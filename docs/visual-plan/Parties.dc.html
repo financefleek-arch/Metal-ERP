@@ -1,0 +1,67 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    a { color: #2f6f89; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    td { padding: 11px 12px; font-size: 13px; border-top: 1px solid #f0ebe1; }
+    .chip { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid #cbc4b8; background: #fff; color: #5a5344; }
+    .chip.on { background: #23201b; color: #f4f1ec; border-color: #23201b; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; min-height: 820px; background: #f4f1ec;">
+  <div style="display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: #23201b; color: #f4f1ec;">
+    <div class="serif" style="font-size: 18px; font-weight: 600;">Parties</div>
+    <button style="height: 36px; padding: 0 16px; border: none; background: #2f6f89; color: #fff; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit;">+ New party</button>
+  </div>
+
+  <div style="padding: 26px 30px;">
+    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+      <span class="chip on">All 128</span>
+      <span class="chip">Customers 94</span>
+      <span class="chip">Suppliers 22</span>
+      <span class="chip">Both 12</span>
+    </div>
+    <p style="font-size: 12px; color: #7c766a; margin: 8px 0 16px;">One party record with a role flag &mdash; metal traders often buy from and sell to the same firm.</p>
+
+    <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden;">
+      <table style="border-collapse: collapse; width: 100%;">
+        <tr style="background: #efe9df; font-size: 11px; color: #6f685b; text-transform: uppercase; letter-spacing: 0.04em;">
+          <td>Name</td>
+          <td style="width: 110px;">Role</td>
+          <td style="width: 130px;">Phone</td>
+          <td style="width: 260px;">City / State</td>
+          <td style="width: 130px;">PAN</td>
+          <td style="width: 120px;" class="serif">This month</td>
+        </tr>
+        <tr><td class="b" style="font-weight:600;">Jay Matadee Enterprises</td><td>Customer</td><td>&mdash;</td><td>Darjeeling &middot; WB (19)</td><td>AGAPK7969G</td><td>&#8377; 2,37,601</td></tr>
+        <tr><td>Balaji Traders</td><td>Customer</td><td>98320 11223</td><td>Siliguri &middot; WB (19)</td><td>&mdash;</td><td>&#8377; 84,200</td></tr>
+        <tr><td>Rungta Steel Traders</td><td>Both</td><td>94341 55678</td><td>Siliguri &middot; WB (19)</td><td>AAECR1234K</td><td>&#8377; 3,35,760 in</td></tr>
+        <tr><td>Nilkanth Hardware</td><td>Customer</td><td>&mdash;</td><td>Jalpaiguri &middot; WB (19)</td><td>&mdash;</td><td>&#8377; 46,750</td></tr>
+        <tr><td>Shyam Steel Udyog</td><td>Supplier</td><td>90070 44521</td><td>Durgapur &middot; WB (19)</td><td>ABZFS9087P</td><td>&#8377; 1,12,000 in</td></tr>
+      </table>
+    </div>
+
+    <div style="margin-top: 16px; border: 1px dashed #2f6f89; background: #f0f6f8; padding: 10px 12px; font-size: 11px; color: #2f6f89;">
+      Each party can hold multiple addresses tagged Bill / Ship / Both, and a state code &mdash; dormant now, needed for Place-of-Supply when GST turns on.
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":820}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

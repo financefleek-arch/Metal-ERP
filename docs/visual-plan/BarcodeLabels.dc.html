@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .box { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; }
+    .lbl { font-size: 11px; color: #8a8272; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .bars { font-family: monospace; font-size: 22px; letter-spacing: -2px; line-height: 1; }
+  </style>
+</helmet>
+
+<div style="width: 1400px; min-height: 940px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">Stacks of sizes: one barcode + a size number</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 22px; max-width: 900px;">Loose finished vessels can&rsquo;t each carry a barcode. So the stack gets <b>one label</b> encoding a group code. The barcode points at the <b>size family</b>, not a SKU. Sizes are a stable ordered sequence (smallest&hellip;largest = 1&hellip;5). Scan the stack &rarr; system knows the family &rarr; operator types the size number &rarr; line added at that size&rsquo;s price.</p>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+    <!-- the scan -> number flow -->
+    <div>
+      <div class="serif" style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">On the bill &mdash; scan mode</div>
+      <div class="box" style="overflow:hidden;">
+        <div style="padding:10px 14px; background:#efe9df; font-size:12px; color:#6f685b;">Invoice #1220 &middot; scanned <span style="font-family:monospace;">700428</span></div>
+        <div style="padding:14px;">
+          <div style="font-size:13px; font-weight:600; margin-bottom:2px;">SS Balti &mdash; SS <span style="font-size:10px; background:#eee6d8; color:#7c6a3f; padding:1px 6px; border-radius:8px;">group &middot; 5 sizes</span></div>
+          <div style="font-size:12px; color:#7c766a; margin-bottom:10px;">Size #?</div>
+          <div style="display:grid; grid-template-columns:repeat(5,1fr); gap:6px;">
+            <div style="border:1px solid #cbc4b8; border-radius:6px; padding:8px 4px; text-align:center; font-size:11px;"><b>1</b><br>smallest<br><span style="color:#7c766a;">&#8377;420</span></div>
+            <div style="border:1px solid #cbc4b8; border-radius:6px; padding:8px 4px; text-align:center; font-size:11px;"><b>2</b><br>small<br><span style="color:#7c766a;">&#8377;480</span></div>
+            <div style="border:2px solid #2f6f89; background:#eef4f7; border-radius:6px; padding:8px 4px; text-align:center; font-size:11px;"><b>3</b><br>average<br><span style="color:#2f6f89;">&#8377;560</span></div>
+            <div style="border:1px solid #cbc4b8; border-radius:6px; padding:8px 4px; text-align:center; font-size:11px;"><b>4</b><br>large<br><span style="color:#7c766a;">&#8377;640</span></div>
+            <div style="border:1px solid #cbc4b8; border-radius:6px; padding:8px 4px; text-align:center; font-size:11px;"><b>5</b><br>largest<br><span style="color:#7c766a;">&#8377;720</span></div>
+          </div>
+          <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
+            <div style="height:34px; width:70px; border:1.5px solid #2f6f89; border-radius:6px; background:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600;">3</div>
+            <span style="font-size:12px; color:#7c766a;">type 1&ndash;5, Enter &middot; invalid number beeps &amp; reprompts</span>
+          </div>
+        </div>
+        <div style="padding:10px 14px; border-top:1px solid #f0ebe1; background:#f2f8f3; font-size:12px; color:#3a5a48;">&#10003; SS Balti No.3 &times;1 &middot; &#8377;532 (MRP&minus;5%) &mdash; line added</div>
+      </div>
+      <div style="margin-top:12px; border:1px dashed #b5892f; background:#fbf6ec; padding:10px 12px; font-size:11px; color:#8a6a1f; line-height:1.6;">
+        No scanner / torn label? Type the group code <span style="font-family:monospace;">700428</span> into the item field &mdash; same size prompt. The number on the label is always keyable. If a size sells 60% of the time, set it as the group&rsquo;s <b>default</b> so Enter alone picks it.
+      </div>
+    </div>
+
+    <!-- the stack label -->
+    <div>
+      <div class="serif" style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">The stack label &mdash; one per stack, printed on intake</div>
+      <div class="box" style="padding:16px 18px;">
+        <div style="display:flex; gap:16px; align-items:flex-start;">
+          <div style="border:1px solid #23201b; border-radius:4px; padding:12px 14px; width:230px;">
+            <div style="font-size:13px; font-weight:700;">SS BALTI &mdash; SS</div>
+            <div class="bars" style="margin:6px 0 2px;">‖║▌║▌‖║▌║▌‖║▌</div>
+            <div style="font-size:11px; letter-spacing:2px;">700428</div>
+            <div style="margin-top:8px; font-size:10px; line-height:1.6; border-top:1px dashed #999; padding-top:6px;">
+              1 smallest &nbsp; 2 small &nbsp; 3 average<br>
+              4 large &nbsp;&nbsp;&nbsp;&nbsp; 5 largest
+            </div>
+          </div>
+          <div style="font-size:11px; color:#7c766a; line-height:1.7;">
+            Barcode encodes only the <b>group code</b> &mdash; a key, not the data.<br>
+            Prices, sizes, HSN all live in the backend, so a price change or a 6th size needs <b>no reprint</b>.<br><br>
+            Numbered legend printed so a smudged barcode can still be keyed.<br><br>
+            If the maker already barcodes the stack &rarr; capture that code as the group&rsquo;s alias, print nothing.
+          </div>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:8px;">
+          <button style="height:36px; padding:0 16px; border:none; background:#2f6f89; color:#fff; border-radius:6px; font-size:13px; font-weight:600; font-family:inherit;">Print stack label</button>
+          <button style="height:36px; padding:0 14px; border:1px solid #cbc4b8; background:#fff; border-radius:6px; font-size:13px; font-family:inherit;">Capture maker barcode</button>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;" class="box">
+        <div style="padding:10px 14px; border-bottom:1px solid #efe9df; font-size:12px; font-weight:600;">Clean single-SKU case &mdash; unchanged</div>
+        <div style="padding:12px 14px; font-size:12px; color:#7c766a; line-height:1.6;">
+          Boxed goods (Prestige tope) or items with a maker EAN-13 &rarr; barcode maps straight to <b>one item</b>. Scan = add 1 at MRP&minus;discount, no number prompt. Scan-scan-scan.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- schema -->
+  <div class="box" style="padding: 14px 18px;">
+    <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Schema &mdash; barcode maps to a GROUP or an ITEM</div>
+    <div style="font-family: monospace; font-size:11px; color:#3a362e; line-height:1.9;">
+      product_group(id, name, category, hsn_sac, uom, item_type, <b>group_code</b> UNIQUE, <b>default_size_pos</b> NULL)<br>
+      item(id, <b>group_id</b>, <b>size_pos</b> INT, <b>size_label</b> TEXT, name, mrp, last_rate, item_code, stock_qty, &hellip;) &nbsp; UNIQUE(group_id, size_pos)<br>
+      barcode_alias(id, code, <b>target_type</b> ENUM('ITEM','GROUP'), target_id, source ENUM('OWN','MANUFACTURER','VENDOR'))<br>
+      label_batch(id, kind[STACK|SKU|LOT], target_ids[], layout, created_by) &nbsp;&mdash; reprints<br>
+      stock_lot(id, item_id, lot_code UNIQUE, net_kg, weighment_id, status) &nbsp;&mdash; BULK, Stage 4
+    </div>
+    <div style="margin-top:8px; font-size:11px; color:#7c766a;">size_pos is the contract between label and operator &mdash; once No.3 = average, it stays 3 forever. Insert a size &rarr; it becomes 6, or renumber deliberately and reprint.</div>
+  </div>
+
+  <div style="margin-top: 14px; border: 1px dashed #2f6f89; background:#f0f6f8; padding: 10px 12px; font-size: 11px; color:#2f6f89; line-height:1.6;">
+    Honest limit: the barcode can&rsquo;t see which vessel was pulled, so one keyed digit is inherent. Scan + one digit, range-checked, one label per stack. If that&rsquo;s still too slow in a rush, the fallback is a <b>size-button keypad</b> for top groups on the billing screen &mdash; not per-piece barcodes.
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1400,"height":940}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

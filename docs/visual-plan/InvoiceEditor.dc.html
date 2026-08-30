@@ -1,0 +1,213 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    a { color: #2f6f89; } a:hover { color: #245771; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .lbl { font-size: 11px; color: #8a8272; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .field { height: 36px; border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; padding: 0 10px; font-size: 13px; display: flex; align-items: center; color: #3a362e; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; min-height: 1060px; background: #f4f1ec;">
+  <div style="display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: #23201b; color: #f4f1ec;">
+    <div class="serif" style="font-size: 18px; font-weight: 600;">Invoice #1219 &middot; <span style="color:#e0a94a;">Awaiting rate</span></div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #b9b3a7; background: #3a362e; border: 1px solid #56504740; border-radius: 6px; padding: 6px 10px;">
+        <span style="width: 8px; height: 8px; border-radius: 50%; background: #4f8a5b;"></span> Scan mode
+        <span style="width: 30px; height: 16px; border-radius: 9px; background: #4f8a5b; position: relative; display: inline-block;"><span style="position:absolute; width:12px; height:12px; border-radius:50%; background:#fff; top:2px; right:2px;"></span></span>
+      </div>
+      <button style="height: 36px; padding: 0 16px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 13px; font-family: inherit;">Save draft</button>
+      <button style="height: 36px; padding: 0 18px; border: none; background: #7c766a; color: #efe9df; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit; opacity: 0.7;">Finalize &mdash; 1 line needs rate</button>
+    </div>
+  </div>
+
+  <!-- contributor strip -->
+  <div style="display: flex; align-items: center; gap: 18px; padding: 8px 24px; background: #efe9df; border-bottom: 1px solid #e0d9cc; font-size: 12px; color: #6f685b;">
+    <span><b style="color:#3a362e;">Counter</b> Suresh &middot; created 15:02 &middot; party + items</span>
+    <span style="color:#c9c2b4;">|</span>
+    <span><b style="color:#3a362e;">Weighbridge</b> Raju &middot; 2 weights attached 15:08</span>
+    <span style="color:#c9c2b4;">|</span>
+    <span><b style="color:#e0a94a;">Rate desk</b> pending &mdash; owner notified on mobile</span>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 340px; gap: 0;">
+    <!-- Left: form -->
+    <div style="padding: 26px 30px;">
+
+      <!-- Party + meta -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; margin-bottom: 22px;">
+        <div>
+          <div class="lbl">Bill to (party)</div>
+          <div class="field" style="justify-content: space-between;">Jay Matadee Enterprises <span style="color:#9a9284;">&#9662;</span></div>
+          <div style="font-size: 12px; color: #7c766a; margin-top: 6px; line-height: 1.5;">Nilkanth Apartment, 1st Floor, Samaresh Bose Sarani, Millanpally, Darjeeling &middot; WB (19)</div>
+        </div>
+        <div>
+          <div class="lbl">Ship to</div>
+          <div class="field" style="justify-content: space-between;">Same as bill to <span style="color:#9a9284;">&#9662;</span></div>
+          <div style="font-size: 12px; color: #7c766a; margin-top: 6px;">Add a different consignee address</div>
+        </div>
+        <div>
+          <div class="lbl">Invoice date</div>
+          <div class="field">29 Aug 2026</div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div>
+            <div class="lbl">Series</div>
+            <div class="field">Sales</div>
+          </div>
+          <div>
+            <div class="lbl">Number</div>
+            <div class="field" style="color:#9a9284;">auto on finalize</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Line items -->
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 10px 14px; background: #efe9df; font-size: 10px; color: #6f685b; text-transform: uppercase; letter-spacing: 0.04em;">
+          <span>#</span><span>Item</span><span>HSN</span><span>Qty / Wt</span><span>UOM</span><span>Rate</span><span style="text-align:right;">Amount</span><span></span>
+        </div>
+
+        <!-- BULK line, weight attached from weighbridge -->
+        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4;">
+          <span style="color:#9a9284;">1</span>
+          <span>SS Utensil <span style="font-size:10px; background:#e3eef2; color:#2f6f89; padding:1px 6px; border-radius:8px;">&#9878; BULK</span></span>
+          <span style="color:#3a362e;">73239390</span>
+          <span style="display:flex; flex-direction:column; line-height:1.3;">900.00 <span style="font-size:9px; color:#4f8a5b;">&#9878; scale #1 &middot; Raju</span></span>
+          <span>Kgs</span>
+          <span>264.00</span>
+          <span style="text-align:right;">2,26,287.00</span>
+          <span style="color:#c0392b; text-align:center;">&times;</span>
+        </div>
+
+        <!-- BULK line, weight pending -->
+        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4;">
+          <span style="color:#9a9284;">2</span>
+          <span>MS Angle 40x40 <span style="font-size:10px; background:#e3eef2; color:#2f6f89; padding:1px 6px; border-radius:8px;">&#9878; BULK</span></span>
+          <span style="color:#3a362e;">72169910</span>
+          <span style="color:#e0a94a;">weigh &middot; <span style="text-decoration:underline; cursor:pointer;">attach</span></span>
+          <span>Kgs</span>
+          <span>58.00</span>
+          <span style="text-align:right; color:#9a9284;">pending</span>
+          <span style="color:#c0392b; text-align:center;">&times;</span>
+        </div>
+
+        <!-- MRP line just added by SCAN -->
+        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4; background: #f2f8f3;">
+          <span style="color:#9a9284;">3</span>
+          <span>SS Balti No.3 <span style="font-size:10px; background:#f1e7d6; color:#8a6a1f; padding:1px 6px; border-radius:8px;">&#128230; MRP</span> <span style="font-size:9px; color:#4f8a5b;">&#9673; scanned</span></span>
+          <span style="color:#3a362e;">73239390</span>
+          <span>2</span>
+          <span>Nos</span>
+          <span>532.00</span>
+          <span style="text-align:right;">1,064.00</span>
+          <span style="color:#c0392b; text-align:center;">&times;</span>
+        </div>
+
+        <!-- active line: type-ahead open, showing a VARIANT GROUP -->
+        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: start; position: relative;">
+          <span style="color:#9a9284; padding-top:8px;">4</span>
+          <div style="position: relative;">
+            <div style="height: 34px; border: 1.5px solid #2f6f89; border-radius: 6px; background: #fff; padding: 0 10px; display: flex; align-items: center; font-size: 13px;">SS Balti</div>
+            <div style="position: absolute; top: 38px; left: 0; width: 420px; background: #fff; border: 1px solid #cbc4b8; border-radius: 8px; box-shadow: 0 8px 24px #23201b1f; z-index: 5; overflow: hidden;">
+              <div style="padding: 9px 12px; font-size: 13px; background:#f7f4ee; display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #f3eee4;">
+                <span><b>SS Balti &mdash; SS</b> <span style="font-size:10px; background:#eee6d8; color:#7c6a3f; padding:1px 6px; border-radius:8px;">group &middot; 5 sizes</span></span>
+                <span style="color:#9a9284; font-size:11px;">HSN 73239390 &middot; Nos</span>
+              </div>
+              <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:1px; background:#f3eee4;">
+                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.1<br><span style="color:#7c766a;">&#8377;420</span></div>
+                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.2<br><span style="color:#7c766a;">&#8377;480</span></div>
+                <div style="background:#eef4f7; padding:8px 6px; text-align:center; font-size:12px; border:1px solid #9cc3d4;">No.3<br><span style="color:#2f6f89;">&#8377;560</span></div>
+                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.4<br><span style="color:#7c766a;">&#8377;640</span></div>
+                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.5<br><span style="color:#7c766a;">&#8377;720</span></div>
+              </div>
+              <div style="padding: 8px 12px; font-size: 11px; color: #8a6a1f; background: #fdf8ef; border-bottom: 1px solid #f3eee4;">
+                &#9888; Close to &ldquo;SS Balti&rdquo; group &mdash; using it. Type more to force a new item.
+              </div>
+              <div style="padding: 9px 12px; font-size: 12px; color: #2f6f89; background: #f0f6f8;">
+                <span style="font-size:15px;">+</span> New item &ldquo;SS Balti&rdquo; &mdash; or add as a new size to this group
+              </div>
+            </div>
+          </div>
+          <div class="field" style="height:34px; color:#9a9284;">&mdash;</div>
+          <div class="field" style="height:34px; color:#9a9284;">&mdash;</div>
+          <div class="field" style="height:34px;">Nos</div>
+          <div class="field" style="height:34px; color:#9a9284;">&mdash;</div>
+          <span style="text-align:right; padding-top:8px; color:#9a9284;">&mdash;</span>
+          <span style="color:#c0392b; text-align:center; padding-top:8px;">&times;</span>
+        </div>
+
+        <div style="padding: 10px 14px; border-top: 1px dashed #ddd5c8; display: flex; gap: 18px;">
+          <span style="font-size: 13px; color: #2f6f89;">+ Add line</span>
+          <span style="font-size: 13px; color: #7c766a;">&#9673; Scan a barcode&hellip;</span>
+          <span style="font-size: 13px; color: #7c766a;">&#9878; Attach a weighment</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px;">
+        <div>
+          <div class="lbl">Notes on invoice</div>
+          <div style="border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; min-height: 70px; padding: 10px; font-size: 12px; color: #9a9284;">Optional note printed under the line table&hellip;</div>
+        </div>
+        <div>
+          <div class="lbl">Transport (for e-Way Bill later)</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="field" style="justify-content:space-between;">Vehicle no. <span style="color:#9a9284;">WB73F0406</span></div>
+            <div class="field" style="justify-content:space-between;">Distance <span style="color:#9a9284;">8 km</span></div>
+          </div>
+          <div style="font-size: 11px; color: #9a9284; margin-top: 6px;">Captured now, used when GST / EWB is switched on.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: totals + live preview link -->
+    <div style="background: #fbf9f5; border-left: 1px solid #e6e0d6; padding: 26px 24px;">
+      <div class="serif" style="font-size: 15px; font-weight: 600; margin-bottom: 14px;">Totals</div>
+      <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px;">
+        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Subtotal</span><span>2,55,687.00</span></div>
+        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Discount</span><span>0.00</span></div>
+        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Round off</span><span>&minus;0.00</span></div>
+        <div style="border-top: 1px solid #e0d9cc; margin: 6px 0;"></div>
+        <div style="display: flex; justify-content: space-between; font-size: 16px;" class="serif"><span style="font-weight:600;">Grand total</span><span style="font-weight:600;">&#8377; 2,55,687</span></div>
+        <div style="font-size: 11px; color: #9a9284; line-height: 1.5;">Two Lakh Fifty Five Thousand Six Hundred Eighty Seven Only</div>
+      </div>
+
+      <div style="margin-top: 20px; padding: 14px; background: #fff; border: 1px solid #e6e0d6; border-radius: 8px;">
+        <div style="font-size: 12px; font-weight: 600; margin-bottom: 8px;">Blocking finalize</div>
+        <div style="font-size: 12px; line-height: 1.7; color: #7c766a;">
+          <span style="color:#e0a94a;">&#9679;</span> Line 2 &mdash; weight not attached<br>
+          <span style="color:#e0a94a;">&#9679;</span> Line 4 &mdash; size &amp; rate not set<br>
+          <span style="color:#e0a94a;">&#9679;</span> Rate desk approval pending
+        </div>
+      </div>
+
+      <div style="margin-top: 16px; padding: 14px; background: #fbf9f5; border: 1px solid #e6e0d6; border-radius: 8px;">
+        <div style="font-size: 12px; color: #7c766a; margin-bottom: 6px;">GST off &middot; template v1-nongst</div>
+        <div style="font-size: 12px; line-height: 1.5;">No CGST/SGST, IRN or HSN summary. Every field is already in the schema for the Phase 2 flip.</div>
+      </div>
+
+      <div style="margin-top: 16px;">
+        <div class="lbl">Live preview</div>
+        <div style="border: 1px solid #cbc4b8; border-radius: 8px; background: #fff; height: 150px; display: flex; align-items: center; justify-content: center; color: #9a9284; font-size: 12px;">A4 preview &mdash; updates live</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":1060}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    a { color: #2f6f89; } a:hover { color: #245771; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    td { padding: 10px 12px; font-size: 13px; border-top: 1px solid #f0ebe1; }
+    .chip { font-size: 11px; padding: 3px 10px; border-radius: 12px; border: 1px solid #cbc4b8; background: #fff; color: #5a5344; }
+    .chip.on { background: #23201b; color: #f4f1ec; border-color: #23201b; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; min-height: 880px; background: #f4f1ec;">
+  <div style="display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: #23201b; color: #f4f1ec;">
+    <div class="serif" style="font-size: 18px; font-weight: 600;">Reports</div>
+    <div style="display: flex; gap: 10px;">
+      <button style="height: 36px; padding: 0 16px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 13px; font-family: inherit;">Export CSV</button>
+      <button style="height: 36px; padding: 0 16px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 13px; font-family: inherit;">Print</button>
+    </div>
+  </div>
+
+  <div style="padding: 26px 30px;">
+    <div style="display: flex; gap: 8px; margin-bottom: 18px;">
+      <span class="chip on">Items sold this month</span>
+      <span class="chip">Items purchased</span>
+      <span class="chip">New items first seen</span>
+      <span class="chip">Rate history</span>
+      <span class="chip">Invoice register</span>
+    </div>
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px;">
+      <h1 class="serif" style="margin: 0; font-size: 22px; font-weight: 600;">Items sold &mdash; August 2026</h1>
+      <div style="font-size: 13px; color: #7c766a;">64 invoices &middot; 189 lines &middot; 96 distinct items</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 14px; margin-bottom: 20px;">
+      <div style="background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding:16px;">
+        <div style="font-size:11px; color:#7c766a; text-transform:uppercase; letter-spacing:0.06em;">Total sold value</div>
+        <div class="serif" style="font-size:22px; font-weight:600; margin-top:6px;">&#8377; 18,42,600</div>
+      </div>
+      <div style="background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding:16px;">
+        <div style="font-size:11px; color:#7c766a; text-transform:uppercase; letter-spacing:0.06em;">BULK tonnage</div>
+        <div class="serif" style="font-size:22px; font-weight:600; margin-top:6px;">42.6 T</div>
+      </div>
+      <div style="background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding:16px;">
+        <div style="font-size:11px; color:#7c766a; text-transform:uppercase; letter-spacing:0.06em;">MRP units sold</div>
+        <div class="serif" style="font-size:22px; font-weight:600; margin-top:6px;">1,248</div>
+      </div>
+      <div style="background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding:16px;">
+        <div style="font-size:11px; color:#7c766a; text-transform:uppercase; letter-spacing:0.06em;">New names captured</div>
+        <div class="serif" style="font-size:22px; font-weight:600; margin-top:6px;">37</div>
+      </div>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden;">
+      <table style="border-collapse: collapse; width: 100%;">
+        <tr style="background: #efe9df; font-size: 11px; color: #6f685b; text-transform: uppercase; letter-spacing: 0.04em;">
+          <td>Item</td>
+          <td style="width: 90px;">Type</td>
+          <td style="width: 120px;">Category</td>
+          <td style="width: 130px;" class="serif">Qty sold</td>
+          <td style="width: 90px;">Times</td>
+          <td style="width: 110px;" class="serif">Avg rate</td>
+          <td style="width: 130px;" class="serif">Value</td>
+        </tr>
+        <tr><td>SS Utensil</td><td>BULK</td><td>Steel</td><td>8,420 Kgs</td><td>18&times;</td><td>&#8377; 262</td><td>&#8377; 2,20,600</td></tr>
+        <tr><td>Aluminium Patta 6&Prime;</td><td>BULK</td><td>Aluminium</td><td>6,110 Kgs</td><td>14&times;</td><td>&#8377; 244</td><td>&#8377; 1,49,080</td></tr>
+        <tr><td>MS Angle 40x40</td><td>BULK</td><td>Iron</td><td>12,300 Kgs</td><td>21&times;</td><td>&#8377; 58</td><td>&#8377; 7,13,400</td></tr>
+        <tr><td>SS Pipe 202 19mm</td><td>BULK</td><td>Steel</td><td>3,240 Kgs</td><td>9&times;</td><td>&#8377; 218</td><td>&#8377; 7,06,320</td></tr>
+        <tr><td>Prestige Tope 3L</td><td>MRP</td><td>Utensil</td><td>96 Nos</td><td>9&times;</td><td>&#8377; 520</td><td>&#8377; 49,920</td></tr>
+        <tr><td>Jindal SS Sheet 304 2mm</td><td>MRP</td><td>Steel</td><td>38 Nos</td><td>5&times;</td><td>&#8377; 4,180</td><td>&#8377; 1,58,840</td></tr>
+        <tr><td style="color:#7c766a;">&hellip; 90 more rows</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+      </table>
+    </div>
+
+    <div style="margin-top: 16px; border: 1px dashed #2f6f89; background: #f0f6f8; padding: 10px 12px; font-size: 11px; color: #2f6f89;">
+      This is the deliverable you asked for: a monthly list of everything sold, built purely from finalized invoice lines grouped by item &mdash; no master data needed up front. Each month the catalogue gets richer and this report gets cleaner.
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

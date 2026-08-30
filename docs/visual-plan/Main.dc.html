@@ -1,0 +1,134 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    a { color: #2f6f89; } a:hover { color: #245771; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; min-height: 900px; background: #f4f1ec; padding: 0;">
+
+  <!-- Top bar -->
+  <div style="display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: #23201b; color: #f4f1ec;">
+    <div style="display: flex; align-items: center; gap: 28px;">
+      <div class="serif" style="font-size: 18px; font-weight: 600; letter-spacing: 0.02em;">Sethia Metal Store</div>
+      <div style="display: flex; gap: 20px; font-size: 13px; color: #b9b3a7;">
+        <span style="color: #f4f1ec; border-bottom: 2px solid #2f6f89; padding-bottom: 18px;">Dashboard</span>
+        <span>Sales</span>
+        <span>Purchases</span>
+        <span>Items</span>
+        <span>Parties</span>
+        <span>Reports</span>
+      </div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 16px; font-size: 13px;">
+      <span style="color: #b9b3a7;">FY 2026&ndash;27</span>
+      <span style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; background: #2f6f89; font-size: 12px;">HJ</span>
+    </div>
+  </div>
+
+  <div style="padding: 28px 32px;">
+    <div style="display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 22px;">
+      <h1 class="serif" style="margin: 0; font-size: 26px; font-weight: 600;">Dashboard</h1>
+      <div style="display: flex; gap: 10px;">
+        <button style="height: 36px; padding: 0 16px; border: 1px solid #cbc4b8; background: #fff; border-radius: 6px; font-size: 13px; font-family: inherit;">New purchase bill</button>
+        <button style="height: 36px; padding: 0 16px; border: none; background: #2f6f89; color: #fff; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit;">+ New invoice</button>
+      </div>
+    </div>
+
+    <!-- Stat row -->
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-bottom: 24px;">
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 18px;">
+        <div style="font-size: 12px; color: #7c766a; text-transform: uppercase; letter-spacing: 0.06em;">Sales this month</div>
+        <div class="serif" style="font-size: 24px; font-weight: 600; margin-top: 8px;">&#8377; 18,42,600</div>
+        <div style="font-size: 12px; color: #4f8a5b; margin-top: 4px;">&#9650; 12% vs last month</div>
+      </div>
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 18px;">
+        <div style="font-size: 12px; color: #7c766a; text-transform: uppercase; letter-spacing: 0.06em;">Invoices raised</div>
+        <div class="serif" style="font-size: 24px; font-weight: 600; margin-top: 8px;">64</div>
+        <div style="font-size: 12px; color: #7c766a; margin-top: 4px;">Last: #1217 &middot; today</div>
+      </div>
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 18px;">
+        <div style="font-size: 12px; color: #7c766a; text-transform: uppercase; letter-spacing: 0.06em;">New items captured</div>
+        <div class="serif" style="font-size: 24px; font-weight: 600; margin-top: 8px;">37</div>
+        <div style="font-size: 12px; color: #b5892f; margin-top: 4px;">28 unconfirmed &middot; review</div>
+      </div>
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 18px;">
+        <div style="font-size: 12px; color: #7c766a; text-transform: uppercase; letter-spacing: 0.06em;">Catalogue size</div>
+        <div class="serif" style="font-size: 24px; font-weight: 600; margin-top: 8px;">312</div>
+        <div style="font-size: 12px; color: #7c766a; margin-top: 4px;">241 BULK &middot; 71 MRP</div>
+      </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px;">
+      <!-- Recent invoices -->
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 4px 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #efe9df;">
+          <div style="font-weight: 600; font-size: 14px;">Recent invoices</div>
+          <a style="font-size: 12px; text-decoration: none;">View all</a>
+        </div>
+        <div style="display: flex; flex-direction: column;">
+          <div style="display: grid; grid-template-columns: 70px 1fr 110px 90px; gap: 12px; padding: 11px 18px; font-size: 11px; color: #9a9284; text-transform: uppercase; letter-spacing: 0.05em;">
+            <span>No.</span><span>Party</span><span style="text-align: right;">Amount</span><span style="text-align: right;">Status</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 70px 1fr 110px 90px; gap: 12px; padding: 12px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>1217</span><span>Jay Matadee Enterprises</span><span style="text-align: right;">&#8377; 2,37,601</span><span style="text-align: right; color: #4f8a5b;">Final</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 70px 1fr 110px 90px; gap: 12px; padding: 12px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>1216</span><span>Balaji Traders</span><span style="text-align: right;">&#8377; 84,200</span><span style="text-align: right; color: #4f8a5b;">Final</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 70px 1fr 110px 90px; gap: 12px; padding: 12px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>&mdash;</span><span style="color: #7c766a;">Draft &middot; Shyam Steel Udyog</span><span style="text-align: right;">&#8377; 1,12,000</span><span style="text-align: right; color: #b5892f;">Draft</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 70px 1fr 110px 90px; gap: 12px; padding: 12px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>1215</span><span>Nilkanth Hardware</span><span style="text-align: right;">&#8377; 46,750</span><span style="text-align: right; color: #4f8a5b;">Final</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Items needing attention -->
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid #efe9df;">
+          <div style="font-weight: 600; font-size: 14px;">Items to review</div>
+          <a style="font-size: 12px; text-decoration: none;">Merge tool</a>
+        </div>
+        <div style="padding: 8px 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>&ldquo;S.S. Utensil&rdquo;</span>
+            <span style="font-size: 11px; color: #b5892f; background: #fbf1dc; padding: 2px 8px; border-radius: 10px;">dup of SS Utensil?</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>&ldquo;Alu patta 6&rdquo;&rdquo;</span>
+            <span style="font-size: 11px; color: #7c766a; background: #f0ece2; padding: 2px 8px; border-radius: 10px;">no HSN / UOM</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>&ldquo;MS Angle 40x40&rdquo;</span>
+            <span style="font-size: 11px; color: #7c766a; background: #f0ece2; padding: 2px 8px; border-radius: 10px;">unconfirmed</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; font-size: 13px; border-top: 1px solid #f3eee4;">
+            <span>&ldquo;Prestige Tope 3L&rdquo;</span>
+            <span style="font-size: 11px; color: #2f6f89; background: #e3eef2; padding: 2px 8px; border-radius: 10px;">MRP matched from purchase</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'Helvetica Neue', Arial, sans-serif; background: #d9d4ca; color: #000; }
+    .sheet { width: 794px; min-height: 1123px; background: #fff; margin: 0 auto; padding: 28px 30px; font-size: 11px; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { border: 1px solid #000; padding: 3px 5px; vertical-align: top; }
+    .noborder td { border: none; }
+    .r { text-align: right; }
+    .c { text-align: center; }
+    .b { font-weight: bold; }
+  </style>
+</helmet>
+
+<div style="padding: 24px 0;">
+<div class="sheet">
+  <div class="c b" style="font-size: 13px; margin-bottom: 6px;">Invoice</div>
+
+  <table>
+    <tr>
+      <td style="width: 55%;">
+        <div class="b" style="font-size: 13px;">SETHIA METAL STORE</div>
+        <div>Near Swastika Sporting Club, Dangipara,<br>Siliguri, PIN 734001</div>
+        <div>PAN: ACHPJ4356R</div>
+        <div>Contact: 9851503336</div>
+      </td>
+      <td>
+        <table class="noborder" style="width:100%;">
+          <tr><td style="width:45%;">Invoice No.</td><td class="b">1217</td></tr>
+          <tr><td>Dated</td><td class="b">29-Aug-26</td></tr>
+          <tr><td>Mode/Terms of Payment</td><td>&nbsp;</td></tr>
+          <tr><td>Buyer's Order No.</td><td>&nbsp;</td></tr>
+          <tr><td>Dispatched through</td><td>&nbsp;</td></tr>
+          <tr><td>Motor Vehicle No.</td><td>WB73F0406</td></tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <div style="color:#555;">Consignee (Ship to)</div>
+        <div class="b">Jay Matadee Enterprises</div>
+        <div>Nilkanth Apartment, 1st Floor, Samaresh Bose Sarani, Millanpally, Darjeeling</div>
+        <div>PAN: AGAPK7969G</div>
+      </td>
+      <td>
+        <div style="color:#555;">Buyer (Bill to)</div>
+        <div class="b">Jay Matadee Enterprises</div>
+        <div>Nilkanth Apartment, 1st Floor, Samaresh Bose Sarani, Millanpally, Darjeeling</div>
+        <div>PAN: AGAPK7969G</div>
+      </td>
+    </tr>
+  </table>
+
+  <table style="margin-top: -1px;">
+    <tr class="b c">
+      <td style="width: 28px;">Sl</td>
+      <td>Description of Goods</td>
+      <td style="width: 78px;">HSN/SAC</td>
+      <td style="width: 80px;">Quantity</td>
+      <td style="width: 70px;">Rate</td>
+      <td style="width: 44px;">per</td>
+      <td style="width: 96px;">Amount</td>
+    </tr>
+    <tr>
+      <td class="c">1</td>
+      <td class="b">SS Utensil</td>
+      <td class="c">73239390</td>
+      <td class="r">900.00 Kgs</td>
+      <td class="r">264.00</td>
+      <td class="c">Kgs</td>
+      <td class="r">2,26,287.00</td>
+    </tr>
+    <tr>
+      <td class="c">2</td>
+      <td class="b">Aluminium Patta 6&Prime;</td>
+      <td class="c">76069210</td>
+      <td class="r">120.00 Kgs</td>
+      <td class="r">245.00</td>
+      <td class="c">Kgs</td>
+      <td class="r">29,400.00</td>
+    </tr>
+    <tr>
+      <td colspan="6" style="height: 230px; border-top: none; border-bottom: none;"></td>
+      <td style="border-top: none; border-bottom: none;"></td>
+    </tr>
+    <tr class="b">
+      <td colspan="3" class="c">Total</td>
+      <td class="r">1020.00 Kgs</td>
+      <td colspan="2"></td>
+      <td class="r">&#8377; 2,55,687.00</td>
+    </tr>
+  </table>
+
+  <table style="margin-top: -1px;">
+    <tr>
+      <td>
+        <div>Amount Chargeable (in words)</div>
+        <div class="b">INR Two Lakh Fifty Five Thousand Six Hundred Eighty Seven Only</div>
+      </td>
+    </tr>
+  </table>
+
+  <table style="margin-top: -1px;">
+    <tr>
+      <td style="width: 50%;">
+        <div class="b">Declaration</div>
+        <div>We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</div>
+        <div style="margin-top: 10px;">Subject to Siliguri Jurisdiction</div>
+      </td>
+      <td>
+        <div class="b">Company's Bank Details</div>
+        <div>Bank: KOTAK BANK</div>
+        <div>A/c No.: 0813702740</div>
+        <div>Branch &amp; IFSC: Hill Cart Road Siliguri &amp; KKBK0006749</div>
+        <div style="margin-top: 22px; text-align: right;">for SETHIA METAL STORE</div>
+        <div style="margin-top: 24px; text-align: right;">Authorised Signatory</div>
+      </td>
+    </tr>
+  </table>
+
+  <div class="c" style="margin-top: 8px; color: #555;">This is a Computer Generated Invoice</div>
+
+  <!-- annotation -->
+  <div style="margin-top: 18px; border: 1px dashed #2f6f89; background: #f0f6f8; padding: 8px 10px; font-size: 10px; color: #2f6f89;">
+    Note (not printed): same boxed layout as the GST sample &mdash; the IRN/Ack header, GST rate columns, HSN tax-summary block and the e-Way Bill page are simply hidden until GST mode is on. Then this becomes template <b>v2-gst</b>; old invoices keep rendering <b>v1-nongst</b>.
+  </div>
+</div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":842,"height":1200}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .stage { flex: 1; background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 14px; }
+    .pill { font-size: 10px; padding: 2px 8px; border-radius: 10px; display: inline-block; }
+  </style>
+</helmet>
+
+<div style="width: 1400px; min-height: 900px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">A bill is assembled by several hands, over time</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 24px; max-width: 780px;">Not one person filling one form. Weight, count and price are separate fields that different roles fill from different devices &mdash; the document just tracks what&rsquo;s still missing. Finalize is gated until every field resolves.</p>
+
+  <!-- state pipeline -->
+  <div style="display: flex; align-items: stretch; gap: 10px; margin-bottom: 26px;">
+    <div class="stage" style="border-color:#9cc3d4;">
+      <div class="pill" style="background:#e3eef2; color:#2f6f89;">DRAFT</div>
+      <div style="font-size: 13px; font-weight: 600; margin: 8px 0 4px;">Counter</div>
+      <div style="font-size: 12px; color: #7c766a; line-height: 1.5;">Party, item names, item counts, vehicle. Desktop.</div>
+    </div>
+    <div style="align-self: center; color: #c9c2b4;">&rarr;</div>
+    <div class="stage" style="border-color:#e0c98a;">
+      <div class="pill" style="background:#f6edd8; color:#8a6a1f;">AWAITING&nbsp;WEIGHT</div>
+      <div style="font-size: 13px; font-weight: 600; margin: 8px 0 4px;">Weighbridge</div>
+      <div style="font-size: 12px; color: #7c766a; line-height: 1.5;">Attaches weighments from scale #1 to BULK lines. Tablet at the scale.</div>
+    </div>
+    <div style="align-self: center; color: #c9c2b4;">&rarr;</div>
+    <div class="stage" style="border-color:#e0c98a;">
+      <div class="pill" style="background:#f6edd8; color:#8a6a1f;">AWAITING&nbsp;RATE</div>
+      <div style="font-size: 13px; font-weight: 600; margin: 8px 0 4px;">Rate desk / Owner</div>
+      <div style="font-size: 12px; color: #7c766a; line-height: 1.5;">Sets or approves &#8377;/kg. <b>Mobile</b> &mdash; the classic &ldquo;approve pricing from your phone&rdquo; case.</div>
+    </div>
+    <div style="align-self: center; color: #c9c2b4;">&rarr;</div>
+    <div class="stage" style="border-color:#a9cbb2;">
+      <div class="pill" style="background:#e6efe8; color:#3a5a48;">READY</div>
+      <div style="font-size: 13px; font-weight: 600; margin: 8px 0 4px;">Counter</div>
+      <div style="font-size: 12px; color: #7c766a; line-height: 1.5;">Reviews, assigns number, generates PDF.</div>
+    </div>
+    <div style="align-self: center; color: #c9c2b4;">&rarr;</div>
+    <div class="stage" style="border-color:#7c766a; background:#efe9df;">
+      <div class="pill" style="background:#23201b; color:#f4f1ec;">FINALIZED</div>
+      <div style="font-size: 13px; font-weight: 600; margin: 8px 0 4px;">Locked</div>
+      <div style="font-size: 12px; color: #7c766a; line-height: 1.5;">Totals frozen. Number consumed. Immutable.</div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 20px;">
+    <!-- the bill with per-field status -->
+    <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden;">
+      <div style="padding: 12px 16px; border-bottom: 1px solid #efe9df; font-weight: 600; font-size: 14px;">Invoice #1219 &middot; Balaji Traders &middot; <span style="color:#e0a94a;">Awaiting rate</span></div>
+      <table style="border-collapse: collapse; width: 100%; font-size: 13px;">
+        <tr style="background:#efe9df; font-size:10px; color:#6f685b; text-transform:uppercase; letter-spacing:0.04em;">
+          <td style="padding:8px 12px;">Item</td><td style="padding:8px 12px;">Count</td><td style="padding:8px 12px;">Weight</td><td style="padding:8px 12px;">Rate</td><td style="padding:8px 12px;">Amount</td>
+        </tr>
+        <tr style="border-top:1px solid #f0ebe1;">
+          <td style="padding:10px 12px;">SS Utensil</td>
+          <td style="padding:10px 12px; color:#9a9284;">n/a</td>
+          <td style="padding:10px 12px;">900.00 <span style="font-size:10px; color:#4f8a5b;">&#10003; Raju 15:08</span></td>
+          <td style="padding:10px 12px;">264.00 <span style="font-size:10px; color:#4f8a5b;">&#10003; owner 15:20</span></td>
+          <td style="padding:10px 12px;">2,26,287</td>
+        </tr>
+        <tr style="border-top:1px solid #f0ebe1; background:#fdf8ef;">
+          <td style="padding:10px 12px;">MS Angle 40x40</td>
+          <td style="padding:10px 12px; color:#9a9284;">n/a</td>
+          <td style="padding:10px 12px; color:#e0a94a;">&#9679; pending</td>
+          <td style="padding:10px 12px; color:#e0a94a;">&#9679; pending</td>
+          <td style="padding:10px 12px; color:#9a9284;">&mdash;</td>
+        </tr>
+        <tr style="border-top:1px solid #f0ebe1;">
+          <td style="padding:10px 12px;">SS Balti No.3</td>
+          <td style="padding:10px 12px;">2 <span style="font-size:10px; color:#4f8a5b;">&#10003; scan</span></td>
+          <td style="padding:10px 12px; color:#9a9284;">n/a</td>
+          <td style="padding:10px 12px;">532.00 <span style="font-size:10px; color:#7c766a;">MRP&minus;5%</span></td>
+          <td style="padding:10px 12px;">1,064</td>
+        </tr>
+      </table>
+      <div style="padding: 10px 16px; background:#fdf8ef; border-top:1px solid #f0ebe1; font-size:12px; color:#8a6a1f;">Finalize blocked &middot; 1 line missing weight &amp; rate</div>
+    </div>
+
+    <!-- audit trail -->
+    <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 16px 18px;">
+      <div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">Field history (every change attributed)</div>
+      <div style="font-size: 12px; line-height: 1.9; color: #3a362e;">
+        <div><span style="color:#9a9284;">15:02</span> &nbsp;Suresh (counter) &mdash; created draft, added party + 3 items</div>
+        <div><span style="color:#9a9284;">15:07</span> &nbsp;Raju (weighbridge) &mdash; net 900.00 kg &rarr; line 1 <span style="color:#7c766a;">[scale #1, raw &ldquo;ST,GS,+900.0kg&rdquo;]</span></div>
+        <div><span style="color:#9a9284;">15:09</span> &nbsp;Amit (counter, mobile) &mdash; scanned SS Balti No.3 &times;2</div>
+        <div><span style="color:#9a9284;">15:20</span> &nbsp;Owner (mobile) &mdash; approved &#8377;264/kg for line 1</div>
+        <div style="color:#e0a94a;"><span style="color:#9a9284;">now</span> &nbsp;waiting on line 2 weight + rate</div>
+      </div>
+      <div style="margin-top: 14px; border-top: 1px dashed #ddd5c8; padding-top: 12px; font-size: 11px; color: #7c766a; line-height: 1.6;">
+        Concurrency: last-write-wins per field, with a live &ldquo;Suresh changed line 2 rate just now&rdquo; toast. Optimistic version check on finalize. Every write carries actor + device + timestamp, server-side.
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 20px; border: 1px dashed #2f6f89; background: #f0f6f8; padding: 12px 14px; font-size: 12px; color: #2f6f89; line-height: 1.6;">
+    <b>Roles</b> &mdash; counter / weighbridge / rate-desk / viewer. One person can hold all of them (small shop) or they split across a team. API-first so a future mobile app is a peer of the web app; PWA covers the mobile-heavy tasks (approve rate, attach weight, check status) before any native build.
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1400,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

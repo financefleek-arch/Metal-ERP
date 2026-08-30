@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    a { color: #2f6f89; } a:hover { color: #245771; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .lbl { font-size: 11px; color: #8a8272; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
+    .field { height: 36px; border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; padding: 0 10px; font-size: 13px; display: flex; align-items: center; color: #3a362e; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; min-height: 860px; background: #f4f1ec;">
+  <div style="display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: #23201b; color: #f4f1ec;">
+    <div class="serif" style="font-size: 18px; font-weight: 600;">New Purchase Bill &middot; <span style="color:#b9b3a7;">Draft</span></div>
+    <div style="display: flex; gap: 10px;">
+      <button style="height: 36px; padding: 0 16px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 13px; font-family: inherit;">Save draft</button>
+      <button style="height: 36px; padding: 0 18px; border: none; background: #2f6f89; color: #fff; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit;">Finalize</button>
+    </div>
+  </div>
+
+  <div style="padding: 26px 30px; max-width: 1040px;">
+    <div style="background: #eef4f0; border: 1px solid #d3e3d9; border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #3a5a48; margin-bottom: 22px;">
+      Purpose of this screen: <b>learn the catalogue from the buying side</b>. No stock movement yet &mdash; just capture supplier item names and MRP so outgoing bills can match them.
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px 24px; margin-bottom: 22px;">
+      <div>
+        <div class="lbl">Supplier</div>
+        <div class="field" style="justify-content: space-between;">Rungta Steel Traders <span style="color:#9a9284;">&#9662;</span></div>
+      </div>
+      <div>
+        <div class="lbl">Supplier bill no.</div>
+        <div class="field">RST/4471</div>
+      </div>
+      <div>
+        <div class="lbl">Bill date</div>
+        <div class="field">27 Aug 2026</div>
+      </div>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden;">
+      <div style="display: grid; grid-template-columns: 34px 1fr 110px 70px 90px 90px 90px 110px 30px; gap: 8px; padding: 10px 14px; background: #efe9df; font-size: 11px; color: #6f685b; text-transform: uppercase; letter-spacing: 0.04em;">
+        <span>#</span><span>Item</span><span>HSN</span><span>Qty</span><span>UOM</span><span>Rate</span><span>MRP</span><span style="text-align:right;">Amount</span><span></span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 34px 1fr 110px 70px 90px 90px 90px 110px 30px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4;">
+        <span style="color:#9a9284;">1</span>
+        <span>Aluminium Coil 1250mm <span style="font-size:10px; background:#e3eef2; color:#2f6f89; padding:1px 6px; border-radius:8px; margin-left:4px;">&#9878; BULK</span></span>
+        <span>76061200</span><span>1400</span><span>Kgs</span><span>228.00</span><span style="color:#9a9284;">&mdash;</span>
+        <span style="text-align:right;">3,19,200.00</span><span style="color:#c0392b; text-align:center;">&times;</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 34px 1fr 110px 70px 90px 90px 90px 110px 30px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4;">
+        <span style="color:#9a9284;">2</span>
+        <span>Prestige Tope 3L <span style="font-size:10px; background:#f1e7d6; color:#8a6a1f; padding:1px 6px; border-radius:8px; margin-left:4px;">&#128230; MRP</span></span>
+        <span>76151030</span><span>24</span><span>Nos</span><span>410.00</span><span class="b">560.00</span>
+        <span style="text-align:right;">9,840.00</span><span style="color:#c0392b; text-align:center;">&times;</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 34px 1fr 110px 70px 90px 90px 90px 110px 30px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: start; position: relative;">
+        <span style="color:#9a9284; padding-top:8px;">3</span>
+        <div style="position: relative;">
+          <div style="height: 34px; border: 1.5px solid #2f6f89; border-radius: 6px; background: #fff; padding: 0 10px; display: flex; align-items: center; font-size: 13px;">Prestige Tope 5</div>
+          <div style="position: absolute; top: 38px; left: 0; right: 0; background: #fff; border: 1px solid #cbc4b8; border-radius: 8px; box-shadow: 0 8px 24px #23201b1f; z-index: 5; overflow: hidden;">
+            <div style="padding: 9px 12px; font-size: 13px; border-bottom: 1px solid #f3eee4; display:flex; justify-content:space-between;">
+              <span>Prestige Tope 5L <span style="font-size:10px; background:#f1e7d6; color:#8a6a1f; padding:1px 6px; border-radius:8px;">&#128230; MRP</span></span>
+              <span style="color:#9a9284; font-size:11px;">MRP &#8377;740</span>
+            </div>
+            <div style="padding: 10px 12px; font-size: 13px; color: #2f6f89; background: #f0f6f8; display: flex; align-items: center; gap: 8px;">
+              <span style="font-size:16px; line-height:1;">+</span> Create new item &ldquo;Prestige Tope 5&rdquo;
+            </div>
+          </div>
+        </div>
+        <div class="field" style="height:34px; color:#9a9284;">&mdash;</div>
+        <div class="field" style="height:34px;">12</div>
+        <div class="field" style="height:34px;">Nos</div>
+        <div class="field" style="height:34px;">560.00</div>
+        <div class="field" style="height:34px;">740.00</div>
+        <span style="text-align:right; padding-top:8px;">6,720.00</span>
+        <span style="color:#c0392b; text-align:center; padding-top:8px;">&times;</span>
+      </div>
+
+      <div style="padding: 10px 14px; border-top: 1px dashed #ddd5c8;">
+        <span style="font-size: 13px; color: #2f6f89;">+ Add line</span>
+      </div>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+      <div style="width: 280px; font-size: 13px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Subtotal</span><span>3,35,760.00</span></div>
+        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Round off</span><span>0.00</span></div>
+        <div style="border-top: 1px solid #e0d9cc;"></div>
+        <div class="serif" style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 600;"><span>Total</span><span>&#8377; 3,35,760</span></div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px; border: 1px dashed #2f6f89; background: #f0f6f8; padding: 10px 12px; font-size: 11px; color: #2f6f89;">
+      On finalize: line 1 &rarr; new BULK item (parallel to sales catalogue, not auto-linked). Lines 2 &amp; 3 &rarr; MRP items whose normalized name will match the same item on a future sales invoice, carrying MRP across.
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":860}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

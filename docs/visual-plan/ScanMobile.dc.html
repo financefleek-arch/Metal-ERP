@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .phone { width: 300px; background: #fff; border: 1px solid #d8d1c4; border-radius: 26px; padding: 14px; box-shadow: 0 12px 30px #23201b1f; }
+    .box { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; }
+  </style>
+</helmet>
+
+<div style="width: 1360px; min-height: 960px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">Scan-mode billing &amp; the mobile touchpoints</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 24px; max-width: 820px;">Scanner = keyboard: the line grid listens for a fast keystroke burst ending in Enter. Known code &rarr; add / increment. Unknown &rarr; link-to-item prompt (catalogue learns barcodes like it learns names). On phones the same three high-value jobs: scan stock in, approve a rate, check status.</p>
+
+  <div style="display: flex; gap: 24px; align-items: flex-start;">
+    <!-- desktop scan grid -->
+    <div style="flex: 1;">
+      <div class="serif" style="font-size: 14px; font-weight: 600; margin-bottom: 8px;">Desktop &mdash; scan mode on</div>
+      <div class="box" style="overflow:hidden;">
+        <div style="padding:10px 14px; background:#efe9df; font-size:12px; color:#6f685b; display:flex; justify-content:space-between;">
+          <span>Invoice #1220 &middot; scan a barcode or type</span>
+          <span style="color:#4f8a5b;">&#9679; last scan OK</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:11px 14px; border-top:1px solid #f0ebe1; font-size:13px; background:#f2f8f3;">
+          <span>SS Balti No.2 &nbsp;<span style="font-size:9px; color:#4f8a5b;">&#9673; +1</span></span><span>3 &times; &#8377;461</span><span>1,383.00</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:11px 14px; border-top:1px solid #f0ebe1; font-size:13px;">
+          <span>Prestige Tope 3L</span><span>2 &times; &#8377;532</span><span>1,064.00</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:11px 14px; border-top:1px solid #f0ebe1; font-size:13px;">
+          <span>Jindal SS Sheet 304 2mm &nbsp;<span style="font-size:9px; color:#7c766a;">mfr EAN</span></span><span>1 &times; &#8377;4,180</span><span>4,180.00</span>
+        </div>
+        <!-- group scan -> size number -->
+        <div style="border-top:1px solid #f0ebe1; background:#eef4f7; padding:12px 14px;">
+          <div style="font-size:12px; color:#2f6f89; font-weight:600;">Scanned 700428 &rarr; SS Balti &mdash; SS &middot; size #?</div>
+          <div style="display:flex; gap:5px; margin-top:8px;">
+            <div style="flex:1; border:1px solid #cbc4b8; border-radius:5px; padding:5px; text-align:center; font-size:10px;">1 sml<br>420</div>
+            <div style="flex:1; border:1px solid #cbc4b8; border-radius:5px; padding:5px; text-align:center; font-size:10px;">2 sml<br>480</div>
+            <div style="flex:1; border:2px solid #2f6f89; background:#fff; border-radius:5px; padding:5px; text-align:center; font-size:10px;">3 avg<br>560</div>
+            <div style="flex:1; border:1px solid #cbc4b8; border-radius:5px; padding:5px; text-align:center; font-size:10px;">4 lrg<br>640</div>
+            <div style="flex:1; border:1px solid #cbc4b8; border-radius:5px; padding:5px; text-align:center; font-size:10px;">5 lgst<br>720</div>
+          </div>
+          <div style="font-size:11px; color:#7c766a; margin-top:6px;">Type 1&ndash;5 + Enter. Out-of-range beeps. Enter alone = default size if set.</div>
+        </div>
+        <!-- unknown barcode prompt -->
+        <div style="border-top:1px solid #f0ebe1; background:#fdf8ef; padding:12px 14px;">
+          <div style="font-size:12px; color:#8a6a1f; font-weight:600;">Barcode 8901234512347 isn&rsquo;t linked</div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <div style="flex:1; height:32px; border:1px solid #cbc4b8; border-radius:6px; background:#fff; padding:0 10px; font-size:12px; display:flex; align-items:center; color:#9a9284;">Link to an item or a size group&hellip;</div>
+            <button style="height:32px; padding:0 12px; border:none; background:#2f6f89; color:#fff; border-radius:6px; font-size:12px; font-family:inherit;">Link &amp; add</button>
+          </div>
+          <div style="font-size:11px; color:#7c766a; margin-top:6px;">Creates a barcode_alias (target ITEM or GROUP) &rarr; every future scan resolves instantly.</div>
+        </div>
+        <div style="padding:9px 14px; border-top:1px dashed #ddd5c8; font-size:12px; color:#7c766a;">Beep + row flash on each scan &middot; audible fail tone on unknown</div>
+      </div>
+    </div>
+
+    <!-- phone: scan into draft -->
+    <div class="phone">
+      <div style="font-size:12px; font-weight:600; margin-bottom:8px;">Add to bill &middot; #1220</div>
+      <div style="background:#23201b; border-radius:10px; height:150px; display:flex; align-items:center; justify-content:center; color:#b9b3a7; font-size:11px; position:relative;">
+        camera
+        <div style="position:absolute; width:170px; height:70px; border:2px solid #4f8a5b; border-radius:6px;"></div>
+      </div>
+      <div style="margin-top:8px; font-size:11px; color:#4f8a5b;">&#10003; SS Balti No.3 &mdash; added &times;1</div>
+      <div style="margin-top:8px; border-top:1px solid #efe9df; padding-top:8px; font-size:12px;">
+        <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>SS Balti No.3</span><span>&times;1</span></div>
+        <div style="display:flex; justify-content:space-between; padding:3px 0;"><span>Tope 3L</span><span>&times;2</span></div>
+      </div>
+      <div style="margin-top:8px; font-size:11px; color:#7c766a;">Amit is scanning &middot; Suresh has the party + rate open on desktop</div>
+    </div>
+
+    <!-- phone: approve rate -->
+    <div class="phone">
+      <div style="font-size:12px; font-weight:600; margin-bottom:8px;">Rate approval &middot; 2 waiting</div>
+      <div class="box" style="padding:12px; margin-bottom:10px;">
+        <div style="font-size:12px; font-weight:600;">#1219 &middot; Balaji Traders</div>
+        <div style="font-size:12px; color:#7c766a; margin:6px 0;">MS Angle 40x40 &middot; 1,240 kg</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <div style="flex:1; height:34px; border:1px solid #cbc4b8; border-radius:6px; background:#fff; padding:0 10px; font-size:13px; display:flex; align-items:center;">&#8377; 58.00 / kg</div>
+          <button style="height:34px; padding:0 14px; border:none; background:#4f8a5b; color:#fff; border-radius:6px; font-size:12px; font-family:inherit;">Approve</button>
+        </div>
+        <div style="font-size:11px; color:#9a9284; margin-top:6px;">last sold &#8377;56&ndash;59 &middot; purchase &#8377;52</div>
+      </div>
+      <div class="box" style="padding:12px;">
+        <div style="font-size:12px; font-weight:600;">#1221 &middot; Nilkanth Hardware</div>
+        <div style="font-size:12px; color:#7c766a; margin-top:6px;">3 lines &middot; tap to set rates</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 20px; display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+    <div style="border: 1px dashed #2f6f89; background:#f0f6f8; padding: 10px 12px; font-size: 11px; color:#2f6f89; line-height:1.6;">
+      Mobile surfaces stay small and task-shaped: <b>scan stock in</b>, <b>approve a rate</b>, <b>check status</b>, <b>today&rsquo;s sales</b>. Full invoice creation on a phone is modelled but built last. PWA first (installable, camera works), native only if needed.
+    </div>
+    <div style="border: 1px dashed #b5892f; background:#fbf6ec; padding: 10px 12px; font-size: 11px; color:#8a6a1f; line-height:1.6;">
+      Every mobile write carries actor + device + timestamp server-side, with an <b>idempotency key</b> &mdash; a phone on a weak signal will retry, and must not double-add a line or re-attach a weighment.
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1360,"height":960}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

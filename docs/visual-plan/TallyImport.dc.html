@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .box { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; }
+    .mono { font-family: monospace; font-size: 11px; }
+    td { padding: 8px 10px; font-size: 12px; border-top: 1px solid #f0ebe1; }
+  </style>
+</helmet>
+
+<div style="width: 1420px; min-height: 1000px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">Seeding from the shop&rsquo;s existing Tally database</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 22px; max-width: 920px;">Years of Tally data is a head start on the catalogue you&rsquo;d otherwise accrete slowly. Pull <b>masters</b> (items, parties, company, units) &mdash; not accounting. One-time seed + optional nightly refresh, both through the on-prem connector agent (Tally is LAN-only). Everything still runs through your normalize / confirm / merge flow.</p>
+
+  <!-- pipeline -->
+  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 12px;">
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 170px;"><b>Tally Prime</b><br><span style="color:#7c766a;">XML export (port 9000)<br>List of Accounts, Stock Items</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 150px;"><b>Connector agent</b><br><span style="color:#7c766a;">counter PC, LAN</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 150px;"><b>Staging tables</b><br><span style="color:#7c766a;">raw + tally_guid</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 190px; border-color:#9cc3d4;"><b>Normalize + validate</b><br><span style="color:#7c766a;">name key, UoM map,<br>HSN vs reference table</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div style="display:flex; flex-direction:column; gap:6px;">
+      <div class="box" style="padding: 8px 12px; text-align: center; width: 200px; border-color:#a9cbb2;"><b>Auto-confirm</b> <span style="color:#7c766a;">has UoM + HSN + group</span></div>
+      <div class="box" style="padding: 8px 12px; text-align: center; width: 200px; border-color:#e0c98a;"><b>Queue for review</b> <span style="color:#7c766a;">unconfirmed &rarr; merge tool</span></div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <!-- what to import -->
+    <div class="box" style="padding: 16px 18px;">
+      <div style="font-weight: 600; font-size: 14px; margin-bottom: 10px;">What comes across</div>
+      <table style="width:100%; border-collapse:collapse;">
+        <tr style="color:#7c766a; font-size:10px; text-transform:uppercase; letter-spacing:0.04em;"><td style="padding-bottom:4px;">Tally</td><td>&rarr; your schema</td></tr>
+        <tr><td><b>Stock Items</b></td><td>item.name + name_normalized, uom, category</td></tr>
+        <tr><td>&nbsp;&nbsp;GST details &rarr; HSN/SAC</td><td>item.hsn_code (FK &mdash; validated on import)</td></tr>
+        <tr><td>&nbsp;&nbsp;Std selling price / price list</td><td>item.default_rate, seed last_rate</td></tr>
+        <tr><td>&nbsp;&nbsp;Alias / Part No.</td><td>item_alias (so those strings resolve too)</td></tr>
+        <tr><td>&nbsp;&nbsp;Opening qty</td><td>item.stock_qty <span style="color:#9a9284;">(only at Stage 3)</span></td></tr>
+        <tr><td><b>Ledgers</b> (Debtors / Creditors)</td><td>party + role (customer / supplier / both)</td></tr>
+        <tr><td>&nbsp;&nbsp;Address, State, GSTIN, PAN</td><td>party_address, party.gstin, party.pan</td></tr>
+        <tr><td><b>Company master</b></td><td>tenant profile + bank block</td></tr>
+        <tr><td><b>Units of Measure</b></td><td>UOM enum (matches Tally vocabulary)</td></tr>
+        <tr><td><b>Stock Groups</b></td><td>category enum + product_group hints</td></tr>
+        <tr><td><b>Sales voucher lines</b> <span style="color:#9a9284;">(6&ndash;12 mo, optional)</span></td><td>historical_sale_line <span style="color:#9a9284;">(read-only, analytics)</span></td></tr>
+      </table>
+    </div>
+
+    <!-- what stays / review screen -->
+    <div>
+      <div class="box" style="padding: 16px 18px; margin-bottom: 14px;">
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">Stays in Tally</div>
+        <div style="font-size: 12px; color: #7c766a; line-height: 1.7;">Accounting &mdash; journals, nominal &amp; tax ledgers, P&amp;L, balance sheet, bank recon, TDS, cost centres, budgets. Old vouchers as transactions. Tally remains the book of record; your platform creates <i>new</i> invoices and (later) pushes them back.</div>
+      </div>
+
+      <div class="box" style="overflow:hidden;">
+        <div style="padding: 12px 16px; border-bottom: 1px solid #efe9df; font-weight: 600; font-size: 14px;">Import review &mdash; 214 items, 128 parties</div>
+        <div style="display:flex; gap:8px; padding: 10px 16px; font-size: 11px;">
+          <span style="background:#e6efe8; color:#3a5a48; padding:3px 10px; border-radius:10px;">168 auto-confirmed</span>
+          <span style="background:#f6edd8; color:#8a6a1f; padding:3px 10px; border-radius:10px;">31 need HSN</span>
+          <span style="background:#f6edd8; color:#8a6a1f; padding:3px 10px; border-radius:10px;">15 possible dupes</span>
+        </div>
+        <table style="width:100%; border-collapse:collapse;">
+          <tr style="background:#efe9df; font-size:10px; color:#6f685b; text-transform:uppercase; letter-spacing:0.04em;"><td>Tally name</td><td>UoM</td><td>HSN</td><td>Status</td></tr>
+          <tr><td>SS Balti 3 No</td><td>Nos</td><td>73239390</td><td style="color:#4f8a5b;">confirmed</td></tr>
+          <tr><td>S.S. Balti No.3</td><td>Nos</td><td>73239390</td><td style="color:#c0392b;">dupe &rarr; merge</td></tr>
+          <tr><td>ALUM PATTA 6</td><td>Kg</td><td style="color:#e0a94a;">&mdash;</td><td style="color:#e0a94a;">pick HSN</td></tr>
+          <tr><td>MS Angle 40 X 40</td><td>Kg</td><td>72169910</td><td style="color:#4f8a5b;">confirmed</td></tr>
+          <tr><td>Round Off</td><td style="color:#9a9284;">&mdash;</td><td style="color:#9a9284;">&mdash;</td><td style="color:#9a9284;">skipped (nominal ledger)</td></tr>
+        </table>
+        <div style="padding: 10px 16px; border-top: 1px dashed #ddd5c8; font-size: 12px; color: #7c766a;">Every row keeps <span class="mono">tally_guid</span> &mdash; nightly refresh updates, never duplicates.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- transport + schema -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px;">
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">How the data is pulled</div>
+      <div style="font-size:12px; color:#3a362e; line-height:1.8;">
+        Tally HTTP server on <span class="mono">:9000</span> &mdash; POST <span class="mono">EXPORT</span> requests for <span class="mono">List of Accounts</span>, <span class="mono">Stock Items</span>, <span class="mono">Group</span>, <span class="mono">Ledger</span> collections &rarr; parse XML.<br>
+        Or ODBC read into staging for a one-off.<br>
+        Runs via the same connector agent doing weighbridge + labels + (later) voucher push-back. Tally must be open with the right company loaded.
+      </div>
+    </div>
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Schema</div>
+      <div class="mono" style="line-height:1.9; color:#3a362e;">
+        item.tally_guid &middot; party.tally_guid &nbsp;<span style="color:#7c766a;">-- refresh key, not duplicate</span><br>
+        hsn_code(code PK, description, chapter, default_gst_rate, &hellip;) &nbsp;<span style="color:#7c766a;">-- shipped reference; HSN is a lookup, not free text</span><br>
+        staging_tally_item / staging_tally_ledger &nbsp;<span style="color:#7c766a;">-- raw landing</span><br>
+        historical_sale_line(&hellip;) &nbsp;<span style="color:#7c766a;">-- read-only analytics, kept apart from live invoices</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 14px; border: 1px dashed #2f6f89; background:#f0f6f8; padding: 10px 12px; font-size: 11px; color:#2f6f89; line-height:1.6;">
+    Changes the Stage 0&rarr;1 story: instead of &ldquo;empty catalogue, type everything,&rdquo; the shop starts at <b>~200 items + 128 parties pre-loaded, mostly a quick confirm</b>. Import is <b>optional</b> and sits at Stage 0. No Tally &rarr; the accretion path still works unchanged.
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1420,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

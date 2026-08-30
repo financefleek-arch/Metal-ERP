@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .box { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; }
+    .mono { font-family: monospace; font-size: 11px; }
+    td { padding: 8px 10px; font-size: 12px; border-top: 1px solid #f0ebe1; }
+  </style>
+</helmet>
+
+<div style="width: 1420px; min-height: 980px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">Pushing finished invoices back into Tally</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 22px; max-width: 920px;">Tally stays the accounting book. On finalize, our platform builds a Tally <b>Sales voucher</b> as XML and POSTs it to the shop&rsquo;s Tally over LAN via the connector agent. One-way push. Tally has no REST / webhooks &mdash; it&rsquo;s XML-over-HTTP <span class="mono">IMPORT DATA</span> into the built-in server on <span class="mono">:9000</span>.</p>
+
+  <!-- flow -->
+  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 12px;">
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 150px; border-color:#7c766a; background:#efe9df;"><b>Invoice FINALIZED</b><br><span style="color:#7c766a;">totals frozen</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 170px;"><b>Voucher builder</b><br><span style="color:#7c766a;">map party&rarr;ledger,<br>item&rarr;stock item,<br>tax&rarr;tax ledgers</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 150px;"><b>Job queue</b><br><span style="color:#7c766a;">retry w/ backoff</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 160px;"><b>Connector agent</b><br><span style="color:#7c766a;">counter PC, LAN</span></div>
+    <span style="color:#c9c2b4;">== XML ==&gt;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 150px;"><b>Tally :9000</b><br><span style="color:#7c766a;">IMPORT DATA</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 12px 14px; text-align: center; width: 150px; border-color:#a9cbb2;"><b>Voucher GUID</b><br><span style="color:#7c766a;">stored on invoice</span></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <!-- master mapping -->
+    <div class="box" style="padding: 16px 18px;">
+      <div style="font-weight: 600; font-size: 14px; margin-bottom: 10px;">Master mapping table</div>
+      <table style="width:100%; border-collapse:collapse;">
+        <tr style="color:#7c766a; font-size:10px; text-transform:uppercase; letter-spacing:0.04em;"><td style="padding-bottom:4px;">Ours</td><td>Tally</td><td>If missing</td></tr>
+        <tr><td>party</td><td>Ledger (under Sundry Debtors)</td><td>POST a <span class="mono">LEDGER</span> master first</td></tr>
+        <tr><td>item</td><td>Stock Item</td><td>POST a <span class="mono">STOCKITEM</span> master first</td></tr>
+        <tr><td>UOM</td><td>Unit</td><td>POST a <span class="mono">UNIT</span></td></tr>
+        <tr><td>Sales account</td><td>Sales ledger (config)</td><td>&mdash; must exist</td></tr>
+        <tr><td>CGST / SGST / IGST</td><td>Duty ledgers (config)</td><td>&mdash; must exist</td></tr>
+        <tr><td>Round Off</td><td>Round Off ledger (config)</td><td>&mdash; must exist</td></tr>
+      </table>
+      <div style="margin-top: 10px; font-size: 11px; color: #7c766a; line-height: 1.6;">
+        Mapping seeded by the <b>Tally import</b> (matched on <span class="mono">tally_guid</span> / name). Unmapped master &rarr; auto-create in Tally, then post the voucher. Config screen pins the fixed ledgers (Sales, tax heads, Round Off).
+      </div>
+    </div>
+
+    <!-- voucher xml + sync status -->
+    <div>
+      <div class="box" style="padding: 14px 16px; margin-bottom: 14px;">
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">Sales VOUCHER envelope (shape)</div>
+        <div class="mono" style="line-height:1.7; color:#3a362e; background:#f7f4ee; border-radius:6px; padding:10px;">
+          &lt;VOUCHER VCHTYPE="Sales" ACTION="Create"&gt;<br>
+          &nbsp;&nbsp;&lt;DATE&gt;20260829&lt;/DATE&gt;<br>
+          &nbsp;&nbsp;&lt;VOUCHERNUMBER&gt;1217&lt;/VOUCHERNUMBER&gt;<br>
+          &nbsp;&nbsp;&lt;PARTYLEDGERNAME&gt;Jay Matadee Enterprises&lt;/&hellip;&gt;<br>
+          &nbsp;&nbsp;&lt;ALLLEDGERENTRIES.LIST&gt; &hellip; Sales / CGST / SGST / Round Off &hellip;<br>
+          &nbsp;&nbsp;&lt;ALLINVENTORYENTRIES.LIST&gt; &hellip; stock item, qty, rate, amount &hellip;<br>
+          &lt;/VOUCHER&gt;
+        </div>
+        <div style="font-size: 11px; color: #7c766a; margin-top: 8px;">Learn the exact dialect by exporting one hand-made voucher and mirroring it. Errors return <span class="mono">&lt;LINEERROR&gt;</span> &mdash; a bad ledger name fails the whole voucher.</div>
+      </div>
+
+      <div class="box" style="overflow:hidden;">
+        <div style="padding: 12px 16px; border-bottom: 1px solid #efe9df; font-weight: 600; font-size: 14px;">Tally sync &mdash; per invoice</div>
+        <table style="width:100%; border-collapse:collapse;">
+          <tr style="background:#efe9df; font-size:10px; color:#6f685b; text-transform:uppercase;"><td>Invoice</td><td>Tally</td><td>State</td></tr>
+          <tr><td>1217</td><td>GUID &hellip;a3f9</td><td style="color:#4f8a5b;">synced 15:22</td></tr>
+          <tr><td>1218</td><td>&mdash;</td><td style="color:#e0a94a;">queued &middot; Tally closed</td></tr>
+          <tr><td>1219</td><td>&mdash;</td><td style="color:#c0392b;">error: ledger &ldquo;Balaji Traders&rdquo; not found &rarr; <span style="text-decoration:underline;">create &amp; retry</span></td></tr>
+        </table>
+        <div style="padding: 10px 16px; border-top: 1px dashed #ddd5c8; font-size: 12px; color: #7c766a;">Idempotent: voucher number = our invoice number + a UDF key &mdash; a retry never double-posts. Finalize is <b>not</b> blocked on Tally; it queues.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- constraints -->
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 18px;">
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">What Tally exposes (all of it)</div>
+      <div style="font-size:12px; color:#3a362e; line-height:1.8;">
+        <b>XML / HTTP</b> :9000 &mdash; EXPORT (read) + IMPORT DATA (write). The main channel.<br>
+        <b>ODBC</b> :9000 &mdash; read-only SELECT from Tally &ldquo;tables&rdquo;.<br>
+        <b>TDL</b> &mdash; Tally&rsquo;s extension language; custom reports / export formats / an in-Tally &ldquo;send&rdquo; button.<br>
+        <b>Tally.NET sync</b> &mdash; Tally-to-Tally only.<br>
+        <span style="color:#c0392b;">No REST/JSON, no OAuth, no webhooks.</span> New-voucher awareness = poll the day book.
+      </div>
+    </div>
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Plan around</div>
+      <div style="font-size:12px; color:#3a362e; line-height:1.8;">
+        Tally must be <b>open</b> with the right company loaded &mdash; health-check, clear &ldquo;unreachable&rdquo; state, queue don&rsquo;t block.<br>
+        LAN-only &mdash; cloud can&rsquo;t reach <span class="mono">192.168.x.x:9000</span>, hence the connector agent.<br>
+        XML mapping is fiddly &mdash; budget real time for GST + inventory allocations. Consider a wrapper lib (TallyConnector) over hand-rolled XML.<br>
+        Firewall the port &mdash; no auth on it.
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 14px; border: 1px dashed #2f6f89; background:#f0f6f8; padding: 10px 12px; font-size: 11px; color:#2f6f89; line-height:1.6;">
+    Roadmap: import (read) at <b>Stage 0</b>; voucher push (write) once invoices are stable and the master mapping is trusted &mdash; <b>Stage 2</b>, alongside GST (GST vouchers are where the XML earns its keep). Optional per tenant &mdash; a shop not on Tally just skips it.
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1420,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

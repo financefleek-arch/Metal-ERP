@@ -1,0 +1,128 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .box { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; }
+    .mono { font-family: monospace; font-size: 11px; }
+    .layer { display: flex; gap: 12px; margin-bottom: 10px; }
+    .num { flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; background: #2f6f89; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  </style>
+</helmet>
+
+<div style="width: 1400px; min-height: 1000px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">Keeping data sane without slowing down billing</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 22px; max-width: 900px;">Free-typing &ldquo;anything, sort it later&rdquo; gives you a month of <span class="mono">SS Balti No 3</span> / <span class="mono">s.s balti-3</span> / <span class="mono">BALTI 3 ss</span>. The fix isn&rsquo;t mandatory forms &mdash; it&rsquo;s shaping the free field gently, constraining the structured fields hard, and making cleanup continuous.</p>
+
+  <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 20px;">
+    <!-- left: the 6 layers -->
+    <div class="box" style="padding: 18px 20px;">
+      <div style="font-weight: 600; font-size: 14px; margin-bottom: 14px;">Six layers, least friction first</div>
+
+      <div class="layer">
+        <div class="num">1</div>
+        <div><b>Normalize the key, not the display.</b> Store <span class="mono">name</span> (shown on invoice, as typed) + <span class="mono">name_normalized</span> (dedupe key, hidden). Auto-create only if the normalized key is new.</div>
+      </div>
+      <div class="layer">
+        <div class="num">2</div>
+        <div><b>Synonym / abbreviation map</b> (tenant-editable). <span class="mono">ss = s s = stainless</span>, <span class="mono">alu = al = aluminum &rarr; aluminium</span>, <span class="mono">pcs = piece &rarr; nos</span>. Owner adds patterns; re-run over old items to fold retroactively.</div>
+      </div>
+      <div class="layer">
+        <div class="num">3</div>
+        <div><b>Type-ahead that pushes toward existing items.</b> Fuzzy (trigram) match on name + aliases. Existing match is the default &mdash; Enter picks it; &ldquo;+ Create new&rdquo; takes 3 keystrokes. Near-miss nudge: &ldquo;Did you mean SS Balti No.3 (16&times;)?&rdquo;</div>
+      </div>
+      <div class="layer">
+        <div class="num">4</div>
+        <div><b>Structured entry for calc/grouping fields.</b> UOM, Category, item_type = pick-lists from day one. HSN = <b>lookup against a shipped reference table</b> (search by code or description, stored as FK) &mdash; not free text. Rate / weight / qty = numeric inputs. Only the name is genuinely open.</div>
+      </div>
+      <div class="layer">
+        <div class="num">5</div>
+        <div><b>Continuous cleanup, not a quarterly purge.</b> Dashboard &ldquo;12 look like duplicates&rdquo; &rarr; merge queue, do 5/day. Weekly digest. Merge is non-destructive &mdash; old spelling becomes an alias, still resolves.</div>
+      </div>
+      <div class="layer">
+        <div class="num">6</div>
+        <div><b>Guardrails against nonsense.</b> Warnings, not blocks (except numerics): rate 0 on finalize &rarr; block; rate far off this item&rsquo;s history &rarr; &ldquo;unusual, confirm?&rdquo;; same item twice on a bill &rarr; &ldquo;merge lines?&rdquo;; name &lt;3 chars / all digits &rarr; &ldquo;looks incomplete&rdquo;.</div>
+      </div>
+    </div>
+
+    <!-- right: normalization pipeline + examples -->
+    <div>
+      <div class="box" style="padding: 16px 18px; margin-bottom: 16px;">
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 10px;">Normalization pipeline (deterministic)</div>
+        <div class="mono" style="line-height: 2; color: #3a362e;">
+          lowercase<br>
+          &rarr; trim + collapse whitespace<br>
+          &rarr; punctuation <span style="color:#7c766a;">. - / ( ) , " '</span> &rarr; space<br>
+          &rarr; collapse whitespace again<br>
+          &rarr; apply synonym map<br>
+          &rarr; <span style="color:#7c766a;">keep token order (no sorting)</span>
+        </div>
+      </div>
+
+      <div class="box" style="padding: 16px 18px; margin-bottom: 16px;">
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 10px;">All of these resolve to one item</div>
+        <div class="mono" style="line-height: 1.9;">
+          <span style="color:#7c766a;">"S.S. Balti No.3"</span> &rarr; <span style="color:#2f6f89;">ss balti no 3</span><br>
+          <span style="color:#7c766a;">"s s  balti-3"</span> &nbsp;&rarr; <span style="color:#2f6f89;">ss balti 3</span> &rarr; <span style="color:#2f6f89;">ss balti no 3</span><br>
+          <span style="color:#7c766a;">"Stainless Balti (3)"</span> &rarr; <span style="color:#2f6f89;">ss balti no 3</span><br>
+          <span style="color:#7c766a;">"BALTI No 3 SS"</span> &rarr; <span style="color:#b5892f;">balti no 3 ss</span> &nbsp;<span style="color:#c0392b;">&larr; token order differs</span>
+        </div>
+        <div style="font-size: 11px; color: #7c766a; margin-top: 8px;">The last one is caught by the Layer-3 fuzzy nudge, or a one-click merge later. Token-sorting would fix it but breaks <span class="mono">angle 40x40</span> vs <span class="mono">40x40 angle</span> &mdash; not worth it.</div>
+      </div>
+
+      <div class="box" style="padding: 16px 18px;">
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 10px;">Structured fields &mdash; enums from day one</div>
+        <table style="width:100%; border-collapse:collapse; font-size:12px;">
+          <tr style="color:#7c766a;"><td style="padding:4px 0;">UOM</td><td>Kgs &middot; Nos &middot; Pcs &middot; Set &middot; Mtr &middot; Ton &middot; Bundle</td></tr>
+          <tr style="color:#7c766a; border-top:1px solid #f0ebe1;"><td style="padding:4px 0;">Category</td><td>Steel &middot; Aluminium &middot; Iron &middot; Brass &middot; Utensil &middot; Hardware &middot; Scrap &middot; Other</td></tr>
+          <tr style="color:#7c766a; border-top:1px solid #f0ebe1;"><td style="padding:4px 0;">Type</td><td>BULK / MRP toggle (auto-guessed)</td></tr>
+          <tr style="color:#7c766a; border-top:1px solid #f0ebe1;"><td style="padding:4px 0;">HSN</td><td>lookup vs shipped hsn_code table (FK); nullable in P1, required once GST on; similar-name-different-code warning</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- schema + cost -->
+  <div style="display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; margin-top: 18px;">
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Schema</div>
+      <div class="mono" style="line-height:1.9; color:#3a362e;">
+        item.name &middot; item.name_normalized &nbsp; INDEX gin_trgm(name_normalized) &nbsp;<span style="color:#7c766a;">-- pg_trgm fuzzy</span><br>
+        item_alias(item_id, alias_text, alias_normalized) &nbsp; UNIQUE(tenant_id, alias_normalized)<br>
+        synonym(tenant_id, from_token, to_token) &nbsp;<span style="color:#7c766a;">-- seeded ~30 metal-trade entries</span><br>
+        item.uom / item.category &nbsp;<span style="color:#7c766a;">-- enum, not free text</span><br>
+        hsn_code(code PK, description, chapter, default_gst_rate, valid_from) &nbsp;<span style="color:#7c766a;">-- shipped ref list; item.hsn_code FK</span>
+      </div>
+    </div>
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Phase 1 cost</div>
+      <div style="font-size:12px; color:#3a362e; line-height:1.8;">
+        Pipeline + column: ~&frac12; day, before first bill<br>
+        Synonym seed list: a few hours<br>
+        Fuzzy type-ahead: <span class="mono">pg_trgm</span> index, one line<br>
+        Merge tool + dashboard widget: 2&ndash;3 days, just after go-live
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 14px; border: 1px dashed #2f6f89; background:#f0f6f8; padding: 10px 12px; font-size: 11px; color:#2f6f89; line-height:1.6;">
+    Principle: <b>constrain the structured fields hard, shape the free field gently, make correction continuous.</b> Some mess still gets in &mdash; but it&rsquo;s mess normalization folds together automatically, not mess a human decodes six months later.
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1400,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

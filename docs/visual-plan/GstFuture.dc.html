@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+  </style>
+</helmet>
+
+<div style="width: 1100px; min-height: 900px; background: #f4f1ec; padding: 36px 44px;">
+  <div class="serif" style="font-size: 13px; color: #7c766a;">Phase 2 &mdash; not built yet, shown for context</div>
+  <h1 class="serif" style="font-size: 26px; font-weight: 600; margin: 6px 0 22px;">What flipping GST mode adds</h1>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px;">
+    <div style="background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding:18px 20px;">
+      <div style="font-weight:600; font-size:14px; margin-bottom:8px;">On the invoice editor</div>
+      <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7; color:#3a362e;">
+        <li>GSTIN on business &amp; party; Place of Supply selector</li>
+        <li>Per-line GST rate + &ldquo;rate incl. tax&rdquo; toggle</li>
+        <li>Auto CGST+SGST vs IGST from state comparison</li>
+        <li>HSN becomes required, pulled from item master</li>
+      </ul>
+    </div>
+    <div style="background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding:18px 20px;">
+      <div style="font-weight:600; font-size:14px; margin-bottom:8px;">On the printed document</div>
+      <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7; color:#3a362e;">
+        <li>Title &rarr; &ldquo;Tax Invoice&rdquo;; IRN / Ack No. / Ack date header</li>
+        <li>Signed QR code block</li>
+        <li>CGST / SGST columns in the line table</li>
+        <li>HSN-wise tax summary table</li>
+        <li>Second page: full e-Way Bill</li>
+      </ul>
+    </div>
+    <div style="background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding:18px 20px;">
+      <div style="font-weight:600; font-size:14px; margin-bottom:8px;">New machinery</div>
+      <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7; color:#3a362e;">
+        <li>GSP client (IRP auth, INV-01 payload, IRN, QR)</li>
+        <li>e-Way Bill generate + Part-B update</li>
+        <li>Job queue + status state machine per invoice</li>
+        <li>GSTR-1 export (B2B / HSN sheets)</li>
+      </ul>
+    </div>
+    <div style="background:#eef4f0; border:1px solid #d3e3d9; border-radius:10px; padding:18px 20px;">
+      <div style="font-weight:600; font-size:14px; margin-bottom:8px; color:#3a5a48;">Why it&rsquo;s additive, not a rewrite</div>
+      <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.7; color:#3a5a48;">
+        <li>Schema already carries every GST column (nullable)</li>
+        <li>Money in paise, totals frozen at finalize from day one</li>
+        <li>Gap-free numbering keyed by financial year</li>
+        <li>PDF template versioned per invoice &mdash; old ones unaffected</li>
+        <li>Same <span style="font-family:monospace; font-size:12px;">tax-core</span> function, new branches</li>
+        <li>HSN already a validated FK; confirmed items already carry it</li>
+      </ul>
+    </div>
+  </div>
+
+  <div style="margin-top: 22px; background:#fff; border:1px solid #e6e0d6; border-radius:10px; padding: 16px 20px;">
+    <div style="font-weight:600; font-size:14px; margin-bottom:10px;">Maturity ladder &mdash; each rung is a shippable release</div>
+    <div style="display:flex; gap:0; font-size:11px;">
+      <div style="flex:1; padding:10px; background:#f0f6f8; border-radius:8px 0 0 8px;"><b>0 &middot; Bootstrap</b><br><span style="color:#7c766a;">Normalized free-typed lines (key + synonym map), auto-created items, bill lifecycle + roles, weighbridge agent, manual weight fallback, structured UOM/category enums</span></div>
+      <div style="flex:1; padding:10px; background:#e8f0f3;"><b>1 &middot; Accreting</b><br><span style="color:#7c766a;">Fuzzy type-ahead + near-miss nudge, monthly reports, merge tool + dashboard widget, role queues, PWA for rate-approval</span></div>
+      <div style="flex:1; padding:10px; background:#dde9ee;"><b>2 &middot; Curated</b><br><span style="color:#7c766a;">Types set, HSN/UOM, dedup, variant groups, item codes assigned. <b>GST slots in here.</b></span></div>
+      <div style="flex:1; padding:10px; background:#d2e2e9;"><b>2.5 &middot; Barcode</b><br><span style="color:#7c766a;">SKU labels for MRP, 1 scanner, scan-mode billing, mfr-EAN capture</span></div>
+      <div style="flex:1; padding:10px; background:#c9dbe3;"><b>3 &middot; Stock</b><br><span style="color:#7c766a;">Opt-in in/out per variant, scans move stock, low-stock flags</span></div>
+      <div style="flex:1; padding:10px; background:#bfd5de; border-radius:0 8px 8px 0;"><b>4 &middot; Inventory</b><br><span style="color:#7c766a;">Lot labels at cutting, weighment-linked, purchase&rarr;itemise&rarr;sale, valuation</span></div>
+    </div>
+  </div>
+
+  <div style="margin-top: 16px; border: 1px dashed #7c766a; background:#f7f4ee; padding: 10px 12px; font-size: 11px; color:#5a5344; line-height:1.6;">
+    One deployment artifact outside the cloud app: the <b>connector agent</b> on the counter PC &mdash; serial-in from the scale, label-print out, <b>Tally XML both ways</b> (import masters at Stage 0, push vouchers at Stage 2). Later, an optional serial&rarr;WiFi converter for PC-less scales. Barcode scanners need no software.
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1100,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
