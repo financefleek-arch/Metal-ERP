@@ -15,55 +15,49 @@
     .serif { font-family: 'Fraunces', Georgia, serif; }
     .lbl { font-size: 11px; color: #8a8272; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
     .field { height: 36px; border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; padding: 0 10px; font-size: 13px; display: flex; align-items: center; color: #3a362e; }
+    input, select { font-family: inherit; font-size: 13px; border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; color: #3a362e; height: 34px; padding: 0 8px; width: 100%; }
+    input:focus, select:focus { outline: none; border-color: #2f6f89; box-shadow: 0 0 0 2px #2f6f8933; }
+    button { font-family: inherit; cursor: pointer; }
+    .btn-primary { height: 36px; padding: 0 18px; border: none; background: #2f6f89; color: #fff; border-radius: 6px; font-size: 13px; font-weight: 600; }
+    .btn-primary:disabled { background: #a9b6bb; cursor: not-allowed; }
+    .btn-ghost { height: 36px; padding: 0 16px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 13px; }
+    .grid-row { display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 92px 108px 26px; gap: 8px; align-items: center; }
+    .rm { color: #c0392b; text-align: center; background: none; border: none; font-size: 15px; }
+    .ac-item { padding: 9px 12px; font-size: 13px; border-bottom: 1px solid #f3eee4; cursor: pointer; display: flex; justify-content: space-between; }
+    .ac-item:hover, .ac-item.sel { background: #eef4f7; }
+    .badge-bulk { font-size:10px; background:#e3eef2; color:#2f6f89; padding:1px 6px; border-radius:8px; }
+    .badge-mrp { font-size:10px; background:#f1e7d6; color:#8a6a1f; padding:1px 6px; border-radius:8px; }
   </style>
 </helmet>
 
-<div style="width: 1440px; min-height: 1060px; background: #f4f1ec;">
+<div style="width: 1440px; min-height: 1000px; background: #f4f1ec;">
   <div style="display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 24px; background: #23201b; color: #f4f1ec;">
-    <div class="serif" style="font-size: 18px; font-weight: 600;">Invoice #1219 &middot; <span style="color:#e0a94a;">Awaiting rate</span></div>
+    <div class="serif" style="font-size: 18px; font-weight: 600;">New Invoice &middot; <span id="statusLabel" style="color:#e0a94a;">Draft</span></div>
     <div style="display: flex; gap: 10px; align-items: center;">
-      <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #b9b3a7; background: #3a362e; border: 1px solid #56504740; border-radius: 6px; padding: 6px 10px;">
-        <span style="width: 8px; height: 8px; border-radius: 50%; background: #4f8a5b;"></span> Scan mode
-        <span style="width: 30px; height: 16px; border-radius: 9px; background: #4f8a5b; position: relative; display: inline-block;"><span style="position:absolute; width:12px; height:12px; border-radius:50%; background:#fff; top:2px; right:2px;"></span></span>
-      </div>
-      <button style="height: 36px; padding: 0 16px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 13px; font-family: inherit;">Save draft</button>
-      <button style="height: 36px; padding: 0 18px; border: none; background: #7c766a; color: #efe9df; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit; opacity: 0.7;">Finalize &mdash; 1 line needs rate</button>
+      <button class="btn-ghost" onclick="{{addLine}}">+ Add line</button>
+      <button id="finalizeBtn" class="btn-primary" onclick="{{finalize}}">Finalize</button>
     </div>
   </div>
 
-  <!-- contributor strip -->
-  <div style="display: flex; align-items: center; gap: 18px; padding: 8px 24px; background: #efe9df; border-bottom: 1px solid #e0d9cc; font-size: 12px; color: #6f685b;">
-    <span><b style="color:#3a362e;">Counter</b> Suresh &middot; created 15:02 &middot; party + items</span>
-    <span style="color:#c9c2b4;">|</span>
-    <span><b style="color:#3a362e;">Weighbridge</b> Raju &middot; 2 weights attached 15:08</span>
-    <span style="color:#c9c2b4;">|</span>
-    <span><b style="color:#e0a94a;">Rate desk</b> pending &mdash; owner notified on mobile</span>
-  </div>
-
   <div style="display: grid; grid-template-columns: 1fr 340px; gap: 0;">
-    <!-- Left: form -->
     <div style="padding: 26px 30px;">
 
-      <!-- Party + meta -->
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px 24px; margin-bottom: 22px;">
         <div>
           <div class="lbl">Bill to (party)</div>
-          <div class="field" style="justify-content: space-between;">Jay Matadee Enterprises <span style="color:#9a9284;">&#9662;</span></div>
-          <div style="font-size: 12px; color: #7c766a; margin-top: 6px; line-height: 1.5;">Nilkanth Apartment, 1st Floor, Samaresh Bose Sarani, Millanpally, Darjeeling &middot; WB (19)</div>
+          <select onchange="{{setParty}}">
+            <option value="">Select a party&hellip;</option>
+            <option>Jay Matadee Enterprises</option>
+            <option>Balaji Traders</option>
+            <option>Nilkanth Hardware</option>
+            <option>Shyam Steel Udyog</option>
+          </select>
+          <div id="partyAddr" style="font-size: 12px; color: #7c766a; margin-top: 6px; line-height: 1.5; min-height: 18px;"></div>
         </div>
-        <div>
-          <div class="lbl">Ship to</div>
-          <div class="field" style="justify-content: space-between;">Same as bill to <span style="color:#9a9284;">&#9662;</span></div>
-          <div style="font-size: 12px; color: #7c766a; margin-top: 6px;">Add a different consignee address</div>
-        </div>
-        <div>
-          <div class="lbl">Invoice date</div>
-          <div class="field">29 Aug 2026</div>
-        </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-content: start;">
           <div>
-            <div class="lbl">Series</div>
-            <div class="field">Sales</div>
+            <div class="lbl">Invoice date</div>
+            <input type="text" value="29 Aug 2026">
           </div>
           <div>
             <div class="lbl">Number</div>
@@ -72,141 +66,288 @@
         </div>
       </div>
 
-      <!-- Line items -->
-      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden;">
-        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 10px 14px; background: #efe9df; font-size: 10px; color: #6f685b; text-transform: uppercase; letter-spacing: 0.04em;">
-          <span>#</span><span>Item</span><span>HSN</span><span>Qty / Wt</span><span>UOM</span><span>Rate</span><span style="text-align:right;">Amount</span><span></span>
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: visible;">
+        <div class="grid-row" style="padding: 10px 14px; background: #efe9df; font-size: 10px; color: #6f685b; text-transform: uppercase; letter-spacing: 0.04em;">
+          <span>#</span><span>Item</span><span>HSN</span><span>Qty</span><span>UOM</span><span>Rate</span><span style="text-align:right;">Amount</span><span></span>
         </div>
 
-        <!-- BULK line, weight attached from weighbridge -->
-        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4;">
-          <span style="color:#9a9284;">1</span>
-          <span>SS Utensil <span style="font-size:10px; background:#e3eef2; color:#2f6f89; padding:1px 6px; border-radius:8px;">&#9878; BULK</span></span>
-          <span style="color:#3a362e;">73239390</span>
-          <span style="display:flex; flex-direction:column; line-height:1.3;">900.00 <span style="font-size:9px; color:#4f8a5b;">&#9878; scale #1 &middot; Raju</span></span>
-          <span>Kgs</span>
-          <span>264.00</span>
-          <span style="text-align:right;">2,26,287.00</span>
-          <span style="color:#c0392b; text-align:center;">&times;</span>
-        </div>
-
-        <!-- BULK line, weight pending -->
-        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4;">
-          <span style="color:#9a9284;">2</span>
-          <span>MS Angle 40x40 <span style="font-size:10px; background:#e3eef2; color:#2f6f89; padding:1px 6px; border-radius:8px;">&#9878; BULK</span></span>
-          <span style="color:#3a362e;">72169910</span>
-          <span style="color:#e0a94a;">weigh &middot; <span style="text-decoration:underline; cursor:pointer;">attach</span></span>
-          <span>Kgs</span>
-          <span>58.00</span>
-          <span style="text-align:right; color:#9a9284;">pending</span>
-          <span style="color:#c0392b; text-align:center;">&times;</span>
-        </div>
-
-        <!-- MRP line just added by SCAN -->
-        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: center; border-bottom: 1px solid #f3eee4; background: #f2f8f3;">
-          <span style="color:#9a9284;">3</span>
-          <span>SS Balti No.3 <span style="font-size:10px; background:#f1e7d6; color:#8a6a1f; padding:1px 6px; border-radius:8px;">&#128230; MRP</span> <span style="font-size:9px; color:#4f8a5b;">&#9673; scanned</span></span>
-          <span style="color:#3a362e;">73239390</span>
-          <span>2</span>
-          <span>Nos</span>
-          <span>532.00</span>
-          <span style="text-align:right;">1,064.00</span>
-          <span style="color:#c0392b; text-align:center;">&times;</span>
-        </div>
-
-        <!-- active line: type-ahead open, showing a VARIANT GROUP -->
-        <div style="display: grid; grid-template-columns: 30px 1fr 96px 96px 84px 88px 110px 26px; gap: 8px; padding: 12px 14px; font-size: 13px; align-items: start; position: relative;">
-          <span style="color:#9a9284; padding-top:8px;">4</span>
-          <div style="position: relative;">
-            <div style="height: 34px; border: 1.5px solid #2f6f89; border-radius: 6px; background: #fff; padding: 0 10px; display: flex; align-items: center; font-size: 13px;">SS Balti</div>
-            <div style="position: absolute; top: 38px; left: 0; width: 420px; background: #fff; border: 1px solid #cbc4b8; border-radius: 8px; box-shadow: 0 8px 24px #23201b1f; z-index: 5; overflow: hidden;">
-              <div style="padding: 9px 12px; font-size: 13px; background:#f7f4ee; display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #f3eee4;">
-                <span><b>SS Balti &mdash; SS</b> <span style="font-size:10px; background:#eee6d8; color:#7c6a3f; padding:1px 6px; border-radius:8px;">group &middot; 5 sizes</span></span>
-                <span style="color:#9a9284; font-size:11px;">HSN 73239390 &middot; Nos</span>
-              </div>
-              <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:1px; background:#f3eee4;">
-                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.1<br><span style="color:#7c766a;">&#8377;420</span></div>
-                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.2<br><span style="color:#7c766a;">&#8377;480</span></div>
-                <div style="background:#eef4f7; padding:8px 6px; text-align:center; font-size:12px; border:1px solid #9cc3d4;">No.3<br><span style="color:#2f6f89;">&#8377;560</span></div>
-                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.4<br><span style="color:#7c766a;">&#8377;640</span></div>
-                <div style="background:#fff; padding:8px 6px; text-align:center; font-size:12px;">No.5<br><span style="color:#7c766a;">&#8377;720</span></div>
-              </div>
-              <div style="padding: 8px 12px; font-size: 11px; color: #8a6a1f; background: #fdf8ef; border-bottom: 1px solid #f3eee4;">
-                &#9888; Close to &ldquo;SS Balti&rdquo; group &mdash; using it. Type more to force a new item.
-              </div>
-              <div style="padding: 9px 12px; font-size: 12px; color: #2f6f89; background: #f0f6f8;">
-                <span style="font-size:15px;">+</span> New item &ldquo;SS Balti&rdquo; &mdash; or add as a new size to this group
-              </div>
+        <sc-for list="{{lines}}" as="ln" hint-placeholder-count="2">
+          <div class="grid-row" style="padding: 10px 14px; border-bottom: 1px solid #f3eee4; position: relative;">
+            <span style="color:#9a9284; font-size:12px;">{{ln.n}}</span>
+            <div style="position: relative;">
+              <input type="text" value="{{ln.name}}" placeholder="type an item name&hellip;"
+                     oninput="{{ln.onName}}" onkeydown="{{ln.onKey}}" onblur="{{ln.onBlur}}">
+              <sc-if value="{{ln.showAc}}" hint-placeholder-val="{{true}}">
+                <div style="position:absolute; top:37px; left:0; width:380px; background:#fff; border:1px solid #cbc4b8; border-radius:8px; box-shadow:0 8px 24px #23201b1f; z-index:20;">
+                  <sc-for list="{{ln.matches}}" as="m" hint-placeholder-count="3">
+                    <div class="ac-item" onmousedown="{{m.pick}}">
+                      <span>{{m.name}} <span class="{{m.badgeClass}}">{{m.badge}}</span></span>
+                      <span style="color:#9a9284; font-size:11px;">{{m.meta}}</span>
+                    </div>
+                  </sc-for>
+                  <sc-if value="{{ln.showCreate}}" hint-placeholder-val="{{true}}">
+                    <div class="ac-item" style="color:#2f6f89; background:#f0f6f8;" onmousedown="{{ln.createNew}}">
+                      <span>+ Create new &ldquo;{{ln.name}}&rdquo;</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ln.nearMiss}}" hint-placeholder-val="{{true}}">
+                    <div style="padding:8px 12px; font-size:11px; color:#8a6a1f; background:#fdf8ef;">&#9888; Close to &ldquo;{{ln.nearMissName}}&rdquo; &mdash; press Enter to use it</div>
+                  </sc-if>
+                </div>
+              </sc-if>
             </div>
+            <input type="text" value="{{ln.hsn}}" oninput="{{ln.onHsn}}" placeholder="&mdash;">
+            <input type="number" value="{{ln.qty}}" oninput="{{ln.onQty}}" min="0" step="any">
+            <select onchange="{{ln.onUom}}">
+              <option selected="{{ln.uomKgs}}">Kgs</option>
+              <option selected="{{ln.uomNos}}">Nos</option>
+              <option selected="{{ln.uomPcs}}">Pcs</option>
+              <option selected="{{ln.uomSet}}">Set</option>
+            </select>
+            <input type="number" value="{{ln.rate}}" oninput="{{ln.onRate}}" min="0" step="any">
+            <span style="text-align:right; font-size:13px;">{{ln.amount}}</span>
+            <button class="rm" onclick="{{ln.remove}}">&times;</button>
           </div>
-          <div class="field" style="height:34px; color:#9a9284;">&mdash;</div>
-          <div class="field" style="height:34px; color:#9a9284;">&mdash;</div>
-          <div class="field" style="height:34px;">Nos</div>
-          <div class="field" style="height:34px; color:#9a9284;">&mdash;</div>
-          <span style="text-align:right; padding-top:8px; color:#9a9284;">&mdash;</span>
-          <span style="color:#c0392b; text-align:center; padding-top:8px;">&times;</span>
-        </div>
+        </sc-for>
 
-        <div style="padding: 10px 14px; border-top: 1px dashed #ddd5c8; display: flex; gap: 18px;">
-          <span style="font-size: 13px; color: #2f6f89;">+ Add line</span>
-          <span style="font-size: 13px; color: #7c766a;">&#9673; Scan a barcode&hellip;</span>
-          <span style="font-size: 13px; color: #7c766a;">&#9878; Attach a weighment</span>
+        <div style="padding: 10px 14px;">
+          <a style="font-size: 13px; cursor:pointer;" onclick="{{addLine}}">+ Add line</a>
         </div>
       </div>
 
-      <div style="margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 18px;">
-        <div>
-          <div class="lbl">Notes on invoice</div>
-          <div style="border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; min-height: 70px; padding: 10px; font-size: 12px; color: #9a9284;">Optional note printed under the line table&hellip;</div>
-        </div>
-        <div>
-          <div class="lbl">Transport (for e-Way Bill later)</div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <div class="field" style="justify-content:space-between;">Vehicle no. <span style="color:#9a9284;">WB73F0406</span></div>
-            <div class="field" style="justify-content:space-between;">Distance <span style="color:#9a9284;">8 km</span></div>
-          </div>
-          <div style="font-size: 11px; color: #9a9284; margin-top: 6px;">Captured now, used when GST / EWB is switched on.</div>
-        </div>
+      <div style="margin-top: 18px;">
+        <div class="lbl">Notes on invoice</div>
+        <textarea rows="2" style="width:100%; font-family:inherit; font-size:12px; border:1px solid #cbc4b8; border-radius:6px; padding:8px; resize:vertical;" placeholder="Optional note printed under the line table&hellip;"></textarea>
       </div>
     </div>
 
-    <!-- Right: totals + live preview link -->
     <div style="background: #fbf9f5; border-left: 1px solid #e6e0d6; padding: 26px 24px;">
       <div class="serif" style="font-size: 15px; font-weight: 600; margin-bottom: 14px;">Totals</div>
       <div style="display: flex; flex-direction: column; gap: 10px; font-size: 13px;">
-        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Subtotal</span><span>2,55,687.00</span></div>
-        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Discount</span><span>0.00</span></div>
-        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Round off</span><span>&minus;0.00</span></div>
+        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Subtotal</span><span>{{subtotal}}</span></div>
+        <div style="display: flex; justify-content: space-between;"><span style="color:#7c766a;">Round off</span><span>{{roundOff}}</span></div>
         <div style="border-top: 1px solid #e0d9cc; margin: 6px 0;"></div>
-        <div style="display: flex; justify-content: space-between; font-size: 16px;" class="serif"><span style="font-weight:600;">Grand total</span><span style="font-weight:600;">&#8377; 2,55,687</span></div>
-        <div style="font-size: 11px; color: #9a9284; line-height: 1.5;">Two Lakh Fifty Five Thousand Six Hundred Eighty Seven Only</div>
+        <div class="serif" style="display: flex; justify-content: space-between; font-size: 16px;"><span style="font-weight:600;">Grand total</span><span style="font-weight:600;">{{grandTotal}}</span></div>
+        <div style="font-size: 11px; color: #9a9284; line-height: 1.5; min-height: 28px;">{{words}}</div>
       </div>
 
-      <div style="margin-top: 20px; padding: 14px; background: #fff; border: 1px solid #e6e0d6; border-radius: 8px;">
-        <div style="font-size: 12px; font-weight: 600; margin-bottom: 8px;">Blocking finalize</div>
-        <div style="font-size: 12px; line-height: 1.7; color: #7c766a;">
-          <span style="color:#e0a94a;">&#9679;</span> Line 2 &mdash; weight not attached<br>
-          <span style="color:#e0a94a;">&#9679;</span> Line 4 &mdash; size &amp; rate not set<br>
-          <span style="color:#e0a94a;">&#9679;</span> Rate desk approval pending
-        </div>
+      <div id="finalizeHint" style="margin-top: 20px; padding: 14px; background: #fff; border: 1px solid #e6e0d6; border-radius: 8px;">
+        <div style="font-size: 12px; font-weight: 600; margin-bottom: 8px;">{{gateTitle}}</div>
+        <div style="font-size: 12px; line-height: 1.7; color: #7c766a;">{{gateBody}}</div>
       </div>
 
-      <div style="margin-top: 16px; padding: 14px; background: #fbf9f5; border: 1px solid #e6e0d6; border-radius: 8px;">
-        <div style="font-size: 12px; color: #7c766a; margin-bottom: 6px;">GST off &middot; template v1-nongst</div>
-        <div style="font-size: 12px; line-height: 1.5;">No CGST/SGST, IRN or HSN summary. Every field is already in the schema for the Phase 2 flip.</div>
-      </div>
-
-      <div style="margin-top: 16px;">
-        <div class="lbl">Live preview</div>
-        <div style="border: 1px solid #cbc4b8; border-radius: 8px; background: #fff; height: 150px; display: flex; align-items: center; justify-content: center; color: #9a9284; font-size: 12px;">A4 preview &mdash; updates live</div>
+      <div style="margin-top: 16px; padding: 14px; background: #fbf9f5; border: 1px solid #e6e0d6; border-radius: 8px; font-size: 12px; line-height: 1.5; color: #7c766a;">
+        GST off &middot; template v1-nongst. No CGST/SGST, IRN or HSN summary.
       </div>
     </div>
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"$preview":{"width":1440,"height":1060}}'>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+const CATALOG = [
+  { name: 'SS Utensil', type: 'BULK', hsn: '73239390', rate: 264, uom: 'Kgs', times: 41 },
+  { name: 'SS Pipe 202 19mm', type: 'BULK', hsn: '73063090', rate: 218, uom: 'Kgs', times: 9 },
+  { name: 'MS Angle 40x40', type: 'BULK', hsn: '72169910', rate: 58, uom: 'Kgs', times: 21 },
+  { name: 'Aluminium Patta 6"', type: 'BULK', hsn: '76069210', rate: 242, uom: 'Kgs', times: 14 },
+  { name: 'Aluminium Coil 1250mm', type: 'BULK', hsn: '76061200', rate: 228, uom: 'Kgs', times: 6 },
+  { name: 'Prestige Tope 3L', type: 'MRP', hsn: '76151030', rate: 532, uom: 'Nos', times: 9 },
+  { name: 'Jindal SS Sheet 304 2mm', type: 'MRP', hsn: '72193590', rate: 4180, uom: 'Nos', times: 5 },
+  { name: 'SS Balti No.3', type: 'MRP', hsn: '73239390', rate: 532, uom: 'Nos', times: 16 },
+];
+const PARTY_ADDR = {
+  'Jay Matadee Enterprises': 'Nilkanth Apartment, 1st Floor, Samaresh Bose Sarani, Millanpally, Darjeeling · WB (19)',
+  'Balaji Traders': 'Sevoke Road, Siliguri · WB (19)',
+  'Nilkanth Hardware': 'Station Feeder Road, Jalpaiguri · WB (19)',
+  'Shyam Steel Udyog': 'Bidhan Market, Siliguri · WB (19)',
+};
+
+function norm(s) {
+  return (s || '').toLowerCase().replace(/[.\-/(),"']/g, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/\bstainless\b/g, 'ss').replace(/\balu(minum)?\b/g, 'aluminium')
+    .replace(/\bpcs?\b/g, 'nos').replace(/\bno\b\.?/g, 'no');
+}
+function inr(n) {
+  const neg = n < 0; n = Math.abs(Math.round(n * 100) / 100);
+  const [i, d] = n.toFixed(2).split('.');
+  let x = i, last3 = x.slice(-3), rest = x.slice(0, -3);
+  if (rest) last3 = ',' + last3;
+  rest = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',');
+  return (neg ? '−' : '') + '₹ ' + rest + last3 + (d === '00' ? '' : '.' + d);
+}
+const ONES = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+const TENS = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+function twoDigit(n) { return n < 20 ? ONES[n] : TENS[Math.floor(n/10)] + (n%10 ? ' ' + ONES[n%10] : ''); }
+function words(n) {
+  n = Math.round(n);
+  if (n === 0) return 'Zero Only';
+  let out = '';
+  const cr = Math.floor(n / 10000000); n %= 10000000;
+  const la = Math.floor(n / 100000); n %= 100000;
+  const th = Math.floor(n / 1000); n %= 1000;
+  const hu = Math.floor(n / 100); n %= 100;
+  if (cr) out += twoDigit(cr) + ' Crore ';
+  if (la) out += twoDigit(la) + ' Lakh ';
+  if (th) out += twoDigit(th) + ' Thousand ';
+  if (hu) out += ONES[hu] + ' Hundred ';
+  if (n) out += twoDigit(n) + ' ';
+  return 'INR ' + out.trim() + ' Only';
+}
+
+let _id = 3;
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  constructor(props) {
+    super(props);
+    this.state = {
+      party: '',
+      status: 'Draft',
+      lines: [ this.mkLine(1), this.mkLine(2) ],
+    };
+  }
+  mkLine(n) {
+    return { id: n === 1 ? 1 : (n === 2 ? 2 : ++_id), n,
+             name: '', hsn: '', qty: '', rate: '', uom: 'Kgs',
+             ac: '', showAc: false };
+  }
+  setParty = (e) => this.setState({ party: e.target.value });
+  addLine = () => {
+    const lines = this.state.lines.slice();
+    lines.push(this.mkLine(lines.length + 1));
+    this.setState({ lines });
+  };
+  removeLine(id) {
+    let lines = this.state.lines.filter(l => l.id !== id);
+    lines = lines.map((l, i) => ({ ...l, n: i + 1 }));
+    if (!lines.length) lines = [this.mkLine(1)];
+    this.setState({ lines });
+  }
+  patch(id, fields) {
+    this.setState({ lines: this.state.lines.map(l => l.id === id ? { ...l, ...fields } : l) });
+  }
+  onName(id, v) {
+    this.patch(id, { name: v, ac: v, showAc: v.trim().length >= 1 });
+  }
+  onKey(id, e) {
+    if (e.key === 'Enter') {
+      const l = this.state.lines.find(x => x.id === id);
+      const m = this.matchesFor(l.ac);
+      if (m[0]) { this.applyItem(id, m[0]); e.preventDefault(); }
+      else { this.patch(id, { showAc: false }); }
+    } else if (e.key === 'Escape') {
+      this.patch(id, { showAc: false });
+    }
+  }
+  onBlur(id) { setTimeout(() => this.patch(id, { showAc: false }), 150); }
+  matchesFor(q) {
+    const nq = norm(q);
+    if (!nq) return [];
+    return CATALOG.filter(c => norm(c.name).includes(nq) || nq.split(' ').every(t => norm(c.name).includes(t)))
+      .slice(0, 5);
+  }
+  applyItem(id, c) {
+    this.patch(id, { name: c.name, hsn: c.hsn, rate: String(c.rate), uom: c.uom, ac: '', showAc: false });
+  }
+  createNew(id) {
+    const l = this.state.lines.find(x => x.id === id);
+    this.patch(id, { name: l.ac, showAc: false });
+  }
+  lineAmount(l) {
+    const q = parseFloat(l.qty), r = parseFloat(l.rate);
+    return (isFinite(q) && isFinite(r)) ? q * r : 0;
+  }
+  renderVals() {
+    const S = this.state;
+    const sub = S.lines.reduce((a, l) => a + this.lineAmount(l), 0);
+    const grand = Math.round(sub);
+    const ro = grand - sub;
+
+    const filled = S.lines.filter(l => l.name.trim());
+    const bad = filled.filter(l => !(parseFloat(l.qty) > 0) || !(parseFloat(l.rate) > 0));
+    const canFinal = S.status === 'Draft' && filled.length > 0 && bad.length === 0 && S.party;
+
+    let gateTitle, gateBody;
+    if (S.status === 'Finalized') {
+      gateTitle = '✓ Finalized as #1219';
+      gateBody = 'Totals frozen. PDF queued. Typed items added to the catalogue as unconfirmed.';
+    } else if (!S.party) {
+      gateTitle = 'Blocking finalize'; gateBody = '• Select a party';
+    } else if (!filled.length) {
+      gateTitle = 'Blocking finalize'; gateBody = '• Add at least one line with an item';
+    } else if (bad.length) {
+      gateTitle = 'Blocking finalize';
+      gateBody = bad.map(l => `• Line ${l.n} — needs qty & rate`).join('  ');
+    } else {
+      gateTitle = 'Ready to finalize'; gateBody = `${filled.length} line(s) · all fields set · party selected`;
+    }
+
+    const lines = S.lines.map(l => {
+      const matches = this.matchesFor(l.ac).map(c => ({
+        name: c.name,
+        badge: c.type === 'BULK' ? '⚖ BULK' : '📦 MRP',
+        badgeClass: c.type === 'BULK' ? 'badge-bulk' : 'badge-mrp',
+        meta: `last ₹${c.rate} · ${c.times}×`,
+        pick: () => this.applyItem(l.id, c),
+      }));
+      const exact = this.matchesFor(l.ac).some(c => norm(c.name) === norm(l.ac));
+      const nm = !exact && l.ac.trim() && this.matchesFor(l.ac)[0];
+      return {
+        n: l.n, name: l.name, hsn: l.hsn, qty: l.qty, rate: l.rate,
+        amount: this.lineAmount(l) ? inr(this.lineAmount(l)) : '—',
+        showAc: l.showAc && (matches.length || l.ac.trim()),
+        matches,
+        showCreate: !!l.ac.trim() && !exact,
+        nearMiss: !!nm,
+        nearMissName: nm ? nm.name : '',
+        uomKgs: l.uom === 'Kgs', uomNos: l.uom === 'Nos', uomPcs: l.uom === 'Pcs', uomSet: l.uom === 'Set',
+        onName: (e) => this.onName(l.id, e.target.value),
+        onKey: (e) => this.onKey(l.id, e),
+        onBlur: () => this.onBlur(l.id),
+        onHsn: (e) => this.patch(l.id, { hsn: e.target.value }),
+        onQty: (e) => this.patch(l.id, { qty: e.target.value }),
+        onRate: (e) => this.patch(l.id, { rate: e.target.value }),
+        onUom: (e) => this.patch(l.id, { uom: e.target.value }),
+        remove: () => this.removeLine(l.id),
+        createNew: () => this.createNew(l.id),
+      };
+    });
+
+    return {
+      lines,
+      addLine: this.addLine,
+      setParty: this.setParty,
+      finalize: () => { if (canFinal) this.setState({ status: 'Finalized' }); },
+      subtotal: inr(sub),
+      roundOff: (ro === 0 ? '0.00' : (ro < 0 ? '−' : '+') + Math.abs(ro).toFixed(2)),
+      grandTotal: inr(grand),
+      words: sub > 0 ? words(grand) : '',
+      gateTitle, gateBody,
+    };
+  }
+  componentDidMount() { this._sync(); }
+  componentDidUpdate() { this._sync(); }
+  _sync() {
+    const S = this.state;
+    const el = (id) => document.getElementById(id);
+    if (el('statusLabel')) {
+      el('statusLabel').textContent = S.status;
+      el('statusLabel').style.color = S.status === 'Finalized' ? '#4f8a5b' : '#e0a94a';
+    }
+    if (el('partyAddr')) el('partyAddr').textContent = PARTY_ADDR[S.party] || '';
+    const btn = el('finalizeBtn');
+    if (btn) {
+      const sub = S.lines.reduce((a, l) => {
+        const q = parseFloat(l.qty), r = parseFloat(l.rate);
+        return a + ((isFinite(q) && isFinite(r)) ? q * r : 0);
+      }, 0);
+      const filled = S.lines.filter(l => l.name.trim());
+      const bad = filled.filter(l => !(parseFloat(l.qty) > 0) || !(parseFloat(l.rate) > 0));
+      const ok = S.status === 'Draft' && filled.length && !bad.length && S.party;
+      btn.disabled = !ok;
+      btn.textContent = S.status === 'Finalized' ? 'Finalized ✓'
+        : (bad.length ? `Finalize — ${bad.length} line needs rate/qty`
+        : (!S.party ? 'Finalize — select party'
+        : (!filled.length ? 'Finalize — add a line' : 'Finalize & generate PDF')));
+    }
+  }
 }
 </script>
 </body>

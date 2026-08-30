@@ -8,12 +8,12 @@
     { "id": "page-6", "name": "Roadmap" }
   ],
   "artboards": [
-    { "file": "Onboarding.dc.html", "page": "page-1", "x": 0, "y": 0, "w": 1000, "h": 820, "title": "1 · Business onboarding" },
+    { "file": "Onboarding.dc.html", "page": "page-1", "x": 0, "y": 0, "w": 1000, "h": 860, "title": "1 · Business onboarding (interactive)", "is_interactive": true },
     { "file": "Main.dc.html", "page": "page-1", "x": 1120, "y": 0, "w": 1440, "h": 900, "title": "2 · Dashboard" },
     { "file": "Parties.dc.html", "page": "page-1", "x": 2680, "y": 0, "w": 1440, "h": 820, "title": "3 · Parties (customers + suppliers)" },
-    { "file": "PurchaseEntry.dc.html", "page": "page-1", "x": 0, "y": 1040, "w": 1440, "h": 860, "title": "4 · Purchase bill entry" },
-    { "file": "InvoiceEditor.dc.html", "page": "page-1", "x": 1560, "y": 1040, "w": 1440, "h": 1060, "title": "5 · Sales invoice editor — type-ahead, scan, weight" },
-    { "file": "ItemCatalogue.dc.html", "page": "page-1", "x": 3120, "y": 1040, "w": 1440, "h": 1080, "title": "6 · Item catalogue — merge, group, size numbers, label" },
+    { "file": "PurchaseEntry.dc.html", "page": "page-1", "x": 0, "y": 1060, "w": 1440, "h": 860, "title": "4 · Purchase bill entry" },
+    { "file": "InvoiceEditor.dc.html", "page": "page-1", "x": 1560, "y": 1060, "w": 1440, "h": 1000, "title": "5 · Sales invoice editor (interactive)", "is_interactive": true },
+    { "file": "ItemCatalogue.dc.html", "page": "page-1", "x": 3120, "y": 1060, "w": 1440, "h": 1000, "title": "6 · Item catalogue (interactive)", "is_interactive": true },
     { "file": "InvoicePrint.dc.html", "page": "page-1", "x": 0, "y": 2260, "w": 842, "h": 1200, "title": "7 · Printed invoice (A4)" },
     { "file": "MonthlyReport.dc.html", "page": "page-1", "x": 1000, "y": 2260, "w": 1440, "h": 880, "title": "8 · Items-sold-this-month report" },
 
@@ -31,7 +31,7 @@
     { "file": "GstFuture.dc.html", "page": "page-6", "x": 0, "y": 0, "w": 1100, "h": 900, "title": "Phase 2 GST + full maturity ladder" }
   ],
   "annotations": [
-    { "id": "loop-note", "page": "page-1", "x": 0, "y": -150, "w": 1000, "text": "CORE LOOP — non-GST billing first, GST as an additive Phase 2.\nBuy → item names land in the catalogue (normalized) → sell with type-ahead / scan → new names auto-created → month-end report → periodic merge/confirm/group → catalogue matures toward inventory.\nColour & type are a first pass — react to structure and flow. Numbers are illustrative." },
+    { "id": "loop-note", "page": "page-1", "x": 0, "y": -170, "w": 1040, "text": "CORE LOOP — non-GST billing first, GST as an additive Phase 2.\nArtboards 1, 5 and 6 are LIVE — type in them, toggle GST, add/remove invoice lines, watch totals recalc, filter and merge items. Sample data, no backend.\nArtboards 2–4, 7–8 are static reference. Colour & type are a first pass. Numbers are illustrative." },
     { "id": "norm-note", "page": "page-2", "x": 0, "y": -130, "w": 900, "text": "DATA NORMALIZATION — the answer to \"how do we not end up with data that makes no sense later.\" Shape the free field gently, constrain the structured fields hard, make cleanup continuous. All of this is Phase 1." },
     { "id": "touch-note", "page": "page-3", "x": 0, "y": -140, "w": 900, "text": "MULTI-TOUCHPOINT — weight, count and price are separate fields filled by different roles from different devices. The bill tracks what's still missing; finalize is gated. The weighbridge agent is one small service on the counter PC." },
     { "id": "scan-note", "page": "page-4", "x": 0, "y": -130, "w": 900, "text": "BARCODE & MOBILE — loose vessels can't each be labelled. One barcode per stack encodes a group code; scan → \"size #?\" → operator types 1–5 → line at that size's price. Boxed single-SKU goods still scan straight to one item." },

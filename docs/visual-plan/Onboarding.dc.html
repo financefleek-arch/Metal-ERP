@@ -13,11 +13,15 @@
     body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
     .serif { font-family: 'Fraunces', Georgia, serif; }
     .lbl { font-size: 11px; color: #8a8272; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 5px; }
-    .field { height: 38px; border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; padding: 0 12px; font-size: 13px; display: flex; align-items: center; color: #3a362e; }
+    input, select, textarea { font-family: inherit; font-size: 13px; border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; color: #3a362e; padding: 0 12px; width: 100%; height: 38px; }
+    textarea { height: 60px; padding: 10px 12px; resize: vertical; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #2f6f89; box-shadow: 0 0 0 2px #2f6f8933; }
+    button { font-family: inherit; cursor: pointer; }
+    .err { border-color: #c0392b !important; }
   </style>
 </helmet>
 
-<div style="width: 1000px; min-height: 820px; background: #f4f1ec; padding: 40px 48px;">
+<div style="width: 1000px; min-height: 860px; background: #f4f1ec; padding: 40px 48px;">
   <div style="max-width: 720px; margin: 0 auto;">
     <div class="serif" style="font-size: 13px; color: #7c766a;">Step 1 of 3</div>
     <h1 class="serif" style="font-size: 28px; font-weight: 600; margin: 6px 0 4px;">Set up your business</h1>
@@ -32,60 +36,101 @@
     <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 12px; padding: 26px 28px;">
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px 22px;">
         <div style="grid-column: 1 / -1;">
-          <div class="lbl">Legal / trade name</div>
-          <div class="field">Sethia Metal Store</div>
+          <div class="lbl">Legal / trade name *</div>
+          <input id="f_name" type="text" value="{{name}}" oninput="{{onName}}" class="{{nameErr}}">
         </div>
         <div style="grid-column: 1 / -1;">
-          <div class="lbl">Address</div>
-          <div class="field" style="height: 60px; align-items: flex-start; padding-top: 10px;">Near Swastika Sporting Club, Dangipara, Siliguri</div>
+          <div class="lbl">Address *</div>
+          <textarea id="f_addr" oninput="{{onAddr}}" class="{{addrErr}}">{{addr}}</textarea>
         </div>
         <div>
           <div class="lbl">City</div>
-          <div class="field">Siliguri</div>
+          <input type="text" value="Siliguri">
         </div>
         <div>
           <div class="lbl">PIN</div>
-          <div class="field">734001</div>
+          <input type="text" value="734001" maxlength="6">
         </div>
         <div>
           <div class="lbl">State</div>
-          <div class="field" style="justify-content: space-between;">West Bengal (19) <span style="color:#9a9284;">&#9662;</span></div>
+          <select>
+            <option>West Bengal (19)</option>
+            <option>Bihar (10)</option>
+            <option>Sikkim (11)</option>
+            <option>Assam (18)</option>
+          </select>
         </div>
         <div>
           <div class="lbl">Phone</div>
-          <div class="field">9851503336</div>
+          <input type="text" value="9851503336">
         </div>
         <div>
-          <div class="lbl">PAN <span style="text-transform:none; color:#9a9284;">(optional)</span></div>
-          <div class="field">ACHPJ4356R</div>
+          <div class="lbl">PAN (optional)</div>
+          <input type="text" value="ACHPJ4356R" maxlength="10" style="text-transform:uppercase;">
         </div>
         <div>
           <div class="lbl">Document label</div>
-          <div class="field" style="justify-content: space-between;">Invoice <span style="color:#9a9284;">&#9662;</span></div>
+          <select onchange="{{onDoc}}">
+            <option>Invoice</option>
+            <option>Bill of Supply</option>
+            <option>Cash Memo</option>
+          </select>
         </div>
       </div>
 
       <div style="margin-top: 22px; padding: 14px 16px; background: #f7f4ee; border-radius: 8px; display: flex; align-items: flex-start; gap: 12px;">
-        <div style="width: 36px; height: 20px; border-radius: 10px; background: #ddd5c8; position: relative; flex-shrink: 0; margin-top: 2px;">
-          <div style="width: 16px; height: 16px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: 2px;"></div>
+        <div onclick="{{toggleGst}}" style="width: 40px; height: 22px; border-radius: 11px; background: {{gstBg}}; position: relative; flex-shrink: 0; margin-top: 2px; cursor: pointer; transition: background .15s;">
+          <div style="width: 18px; height: 18px; border-radius: 50%; background: #fff; position: absolute; top: 2px; left: {{knob}}; transition: left .15s;"></div>
         </div>
         <div>
-          <div style="font-size: 13px; font-weight: 600;">GST mode</div>
-          <div style="font-size: 12px; color: #7c766a; line-height: 1.5;">Off for now &mdash; you&rsquo;ll issue plain invoices. Turn this on later to add GSTIN, CGST/SGST columns, IRN e-invoicing and e-Way Bills. No data migration needed.</div>
+          <div style="font-size: 13px; font-weight: 600;">GST mode &mdash; <span style="color:{{gstColor}};">{{gstState}}</span></div>
+          <div style="font-size: 12px; color: #7c766a; line-height: 1.5;">{{gstBlurb}}</div>
         </div>
       </div>
     </div>
 
-    <div style="display: flex; justify-content: space-between; margin-top: 24px;">
-      <button style="height: 40px; padding: 0 20px; border: 1px solid #cbc4b8; background: #fff; border-radius: 6px; font-size: 13px; font-family: inherit;">Back</button>
-      <button style="height: 40px; padding: 0 24px; border: none; background: #2f6f89; color: #fff; border-radius: 6px; font-size: 13px; font-weight: 600; font-family: inherit;">Next: bank details &rarr;</button>
+    <div style="display: flex; justify-content: space-between; margin-top: 24px; align-items: center;">
+      <button style="height: 40px; padding: 0 20px; border: 1px solid #cbc4b8; background: #fff; border-radius: 6px; font-size: 13px;">Back</button>
+      <div style="display:flex; align-items:center; gap:14px;">
+        <span id="saveNote" style="font-size:12px; color:#4f8a5b; opacity:0;">Saved ✓</span>
+        <button onclick="{{next}}" style="height: 40px; padding: 0 24px; border: none; background: #2f6f89; color: #fff; border-radius: 6px; font-size: 13px; font-weight: 600;">Next: bank details →</button>
+      </div>
     </div>
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"$preview":{"width":1000,"height":820}}'>
+<script data-dc-script data-props='{"$preview":{"width":1000,"height":860}}'>
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  constructor(props){
+    super(props);
+    this.state = { name:'Sethia Metal Store', addr:'Near Swastika Sporting Club, Dangipara, Siliguri', gst:false, touched:false };
+  }
+  onName = (e) => this.setState({ name: e.target.value });
+  onAddr = (e) => this.setState({ addr: e.target.value });
+  onDoc = () => {};
+  toggleGst = () => this.setState({ gst: !this.state.gst });
+  next = () => {
+    if (!this.state.name.trim() || !this.state.addr.trim()) { this.setState({ touched: true }); return; }
+    const n = document.getElementById('saveNote');
+    if (n) { n.style.opacity = '1'; setTimeout(() => { n.style.opacity = '0'; }, 1600); }
+  };
+  renderVals(){
+    const S = this.state;
+    return {
+      name: S.name, addr: S.addr,
+      nameErr: (S.touched && !S.name.trim()) ? 'err' : '',
+      addrErr: (S.touched && !S.addr.trim()) ? 'err' : '',
+      onName: this.onName, onAddr: this.onAddr, onDoc: this.onDoc,
+      toggleGst: this.toggleGst, next: this.next,
+      gstState: S.gst ? 'ON' : 'OFF',
+      gstColor: S.gst ? '#4f8a5b' : '#8a6a1f',
+      gstBg: S.gst ? '#4f8a5b' : '#ddd5c8',
+      knob: S.gst ? '20px' : '2px',
+      gstBlurb: S.gst
+        ? 'GSTIN, CGST/SGST columns, IRN e-invoicing and e-Way Bills are enabled. Invoice title becomes "Tax Invoice".'
+        : 'You will issue plain invoices. Turn this on later — no data migration needed; every field is already in the schema.',
+    };
+  }
 }
 </script>
 </body>

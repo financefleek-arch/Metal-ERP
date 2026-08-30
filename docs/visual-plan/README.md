@@ -19,6 +19,16 @@ Mid-fi screen mockups for Metal ERP — 16 artboards across 6 pages.
 | **5 · Tally integration** | Tally → our software (import masters); our software → Tally (push Sales vouchers) |
 | **6 · Roadmap** | Phase 2 GST detail + the full Stage 0 → 4 maturity ladder |
 
+## Interactive artboards
+
+`metal-billing-visual-plan.html` is the rendered canvas — open it in a browser. Three Page 1 artboards are **live prototypes** (sample data, no backend):
+
+- **Onboarding** — editable fields with validation; working GST on/off toggle that rewrites the explanatory copy.
+- **Sales invoice editor** — real type-ahead (normalized fuzzy match against a sample catalogue), add/remove lines that renumber, subtotal / round-off / grand-total / amount-in-words recomputing on every keystroke, and a finalize button that stays gated until party + all lines are valid.
+- **Item catalogue** — live search, filter chips with counts, row selection, and a Merge action that actually folds rows together.
+
+The remaining artboards are static reference. The individual `.dc.html` files are canvas-editor source (they need the design runtime) — view them via the rendered `.html`, not directly.
+
 ## Status of this design
 
 Mid-fi. Colour (warm neutral + one steel-blue accent) and typography (Fraunces / IBM Plex Sans) are a first pass, not a committed brand — react to structure and flow. Data shown in the mockups is illustrative.
