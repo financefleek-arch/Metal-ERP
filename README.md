@@ -21,23 +21,36 @@ Out of scope for M1 (designed-for, dormant): GST/IRN/e-Way Bill, weighbridge int
 
 ## Stack (planned)
 
-- **API**: Node 20 + TypeScript, Fastify, Prisma, PostgreSQL (row-level security per tenant)
+Matches the fleek-backend stack (Python / SQLAlchemy / Alembic) so the same
+team runs both with one set of deploy, migration and testing conventions.
+
+- **API**: Python 3.12, FastAPI, SQLAlchemy 2.0 (typed `mapped_column`), Alembic migrations, PostgreSQL (`pg_trgm` for fuzzy item search)
 - **Web**: React + Vite + TypeScript, TanStack Query, React Hook Form + Zod, Tailwind
-- **PDF**: Puppeteer + headless Chromium rendering a print HTML template (same template feeds the live editor preview)
-- **Shared**: `packages/tax-core` — pure invoice math (subtotal, discount, round-off, amount-in-words); consumed by both API and web
+- **PDF**: WeasyPrint rendering a print HTML/CSS template — pure Python, no headless browser. The same template's markup feeds the live editor preview (rendered client-side).
+- **Invoice math**: `app/domain/tax.py` — pure functions (subtotal, discount, round-off, amount-in-words), no I/O, unit-tested. The web live-preview total is a small duplicated JS helper kept in sync by a shared test vector.
+- **Tests**: pytest, real Postgres against an isolated schema (`DB_SCHEMA=...` + `alembic upgrade head`), same discipline as fleek-backend.
 
 ## Repo layout (target)
 
 ```
-api/                 Fastify service
-web/                 React app
-packages/
-  tax-core/          pure invoice calculation + tests
-  tally-import/      Tally XML → staging (optional pre-seed)
+api/
+  app/
+    main.py            FastAPI app
+    domain/tax.py      pure invoice calculation
+    models/            SQLAlchemy models
+    routers/           HTTP routes
+    services/          finalize, numbering, item-accretion, pdf
+    templates/         invoice HTML/CSS for WeasyPrint
+  alembic/             migrations
+  tests/
+  pyproject.toml
+web/                   React app
+tools/
+  tally_import/        Tally XML → staging (optional pre-seed)
 docs/
   EXECUTION-PLAN.md
   DESIGN.md
-  visual-plan/       .dc.html artboards + canvas.json + published html
+  visual-plan/         .dc.html artboards + canvas.json + rendered html
 ```
 
 ## Status

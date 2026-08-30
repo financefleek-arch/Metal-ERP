@@ -39,26 +39,38 @@ Each rung is a shippable release. Every column for later rungs exists from day o
 | **3 Stock** | Stable | Opt-in in/out per variant, scans move stock, low-stock flags (negative allowed for BULK, reconcile) |
 | **4 Inventory** | Purchase side captured | Lot labels at cutting, weighment-linked, purchase → itemise → sale, wastage, valuation, margin per item |
 
+## Stack
+
+Matches the fleek-backend stack so one team runs both with the same deploy,
+migration and testing conventions.
+
+- **API**: Python 3.12, FastAPI, SQLAlchemy 2.0 (typed `mapped_column`), Alembic, Pydantic v2 schemas.
+- **DB**: PostgreSQL — a dedicated `metalerp` database + role on the existing shared instance, `pg_trgm` enabled. Isolated schema per developer for tests (`DB_SCHEMA=...` + `alembic upgrade head`), same rule as fleek-backend.
+- **Web**: React + Vite + TypeScript, TanStack Query, React Hook Form + Zod, Tailwind.
+- **PDF**: Jinja2 template → **WeasyPrint** → PDF bytes. Pure Python, no headless browser; OS deps are just `libpango` / `libgdk-pixbuf`. Bundled font with the ₹ glyph for host-independent output.
+- **Invoice math**: `app/domain/tax.py`, pure functions, pytest vectors in `tests/vectors/tax_vectors.json`. A small duplicated JS helper (`web/src/lib/previewTotal.ts`) does the live-preview total and is tested against the same vectors so it can't drift.
+- **Async work**: none for M1 (PDF renders synchronously in the finalize request, ~0.3–1 s). When Stage 1–2 adds Tally push / email / IRN, use a Postgres-backed `job` table polled by a thread in the same process (`SELECT … FOR UPDATE SKIP LOCKED`) — the pattern fleek-backend already uses. No Redis.
+
 ## Architecture
 
 ```
-React SPA ──▶ Fastify API ──┬── Auth / tenant (RLS)
-                            ├── Invoice service (draft → finalize, gated)
-                            ├── @app/tax-core (subtotal, discount, round-off, words; + GST branches later)
-                            ├── PDF renderer (Puppeteer → object storage)
-                            └── Job queue (BullMQ) — PDF render; later: IRN, EWB, Tally push
+React SPA ──▶ FastAPI ──┬── Auth / tenant scope (JWT, role dependency)
+                        ├── Invoice service (draft → finalize, gated, one txn)
+                        ├── domain/tax.py (subtotal, discount, round-off, words; + GST branches later)
+                        ├── PDF renderer (Jinja2 → WeasyPrint → PDF volume)
+                        └── (Stage 1+) job table polled in-process — Tally push, IRN, EWB, email
                                     │
-                    PostgreSQL (RLS)   Object storage (PDFs, logos, labels)
+                    PostgreSQL (metalerp db)   PDF volume on disk (S3-compatible later)
 
 On-prem connector agent (counter PC) — later stages:
   serial-in from weighing scale  ·  label-printer out  ·  Tally XML import + voucher push
 ```
 
-- **PDF**: Puppeteer + headless Chromium rendering a versioned print HTML template. Same template feeds the live editor preview. `invoice.template_version` pins which template re-renders an old invoice (`v1-nongst` → `v2-gst` when GST turns on; old invoices keep their version).
-- **Money**: `NUMERIC(15,2)` at the edges, integer paise internally.
-- **Numbering**: `number_sequence(tenant_id, series, fy)`, row-locked, gap-free. FY = Apr–Mar. GSTN rejects gapped/duplicate doc numbers per FY, so this discipline holds from day one.
-- **RLS**: every tenant-scoped table carries `tenant_id`; app sets `SET app.tenant_id` per request.
-- **Auth**: email + password (Argon2), TOTP optional. Roles `owner | accountant | viewer` now; `counter | weighbridge | rate_desk` touchpoint roles added at Stage 1.
+- **PDF**: versioned Jinja2 template. The React live preview mirrors the same markup + imports the same CSS. `invoice.template_version` pins which template re-renders an old invoice (`v1-nongst` → `v2-gst` when GST turns on; old invoices keep their version).
+- **Money**: `NUMERIC(15,2)` at the edges, integer paise (`int`) internally.
+- **Numbering**: `number_sequence(tenant_id, series, fy)`, claimed with `SELECT … FOR UPDATE` in the finalize transaction, gap-free. FY = Apr–Mar. GSTN rejects gapped/duplicate doc numbers per FY, so this discipline holds from day one.
+- **Tenant scope**: every tenant-scoped table carries `tenant_id`; enforced by a query-helper argument / session filter. Postgres RLS optional — app-level guard is enough for the single-tenant M1 and matches fleek's pattern.
+- **Auth**: email + password (`passlib`/Argon2), JWT access token, TOTP optional. Roles `owner | accountant | viewer` now; `counter | weighbridge | rate_desk` touchpoint roles added at Stage 1.
 
 ## Data model (target)
 
@@ -170,7 +182,7 @@ DRAFT → AWAITING_WEIGHT → AWAITING_RATE → READY → FINALIZED
 
 ## Weighbridge integration (Stage 0 agent, wired at Stage 1+)
 
-- Industrial scale indicators stream weight as ASCII over RS-232. A small always-on **bridge agent** on the counter PC (Node + `serialport`) parses it, debounces to a stable reading, stamps time + operator + scale-id + optional webcam frame, and POSTs a `weighment` to the cloud. Queues offline, syncs on reconnect.
+- Industrial scale indicators stream weight as ASCII over RS-232. A small always-on **bridge agent** on the counter PC (Python + `pyserial`, packaged with PyInstaller and run as a Windows service via NSSM) parses it, debounces to a stable reading, stamps time + operator + scale-id + optional webcam frame, and POSTs a `weighment` to the cloud. Queues offline (local SQLite), syncs on reconnect.
 - A `weighment` is standalone and immutable; billing **attaches** one to a line. Decouples the scale operator from the biller.
 - No PC at the scale → serial→WiFi converter (USR-W610 / Moxa) bridges RS-232 to TCP; agent opens a socket instead of a COM port.
 - Mobile can't read serial — on phones, weight always comes from the agent → cloud, and the mobile user picks a recent weighment (or photographs the display).
@@ -180,7 +192,7 @@ DRAFT → AWAITING_WEIGHT → AWAITING_RATE → READY → FINALIZED
 
 Turned on per tenant via `tenant.gst_enabled`. Additive because the schema, paise math, frozen totals, FY-keyed numbering, versioned templates and validated HSN are all already in place.
 
-Adds: GSTIN fields active, Place of Supply selector, per-line GST rate + "rate incl. tax" toggle, CGST+SGST vs IGST from state comparison, HSN-wise tax summary, `tax-core` GST branches, INV-01 payload builder, GSP client (IRP auth → IRN / Ack / signed QR), e-Way Bill generate + Part-B update, second-page EWB layout, GSTR-1 export. All GSTN calls run as retrying jobs with a per-invoice status state machine; raw request/response stored encrypted for audit.
+Adds: GSTIN fields active, Place of Supply selector, per-line GST rate + "rate incl. tax" toggle, CGST+SGST vs IGST from state comparison, HSN-wise tax summary, `domain/tax.py` GST branches, INV-01 payload builder, GSP client (IRP auth → IRN / Ack / signed QR), e-Way Bill generate + Part-B update, second-page EWB layout, GSTR-1 export. All GSTN calls run through the Postgres `job` table with a per-invoice status state machine; raw request/response stored encrypted for audit.
 
 e-Invoicing goes through a **GSP** (GST Suvidha Provider) — no direct GSTN access. GSP choice is an open decision.
 
@@ -190,12 +202,13 @@ Tally stays the accounting book of record. Two directions, both XML-over-HTTP (T
 
 **Import (read) — Stage 0, optional.** One-time `File → Export` from Tally Prime to XML (Stock Items, Ledgers, Units, Stock Groups) — no live connection needed for the initial seed. Parse (UTF-16/BOM aware, strip control-char entities) → `staging_tally_*` → normalize → auto-confirm rows with uom + hsn + group, queue the rest. Keeps `tally_guid` per record for idempotent refresh. Changes the Stage 0 story from "empty catalogue" to "~200 items + 128 parties pre-loaded, mostly a quick confirm".
 
-**Push (write) — Stage 2.** On finalize, build a Sales `VOUCHER` XML (`<VOUCHER VCHTYPE="Sales">` with `<ALLLEDGERENTRIES.LIST>` + `<ALLINVENTORYENTRIES.LIST>`) and POST `IMPORT DATA` to Tally `:9000` via the agent. Master-mapping table (party↔ledger, item↔stock item, tax↔duty ledgers; auto-create missing masters first; config pins Sales / tax / Round Off ledgers). Store the returned voucher GUID; idempotent on invoice-number-as-voucher-number; finalize never blocked on Tally (queues, retries). Errors return `<LINEERROR>`.
+**Push (write) — Stage 2.** On finalize, enqueue a `job` that builds a Sales `VOUCHER` XML (`<VOUCHER VCHTYPE="Sales">` with `<ALLLEDGERENTRIES.LIST>` + `<ALLINVENTORYENTRIES.LIST>`) and POSTs `IMPORT DATA` to Tally `:9000` via the agent. Master-mapping table (party↔ledger, item↔stock item, tax↔duty ledgers; auto-create missing masters first; config pins Sales / tax / Round Off ledgers). Store the returned voucher GUID; idempotent on invoice-number-as-voucher-number; finalize never blocked on Tally (job retries with backoff). Errors return `<LINEERROR>`.
 
 If the `.tsf` files on the USB are a sync snapshot rather than a restorable backup, they must be opened in a live Tally Prime first (restore a proper Backup, or select-company from a data folder), then exported to XML.
 
 ## Deployment artifacts outside the cloud app
 
-- **Connector agent** (counter PC): serial-in from the scale, label-print out, Tally XML both ways. One small Node service, runs as a Windows service, queues offline.
+- **Cloud app**: one FastAPI container on the existing VPS via Docker Compose, sharing the Postgres instance (own `metalerp` db) and reverse proxy (a `billing.<domain>` vhost). Web is a static Vite build served by the proxy. PDFs on a bind-mounted volume. No new datastore.
+- **Connector agent** (counter PC, Stage 1+): serial-in from the scale, label-print out, Tally XML both ways. One small Python service (PyInstaller + NSSM), queues offline.
 - **Serial→WiFi converter** (optional hardware, PC-less scales).
 - Barcode scanners need no software (HID keyboard emulation).
