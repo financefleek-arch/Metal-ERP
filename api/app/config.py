@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     pdf_dir: str = "/data/pdfs"
 
     # Optional integrations
-    smtp_url: str | None = None
+    # Brevo transactional-email HTTP API key — shared across the fleek
+    # stack (secret/brevo/api). Used from Stage 1+ for invoice email.
+    brevo_api_key: str | None = None
     sentry_dsn: str | None = None
 
     @property
