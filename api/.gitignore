@@ -10,3 +10,4 @@ htmlcov/
 _scratch*
 _mig_test*
 _pytest*
+_smoke*

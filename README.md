@@ -19,6 +19,19 @@ A deployed web app where the shop can: onboard the business → add a party → 
 
 Out of scope for M1 (designed-for, dormant): GST/IRN/e-Way Bill, weighbridge integration, barcodes/scanning, Tally voucher push, mobile app, multi-touchpoint roles, stock tracking, payments.
 
+### Status
+
+| Slice | State |
+|---|---|
+| Data model + migrations (all tables, GST/stock/barcode columns dormant) | ✅ `0001`, `0002` |
+| Auth — register firm + owner, login, JWT, role gate | ✅ `/api/auth/*` |
+| Firm profile — read + onboard (`PATCH /api/tenant`) | ✅ |
+| Parties — list/search/filter, create, edit, delete, tenant-isolated | ✅ `/api/parties` |
+| Frontend — auth page, app shell, Firm page, Parties page + drawer | ✅ `web/` |
+| Deploy — push-to-`main` → build → migrate → live at `metal.fleekfinance.in` | ✅ (API; SPA builds once `web/Dockerfile` is present — it now is) |
+| Item catalogue + normalization | ⬜ next |
+| Invoice editor + finalize + PDF | ⬜ |
+
 ## Stack (planned)
 
 Matches the fleek-backend stack (Python / SQLAlchemy / Alembic) so the same

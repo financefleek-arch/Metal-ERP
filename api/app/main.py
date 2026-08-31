@@ -1,16 +1,19 @@
 """FastAPI application entry point.
 
-Milestone 1 exposes only /health so the container can be built and
-deployed live before the domain routes (party, item, invoice) land.
+Everything is mounted under /api so a single reverse-proxy rule
+(`handle /api/*`) covers the whole backend and the rest of the host
+serves the SPA.
 """
 
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import engine
+from app.routers import auth, parties, tenant
 
 settings = get_settings()
 
@@ -21,12 +24,29 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
+# In production the SPA is same-origin (served by Caddy at the same host),
+# so CORS is a dev-only convenience for `vite dev` on :5173.
+if not settings.is_production:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+app.include_router(auth.router)
+app.include_router(tenant.router)
+app.include_router(parties.router)
+
 
 @app.get("/health")
+@app.get("/api/health")
 def health() -> dict[str, str]:
     """Liveness + DB reachability. A real SELECT 1 through the pool, so a
     DB-disconnected-but-still-listening process reports unhealthy rather
-    than healthy (matches fleek-backend's /health contract).
+    than healthy. Exposed at both /health (internal Docker healthcheck,
+    hits the container directly) and /api/health (through the proxy).
     """
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))

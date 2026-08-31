@@ -68,25 +68,15 @@ jobs:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
-      - name: Skip if no web app yet
-        id: guard
-        run: |
-          if [ -f package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
       - uses: actions/setup-node@v4
-        if: steps.guard.outputs.present == 'true'
         with:
           node-version: "20"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - name: Install
-        if: steps.guard.outputs.present == 'true'
-        run: npm ci
+      - run: npm ci
       - name: Lint
-        if: steps.guard.outputs.present == 'true'
-        run: npm run lint --if-present
+        run: npm run lint
       - name: Typecheck
-        if: steps.guard.outputs.present == 'true'
-        run: npm run typecheck --if-present
+        run: npm run typecheck
       - name: Build
-        if: steps.guard.outputs.present == 'true'
         run: npm run build

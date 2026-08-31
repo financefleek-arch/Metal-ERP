@@ -1,64 +1,60 @@
 """Test fixtures.
 
-Uses an in-memory SQLite DB with the full metadata created directly (not
-via Alembic) — fast, isolated per test session. The Postgres-specific
-bits (JSONB, pg_trgm) degrade to portable equivalents via the model
-`.with_variant` declarations, so schema-shape tests still pass here; the
-real Postgres path is exercised by CI's service container.
+All tests run against a single throwaway SQLite **file** DB, which is the
+same engine `app.db` builds (env var set below, before app.db imports).
+Postgres-specific types (JSONB) degrade to portable equivalents via the
+model `.with_variant` declarations; the real Postgres path is exercised
+by CI's service container.
+
+Isolation is per-test table wipe (autouse `_clean_db`), not a rolled-back
+transaction — because the API routes open their own request-scoped
+sessions via `get_session` and commit, so a test that also touches the DB
+directly must share the committed state, not a separate transaction.
 """
 
 from __future__ import annotations
 
 import os
 
-# Point the app engine at a throwaway file DB before app.db / app.config
-# import — keeps /health and any engine-touching code off a real Postgres
-# in tests and CI.
 os.environ.setdefault("DATABASE_URL", "sqlite:///./_pytest.db")
 os.environ.setdefault("APP_ENV", "test")
 
 from collections.abc import Iterator  # noqa: E402
 
 import pytest  # noqa: E402
-from sqlalchemy import create_engine  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
-from sqlalchemy.pool import StaticPool  # noqa: E402
 
-import app.models  # noqa: F401,E402  (registers models)
+import app.models  # noqa: F401,E402  (registers models on Base.metadata)
 from app.db import Base  # noqa: E402
 from app.db import engine as app_engine  # noqa: E402
 
+_SessionTest = sessionmaker(bind=app_engine, autoflush=False, expire_on_commit=False)
+
 
 @pytest.fixture(scope="session", autouse=True)
-def _create_app_engine_schema() -> Iterator[None]:
-    """The module-level app engine (used by /health) needs its schema too."""
+def _schema() -> Iterator[None]:
     Base.metadata.create_all(app_engine)
     yield
     Base.metadata.drop_all(app_engine)
 
 
-@pytest.fixture(scope="session")
-def engine():  # type: ignore[no-untyped-def]
-    eng = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    Base.metadata.create_all(eng)
-    yield eng
-    eng.dispose()
+@pytest.fixture(autouse=True)
+def _clean_db() -> Iterator[None]:
+    """Empty every table before each test (FK-safe reverse order)."""
+    with app_engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            conn.execute(table.delete())
+    yield
 
 
 @pytest.fixture
-def session(engine) -> Iterator[Session]:  # type: ignore[no-untyped-def]
-    """A transaction-wrapped session, rolled back after each test."""
-    conn = engine.connect()
-    trans = conn.begin()
-    SessionTest = sessionmaker(bind=conn, expire_on_commit=False)
-    s = SessionTest()
+def session() -> Iterator[Session]:
+    """A plain session on the app engine. Commit in the test if the app
+    needs to see the write on a later request.
+    """
+    s = _SessionTest()
     try:
         yield s
+        s.commit()
     finally:
         s.close()
-        trans.rollback()
-        conn.close()
