@@ -10,6 +10,9 @@ Mid-fi screen mockups for Metal ERP — 16 artboards across 6 pages.
 
 ## Pages
 
+**Build status** (first page) — where the app stands against the execution plan: which billing-loop screens are shipped, in progress, and next. Regenerate from `docs/EXECUTION-PLAN.md` when phases land.
+
+
 | Page | Artboards |
 |---|---|
 | **1 · Core billing loop** | Onboarding, Dashboard, Parties, Purchase entry, Invoice editor (type-ahead + scan + weight), Item catalogue (merge / group / size numbers / label), Printed invoice A4, Items-sold-this-month report |

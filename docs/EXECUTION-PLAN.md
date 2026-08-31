@@ -2,7 +2,25 @@
 
 **Goal:** a deployed web app where the shop can create a non-GST invoice — pick a party, add line items (typed, with type-ahead), enter qty/rate, finalize, and download a print-accurate A4 PDF matching the sample layout (minus GST columns).
 
-**Explicitly out of scope for this milestone:** GST/IRN/e-Way Bill, weighbridge agent, barcodes/scanning, Tally push, mobile app, multi-touchpoint role split, stock tracking, payments/outstanding. All are designed-for in the schema but dormant. Tally *import* is optional and can run before or after first bill.
+**Explicitly out of scope for this milestone:** GST/IRN/e-Way Bill, weighbridge agent, barcodes/scanning, Tally push, mobile app, multi-touchpoint role split, **inventory / stock tracking**, payments/outstanding. All are designed-for in the schema but dormant. Tally *import* is optional and can run before or after first bill.
+
+> **Inventory is Stage 3, not M1.** M1 has no stock quantities, no opening-stock entry, no in/out movements, no low-stock views, and no purchase-bill screen. Selling an item the catalogue doesn't know about just auto-creates it. See `DESIGN.md` → *Maturity ladder*.
+
+## Screens shipping in M1
+
+| Screen | Phase | Status |
+|---|---|---|
+| Register / Login | 3 | ✅ done |
+| App shell + top nav + auth guard | 3 | ✅ done |
+| Firm profile (onboarding: address, bank block, document label, PAN/state validation) | 3 | ✅ done |
+| Parties — list + search + role filter, add/edit drawer (with one address, PAN/GSTIN/state validation) | 4 | ✅ done |
+| **Items — list + search + filter chips, Add/Edit-item drawer** | **4** | ⬜ |
+| **Invoice editor** — party picker, item type-ahead combobox, line grid, live totals panel, save draft | **5** | ⬜ |
+| **Printed invoice** — A4 (WeasyPrint) + an in-editor React preview that mirrors the same markup | **7** | ⬜ |
+| **Invoice list** — filters, open → view/download PDF, duplicate, cancel | **8** | ⬜ |
+| **Dashboard** — sales-this-month tile, recent invoices, unconfirmed-items count | **8** | ⬜ |
+
+Synonym-editor UI is deferred to Stage 1 — M1 ships the seeded ~35-entry list, no editor.
 
 ---
 
@@ -78,33 +96,47 @@ def compute_invoice(inp: InvoiceInput) -> ComputedInvoice:
 
 ## 4. Party + Item CRUD + normalization (1 week)
 
-**Party**
-- List + create/edit. Fields: name, phone, email, PAN, one address (line1–3, city, state, pincode). `role` defaults `customer`; GSTIN field present, hidden.
+### Party  ✅ done
 
-**Item**
-- `name` + computed `name_normalized` (normalization pipeline: lowercase → trim/collapse → strip punctuation → synonym map → keep token order).
-- `uom` (enum picker), `category` (enum picker), `item_type` (BULK/MRP toggle, default BULK), `hsn_code` (searchable lookup against `hsn_code`, nullable), `default_rate`/`last_rate`.
-- `source` (`MANUAL | AUTO_FROM_INVOICE | IMPORT`), `status` (`UNCONFIRMED | CONFIRMED`).
-- Trigram index (`pg_trgm`) on `name_normalized` for fuzzy search.
-- **No merge tool / variant grouping / label printing yet** — Stage 1+ work. Just CRUD + the normalized-key dedupe on create.
+- API: `GET /api/parties` (name search `q`, `role` filter), `POST`, `GET/{id}`, `PATCH/{id}`, `DELETE/{id}` — all tenant-scoped, dup-name 409.
+- Schema-level PAN / GSTIN / GST-state-code validation (`app/reference.py`), `GET /api/reference/states`.
+- **UI:** Parties page (table, search box, role filter chips) + a slide-in **PartyDrawer** (name, role, phone, email, PAN, GSTIN, default state, one address). State fields are a `StateSelect` dropdown; PAN/GSTIN inputs uppercase + format-hint.
 
-**Exit:** can add a party and a few items by hand; searching items is fuzzy; duplicate normalized names are rejected on create.
+### Item  ⬜
+
+**API**
+- `GET /api/items` — `q` (fuzzy over `name_normalized` + aliases via `pg_trgm`), `type`, `status`, `no_hsn` filters; confirmed-first ordering.
+- `POST /api/items`, `GET/PATCH/DELETE /api/items/{id}` — tenant-scoped, normalized-key dedupe (409 on a colliding `name_normalized`).
+- `GET /api/reference/hsn?q=` — searchable HSN lookup (code or description).
+- `GET /api/reference/uoms`, `/categories` — enum lists for the pickers.
+- `app/domain/normalize.py` — the pipeline: lowercase → trim/collapse whitespace → strip punctuation → apply the tenant's `synonym` map → keep token order. Used by item create/patch and (later) by finalize accretion. Unit-tested against a table of messy inputs.
+
+**UI**
+- **Items page** — table: name, type badge (⚖ BULK / 📦 MRP), category, HSN, UOM, last rate, status. Search box (fuzzy) + filter chips: All / BULK / MRP / Unconfirmed / No HSN. Row → open the drawer.
+- **ItemDrawer** (add/edit) — name; BULK/MRP toggle (default BULK); category select; UOM select; **HSN searchable lookup** (type code or words → pick from `hsn_code`); default rate; MRP + default discount % (shown only for MRP). On save: normalized-key collision → inline "looks like an existing item: <name>".
+- No merge tool / variant grouping / label printing — Stage 1+.
+
+**Exit:** add a party and items by hand; item search is fuzzy and synonym-aware; a colliding normalized name is rejected on create with a pointer to the existing item.
 
 ---
 
 ## 5. Invoice editor + live preview (1.5 weeks) — the core
 
-- **Header:** pick party → address auto-fills (editable); invoice date; series = `Sales`; number shown as "auto on finalize".
-- **Line grid:**
-  - Item field = **type-ahead combobox**: searches existing items (fuzzy, confirmed first); Enter picks the highlighted match; arrow to "+ Create new '<text>'" to diverge. Near-miss soft nudge.
-  - Per line: description (frozen from item or free text), `hsn_sac`, `qty`, `uom`, `unit_rate`, line discount → `line_total`.
-  - Free-typed name with no match is allowed — item row is created on **finalize**, not mid-type.
-- **Totals panel:** subtotal, discount, round-off, grand total, amount-in-words — computed client-side via `previewTotal.ts` for instant feedback; the finalize response returns the authoritative Python-computed numbers.
-- **Live A4 preview:** the same HTML/CSS the WeasyPrint template uses, rendered in the editor from the draft (React component mirroring the template markup).
-- **Save draft:** `PUT /invoices/{id}` persists `invoice` (status DRAFT, no number) + `invoice_line`s.
-- Concurrency: simple — last-write-wins on the whole draft, single editor assumed. No real-time sync yet.
+**API**
+- `POST /api/invoices` → new DRAFT (no number); `GET /api/invoices/{id}`; `PUT /api/invoices/{id}` replaces header + all lines (last-write-wins, single-editor assumed); `GET /api/invoices` (list, Phase 8).
 
-**Exit:** build a multi-line draft, see correct live totals and a correct on-screen preview, reload and it persists.
+**UI — `InvoiceEditorPage`**
+- **Header block:** party picker (async search of `/api/parties`) → bill-to / ship-to addresses auto-fill, editable; invoice date; series = `Sales` (fixed for M1); number shows "auto on finalize".
+- **Line grid** (`InvoiceLineRow` × N):
+  - Item cell = **`ItemCombobox`**: debounced fuzzy search of `/api/items`; results show name + type badge + last-rate/times-billed; keyboard nav; Enter picks the top match (fills description/HSN/UOM/rate); a "+ Create new '<text>'" row to diverge; a soft near-miss banner ("close to *SS Utensil* — press Enter to use it").
+  - Cells: description (from item or free text), HSN, qty, UOM, unit rate, line discount → computed line total.
+  - Free-typed name with no match is allowed and stays as text — the `item` row is created at **finalize**, not mid-type.
+  - Add-line / remove-line; rows renumber.
+- **Totals panel** (right rail): subtotal, discount, round-off, grand total, **amount-in-words** — recompute on every keystroke via `web/src/lib/previewTotal.ts` (the small JS mirror of `domain/tax.py`, kept in lockstep by the shared `tax_vectors.json`). The finalize response returns the authoritative Python numbers.
+- **Live A4 preview** (`InvoicePreview` component): a React render of the *same* markup + CSS the WeasyPrint template uses, fed from the draft — so the editor and the printed PDF stay visually aligned.
+- **Save draft** button → `PUT /api/invoices/{id}`; a "Finalize" button, disabled until every line has qty > 0 and rate > 0 and a party is set, with the blocking reasons listed.
+
+**Exit:** build a multi-line draft, see correct live totals + amount-in-words + on-screen A4 preview, reload and it persists; the Finalize button gates correctly.
 
 ---
 
@@ -117,6 +149,8 @@ def compute_invoice(inp: InvoiceInput) -> ComputedInvoice:
 4. For each line: normalize description → find item by `name_normalized` / alias → if none, **create** `item` (`source=AUTO_FROM_INVOICE`, `status=UNCONFIRMED`, uom from line, `last_rate`); else bump `last_rate`, `last_sold_at`, `times_billed`. Link `invoice_line.item_id`.
 5. Set `status = FINAL`. Write `audit_log`.
 6. Render the PDF **synchronously** (WeasyPrint, ~0.3–1 s — no queue needed for M1) → write to the PDF volume → set `invoice.pdf_path`. If the render raises, the finalize still commits; a `pdf_status` flag marks it for a manual re-render endpoint.
+
+**UI:** the editor's "Finalize" button calls this; on success it flips the page to a **read-only finalized view** with the assigned number, frozen totals, and a **Download PDF** button (+ a "Re-render" affordance if `pdf_status = failed`).
 
 **Exit:** finalizing a draft assigns #1, freezes totals, produces the PDF, and the typed items now exist in the catalogue as unconfirmed.
 
@@ -135,14 +169,16 @@ def compute_invoice(inp: InvoiceInput) -> ComputedInvoice:
 
 ---
 
-## 8. Invoice list + wrap-up (½ week)
+## 8. Invoice list + dashboard + wrap-up (½ week)
 
-- Invoice list: number, date, party, amount, status; filter by status/date; open → view + Download PDF.
-- Actions: **Duplicate** (new draft from an existing invoice), **Cancel** (status CANCELLED, number not reused).
-- Dashboard: sales-this-month total, invoice count, recent invoices, count of unconfirmed items. (The "items to review" panel can be a stub link.)
-- Basic **invoice register** (list export to CSV).
+**API:** `GET /api/invoices` (filters: status, date range, party), `POST /api/invoices/{id}/duplicate`, `POST /api/invoices/{id}/cancel`, `GET /api/invoices/{id}/pdf` (streams the file), `GET /api/dashboard/summary`, `GET /api/reports/invoice-register.csv`.
 
-**Exit:** the shop can find, reopen, re-print, duplicate and cancel invoices.
+**UI**
+- **`InvoicesPage`** — table: number, date, party, amount, status badge. Filter bar (status / date / party). Row → finalized view; DRAFT rows → back into the editor. Per-row actions: **Download PDF**, **Duplicate** (→ new draft, opens editor), **Cancel** (confirm → status CANCELLED, number *not* reused).
+- **`DashboardPage`** — tiles: sales this month, invoices raised, new/unconfirmed items; a "recent invoices" list; an "items to review" count linking to the Items page filtered to `Unconfirmed`.
+- **CSV export** button on the invoices page (invoice register).
+
+**Exit:** the shop can find, reopen, re-print, duplicate and cancel invoices; the dashboard shows the month at a glance.
 
 ---
 
@@ -173,22 +209,23 @@ Only if the shop wants their existing catalogue loaded before bill #1.
 
 ## Timeline
 
-| Phase | Duration | Notes |
-|---|---|---|
-| 0 Foundations | 0.5 wk | |
-| 1 Data model (SQLAlchemy + Alembic) | 0.5 wk | ‖ with 2 |
-| 2 `domain/tax.py` + vectors | 0.5 wk | ‖ with 1 |
-| 3 Auth + shell | 0.5 wk | |
-| 4 Party/Item CRUD + normalization | 1 wk | |
-| 5 Invoice editor + preview | 1.5 wk | critical path |
-| 6 Finalize + numbering + accretion | 1 wk | |
-| 7 PDF rendering (WeasyPrint) | 1.5 wk | critical path; can start template in wk 3 |
-| 8 Invoice list + wrap-up | 0.5 wk | |
-| 10 Hardening + go-live | 1 wk | |
-| **Total (critical path)** | **~8–9 weeks** | one full-stack dev |
-| 9 Tally import (optional) | +1 wk | parallel, off critical path |
+| Phase | Duration | Status | Notes |
+|---|---|---|---|
+| 0 Foundations | 0.5 wk | ✅ done | repo, CI, Docker, deploy pipeline, Vault, shared PG DB |
+| 1 Data model (SQLAlchemy + Alembic) | 0.5 wk | ✅ done | 13 tables, `0001`/`0002`, `seed.py` |
+| 2 `domain/tax.py` + vectors | 0.5 wk | ⬜ | pure math + amount-in-words + `previewTotal.ts` |
+| 3 Auth + shell | 0.5 wk | ✅ done | register/login/JWT, React shell, Firm profile |
+| 4 Party CRUD + validation | — | ✅ done | parties + PAN/GSTIN/state validation + StateSelect |
+| 4 Item CRUD + normalization | 1 wk | ⬜ | Items page + ItemDrawer + `domain/normalize.py` + HSN lookup |
+| 5 Invoice editor + preview | 1.5 wk | ⬜ | critical path — ItemCombobox, line grid, live totals, A4 preview |
+| 6 Finalize + numbering + accretion | 1 wk | ⬜ | finalize txn, gap-free number, item auto-create, finalized view |
+| 7 PDF rendering (WeasyPrint) | 1.5 wk | ⬜ | critical path; can start the template in parallel |
+| 8 Invoice list + dashboard | 0.5 wk | ⬜ | InvoicesPage, DashboardPage, duplicate/cancel, CSV |
+| 10 Hardening + go-live | 0.5 wk | ⬜ | prod seed, per-DB backup, runbook, bill #1 walkthrough |
+| **Remaining critical path** | **~6–7 wk** | | one full-stack dev, from here |
+| 9 Tally import (optional) | +1 wk | ⬜ | parallel, off critical path |
 
-**Two devs:** one owns api/models/tax/finalize (§1,2,6), the other owns web/editor/preview/PDF template (§3,5,7) → **~5–6 weeks**.
+**Two devs from here:** one owns tax/normalize/items-API/finalize (§2, §4-item, §6), the other owns items-UI/editor/preview/PDF template (§4-item UI, §5, §7) → **~4 weeks** remaining.
 
 ---
 

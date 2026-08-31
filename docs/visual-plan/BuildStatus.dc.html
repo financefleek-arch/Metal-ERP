@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .box { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; }
+    .done { color: #4f8a5b; }
+    .now  { color: #2f6f89; }
+    .next { color: #9a9284; }
+    td { padding: 9px 12px; font-size: 13px; border-top: 1px solid #f0ebe1; vertical-align: top; }
+    .pill { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; }
+    .pill-done { background: #e6efe8; color: #3a5a48; }
+    .pill-now  { background: #e3eef2; color: #2f6f89; }
+    .pill-next { background: #efe9df; color: #7c766a; }
+  </style>
+</helmet>
+
+<div style="width: 1400px; min-height: 980px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">Metal ERP &mdash; build status against the plan</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 22px; max-width: 900px;">
+    Milestone&nbsp;1 = the shop can register, set up the firm, load parties &amp; items, raise an invoice, and download a print-accurate A4 PDF (no GST columns). Live at <b>metal.fleekfinance.in</b> with push-to-deploy. Inventory / stock is <b>not M1</b> &mdash; it&rsquo;s Stage&nbsp;3.
+  </p>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+    <!-- shipped -->
+    <div class="box" style="overflow: hidden;">
+      <div style="padding: 12px 16px; background: #eef4f0; border-bottom: 1px solid #d3e3d9; font-weight: 600; font-size: 14px; color: #3a5a48;">Shipped &amp; deployed</div>
+      <table style="border-collapse: collapse; width: 100%;">
+        <tr><td style="width: 130px;"><span class="pill pill-done">Phase 0</span></td><td>Repo, CI (ruff / mypy / pytest / web build), Docker, push&rarr;deploy pipeline, Vault-sourced JWT secret, shared Postgres <span class="serif">metalerp</span> DB</td></tr>
+        <tr><td><span class="pill pill-done">Phase 1</span></td><td>All 13 tables (GST / stock / barcode columns present, dormant), migrations 0001&ndash;0002, <span class="serif">pg_trgm</span> index, seed (HSN + synonyms)</td></tr>
+        <tr><td><span class="pill pill-done">Phase 3</span></td><td>Register firm + owner, login, JWT, role gate; React shell + nav + auth guard; API client</td></tr>
+        <tr><td><span class="pill pill-done">Phase 3</span></td><td><b>Firm profile</b> screen &mdash; onboarding (address, bank block, document label), state-code dropdown, PAN validation</td></tr>
+        <tr><td><span class="pill pill-done">Phase 4a</span></td><td><b>Parties</b> screen &mdash; list, search, role filter, add/edit drawer with one address; PAN / GSTIN / GST-state-code validation; <span class="serif">/api/reference/states</span></td></tr>
+      </table>
+    </div>
+
+    <!-- in progress / next -->
+    <div class="box" style="overflow: hidden;">
+      <div style="padding: 12px 16px; background: #f0f6f8; border-bottom: 1px solid #9cc3d4; font-weight: 600; font-size: 14px; color: #2f6f89;">Remaining for M1 &mdash; ~4 weeks</div>
+      <table style="border-collapse: collapse; width: 100%;">
+        <tr><td style="width: 130px;"><span class="pill pill-now">Phase 2 &middot; next</span></td><td><span class="serif">domain/tax.py</span> &mdash; subtotal, discount, round-off, <b>amount-in-words</b> (lakh/crore); pytest vectors; the small <span class="serif">previewTotal.ts</span> mirror for the live editor total</td></tr>
+        <tr><td><span class="pill pill-next">Phase 4b</span></td><td><b>Items</b> screen + <b>Add-item drawer</b> &mdash; BULK/MRP toggle, category / UOM enums, HSN searchable lookup, MRP + discount; <span class="serif">domain/normalize.py</span> pipeline + fuzzy search endpoint</td></tr>
+        <tr><td><span class="pill pill-next">Phase 5</span></td><td><b>Invoice editor</b> &mdash; party picker, <b>item type-ahead combobox</b>, line grid, live totals panel, A4 preview mirror, save draft &nbsp;<i>(critical path)</i></td></tr>
+        <tr><td><span class="pill pill-next">Phase 6</span></td><td><b>Finalize</b> &mdash; one txn: gap-free number, freeze totals, auto-create items from typed lines, audit log, render PDF; read-only finalized view</td></tr>
+        <tr><td><span class="pill pill-next">Phase 7</span></td><td><b>Printed invoice</b> &mdash; Jinja2 + WeasyPrint A4 template (boxed grid, no GST columns), same markup drives the editor preview &nbsp;<i>(critical path)</i></td></tr>
+        <tr><td><span class="pill pill-next">Phase 8</span></td><td><b>Invoice list</b> (filters, download / duplicate / cancel) + <b>Dashboard</b> (sales-this-month, recent, unconfirmed-items) + CSV register</td></tr>
+        <tr><td><span class="pill pill-next">Phase 10</span></td><td>Prod seed, per-DB backup, runbook, walk the shop through <b>bill #1</b></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- how the artboards map -->
+  <div class="box" style="padding: 14px 18px;">
+    <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">How this canvas maps to the build</div>
+    <div style="font-size: 12px; color: #3a362e; line-height: 1.8;">
+      <b>Core billing loop</b> (page&nbsp;1) &mdash; artboards 1&ndash;8 are the M1 target screens. 1 (Onboarding) &amp; 3 (Parties) are <span class="done">shipped</span>; 6 (Item catalogue) is <span class="now">Phase&nbsp;4b</span>; 5 (Invoice editor) + 7 (Printed invoice) are <span class="now">Phases&nbsp;5&ndash;7</span>; 2 (Dashboard) + 8 (report) are <span class="now">Phase&nbsp;8</span>.<br>
+      <b>Data normalization</b> (page&nbsp;2) &mdash; the <span class="serif">domain/normalize.py</span> design for Phase&nbsp;4b. The merge / variant-group tooling shown there is <span class="next">Stage&nbsp;1+</span>, not M1.<br>
+      <b>Multi-touchpoint &amp; weighbridge</b> (page&nbsp;3), <b>Barcode &amp; mobile</b> (page&nbsp;4), <b>Tally integration</b> (page&nbsp;5) &mdash; all <span class="next">post-M1</span> (Stages&nbsp;1&ndash;4). Purchase-bill entry (artboard 4) is Stage&nbsp;1.<br>
+      <b>Roadmap</b> (page&nbsp;6) &mdash; GST is <span class="next">Phase&nbsp;2</span>, slots in at Stage&nbsp;2 once the catalogue is curated.
+    </div>
+  </div>
+
+  <div style="margin-top: 16px; border: 1px dashed #2f6f89; background: #f0f6f8; padding: 10px 12px; font-size: 11px; color: #2f6f89; line-height: 1.6;">
+    Not in M1 (schema built, UI deferred): inventory / stock screens, purchase-bill entry, merge &amp; variant-group tools, weighbridge, barcode / label screens, GST fields, Tally screens, mobile / PWA, payments / outstanding.
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1400,"height":980}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

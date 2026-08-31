@@ -1,5 +1,6 @@
 {
   "pages": [
+    { "id": "page-0", "name": "Build status" },
     { "id": "page-1", "name": "Core billing loop" },
     { "id": "page-2", "name": "Data normalization" },
     { "id": "page-3", "name": "Multi-touchpoint & weighbridge" },
@@ -8,6 +9,7 @@
     { "id": "page-6", "name": "Roadmap" }
   ],
   "artboards": [
+    { "file": "BuildStatus.dc.html", "page": "page-0", "x": 0, "y": 0, "w": 1400, "h": 980, "title": "M1 build status" },
     { "file": "Onboarding.dc.html", "page": "page-1", "x": 0, "y": 0, "w": 1000, "h": 860, "title": "1 · Business onboarding (interactive)", "is_interactive": true },
     { "file": "Main.dc.html", "page": "page-1", "x": 1120, "y": 0, "w": 1440, "h": 900, "title": "2 · Dashboard" },
     { "file": "Parties.dc.html", "page": "page-1", "x": 2680, "y": 0, "w": 1440, "h": 820, "title": "3 · Parties (customers + suppliers)" },
@@ -31,12 +33,13 @@
     { "file": "GstFuture.dc.html", "page": "page-6", "x": 0, "y": 0, "w": 1100, "h": 900, "title": "Phase 2 GST + full maturity ladder" }
   ],
   "annotations": [
-    { "id": "loop-note", "page": "page-1", "x": 0, "y": -170, "w": 1040, "text": "CORE LOOP — non-GST billing first, GST as an additive Phase 2.\nArtboards 1, 5 and 6 are LIVE — type in them, toggle GST, add/remove invoice lines, watch totals recalc, filter and merge items. Sample data, no backend.\nArtboards 2–4, 7–8 are static reference. Colour & type are a first pass. Numbers are illustrative." },
+    { "id": "status-note", "page": "page-0", "x": 0, "y": -120, "w": 900, "text": "BUILD STATUS — where Metal ERP stands against the execution plan. The billing loop on the next page is the M1 target; this board says which of those screens are shipped, in progress, or next. Full plan: docs/EXECUTION-PLAN.md in the repo." },
+    { "id": "loop-note", "page": "page-1", "x": 0, "y": -170, "w": 1040, "text": "CORE LOOP — non-GST billing first, GST as an additive Phase 2.\nSHIPPED: Onboarding (1) and Parties (3) are built and live at metal.fleekfinance.in. Item catalogue (6) is next; Invoice editor (5) + Printed invoice (7) after that.\nThe interactive artboards (1, 5, 6) are design prototypes with sample data — the live app looks close but is React, not this canvas. See the Build Status page." },
     { "id": "norm-note", "page": "page-2", "x": 0, "y": -130, "w": 900, "text": "DATA NORMALIZATION — the answer to \"how do we not end up with data that makes no sense later.\" Shape the free field gently, constrain the structured fields hard, make cleanup continuous. All of this is Phase 1." },
     { "id": "touch-note", "page": "page-3", "x": 0, "y": -140, "w": 900, "text": "MULTI-TOUCHPOINT — weight, count and price are separate fields filled by different roles from different devices. The bill tracks what's still missing; finalize is gated. The weighbridge agent is one small service on the counter PC." },
     { "id": "scan-note", "page": "page-4", "x": 0, "y": -130, "w": 900, "text": "BARCODE & MOBILE — loose vessels can't each be labelled. One barcode per stack encodes a group code; scan → \"size #?\" → operator types 1–5 → line at that size's price. Boxed single-SKU goods still scan straight to one item." },
     { "id": "tally-note", "page": "page-5", "x": 0, "y": -130, "w": 900, "text": "TALLY — Tally stays the accounting book. Read: import Stock Items / Ledgers / units to seed the catalogue at Stage 0. Write: push finished Sales vouchers back at Stage 2. Both via XML-over-HTTP through the connector agent (Tally is LAN-only, no REST/webhooks). Optional per tenant." },
     { "id": "road-note", "page": "page-6", "x": 0, "y": -120, "w": 820, "text": "ROADMAP — each rung ships on its own. GST slots in at Stage 2 once the catalogue is curated. Everything in the schema is built from day one; half of it just stays dormant." }
   ],
-  "launch": { "view": "canvas", "page": "page-1" }
+  "launch": { "view": "canvas", "page": "page-0" }
 }
