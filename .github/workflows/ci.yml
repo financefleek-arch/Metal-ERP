@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: metalerp
+          POSTGRES_PASSWORD: metalerp
+          POSTGRES_DB: metalerp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U metalerp -d metalerp"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql+psycopg://metalerp:metalerp@localhost:5432/metalerp
+      APP_ENV: test
+      JWT_SECRET: ci-test-secret
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type-check (mypy)
+        run: mypy app
+
+      - name: Enable pg_trgm
+        run: psql "postgresql://metalerp:metalerp@localhost:5432/metalerp" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+      - name: Migrations up (full chain, against real Postgres)
+        run: alembic upgrade head
+
+      - name: Migration drift check (models vs migrations)
+        run: alembic check
+
+      - name: Migrations down (full chain reversible)
+        run: alembic downgrade base
+
+      - name: Tests
+        run: pytest -q
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - name: Skip if no web app yet
+        id: guard
+        run: |
+          if [ -f package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.present == 'true'
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        if: steps.guard.outputs.present == 'true'
+        run: npm ci
+      - name: Lint
+        if: steps.guard.outputs.present == 'true'
+        run: npm run lint --if-present
+      - name: Typecheck
+        if: steps.guard.outputs.present == 'true'
+        run: npm run typecheck --if-present
+      - name: Build
+        if: steps.guard.outputs.present == 'true'
+        run: npm run build

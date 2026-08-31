@@ -1,0 +1,93 @@
+"""Shared column mixins and enums."""
+
+from __future__ import annotations
+
+import enum
+import uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, String, func
+from sqlalchemy.orm import Mapped, mapped_column
+
+
+def _uuid_str() -> str:
+    return str(uuid.uuid4())
+
+
+class PkUuidMixin:
+    """String UUID primary key — portable, no DB extension needed."""
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid_str)
+
+
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+# --- enums (stored as native strings, not PG ENUM, for painless additions) ---
+
+
+class UserRole(enum.StrEnum):
+    owner = "owner"
+    accountant = "accountant"
+    viewer = "viewer"
+    # Stage 1+ touchpoint roles — defined now, unused until then.
+    counter = "counter"
+    weighbridge = "weighbridge"
+    rate_desk = "rate_desk"
+
+
+class PartyRole(enum.StrEnum):
+    customer = "customer"
+    supplier = "supplier"
+    both = "both"
+
+
+class AddressType(enum.StrEnum):
+    bill = "bill"
+    ship = "ship"
+    both = "both"
+
+
+class ItemType(enum.StrEnum):
+    bulk = "bulk"
+    mrp = "mrp"
+
+
+class ItemSource(enum.StrEnum):
+    manual = "manual"
+    auto_from_invoice = "auto_from_invoice"
+    auto_from_purchase = "auto_from_purchase"
+    import_ = "import"
+
+
+class ItemStatus(enum.StrEnum):
+    unconfirmed = "unconfirmed"
+    confirmed = "confirmed"
+    archived = "archived"
+
+
+class DocType(enum.StrEnum):
+    inv = "inv"
+    crn = "crn"  # credit note
+    dbn = "dbn"  # debit note
+
+
+class InvoiceStatus(enum.StrEnum):
+    draft = "draft"
+    final = "final"
+    cancelled = "cancelled"
+
+
+class PdfStatus(enum.StrEnum):
+    none = "none"
+    rendered = "rendered"
+    failed = "failed"
