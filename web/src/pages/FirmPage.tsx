@@ -3,17 +3,20 @@ import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type { Tenant } from "../lib/types";
+import { StateSelect } from "../components/StateSelect";
+import { panError } from "../lib/reference";
 
 type FormShape = Omit<Tenant, "id" | "gst_enabled" | "gstin" | "trade_name" | "email">;
 
-const FIELDS: { name: keyof FormShape; label: string; full?: boolean; textarea?: boolean }[] = [
+type FieldKind = "text" | "textarea" | "state" | "pan";
+const FIELDS: { name: keyof FormShape; label: string; full?: boolean; kind?: FieldKind }[] = [
   { name: "legal_name", label: "Legal / trade name", full: true },
-  { name: "address", label: "Address", full: true, textarea: true },
+  { name: "address", label: "Address", full: true, kind: "textarea" },
   { name: "city", label: "City" },
   { name: "pincode", label: "PIN" },
-  { name: "state_code", label: "State code" },
+  { name: "state_code", label: "State", kind: "state" },
   { name: "phone", label: "Phone" },
-  { name: "pan", label: "PAN" },
+  { name: "pan", label: "PAN", kind: "pan" },
   { name: "document_label", label: "Document label" },
   { name: "bank_holder", label: "Bank A/c holder" },
   { name: "bank_name", label: "Bank name" },
@@ -21,7 +24,7 @@ const FIELDS: { name: keyof FormShape; label: string; full?: boolean; textarea?:
   { name: "bank_ifsc", label: "IFSC" },
   { name: "bank_branch", label: "Branch" },
   { name: "upi_id", label: "UPI ID" },
-  { name: "declaration_text", label: "Declaration text", full: true, textarea: true },
+  { name: "declaration_text", label: "Declaration text", full: true, kind: "textarea" },
   { name: "jurisdiction_text", label: "Jurisdiction line", full: true },
 ];
 
@@ -32,7 +35,12 @@ export function FirmPage() {
     queryFn: () => api<Tenant>("/tenant"),
   });
 
-  const { register, handleSubmit, reset } = useForm<FormShape>();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FormShape>();
   const [saved, setSaved] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -84,12 +92,26 @@ export function FirmPage() {
           {FIELDS.map((f) => (
             <div key={f.name} className={f.full ? "col-span-2" : ""}>
               <label className="label">{f.label}</label>
-              {f.textarea ? (
+              {f.kind === "textarea" ? (
                 <textarea
                   rows={2}
                   className="field h-auto resize-y py-2"
                   {...register(f.name)}
                 />
+              ) : f.kind === "state" ? (
+                <StateSelect {...register(f.name)} />
+              ) : f.kind === "pan" ? (
+                <>
+                  <input
+                    className="field uppercase"
+                    placeholder="AAAAA9999A"
+                    {...register(f.name, {
+                      setValueAs: (v: string) => (v ?? "").trim().toUpperCase(),
+                      validate: (v) => panError(String(v ?? "")) ?? true,
+                    })}
+                  />
+                  {errors[f.name] && <p className="err">{errors[f.name]?.message}</p>}
+                </>
               ) : (
                 <input className="field" {...register(f.name)} />
               )}

@@ -3,6 +3,8 @@ import { useMutation } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type { Party, PartyRole } from "../lib/types";
 import { useState } from "react";
+import { StateSelect } from "./StateSelect";
+import { gstinError, panError } from "../lib/reference";
 
 interface Fields {
   legal_name: string;
@@ -136,15 +138,31 @@ export function PartyDrawer({
             </div>
             <div>
               <label className="label">PAN</label>
-              <input className="field uppercase" {...register("pan")} />
+              <input
+                className="field uppercase"
+                placeholder="AAAAA9999A"
+                {...register("pan", {
+                  setValueAs: (v: string) => v.trim().toUpperCase(),
+                  validate: (v) => panError(v) ?? true,
+                })}
+              />
+              {errors.pan && <p className="err">{errors.pan.message}</p>}
             </div>
             <div>
               <label className="label">GSTIN</label>
-              <input className="field uppercase" {...register("gstin")} />
+              <input
+                className="field uppercase"
+                placeholder="27AAAAA9999A1Z5"
+                {...register("gstin", {
+                  setValueAs: (v: string) => v.trim().toUpperCase(),
+                  validate: (v) => gstinError(v) ?? true,
+                })}
+              />
+              {errors.gstin && <p className="err">{errors.gstin.message}</p>}
             </div>
-            <div>
-              <label className="label">Default state code</label>
-              <input className="field" {...register("default_state_code")} />
+            <div className="col-span-2">
+              <label className="label">Default state</label>
+              <StateSelect {...register("default_state_code")} />
             </div>
           </div>
 
@@ -158,11 +176,7 @@ export function PartyDrawer({
               />
               <div className="grid grid-cols-3 gap-3">
                 <input className="field" placeholder="City" {...register("addr_city")} />
-                <input
-                  className="field"
-                  placeholder="State code"
-                  {...register("addr_state_code")}
-                />
+                <StateSelect {...register("addr_state_code")} />
                 <input className="field" placeholder="PIN" {...register("addr_pincode")} />
               </div>
             </div>

@@ -187,3 +187,93 @@ def test_viewer_role_cannot_write(client: TestClient, session) -> None:  # type:
         "/api/parties", headers=_auth(viewer_token), json={"legal_name": "Nope Traders"}
     )
     assert blocked.status_code == 403
+
+
+def test_reference_states(client: TestClient) -> None:
+    r = client.get("/api/reference/states")
+    assert r.status_code == 200
+    states = r.json()
+    assert {"code": "27", "name": "Maharashtra"} in states
+    assert {"code": "19", "name": "West Bengal"} in states
+    # sorted by name
+    assert states == sorted(states, key=lambda s: s["name"])
+
+
+def test_party_pan_gstin_state_validation(client: TestClient) -> None:
+    token = _register(client, "valid@sethia.example.com")
+    h = _auth(token)
+
+    # state name instead of code -> 422 (the bug from the screenshot)
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Bad State Co", "default_state_code": "Maharashtra"},
+    )
+    assert r.status_code == 422
+    assert "state code" in r.text.lower()
+
+    # malformed PAN -> 422
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Bad PAN Co", "pan": "PRP7809D"},  # 8 chars, invalid
+    )
+    assert r.status_code == 422
+    assert "pan" in r.text.lower()
+
+    # malformed GSTIN -> 422
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Bad GST Co", "gstin": "27ABCDE1234"},
+    )
+    assert r.status_code == 422
+
+    # all valid -> 201, values normalised to upper
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={
+            "legal_name": "Good Co",
+            "pan": "abcpp7809d",
+            "gstin": "27abcpp7809d1z5",
+            "default_state_code": "27",
+            "addresses": [{"type": "both", "state_code": "27", "is_default": True}],
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["pan"] == "ABCPP7809D"
+    assert body["gstin"] == "27ABCPP7809D1Z5"
+    assert body["default_state_code"] == "27"
+    assert body["addresses"][0]["state_code"] == "27"
+
+    # blank strings are accepted as "unset"
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Blank Fields Co", "pan": "", "gstin": "", "default_state_code": ""},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["pan"] is None
+
+
+def test_tenant_pan_state_validation(client: TestClient) -> None:
+    token = _register(client, "tval@sethia.example.com")
+    h = _auth(token)
+
+    bad = client.patch("/api/tenant", headers=h, json={"state_code": "West Bengal"})
+    assert bad.status_code == 422
+
+    ok = client.patch(
+        "/api/tenant", headers=h, json={"state_code": "19", "pan": "achpj4356r0"}
+    )
+    # PAN 'achpj4356r0' -> 11 chars, invalid
+    assert ok.status_code == 422
+
+    ok = client.patch(
+        "/api/tenant", headers=h, json={"state_code": "19", "pan": "ACHPJ4356R"}
+    )
+    assert ok.status_code == 200
+    assert ok.json()["state_code"] == "19"
+    assert ok.json()["pan"] == "ACHPJ4356R"

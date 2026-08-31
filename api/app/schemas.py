@@ -5,9 +5,18 @@ Kept in one module for M1 — split per-domain when it grows.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from typing import Annotated
+
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
 from app.models._mixins import AddressType, PartyRole, UserRole
+from app.reference import validate_gstin, validate_pan, validate_state_code
+
+# Reusable validated string aliases. Each accepts None / "" (-> None) and
+# raises a 422 with a helpful message on a malformed value.
+Pan = Annotated[str | None, AfterValidator(validate_pan)]
+Gstin = Annotated[str | None, AfterValidator(validate_gstin)]
+StateCode = Annotated[str | None, AfterValidator(validate_state_code)]
 
 # --------------------------------------------------------------------------
 # auth
@@ -49,10 +58,10 @@ class UserOut(BaseModel):
 class TenantUpdate(BaseModel):
     legal_name: str | None = Field(default=None, max_length=200)
     trade_name: str | None = Field(default=None, max_length=200)
-    pan: str | None = Field(default=None, max_length=10)
+    pan: Pan = None
     address: str | None = None
     city: str | None = Field(default=None, max_length=100)
-    state_code: str | None = Field(default=None, max_length=2)
+    state_code: StateCode = None
     pincode: str | None = Field(default=None, max_length=6)
     phone: str | None = Field(default=None, max_length=20)
     email: EmailStr | None = None
@@ -106,7 +115,7 @@ class PartyAddressIn(BaseModel):
     line2: str | None = Field(default=None, max_length=200)
     line3: str | None = Field(default=None, max_length=200)
     city: str | None = Field(default=None, max_length=100)
-    state_code: str | None = Field(default=None, max_length=2)
+    state_code: StateCode = None
     pincode: str | None = Field(default=None, max_length=6)
     is_default: bool = False
 
@@ -121,10 +130,10 @@ class PartyBase(BaseModel):
     legal_name: str = Field(min_length=1, max_length=200)
     phone: str | None = Field(default=None, max_length=20)
     email: EmailStr | None = None
-    pan: str | None = Field(default=None, max_length=10)
+    pan: Pan = None
     role: PartyRole = PartyRole.customer
-    default_state_code: str | None = Field(default=None, max_length=2)
-    gstin: str | None = Field(default=None, max_length=15)
+    default_state_code: StateCode = None
+    gstin: Gstin = None
 
 
 class PartyCreate(PartyBase):
@@ -135,10 +144,10 @@ class PartyUpdate(BaseModel):
     legal_name: str | None = Field(default=None, min_length=1, max_length=200)
     phone: str | None = Field(default=None, max_length=20)
     email: EmailStr | None = None
-    pan: str | None = Field(default=None, max_length=10)
+    pan: Pan = None
     role: PartyRole | None = None
-    default_state_code: str | None = Field(default=None, max_length=2)
-    gstin: str | None = Field(default=None, max_length=15)
+    default_state_code: StateCode = None
+    gstin: Gstin = None
     addresses: list[PartyAddressIn] | None = None
 
 

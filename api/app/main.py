@@ -13,7 +13,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import engine
-from app.routers import auth, parties, tenant
+from app.routers import auth, parties, reference, tenant
 
 settings = get_settings()
 
@@ -36,6 +36,7 @@ if not settings.is_production:
     )
 
 app.include_router(auth.router)
+app.include_router(reference.router)
 app.include_router(tenant.router)
 app.include_router(parties.router)
 
