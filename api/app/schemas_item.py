@@ -11,7 +11,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models._mixins import ItemSource, ItemStatus, ItemType
+from app.models._mixins import ItemSource, ItemStatus, ItemType, RateMode
 
 # Money / quantity as Decimal so we don't lose paise to float.
 Money = Annotated[Decimal, Field(max_digits=15, decimal_places=2)]
@@ -27,6 +27,12 @@ class ItemBase(BaseModel):
     name: str = _NAME
     item_type: ItemType = ItemType.bulk
     category: str | None = Field(default=None, max_length=50)
+    category_id: str | None = None
+    group_id: str | None = None
+    rate_mode: RateMode | None = None
+    weight_per_piece: Decimal | None = Field(default=None, max_digits=12, decimal_places=3, ge=0)
+    sku: str | None = _SHORT
+    size_label: str | None = Field(default=None, max_length=50)
     uom: str | None = Field(default=None, max_length=20)
     hsn_code: str | None = Field(default=None, max_length=8)
 
@@ -76,6 +82,12 @@ class ItemUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     item_type: ItemType | None = None
     category: str | None = Field(default=None, max_length=50)
+    category_id: str | None = None
+    group_id: str | None = None
+    rate_mode: RateMode | None = None
+    weight_per_piece: Decimal | None = Field(default=None, max_digits=12, decimal_places=3, ge=0)
+    sku: str | None = _SHORT
+    size_label: str | None = Field(default=None, max_length=50)
     uom: str | None = Field(default=None, max_length=20)
     hsn_code: str | None = Field(default=None, max_length=8)
     metal: str | None = Field(default=None, max_length=20)
@@ -120,6 +132,11 @@ class ItemListItem(BaseModel):
     name: str
     item_type: ItemType
     category: str | None
+    category_id: str | None
+    group_id: str | None
+    rate_mode: RateMode
+    sku: str | None
+    size_label: str | None
     uom: str | None
     hsn_code: str | None
     metal: str | None
@@ -139,6 +156,7 @@ class ItemListItem(BaseModel):
 
 class ItemOut(ItemListItem):
     name_normalized: str
+    weight_per_piece: Decimal | None
     thickness_mm: Dim | None
     width_mm: Dim | None
     length_mm: Dim | None

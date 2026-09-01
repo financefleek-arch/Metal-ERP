@@ -8,11 +8,12 @@ hand-made item still passes through the review queue once.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
-from app.models import Item, ItemAlias
+from app.models import Item, ItemAlias, ItemCategory, ProductGroup
 from app.models._mixins import ItemSource, ItemStatus, ItemType
 from app.schemas_item import (
     ItemCreate,
@@ -89,6 +90,127 @@ def list_items(
     return [_list_item(i) for i in session.scalars(stmt).unique().all()]
 
 
+# --------------------------------------------------------------------------
+# tree view: category -> group -> leaf, plus an "Ungrouped" bucket
+# --------------------------------------------------------------------------
+
+
+class TreeLeaf(BaseModel):
+    id: str
+    name: str
+    size_label: str | None
+    default_rate: str | None
+    status: ItemStatus
+
+
+class TreeGroup(BaseModel):
+    id: str
+    name: str
+    item_type: ItemType
+    leaves: list[TreeLeaf]
+
+
+class TreeCategory(BaseModel):
+    id: str | None
+    name: str
+    groups: list[TreeGroup]
+    loose: list[TreeLeaf]  # leaves in this category with no group
+
+
+@router.get("/tree", response_model=list[TreeCategory])
+def item_tree(user: CurrentUser, session: SessionDep) -> list[TreeCategory]:
+    cats = list(
+        session.scalars(
+            select(ItemCategory)
+            .where(ItemCategory.tenant_id == user.tenant_id)
+            .order_by(ItemCategory.sort, func.lower(ItemCategory.name))
+        ).all()
+    )
+    groups = list(
+        session.scalars(
+            select(ProductGroup)
+            .where(ProductGroup.tenant_id == user.tenant_id)
+            .order_by(func.lower(ProductGroup.name))
+        ).all()
+    )
+    items = list(
+        session.scalars(
+            select(Item).where(
+                Item.tenant_id == user.tenant_id,
+                Item.merged_into_id.is_(None),
+                Item.status != ItemStatus.archived,
+            )
+        ).all()
+    )
+
+    def leaf(it: Item) -> TreeLeaf:
+        return TreeLeaf(
+            id=it.id,
+            name=it.name,
+            size_label=it.size_label or it.size_text,
+            default_rate=str(it.default_rate) if it.default_rate is not None else None,
+            status=it.status,
+        )
+
+    leaves_by_group: dict[str, list[Item]] = {}
+    loose_by_cat: dict[str | None, list[Item]] = {}
+    for it in items:
+        if it.group_id:
+            leaves_by_group.setdefault(it.group_id, []).append(it)
+        else:
+            loose_by_cat.setdefault(it.category_id, []).append(it)
+
+    groups_by_cat: dict[str | None, list[ProductGroup]] = {}
+    for g in groups:
+        groups_by_cat.setdefault(g.category_id, []).append(g)
+
+    def sort_leaves(lst: list[Item]) -> list[Item]:
+        return sorted(
+            lst,
+            key=lambda x: (x.size_pos if x.size_pos is not None else 9999, x.name.lower()),
+        )
+
+    out: list[TreeCategory] = []
+    for c in cats:
+        out.append(
+            TreeCategory(
+                id=c.id,
+                name=c.name,
+                groups=[
+                    TreeGroup(
+                        id=g.id,
+                        name=g.name,
+                        item_type=g.item_type,
+                        leaves=[leaf(x) for x in sort_leaves(leaves_by_group.get(g.id, []))],
+                    )
+                    for g in groups_by_cat.get(c.id, [])
+                ],
+                loose=[leaf(x) for x in sort_leaves(loose_by_cat.get(c.id, []))],
+            )
+        )
+    # uncategorised groups + loose items
+    unc_groups = groups_by_cat.get(None, [])
+    unc_loose = loose_by_cat.get(None, [])
+    if unc_groups or unc_loose:
+        out.append(
+            TreeCategory(
+                id=None,
+                name="Uncategorised",
+                groups=[
+                    TreeGroup(
+                        id=g.id,
+                        name=g.name,
+                        item_type=g.item_type,
+                        leaves=[leaf(x) for x in sort_leaves(leaves_by_group.get(g.id, []))],
+                    )
+                    for g in unc_groups
+                ],
+                loose=[leaf(x) for x in sort_leaves(unc_loose)],
+            )
+        )
+    return out
+
+
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
 def create_item(body: ItemCreate, user: WriteUser, session: SessionDep) -> ItemOut:
     key = _normalized(session, user.tenant_id, body.name)
@@ -114,6 +236,7 @@ def create_item(body: ItemCreate, user: WriteUser, session: SessionDep) -> ItemO
         status=ItemStatus.unconfirmed,
         **data,
     )
+    _apply_group_inheritance(session, user.tenant_id, it, body.model_fields_set)
     # HSN -> GST rate (data is right the day GST turns on; not printed in M1).
     rate = hsn_gst_rate(session, it.hsn_code)
     if rate is not None:
@@ -121,6 +244,33 @@ def create_item(body: ItemCreate, user: WriteUser, session: SessionDep) -> ItemO
     session.add(it)
     session.flush()
     return _out(session, it)
+
+
+def _apply_group_inheritance(
+    session: SessionDep, tenant_id: str, it: Item, set_fields: set[str]
+) -> None:
+    """When a leaf is put in a group, fill from the group any field the caller
+    did NOT explicitly set (rate_mode, category, hsn, uom, item_type).
+    """
+    if not it.group_id:
+        return
+    grp = session.scalar(
+        select(ProductGroup).where(
+            ProductGroup.id == it.group_id, ProductGroup.tenant_id == tenant_id
+        )
+    )
+    if grp is None:
+        raise HTTPException(status_code=422, detail="Unknown product group")
+    if "rate_mode" not in set_fields:
+        it.rate_mode = grp.default_rate_mode
+    if "category_id" not in set_fields and it.category_id is None:
+        it.category_id = grp.category_id
+    if "hsn_code" not in set_fields and not it.hsn_code:
+        it.hsn_code = grp.hsn_code
+    if "uom" not in set_fields and not it.uom:
+        it.uom = grp.uom
+    if "item_type" not in set_fields:
+        it.item_type = grp.item_type
 
 
 @router.get("/{item_id}", response_model=ItemOut)
@@ -154,8 +304,11 @@ def update_item(
         it.name_normalized = key
 
     hsn_changed = "hsn_code" in patch and patch["hsn_code"] != it.hsn_code
+    group_changed = "group_id" in patch and patch["group_id"] != it.group_id
     for field, value in patch.items():
         setattr(it, field, value)
+    if group_changed:
+        _apply_group_inheritance(session, user.tenant_id, it, set(patch.keys()))
     if hsn_changed:
         rate = hsn_gst_rate(session, it.hsn_code)
         if rate is not None:

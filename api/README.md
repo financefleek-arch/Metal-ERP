@@ -61,6 +61,11 @@ alembic check                                        # models vs migrations drif
   price_max), notes; + dormant columns for the price engine
   (markup_pct/suggested_rate/…/price_review_pending) and Stage 2/3
   (barcode/sku/reorder_level). `tenant.default_markup_pct`.
+- `0007` — item hierarchy: per-tenant `item_category` (seeded on
+  register), `product_group.category_id` + `default_rate_mode` +
+  `name_normalized`, `item.category_id` + `rate_mode` + `weight_per_piece`,
+  `item_alias` gains `group_id` (xor with `item_id`) + `source` +
+  `last_used_at` for the catalogue-learning loops.
 
 ## Layout
 

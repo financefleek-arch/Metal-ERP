@@ -23,10 +23,12 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 from app.models._mixins import (
+    AliasSource,
     ItemSource,
     ItemStatus,
     ItemType,
     PkUuidMixin,
+    RateMode,
     TimestampMixin,
 )
 
@@ -34,21 +36,30 @@ from app.models._mixins import (
 class ProductGroup(PkUuidMixin, TimestampMixin, Base):
     """A family of size/variant items (e.g. "SS Balti" in 5 sizes).
 
-    Table exists from Milestone 1 but is unused until Stage 2 curation;
-    `group_code` is what a stack barcode encodes.
+    The middle level of category → group → item. `name_normalized` +
+    group aliases resolve wording drift ("ST Storage Box" / "ST Stor Box").
+    `group_code` (dormant) is what a stack barcode encodes.
     """
 
     __tablename__ = "product_group"
     __table_args__ = (
         UniqueConstraint("tenant_id", "group_code", name="uq_group_tenant_code"),
+        UniqueConstraint("tenant_id", "name_normalized", name="uq_group_tenant_normname"),
     )
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    category: Mapped[str | None] = mapped_column(String(50))
+    name_normalized: Mapped[str] = mapped_column(
+        String(200), nullable=False, server_default=""
+    )
+    category: Mapped[str | None] = mapped_column(String(50))  # legacy; category_id wins
+    category_id: Mapped[str | None] = mapped_column(ForeignKey("item_category.id"), index=True)
     hsn_code: Mapped[str | None] = mapped_column(ForeignKey("hsn_code.code"))
     uom: Mapped[str | None] = mapped_column(String(20))
     item_type: Mapped[ItemType] = mapped_column(String(10), default=ItemType.mrp, nullable=False)
+    default_rate_mode: Mapped[RateMode] = mapped_column(
+        String(10), default=RateMode.piece, nullable=False
+    )
     group_code: Mapped[str | None] = mapped_column(String(32))
     default_size_pos: Mapped[int | None] = mapped_column(Integer)
 
@@ -69,9 +80,19 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     name_normalized: Mapped[str] = mapped_column(String(300), nullable=False)
 
     item_type: Mapped[ItemType] = mapped_column(String(10), default=ItemType.bulk, nullable=False)
-    category: Mapped[str | None] = mapped_column(String(50))
+    category: Mapped[str | None] = mapped_column(String(50))  # legacy; category_id wins
+    category_id: Mapped[str | None] = mapped_column(ForeignKey("item_category.id"), index=True)
     uom: Mapped[str | None] = mapped_column(String(20))
     hsn_code: Mapped[str | None] = mapped_column(ForeignKey("hsn_code.code"))
+
+    # per piece | per kg (weight goods). Default from the group; the invoice
+    # line copies it and may flip it for one bill.
+    rate_mode: Mapped[RateMode] = mapped_column(
+        String(10), default=RateMode.piece, nullable=False
+    )
+    # kg per one piece, when rate_mode = kg (used to split a pooled inward line
+    # and, later, to convert pieces↔kg in the editor).
+    weight_per_piece: Mapped[float | None] = mapped_column(Numeric(12, 3))
 
     # --- metal-trade attributes (all optional; sharpen search + the printed line) ---
     # metal: MS/SS/GI/aluminium/brass/copper/cast_iron
@@ -149,14 +170,27 @@ class Item(PkUuidMixin, TimestampMixin, Base):
 
 
 class ItemAlias(PkUuidMixin, TimestampMixin, Base):
+    """A learned wording → catalogue-thing mapping.
+
+    Points at exactly one of `item_id` (a leaf) or `group_id` (a family).
+    `source` decides lifecycle: `auto_from_purchase` (off a real inward
+    document) is permanent; `learned` (from the billing type-ahead) is
+    swept by a nightly job if `last_used_at` falls behind 90 days.
+    """
+
     __tablename__ = "item_alias"
     __table_args__ = (
         UniqueConstraint("tenant_id", "alias_normalized", name="uq_alias_tenant_norm"),
     )
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
-    item_id: Mapped[str] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    item_id: Mapped[str | None] = mapped_column(ForeignKey("item.id"), index=True)
+    group_id: Mapped[str | None] = mapped_column(ForeignKey("product_group.id"), index=True)
     alias_text: Mapped[str] = mapped_column(String(300), nullable=False)
     alias_normalized: Mapped[str] = mapped_column(String(300), nullable=False)
+    source: Mapped[AliasSource] = mapped_column(
+        String(20), default=AliasSource.manual, nullable=False
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    item: Mapped[Item] = relationship(back_populates="aliases")
+    item: Mapped[Item | None] = relationship(back_populates="aliases")

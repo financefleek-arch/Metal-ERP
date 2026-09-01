@@ -33,6 +33,8 @@ export function App() {
         <Route path="/parties/:id" element={<PartiesPage />} />
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/items/new" element={<ItemsPage />} />
+        <Route path="/items/categories" element={<ItemsPage />} />
+        <Route path="/items/g/:groupId" element={<ItemsPage />} />
         <Route path="/items/:id" element={<ItemsPage />} />
 
         {/* Inward Bill Import — only when the tenant flag is on */}

@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select
 
 from app.deps import CurrentUser, SessionDep
-from app.models import Tenant, User
+from app.models import ItemCategory, Tenant, User
 from app.models._mixins import UserRole
 from app.schemas import (
     LoginRequest,
@@ -17,6 +17,19 @@ from app.schemas import (
 from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# A starter set of item categories seeded for every new firm. The shop
+# renames / replaces these — a bartan shop turns them into brands.
+_SEED_CATEGORIES = [
+    "Steel",
+    "Stainless",
+    "Aluminium",
+    "Iron",
+    "Brass / Copper",
+    "Utensils",
+    "Hardware & Fittings",
+    "Scrap",
+]
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -46,6 +59,9 @@ def register(body: RegisterRequest, session: SessionDep) -> TokenResponse:
         role=UserRole.owner,
     )
     session.add(user)
+
+    for i, name in enumerate(_SEED_CATEGORIES):
+        session.add(ItemCategory(tenant_id=tenant.id, name=name, sort=i))
     session.flush()
 
     token = create_access_token(user_id=user.id, tenant_id=tenant.id, role=str(user.role))

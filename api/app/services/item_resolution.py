@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
-from app.models import Item, ItemAlias
+from app.models import Item, ItemAlias, ProductGroup
 from app.models._mixins import ItemStatus, MatchMethod
 
 _FUZZY_FLOOR = 0.55
@@ -134,3 +134,74 @@ def resolve_item(
 
     # Weak / ambiguous — caller decides (LLM in X3, else stage-new).
     return ItemMatch(item_id=None, method=None, confidence=None, candidates=cands, weak=True)
+
+
+# --------------------------------------------------------------------------
+# group resolution — the middle level of category → group → item
+# --------------------------------------------------------------------------
+
+
+@dataclass
+class GroupMatch:
+    group_id: str | None
+    method: MatchMethod | None  # exact | alias | fuzzy | None
+    confidence: float | None
+    name: str | None = None
+
+
+def resolve_group(
+    session: Session,
+    tenant_id: str,
+    text: str,
+    *,
+    synonyms: dict[str, str] | None = None,
+) -> GroupMatch:
+    """Resolve free text to a `product_group`: exact name_normalized ->
+    group-scoped alias -> trigram (Postgres only).
+    """
+    if synonyms is None:
+        synonyms = load_synonym_map(session, tenant_id)
+    key = normalize_name(text, synonyms)
+    if not key:
+        return GroupMatch(None, None, None)
+
+    exact = session.scalar(
+        select(ProductGroup).where(
+            ProductGroup.tenant_id == tenant_id,
+            ProductGroup.name_normalized == key,
+        )
+    )
+    if exact is not None:
+        return GroupMatch(exact.id, MatchMethod.exact, 1.0, exact.name)
+
+    alias = session.scalar(
+        select(ItemAlias).where(
+            ItemAlias.tenant_id == tenant_id,
+            ItemAlias.alias_normalized == key,
+            ItemAlias.group_id.is_not(None),
+        )
+    )
+    if alias is not None:
+        grp = session.get(ProductGroup, alias.group_id)
+        return GroupMatch(
+            alias.group_id, MatchMethod.alias, 0.98, grp.name if grp else None
+        )
+
+    if not _is_postgres(session):
+        return GroupMatch(None, None, None)
+
+    sim = func.similarity(ProductGroup.name_normalized, key)
+    row = session.execute(
+        select(ProductGroup.id, ProductGroup.name, sim.label("s"))
+        .where(
+            ProductGroup.tenant_id == tenant_id,
+            sim >= _FUZZY_FLOOR,
+        )
+        .order_by(sim.desc())
+        .limit(2)
+    ).all()
+    if len(row) == 1 and float(row[0].s) >= _FUZZY_ACCEPT:
+        return GroupMatch(
+            row[0].id, MatchMethod.fuzzy, round(float(row[0].s), 3), row[0].name
+        )
+    return GroupMatch(None, None, None)

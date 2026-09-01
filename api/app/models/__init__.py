@@ -21,6 +21,7 @@ from app.models.inward import (
     TallyLedgerConfig,
 )
 from app.models.item import Item, ItemAlias, ProductGroup
+from app.models.item_category import ItemCategory
 from app.models.party import Party, PartyAddress
 from app.models.tally_import import StagingTallyParty
 from app.models.tenant import Tenant, User
@@ -40,6 +41,7 @@ __all__ = [
     "InvoiceLine",
     "Item",
     "ItemAlias",
+    "ItemCategory",
     "ProductGroup",
     "Party",
     "PartyAddress",

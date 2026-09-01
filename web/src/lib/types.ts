@@ -183,3 +183,67 @@ export interface HsnOption {
   description: string;
   gst_rate: number | null;
 }
+
+// --- catalogue hierarchy ---
+
+export type RateMode = "piece" | "kg";
+
+export interface ItemCategoryRow {
+  id: string;
+  name: string;
+  sort: number;
+  group_count: number;
+  item_count: number;
+}
+
+export interface GroupOut {
+  id: string;
+  name: string;
+  name_normalized: string;
+  category_id: string | null;
+  category_name: string | null;
+  hsn_code: string | null;
+  uom: string | null;
+  item_type: ItemType;
+  default_rate_mode: RateMode;
+  item_count: number;
+}
+
+export interface GroupLeaf {
+  id: string;
+  size_pos: number | null;
+  size_label: string | null;
+  size_text: string | null;
+  sku: string | null;
+  rate_mode: RateMode;
+  weight_per_piece: string | null;
+  default_rate: string | null;
+  last_rate: string | null;
+  generated_name: string;
+}
+
+export interface GroupDetail extends GroupOut {
+  leaves: GroupLeaf[];
+}
+
+export interface TreeLeaf {
+  id: string;
+  name: string;
+  size_label: string | null;
+  default_rate: string | null;
+  status: ItemStatus;
+}
+
+export interface TreeGroup {
+  id: string;
+  name: string;
+  item_type: ItemType;
+  leaves: TreeLeaf[];
+}
+
+export interface TreeCategory {
+  id: string | null;
+  name: string;
+  groups: TreeGroup[];
+  loose: TreeLeaf[];
+}

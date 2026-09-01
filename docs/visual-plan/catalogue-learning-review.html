@@ -1,0 +1,423 @@
+<title>Catalogue Learning Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --cat-fg:#5a4a2f;   --cat-bg:#efe6d4;
+    --grp-fg:#2f6f89;   --grp-bg:#e3eef2;
+    --leaf-fg:#3a5a48;  --leaf-bg:#e6efe8;
+    --warn-fg:#8a6a1f;  --warn-bg:#f1e7d6;
+    --kg-fg:#2f6f89;    --kg-bg:#e3eef2;
+    --pc-fg:#7a5a2f;    --pc-bg:#efe6d4;
+    --danger-fg:#a23b2e;--danger-bg:#f4e3df;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --cat-fg:#d8c39a;   --cat-bg:#332c1f;
+    --grp-fg:#8fc3d7;   --grp-bg:#22333a;
+    --leaf-fg:#9cc9ad;  --leaf-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --kg-fg:#8fc3d7;    --kg-bg:#22333a;
+    --pc-fg:#d8c39a;    --pc-bg:#332c1f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --cat-fg:#d8c39a;   --cat-bg:#332c1f;
+    --grp-fg:#8fc3d7;   --grp-bg:#22333a;
+    --leaf-fg:#9cc9ad;  --leaf-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --kg-fg:#8fc3d7;    --kg-bg:#22333a;
+    --pc-fg:#d8c39a;    --pc-bg:#332c1f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1180px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:8px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(26px,4vw,36px);
+    line-height:1.12; margin:0 0 12px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:76ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .statusrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:11px; }
+  .chip { padding:3px 9px; border-radius:999px; font-weight:500; }
+  .chip.reuse { background:var(--leaf-bg); color:var(--leaf-fg); }
+  .chip.new { background:var(--grp-bg); color:var(--grp-fg); }
+  .chip.change { background:var(--warn-bg); color:var(--warn-fg); }
+
+  section.blk { margin-top:46px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:84ch; }
+
+  .model { display:grid; grid-template-columns:130px 1fr; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); }
+  .model .lvl { display:flex; flex-direction:column; align-items:flex-start; gap:4px; padding:16px 14px; border-bottom:1px solid var(--line-soft); }
+  .model .lvl:last-of-type { border-bottom:none; }
+  .model .lname { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:13px; }
+  .model .ltab { font-family:"IBM Plex Mono",monospace; font-size:9px; color:var(--muted); }
+  .model .row { display:flex; flex-wrap:wrap; gap:8px; padding:16px; border-bottom:1px solid var(--line-soft); align-items:center; }
+  .model .row:last-of-type { border-bottom:none; }
+  .pill { font-size:11px; padding:3px 10px; border-radius:999px; font-weight:500; white-space:nowrap; }
+  .pill.cat { background:var(--cat-bg); color:var(--cat-fg); }
+  .pill.grp { background:var(--grp-bg); color:var(--grp-fg); }
+  .pill.leaf { background:var(--leaf-bg); color:var(--leaf-fg); }
+  .pill .dim { opacity:0.7; font-weight:400; }
+  .model .row .meta { font-size:10px; color:var(--muted); margin-left:auto; font-family:"IBM Plex Mono",monospace; }
+  .mode { font-size:8px; letter-spacing:0.03em; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+  .mode.kg { background:var(--kg-bg); color:var(--kg-fg); }
+  .mode.pc { background:var(--pc-bg); color:var(--pc-fg); }
+
+  /* loop diagram */
+  .loop { border:1px solid var(--line); border-radius:12px; background:var(--card); padding:16px 18px; }
+  .loop h3 { margin:0 0 4px; font-size:14px; }
+  .loop .rt { font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); margin-bottom:10px; }
+  .loop .step { display:flex; gap:10px; margin:8px 0; font-size:12px; }
+  .loop .step .n { flex-shrink:0; width:20px; height:20px; border-radius:50%; background:var(--accent); color:#fff; font-size:10px; font-weight:600; display:grid; place-items:center; }
+  .loop .step .d { color:var(--ink-soft); }
+  .loop .step .d .mono { font-size:10.5px; background:var(--band); padding:0 4px; border-radius:3px; }
+  .loop .out { margin-top:10px; border-top:1px dashed var(--line); padding-top:9px; font-size:11px; color:var(--muted); }
+
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .fhead { padding:8px 14px; background:var(--band); border-bottom:1px solid var(--line); font-size:11px; color:var(--muted); font-family:"IBM Plex Mono",monospace; }
+  .fbody { padding:16px 18px; }
+
+  /* worked example table */
+  .wex { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .wex th { text-align:left; padding:7px 9px; background:var(--band); font-size:9px; letter-spacing:0.04em; text-transform:uppercase; color:var(--muted); }
+  .wex td { padding:8px 9px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .wex td.raw { font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--ink-soft); white-space:nowrap; }
+  .wex td.out { font-size:11px; }
+  .wex .tag { color:var(--muted); }
+
+  .combo { border:1px solid var(--accent); border-radius:6px; background:var(--card); overflow:hidden; box-shadow:0 8px 24px -10px rgba(35,32,27,0.25); max-width:420px; }
+  .combo .q { padding:6px 9px; border-bottom:1px solid var(--line); font-size:11px; color:var(--muted); }
+  .combo .grp { padding:6px 9px; font-size:11px; background:var(--grp-bg); color:var(--grp-fg); font-weight:600; }
+  .combo .sizes { display:flex; flex-wrap:wrap; gap:6px; padding:8px 9px; }
+  .combo .sz { border:1px solid var(--line); border-radius:5px; padding:3px 9px; font-size:10.5px; background:var(--card); }
+  .combo .sz.sel { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .combo .new { padding:6px 9px; border-top:1px solid var(--line-soft); font-size:10.5px; color:var(--accent); }
+
+  .billprint { border:1px solid var(--line); border-radius:8px; background:var(--card); padding:14px 16px; font-family:"IBM Plex Mono",monospace; font-size:11px; line-height:1.9; color:var(--ink-soft); }
+  .billprint .sub { color:var(--muted); font-weight:600; }
+  .billprint .amt { float:right; }
+
+  .ctable { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:20px; background:var(--card); }
+  .ctable table { width:100%; border-collapse:collapse; }
+  .ctable th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:10px 12px; background:var(--band); border-bottom:1px solid var(--line); }
+  .ctable td { padding:11px 12px; font-size:12px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .ctable td:first-child { font-weight:600; white-space:nowrap; width:120px; }
+  .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
+  .ctable .st-new { color:var(--grp-fg); font-weight:600; }
+  .ctable .st-change { color:var(--warn-fg); font-weight:600; }
+
+  .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
+    padding:14px 16px; margin-top:20px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
+  .note b { color:var(--accent-dark); }
+  .note ul { margin:8px 0 0; padding-left:18px; } .note li { margin:4px 0; }
+  .note code { font-family:"IBM Plex Mono",monospace; font-size:0.9em; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:0 4px; border-radius:3px; }
+
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .phase { display:flex; gap:12px; align-items:flex-start; margin:10px 0; font-size:12.5px; }
+  .phase .p { flex-shrink:0; font-family:"Fraunces",Georgia,serif; font-weight:600; color:var(--accent); font-size:13px; }
+  .phase .dep { color:var(--muted); font-size:11px; }
+
+  footer.page { margin-top:56px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    .model { grid-template-columns:1fr; }
+    .grid2 { grid-template-columns:1fr; }
+    .wex { display:block; overflow-x:auto; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual review · Catalogue learning · supersedes item-hierarchy-review</p>
+    <h1 class="page">The catalogue teaches itself</h1>
+    <p class="lede">
+      The shop never maintains an item list. <strong>Inward bills</strong> seed a first-cut catalogue as they're
+      uploaded. <strong>Billing</strong> refines it — the biller types the terse shorthand they always have
+      (<em>hawkins 5</em>, <em>dhara kettly 10cup</em>, <em>ST storage box 12x18</em>) and the system resolves it to a
+      product + size, learns the mapping, and <strong>generates the clean printed name</strong>. Two learning loops
+      over a three-level model; a rules-first parser; aliases that stick on the second use.
+    </p>
+    <div class="statusrow">
+      <span class="chip reuse">✓ reuse: product_group + item.group_id / size_pos / size_label / sku (dormant since 0001); item_alias; normalize.py; resolve_item</span>
+      <span class="chip new">＋ new: item_category (per-tenant · = brand); item.rate_mode + weight_per_piece; item.sku active; item_alias.group_id + source + last_used_at; inward_bill_line.group_id + inward_line_size; product_parse.py; resolve_group; nightly stale-alias sweep</span>
+      <span class="chip change">↻ change: item.category string → category_id; resolve ladder gains a group step; Items page gets a tree</span>
+    </div>
+  </header>
+
+  <!-- ============ REAL DATA ============ -->
+  <section class="blk">
+    <h2>What the real bills look like</h2>
+    <p class="sub">
+      Three inward invoices + two counter bills from a Siliguri bartan/metal shop. The model is shaped by these, not
+      the other way round.
+    </p>
+    <div class="grid2">
+      <div class="frame">
+        <div class="fhead">inward · wholesale · priced per KG, sizes as sub-detail</div>
+        <div class="fbody billprint">
+8  ST STORAGE BOX  12X18 <span class="amt">49,810.70</span><br>
+&nbsp;&nbsp;&nbsp;16X18 ×12 · 12X18 ×18 · 273.685 KGS @ 182/KG<br>
+12 GS DEEP DIBBA  10X14 <span class="amt">13,459.90</span><br>
+&nbsp;&nbsp;&nbsp;10X14 ×3 · 10X18 ×3 · 43.630 KGS @ 308.5/KG<br>
+23 C.B.KADAI  12X18 <span class="amt">2,506.80</span><br>
+&nbsp;&nbsp;&nbsp;13X15 ×1 · 8.674 KGS @ 289/KG
+        </div>
+      </div>
+      <div class="frame">
+        <div class="fhead">counter bill · target output · branded goods, priced per PIECE</div>
+        <div class="fbody billprint">
+<span class="sub">Dhara Kettle</span><br>
+&nbsp;&nbsp;10cup&nbsp;&nbsp;6 PC × 425 <span class="amt">2,550</span><br>
+&nbsp;&nbsp;15cup&nbsp;&nbsp;6 PC × 465 <span class="amt">2,790</span><br>
+&nbsp;&nbsp;20cup&nbsp;&nbsp;6 PC × 550 <span class="amt">3,300</span><br>
+<span class="sub">Mintage</span><br>
+&nbsp;&nbsp;5 Ltr&nbsp;&nbsp;&nbsp;1 PC × 1820 <span class="amt">1,820</span><br>
+&nbsp;&nbsp;10 Ltr&nbsp;&nbsp;1 PC × 2548 <span class="amt">2,548</span><br>
+&nbsp;&nbsp;7.5 Ltr&nbsp;4 PC × 2183 <span class="amt">8,732</span>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px;">
+      <b>What this tells the model:</b>
+      <ul>
+        <li>A line = <b>one product, one size, one rate</b>. The bartan inwards <i>pool weight</i> across sizes on one row; the target bill puts <b>one row per size</b>. We emit <b>one row per size</b> (leaf) and print the product name as a sub-header when consecutive rows share it.</li>
+        <li><b>Rate mode varies by product</b>: storage boxes / dhegchi / kadai → <span class="mode kg">per kg</span>. Hawkins / Mintage / Dhara → <span class="mode pc">per piece</span>. This lives <b>on the leaf</b> (default from its group).</li>
+        <li><b>Brand is the section a customer navigates by</b> — "Hawkins 5 litre", "Mintage 3499". So <b>brand = category</b>. A no-brand stainless item's category is a material tag (<code>ST</code>, <code>GS</code>).</li>
+        <li>Names are terse Hinglish shorthand with no delimiters — <code>C.B.KADAI 12X18</code>, <code>SINI ShivShakti 92.380×305</code>, <code>Dhara Kettly 10cup 6PC→425</code>. A <b>rules-first parser</b> splits brand / product / size / qty / rate / mode; the messy residue is flagged.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ THE MODEL ============ -->
+  <section class="blk">
+    <h2>Three levels</h2>
+    <div class="model">
+      <div class="lvl"><span class="lname">Category</span><span class="ltab">item_category<br>per-tenant · = brand OR material/section</span></div>
+      <div class="row">
+        <span class="pill cat">Hawkins</span><span class="pill cat">Mintage</span><span class="pill cat">Dhara Kettle</span>
+        <span class="pill cat">SINI</span><span class="pill cat">ST</span><span class="pill cat">GS</span>
+        <span class="meta">shop-defined · a metal-bar shop uses Steel / Aluminium / Iron</span>
+      </div>
+      <div class="lvl"><span class="lname">Product group</span><span class="ltab">product_group<br>name · category_id · hsn · item_type · default rate_mode</span></div>
+      <div class="row">
+        <span class="pill grp">Hawkins Cooker <span class="dim">· Hawkins ·</span> <span class="mode pc">pc</span></span>
+        <span class="pill grp">Mintage Casserole <span class="dim">· Mintage ·</span> <span class="mode pc">pc</span></span>
+        <span class="pill grp">ST Storage Box <span class="dim">· ST ·</span> <span class="mode kg">kg</span></span>
+        <span class="pill grp">GS Deep Dibba <span class="dim">· GS ·</span> <span class="mode kg">kg</span></span>
+        <span class="meta">normalize()d name + alias set → resolves wording drift</span>
+      </div>
+      <div class="lvl"><span class="lname">Item (leaf)</span><span class="ltab">item<br>group_id · size_text/label/pos · rate_mode · weight_per_piece · rate</span></div>
+      <div class="row">
+        <span class="pill leaf">Hawkins Cooker 5L <span class="mode pc">pc</span> ₹1206</span>
+        <span class="pill leaf">Dhara Kettle 10cup <span class="mode pc">pc</span> ₹425</span>
+        <span class="pill leaf">ST Storage Box 12X18 <span class="mode kg">kg</span> ₹182 · 4.2kg/pc</span>
+        <span class="meta">the row a sale line resolves to</span>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px;">
+      <b>Who owns what</b>
+      <ul>
+        <li><b>Category</b> — just a name, tenant-scoped. <code>product_group.category_id</code>; a loose group-less item also carries <code>category_id</code>. Seeded on register with a starter set; the shop renames/replaces (a bartan shop turns them into brands).</li>
+        <li><b>Product group</b> — <code>hsn_code</code>, <code>item_type</code>, and a <b>default <code>rate_mode</code></b> (piece | kg). Metal-bar shops also set <code>metal</code>/<code>shape</code>/<code>grade</code> here; utensils leave them blank.</li>
+        <li><b>Item (leaf)</b> — <code>size_text</code> (free: <code>12X18</code>, <code>10cup</code>, <code>7.5Ltr</code>, <code>No.14</code>), <code>size_pos</code> orders them; <code>rate_mode</code> (from group, overridable — a family can mix); <code>weight_per_piece</code> when <code>rate_mode=kg</code>; own <code>default_rate</code> / <code>price_min/max</code> / <code>last_rate</code> / <code>last_purchase_rate</code>; usage counts. The article/model no. (<code>3499</code>) rides in the name for now — <code>sku</code> stays dormant.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ THE PARSER ============ -->
+  <section class="blk">
+    <h2>The shared parser — <code>parse_product_line(text)</code></h2>
+    <p class="sub">
+      Rules first. A size grammar + a tenant brand list + <code>normalize.py</code> handle the ~80% that's structured.
+      Ambiguous lines are flagged for review (or, opt-in, one batched LLM call per inward bill — reuses the inward
+      module's <code>llm</code> service, off by default). Nothing here calls an LLM on the billing type-ahead.
+    </p>
+    <div class="frame">
+      <div class="fhead">parse_product_line → { brand, product, size, size_kind, rate_mode, qty, rate, confidence }</div>
+      <div class="fbody" style="padding:0; overflow-x:auto;">
+        <table class="wex">
+          <thead><tr><th>Raw line</th><th>→ parsed</th><th>How</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="raw">ST STORAGE BOX 12X18 … 273.685 KGS @ 182/KG</td>
+              <td class="out"><span class="tag">brand</span> ST · <span class="tag">product</span> Storage Box · <span class="tag">size</span> 12X18 (NxN) · <span class="tag">mode</span> <span class="mode kg">kg</span> · <span class="tag">rate</span> 182</td>
+              <td>ST prefix → brand; "per KGS" col → kg; <code>\d+X\d+</code> → size</td>
+            </tr>
+            <tr>
+              <td class="raw">Dhara Kettly 10cup 6PC → 425</td>
+              <td class="out"><span class="tag">brand</span> Dhara Kettle · <span class="tag">size</span> 10cup (cup) · <span class="tag">mode</span> <span class="mode pc">pc</span> · <span class="tag">qty</span> 6 · <span class="tag">rate</span> 425</td>
+              <td>"Kettly"→"Kettle" (synonym); <code>\d+cup</code> → size; <code>\d+PC</code> → piece</td>
+            </tr>
+            <tr>
+              <td class="raw">Mintage 3499 5Ltr 1PC → 1820</td>
+              <td class="out"><span class="tag">brand</span> Mintage · <span class="tag">model</span> 3499 (→ name) · <span class="tag">size</span> 5Ltr (litre) · <span class="tag">mode</span> <span class="mode pc">pc</span> · <span class="tag">rate</span> 1820</td>
+              <td>brand list; <code>\d+(\.\d+)?\s?l(tr)?</code> → size; leading number after brand = model → kept in the generated name</td>
+            </tr>
+            <tr>
+              <td class="raw">SS 16→16   1 × 2500</td>
+              <td class="out"><span class="tag">brand</span> SS · <span class="tag">size</span> 16 · <span class="tag">mode</span> <span class="mode pc">pc</span> · <span class="tag">qty</span> 1 · <span class="tag">rate</span> 2500 · <span style="color:var(--warn-fg);">conf 0.55</span></td>
+              <td>bare number in size slot; <code>1 ×</code> integer qty → piece. Low confidence → row flagged.</td>
+            </tr>
+            <tr>
+              <td class="raw">SINI ShivShakti 92.380 × 305</td>
+              <td class="out"><span class="tag">brand</span> SINI · <span class="tag">product</span> ShivShakti? · <span class="tag">mode</span> <span class="mode kg">kg</span> · <span style="color:var(--warn-fg);">conf 0.4 — flag</span></td>
+              <td>decimal qty → kg; "ShivShakti" — model or product, unclear → reviewer decides / LLM residue</td>
+            </tr>
+            <tr>
+              <td class="raw">BK 4°   13.600 × 400</td>
+              <td class="out"><span class="tag">product</span> BK · <span class="tag">size</span> 4 · <span class="tag">mode</span> <span class="mode kg">kg</span> · <span style="color:var(--warn-fg);">conf 0.45 — flag</span></td>
+              <td>decimal qty → kg; "BK" not in brand list → flag, name = raw text until human tidies</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="note">
+      <b>Size grammar</b> (first match wins): <code>\d+\s?cup</code> · <code>\d+(\.\d+)?\s?l(tr|itre)?</code> ·
+      <code>\d+\s?[xX]\s?\d+</code> (NxN inches) · <code>no\.?\s?\d+</code> · <code>\d+\s?(mm|g|gauge|G)\b</code> ·
+      bare <code>\d+</code> when a size slot is expected and nothing else claimed it.
+      <br><b>Rate-mode heuristic:</b> a "per KGS/KG" column → kg · <code>\d+\s?PC</code> or <code>\d+\s?NUG</code> → piece ·
+      a <b>decimal</b> quantity → kg · an <b>integer</b> quantity with <code>×</code> → piece · else inherit the group's default.
+      <br><b>Brand list</b> is a per-tenant table (<code>brand</code>), seeded from what inward bills reveal, editable.
+    </div>
+  </section>
+
+  <!-- ============ LOOP 1 ============ -->
+  <section class="blk">
+    <h2>Loop 1 — inward bills seed the catalogue</h2>
+    <p class="sub">Runs inside the inward-approve transaction (lands after the inward module ships). Every approved line teaches the catalogue.</p>
+    <div class="loop">
+      <h3>learn_from_inward(bill)</h3>
+      <div class="rt">app/services/catalogue/learn_from_inward.py · called from inward approve</div>
+      <div class="step"><span class="n">1</span><span class="d"><span class="mono">parse_product_line</span> each line → brand / product / size(s) / rate_mode / rate</span></div>
+      <div class="step"><span class="n">2</span><span class="d"><span class="mono">resolve_group</span>(normalize("ST Storage Box")) → exact <span class="mono">product_group.name_normalized</span> → group alias → trigram. No hit → <b>create</b> the group: category from the brand/prefix (create the category too if new), <code>rate_mode</code> from the line, <code>hsn_code</code> from the line.</span></div>
+      <div class="step"><span class="n">3</span><span class="d">For each size token → resolve-or-create the <b>leaf</b>: <code>size_text</code>, <code>size_pos</code> (from the parser's <code>size_sort</code>), <code>rate_mode</code>, <code>sku</code> if a per-size model number was on the line, <code>last_purchase_rate</code> (₹/kg — same for all sizes on the line).</span></div>
+      <div class="step"><span class="n">4</span><span class="d"><b>Pooled-weight line</b> (one row, several sizes, one total weight): the inward line links to the <b>group</b> (<code>inward_bill_line.group_id</code>), the size×pieces breakdown goes to <code>inward_line_size</code> rows, the pooled weight/value stays group-level. A <b>[split by weight]</b> action distributes it once <code>weight_per_piece</code> is entered for those sizes.</span></div>
+      <div class="step"><span class="n">5</span><span class="d">Write the line's wording as a <b>group alias</b> (+ per-leaf alias where the size was explicit), <code>source=auto_from_purchase</code> — never auto-retired.</span></div>
+      <div class="out">Everything <code>status = unconfirmed</code>. After ~5–10 bills the catalogue is mostly there — nobody typed it. Low-confidence parses → item named after the raw text + flagged. <b>Dry-run</b> mode parses a bill and shows what it would create without writing — use it to check parser quality on real PDFs before switching learning on.</div>
+    </div>
+  </section>
+
+  <!-- ============ LOOP 2 ============ -->
+  <section class="blk">
+    <h2>Loop 2 — billing resolves shorthand &amp; generates the name</h2>
+    <p class="sub">The invoice type-ahead (lands with the invoice editor). The biller types how they always have; the system does the rest.</p>
+    <div class="grid2">
+      <div class="loop">
+        <h3>Known product, pick a size</h3>
+        <div class="rt">biller types "hawkins 5"</div>
+        <div class="step"><span class="n">1</span><span class="d">resolve → no exact leaf → fuzzy hits the <b>group</b> "Hawkins Cooker" (learned from an inward bill)</span></div>
+        <div class="step"><span class="n">2</span><span class="d">combobox expands the group's size axis inline:</span></div>
+        <div class="combo" style="margin:6px 0 6px 30px;">
+          <div class="q">hawkins 5</div>
+          <div class="grp">Hawkins Cooker · Hawkins</div>
+          <div class="sizes"><span class="sz">3L</span><span class="sz sel">5L</span><span class="sz">7.5L</span><span class="sz">10L</span></div>
+        </div>
+        <div class="step"><span class="n">3</span><span class="d">biller picks <b>5L</b> (or types "5") → line binds to leaf <b>Hawkins Cooker 5L</b>; the line copies <code>rate_mode=piece</code> (flippable per bill), rate ₹1206</span></div>
+        <div class="step"><span class="n">4</span><span class="d">the alias <code>"hawkins 5" → leaf</code> is written <b>now</b> (<code>source=learned</code>). Bill #2 is an instant hit. A learned alias unused for 90 days is swept.</span></div>
+        <div class="out">Printed line = the <b>generated name</b> "Hawkins Cooker 5 Litre" (from group + size; +sku when set). Not the shorthand.</div>
+      </div>
+      <div class="loop">
+        <h3>Unknown product — learn it</h3>
+        <div class="rt">biller types "dhara kettly 10cup"</div>
+        <div class="step"><span class="n">1</span><span class="d">resolve → nothing. <span class="mono">parse_product_line</span> → brand "Dhara Kettle", size "10cup", mode piece (integer qty context)</span></div>
+        <div class="step"><span class="n">2</span><span class="d">offer: <b>Create "Dhara Kettle" group + "10cup" size?</b> (category "Dhara Kettle" too, if new)</span></div>
+        <div class="combo" style="margin:6px 0 6px 30px;">
+          <div class="q">dhara kettly 10cup</div>
+          <div class="new">＋ Create group <b>Dhara Kettle</b> · size <b>10cup</b> · per piece · category Dhara Kettle</div>
+        </div>
+        <div class="step"><span class="n">3</span><span class="d">one tap → group + leaf + (this being an explicit create) the alias, all <code>source=auto_from_invoice</code>, <code>unconfirmed</code></span></div>
+        <div class="step"><span class="n">4</span><span class="d">free-typed with <b>no parseable structure</b> → stays as line text; a plain leaf is created at finalize, no group</span></div>
+        <div class="out">The shop grew its catalogue by billing. The Items "Unconfirmed" filter is the (optional) review queue.</div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Alias trust</b> — a billing shorthand becomes a stored alias on the <b>1st use</b> (marked <code>source=learned</code>, <code>last_used_at</code>), so bill #2 is instant. A nightly sweep <b>retires learned aliases unused for 90 days</b>, so a one-off typo like <code>hawkins 55</code> self-cleans. Inward-derived aliases (<code>source=auto_from_purchase</code>) came off a real document and never auto-retire. Every learned alias is also deletable from the review queue.
+    </div>
+  </section>
+
+  <!-- ============ BILL OUTPUT ============ -->
+  <section class="blk">
+    <h2>The generated bill</h2>
+    <p class="sub">One invoice line per leaf. Consecutive lines that share a product group print the group name as a sub-header (no amount). <code>rate_mode</code> per leaf decides whether qty is pieces or kg.</p>
+    <div class="frame">
+      <div class="fhead">Invoice · Siliguri Metal · what the editor produces</div>
+      <div class="fbody billprint">
+&nbsp;&nbsp;Description&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Qty&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Rate&nbsp;&nbsp;&nbsp;per&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Amount<br>
+<span class="sub">1&nbsp;&nbsp;Hawkins Cooker</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;5 Litre&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6&nbsp;&nbsp;&nbsp;&nbsp;1206.0&nbsp;&nbsp;PC&nbsp;&nbsp;&nbsp;&nbsp;7,236.00<br>
+<span class="sub">2&nbsp;&nbsp;Dhara Kettle</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;10 cup&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;425.0&nbsp;&nbsp;PC&nbsp;&nbsp;&nbsp;&nbsp;2,550.00<br>
+&nbsp;&nbsp;&nbsp;&nbsp;15 cup&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;6&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;465.0&nbsp;&nbsp;PC&nbsp;&nbsp;&nbsp;&nbsp;2,790.00<br>
+<span class="sub">3&nbsp;&nbsp;ST Storage Box</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;12X18&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;98.500&nbsp;&nbsp;&nbsp;&nbsp;182.0&nbsp;&nbsp;KGS&nbsp;&nbsp;17,927.00<br>
+&nbsp;&nbsp;&nbsp;&nbsp;16X18&nbsp;&nbsp;&nbsp;120.200&nbsp;&nbsp;&nbsp;&nbsp;182.0&nbsp;&nbsp;KGS&nbsp;&nbsp;21,876.40
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SPEC + SEQUENCING ============ -->
+  <section class="blk">
+    <h2>The slices — spec</h2>
+    <div class="ctable">
+      <table>
+        <thead><tr><th>Area</th><th>What</th><th>API / detail</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Categories</td><td>Per-tenant <code>item_category(id, tenant_id, name, sort)</code> — <b>this IS the brand</b> for a bartan shop (Hawkins / Mintage / ST / GS), a material for a metal-bar shop (Steel / Aluminium). <b>No separate brand table.</b> Seeded on register with a starter set the shop edits. CRUD; delete blocked if referenced → reassign.</td><td class="op">/api/item-categories</td><td class="st-new">new table + router</td></tr>
+          <tr><td>Groups</td><td>Surface <code>product_group</code>: name, category_id, hsn_code, item_type, <b>default rate_mode</b>, optional metal/shape/grade. Tree list, CRUD, size grid. <code>name_normalized</code> + group aliases.</td><td class="op">/api/item-groups · /api/item-groups/:id</td><td class="st-new">new router (table exists)</td></tr>
+          <tr><td>Migration 0008</td><td><code>down_revision = "0007"</code>. New <code>item_category(id, tenant_id, name, sort)</code>. <code>product_group</code>: <code>+ category_id</code> FK, <code>+ default_rate_mode</code>. <code>item</code>: <code>category</code> string → <code>category_id</code> FK (backfill vs seeded rows, drop the string), <code>+ rate_mode ENUM(piece,kg)</code>, <code>+ weight_per_piece NUMERIC(12,3)</code> (<code>sku</code> already exists — now used). <code>item_alias</code>: <code>+ group_id</code> nullable (xor with <code>item_id</code>), <code>+ source ENUM(auto_from_purchase, learned, manual)</code>, <code>+ last_used_at</code>. <code>inward_bill_line</code>: <code>+ group_id</code> nullable (xor with <code>matched_item_id</code>). New <code>inward_line_size(id, inward_bill_line_id, size_text, pieces)</code> — the pooled-line sub-detail.</td><td class="op">—</td><td class="st-change">migration 0008</td></tr>
+          <tr><td>Parser</td><td><code>app/domain/product_parse.py</code> — pure, rules-first: size grammar + tenant brand/category list + normalize + rate-mode heuristic → <code>ParsedLine</code> { brand, product, sku, size, size_kind, size_sort, rate_mode, qty, rate, confidence }. <b>Acceptance bar: a committed test corpus of every line from all 5 real bills.</b> LLM residue path stubbed.</td><td class="op">—</td><td class="st-new">new, shared</td></tr>
+          <tr><td>size_pos</td><td>Parser derives <code>size_sort</code> from the size string (5←"5Ltr", 12←"12X18" first dim, 10←"10cup", 14←"No.14"); failures/ties → created order. The group's size grid has <b>drag-to-reorder</b> that rewrites <code>size_pos</code>.</td><td class="op">PATCH /api/item-groups/:id/size-order</td><td class="st-new">in product_parse + GroupForm</td></tr>
+          <tr><td>Group resolver</td><td><code>resolve_group(session, tenant, text)</code> — exact name_normalized → group alias → trigram. <code>resolve_item</code> gains a group step (after leaf exact/alias, before fuzzy) and returns <code>kind: "item" | "group"</code>.</td><td class="op">POST /api/items/resolve (extended)</td><td class="st-change">item_resolution.py</td></tr>
+          <tr><td>Name generation</td><td><code>generated_name(leaf)</code> = <code>&lt;category&gt; &lt;sku&gt; &lt;size_label&gt;</code> when <code>sku</code> set (→ "Mintage 3499 5 Litre"), else <code>&lt;group.name&gt; &lt;size_label&gt;</code> (→ "ST Storage Box 12X18"). This is the printed invoice-line description; the biller's shorthand is only an alias.</td><td class="op">—</td><td class="st-new">helper, used by print + Loop 2</td></tr>
+          <tr><td>Items page</td><td>Rail: <b>Tree</b> (category → group → leaf, collapsible, counts, a permanent "Ungrouped" section) / <b>Flat</b> toggle (the current 0006 list) + a <b>Categories manager</b>. Group editor + size grid (drag-reorder, [split by weight]). Leaf editor: breadcrumb, inherited fields greyed with ↑ (override on type), <code>rate_mode</code> + <code>weight_per_piece</code> + <code>sku</code> per leaf.</td><td class="op">—</td><td class="st-change">ItemsPage + GroupForm + CategoryManager</td></tr>
+          <tr><td>Loop 1</td><td><code>app/services/catalogue/learn_from_inward.py</code> — called from inward approve. parse → resolve_group-or-create → for each size: resolve/create the leaf + <code>last_purchase_rate</code>; a <b>pooled-weight line</b> links to the <b>group</b> + writes <code>inward_line_size</code> rows, weight stays group-level until <code>weight_per_piece</code> is set (then [split]). Writes group/leaf aliases (<code>source=auto_from_purchase</code>). <b>Dry-run mode</b>: parse a bill, show what it would create, write nothing.</td><td class="op">(inward approve txn) · POST /api/inward-bills/:id/learn-dryrun</td><td class="st-new">after inward module ships</td></tr>
+          <tr><td>Loop 2</td><td>Invoice type-ahead: resolve → group-with-size-picker → bind leaf → <b>alias written on 1st use</b> (<code>source=learned</code>, <code>last_used_at</code>) → "create group+size" for misses. Line copies <code>leaf.rate_mode</code> but can flip it per bill. Printed description = <code>generated_name(leaf)</code>.</td><td class="op">(invoice editor)</td><td class="st-new">with the invoice editor</td></tr>
+          <tr><td>Stale-alias sweep</td><td>Nightly job: delete <code>item_alias</code> where <code>source=learned</code> and <code>last_used_at &lt; now() - 90d</code>. Typos self-clean. Inward-derived aliases (<code>auto_from_purchase</code>) never retire.</td><td class="op">Job kind <code>alias_sweep</code></td><td class="st-new">new job (reuses the job table)</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">
+      <b>Sequencing</b> (locked: tables first)
+      <div class="phase"><span class="p">1</span><span><b>Hierarchy tables + parser + tree UI</b> — migration <code>0008</code> (as above); <code>product_parse.py</code> + the 5-bill test corpus; <code>resolve_group</code>; <code>generated_name</code>; Items <b>tree</b> + Flat toggle + group editor (size grid, drag-reorder) + Categories manager; extend <code>/api/items/resolve</code>. <b>No external dependency — build now.</b></span></div>
+      <div class="phase"><span class="p">2</span><span><b>Loop 1 — learn_from_inward</b> (+ dry-run endpoint) wired into the inward-approve transaction; the pooled-weight [split] action; the nightly alias sweep.<br><span class="dep">depends on the other session's inward module landing</span></span></div>
+      <div class="phase"><span class="p">3</span><span><b>Loop 2 — billing-learning</b> — resolve+learn in the invoice type-ahead; the group→size picker; per-line rate_mode flip.<br><span class="dep">depends on the invoice editor slice</span></span></div>
+      <div style="margin-top:8px;"><b>Not any of these:</b> stack barcodes (<code>group_code</code> stays dormant), multi-axis variant matrices, per-size stock, an LLM-first parser, a "tidy up loose items into groups" batch tool, a separate brand table.</div>
+      <div style="margin-top:10px;"><b>Open risk carried into phase 1:</b> parser accuracy against real shorthand — only 5 bills to test on. Mitigations baked in: the committed 5-bill corpus is the acceptance bar, and Loop 1 ships with a dry-run mode so parser quality can be eyeballed on real inward PDFs before learning is switched on.</div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Supersedes: <code>docs/visual-plan/item-hierarchy-review.html</code></span>
+    <span>Builds on: <code>items-crud-review.html</code> (0006)</span>
+    <span>Feeds: the inward line matcher · the invoice editor · <code>tally-item-import-review.html</code></span>
+    <span>Mid-fi · for sign-off before coding phase 1</span>
+  </footer>
+</div>

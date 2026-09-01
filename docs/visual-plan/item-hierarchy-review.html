@@ -1,0 +1,432 @@
+<title>Item Hierarchy Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --cat-fg:#5a4a2f;   --cat-bg:#efe6d4;
+    --grp-fg:#2f6f89;   --grp-bg:#e3eef2;
+    --leaf-fg:#3a5a48;  --leaf-bg:#e6efe8;
+    --new-fg:#2f6f89;   --new-bg:#e3eef2;
+    --warn-fg:#8a6a1f;  --warn-bg:#f1e7d6;
+    --danger-fg:#a23b2e;--danger-bg:#f4e3df;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --cat-fg:#d8c39a;   --cat-bg:#332c1f;
+    --grp-fg:#8fc3d7;   --grp-bg:#22333a;
+    --leaf-fg:#9cc9ad;  --leaf-bg:#24322a;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --cat-fg:#d8c39a;   --cat-bg:#332c1f;
+    --grp-fg:#8fc3d7;   --grp-bg:#22333a;
+    --leaf-fg:#9cc9ad;  --leaf-bg:#24322a;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1160px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:8px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(26px,4vw,36px);
+    line-height:1.12; margin:0 0 12px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:74ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .statusrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:11px; }
+  .chip { padding:3px 9px; border-radius:999px; font-weight:500; }
+  .chip.reuse { background:var(--leaf-bg); color:var(--leaf-fg); }
+  .chip.new { background:var(--new-bg); color:var(--new-fg); }
+  .chip.change { background:var(--warn-bg); color:var(--warn-fg); }
+
+  section.blk { margin-top:46px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:82ch; }
+
+  /* the three-level model diagram */
+  .model { display:grid; grid-template-columns:120px 1fr; gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); }
+  .model .lvl { display:flex; flex-direction:column; align-items:flex-start; gap:4px; padding:16px 14px; border-bottom:1px solid var(--line-soft); }
+  .model .lvl:last-child { border-bottom:none; }
+  .model .lname { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:13px; }
+  .model .ltab { font-family:"IBM Plex Mono",monospace; font-size:9px; color:var(--muted); }
+  .model .row { display:flex; flex-wrap:wrap; gap:8px; padding:16px 16px; border-bottom:1px solid var(--line-soft); align-items:center; }
+  .model .row:last-child { border-bottom:none; }
+  .pill { font-size:11px; padding:3px 10px; border-radius:999px; font-weight:500; white-space:nowrap; }
+  .pill.cat { background:var(--cat-bg); color:var(--cat-fg); }
+  .pill.grp { background:var(--grp-bg); color:var(--grp-fg); }
+  .pill.leaf { background:var(--leaf-bg); color:var(--leaf-fg); }
+  .pill .dim { opacity:0.7; font-weight:400; }
+  .model .row .arrow { color:var(--faint); font-size:11px; }
+  .model .row .meta { font-size:10px; color:var(--muted); margin-left:auto; font-family:"IBM Plex Mono",monospace; }
+
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .tabbar { display:flex; align-items:center; gap:7px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line); }
+  .tabbar i { width:10px; height:10px; border-radius:50%; background:var(--faint); }
+  .tabbar .url { margin-left:10px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted);
+    background:var(--card); border:1px solid var(--line); border-radius:5px; padding:3px 10px; }
+  .topnav { display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 18px;
+    background:var(--shell); color:var(--shell-text); }
+  .topnav .brand { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:15px; }
+  .topnav nav { display:flex; gap:16px; font-size:12.5px; color:var(--shell-dim); }
+  .topnav nav a { color:var(--shell-dim); text-decoration:none; padding-bottom:14px; }
+  .topnav nav a.active { color:var(--shell-text); border-bottom:2px solid var(--accent); }
+  .topnav .who { font-size:11px; color:var(--shell-dim); }
+
+  .pane { display:grid; grid-template-columns:320px 1fr; min-height:480px; }
+  .rail { border-right:1px solid var(--line); background:var(--paper); display:flex; flex-direction:column; }
+  .railhead { padding:11px 13px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:9px; }
+  .railhead .top { display:flex; align-items:center; justify-content:space-between; }
+  .railhead .top .sc { font-size:12.5px; font-weight:600; }
+  .newbtn { font-size:11.5px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px; padding:5px 11px; }
+  .search { font-size:11px; border:1px solid var(--line); border-radius:6px; background:var(--card); padding:5px 8px; color:var(--muted); }
+  .modes { display:flex; gap:5px; }
+  .modes .m { font-size:9.5px; border:1px solid var(--line); border-radius:999px; padding:2px 9px; color:var(--muted); background:var(--card); }
+  .modes .m.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .rows { flex:1; overflow:auto; }
+  .catrow { padding:7px 13px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--cat-fg); background:color-mix(in srgb,var(--cat-bg) 50%,transparent); border-bottom:1px solid var(--line-soft); }
+  .grprow { display:flex; align-items:center; gap:6px; padding:7px 13px 7px 22px; font-size:11.5px; border-bottom:1px solid var(--line-soft); cursor:pointer; font-weight:500; }
+  .grprow .caret { color:var(--faint); font-size:9px; }
+  .grprow .cnt { margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:9px; color:var(--muted); }
+  .leafrow { display:flex; align-items:center; gap:6px; padding:6px 13px 6px 38px; font-size:11px; border-bottom:1px solid var(--line-soft); cursor:pointer; }
+  .leafrow.sel { background:var(--card); box-shadow:inset 2px 0 0 var(--accent); }
+  .leafrow .rate { margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:9.5px; color:var(--muted); }
+  .badge { font-size:7.5px; letter-spacing:0.03em; font-weight:700; padding:1px 4px; border-radius:3px; text-transform:uppercase; }
+  .badge.bulk { background:var(--grp-bg); color:var(--grp-fg); }
+  .badge.mrp { background:var(--warn-bg); color:var(--warn-fg); }
+
+  .detail { padding:16px 20px; display:flex; flex-direction:column; gap:12px; }
+  .dhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .dhead .t { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:16px; }
+  .dhead .crumbs { font-size:10.5px; color:var(--muted); margin-top:3px; }
+  .dhead .crumbs a { color:var(--accent); text-decoration:none; }
+  .sec { border-top:1px solid var(--line); padding-top:10px; }
+  .sec .st { font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); margin-bottom:7px; }
+  .fgrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px 12px; }
+  .fl label { font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:3px; }
+  .fl .inp { border:1px solid var(--line); border-radius:6px; background:var(--card); padding:5px 8px; font-size:11px; color:var(--ink-soft); min-height:28px; display:flex; align-items:center; }
+  .fl .inp.mono { font-family:"IBM Plex Mono",monospace; }
+  .fl .inp.inherit { background:color-mix(in srgb,var(--grp-bg) 40%,var(--card)); color:var(--muted); }
+  .fl .hint { font-size:9px; color:var(--muted); margin-top:3px; }
+
+  .sizes { border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .sizes .sh, .sizes .sr { display:grid; grid-template-columns:40px 1fr 90px 90px 28px; gap:8px; padding:6px 10px; align-items:center; font-size:10.5px; }
+  .sizes .sh { background:var(--band); font-size:8.5px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); font-weight:600; }
+  .sizes .sr { border-top:1px solid var(--line-soft); }
+  .sizes .sr .m { font-family:"IBM Plex Mono",monospace; }
+  .sizes .add { padding:6px 10px; border-top:1px solid var(--line-soft); font-size:10px; color:var(--accent); }
+
+  .ctable { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:20px; background:var(--card); }
+  .ctable table { width:100%; border-collapse:collapse; }
+  .ctable th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:10px 12px; background:var(--band); border-bottom:1px solid var(--line); }
+  .ctable td { padding:11px 12px; font-size:12px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .ctable td:first-child { font-weight:600; white-space:nowrap; width:110px; }
+  .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
+  .ctable .st-new { color:var(--new-fg); font-weight:600; }
+  .ctable .st-change { color:var(--warn-fg); font-weight:600; }
+
+  .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
+    padding:14px 16px; margin-top:20px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
+  .note b { color:var(--accent-dark); }
+  .note ul { margin:8px 0 0; padding-left:18px; } .note li { margin:4px 0; }
+  .note code { font-family:"IBM Plex Mono",monospace; font-size:0.9em; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:0 4px; border-radius:3px; }
+
+  .flow2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px; }
+  .flowcard { border:1px solid var(--line); border-radius:10px; background:var(--card); padding:13px 15px; }
+  .flowcard h3 { margin:0 0 8px; font-size:13px; }
+  .flowcard ol { margin:0; padding-left:18px; font-size:12px; color:var(--ink-soft); }
+  .flowcard li { margin:5px 0; }
+  .flowcard .mono { font-size:11px; background:var(--band); padding:0 4px; border-radius:3px; }
+
+  footer.page { margin-top:56px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    .pane { grid-template-columns:1fr; }
+    .model { grid-template-columns:1fr; }
+    .fgrid { grid-template-columns:1fr; }
+    .flow2 { grid-template-columns:1fr; }
+    .topnav nav { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual review · Item hierarchy · category → group → item</p>
+    <h1 class="page">Categories, product groups &amp; sub-items</h1>
+    <p class="lede">
+      Three levels. A <strong>category</strong> is the coarse bucket a shop owns (<em>steel · aluminium · iron ·
+      utensils</em>). A <strong>product group</strong> is a family that shares an HSN / UOM / rate basis
+      (<em>MS TMT Bar</em>, <em>SS Balti</em>). An <strong>item</strong> is the leaf you actually bill
+      (<em>MS TMT Bar 12mm</em>). An <strong>inward bill</strong> line often names the group; the
+      <strong>sale</strong> line names the leaf. The mapping is <code>item.group_id</code> and
+      <code>group.category_id</code> — structural, generic, not metal-specific.
+    </p>
+    <div class="statusrow">
+      <span class="chip reuse">✓ reuse: product_group table + item.group_id / size_pos / size_label (all exist, dormant since 0001)</span>
+      <span class="chip new">＋ new: per-tenant item_category table (seeded on register); alias → group; inward "match a group" step</span>
+      <span class="chip change">↻ change: item.category string → category_id FK (via 0006 backfill); Items page gets a group tree</span>
+    </div>
+  </header>
+
+  <!-- ============ THE MODEL ============ -->
+  <section class="blk">
+    <h2>The three levels</h2>
+    <div class="model">
+      <div class="lvl"><span class="lname">Category</span><span class="ltab">item_category<br>(tenant-owned)</span></div>
+      <div class="row">
+        <span class="pill cat">steel</span>
+        <span class="pill cat">aluminium</span>
+        <span class="pill cat">iron</span>
+        <span class="pill cat">utensils</span>
+        <span class="pill cat">fittings</span>
+        <span class="meta">seeded on register · editable · <code>+ category</code></span>
+      </div>
+      <div class="lvl"><span class="lname">Product group</span><span class="ltab">product_group<br>name · category_id · hsn · uom · item_type</span></div>
+      <div class="row">
+        <span class="pill grp">MS TMT Bar <span class="dim">· steel</span></span>
+        <span class="arrow">·</span>
+        <span class="pill grp">MS Angle <span class="dim">· steel</span></span>
+        <span class="arrow">·</span>
+        <span class="pill grp">SS Patta <span class="dim">· steel</span></span>
+        <span class="arrow">·</span>
+        <span class="pill grp">Alu Coil <span class="dim">· aluminium</span></span>
+        <span class="meta">shares HSN 72142000, UOM kg</span>
+      </div>
+      <div class="lvl"><span class="lname">Item (leaf)</span><span class="ltab">item<br>group_id · size_pos · size_label · rate</span></div>
+      <div class="row">
+        <span class="pill leaf">MS TMT Bar 12mm</span>
+        <span class="pill leaf">MS TMT Bar 16mm</span>
+        <span class="pill leaf">MS TMT Bar 20mm</span>
+        <span class="pill leaf">MS TMT Bar 25mm</span>
+        <span class="meta">the row a sale line resolves to</span>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px;">
+      <b>What each level owns</b>
+      <ul>
+        <li><b>Category</b> — just a name, tenant-scoped. The anchor. Both <code>product_group</code> and a <em>group-less</em> <code>item</code> carry a <code>category_id</code>.</li>
+        <li><b>Product group</b> — the shared attributes: <code>hsn_code</code>, <code>uom</code>, <code>item_type</code>, <code>metal</code>, <code>shape</code>, <code>grade</code>, <code>default_gst_rate</code>. A leaf <b>inherits</b> these unless it overrides. HSN typed once per family, not per size.</li>
+        <li><b>Item</b> — <code>size_text</code> / <code>size_pos</code> / <code>size_label</code>, its own <code>default_rate</code> / <code>price_min</code> / <code>price_max</code> / <code>last_rate</code>. The only level with money and usage counts.</li>
+        <li><b>A loose item</b> (no group) still works — it carries its own category + HSN + everything, exactly as today. Grouping is optional; you reach for it when a family has sizes.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ ITEMS PAGE WITH THE TREE ============ -->
+  <section class="blk">
+    <h2>The Items page — a group tree in the rail</h2>
+    <p class="sub">
+      The rail switches between <strong>Tree</strong> (category → group → item) and <strong>Flat</strong> (the
+      current searchable list). Picking a group shows the group editor + its size grid; picking a leaf shows the
+      item editor with inherited fields greyed and overridable.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/items/g_tmt</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#">Parties</a><a href="#" class="active">Items</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="pane">
+        <!-- rail -->
+        <div class="rail">
+          <div class="railhead">
+            <div class="top"><span class="sc">Items</span><button class="newbtn">+ New ▾</button></div>
+            <input class="search" value="search…" />
+            <div class="modes"><span class="m on">Tree</span><span class="m">Flat</span><span class="m">Unconfirmed</span><span class="m">Categories…</span></div>
+          </div>
+          <div class="rows">
+            <div class="catrow">Steel · 4 groups · 61 items</div>
+            <div class="grprow"><span class="caret">▾</span><span class="badge bulk">bulk</span> MS TMT Bar <span class="cnt">4</span></div>
+            <div class="leafrow sel"><span>MS TMT Bar 12mm</span><span class="rate">₹58/kg</span></div>
+            <div class="leafrow"><span>MS TMT Bar 16mm</span><span class="rate">₹57/kg</span></div>
+            <div class="leafrow"><span>MS TMT Bar 20mm</span><span class="rate">₹56.5/kg</span></div>
+            <div class="leafrow"><span>MS TMT Bar 25mm</span><span class="rate">₹56/kg</span></div>
+            <div class="grprow"><span class="caret">▸</span><span class="badge bulk">bulk</span> MS Angle <span class="cnt">7</span></div>
+            <div class="grprow"><span class="caret">▸</span><span class="badge bulk">bulk</span> SS Patta <span class="cnt">12</span></div>
+            <div class="grprow"><span class="caret">▸</span><span class="badge bulk">bulk</span> SS Pipe 202 <span class="cnt">9</span></div>
+            <div class="catrow">Aluminium · 3 groups · 28 items</div>
+            <div class="grprow"><span class="caret">▸</span><span class="badge bulk">bulk</span> Alu Coil <span class="cnt">6</span></div>
+            <div class="grprow"><span class="caret">▸</span><span class="badge bulk">bulk</span> Alu Patta <span class="cnt">14</span></div>
+            <div class="catrow">Utensils · 5 groups · 41 items</div>
+            <div class="grprow"><span class="caret">▸</span><span class="badge mrp">mrp</span> SS Balti <span class="cnt">5</span></div>
+            <div class="catrow" style="color:var(--muted); background:transparent;">Ungrouped · 18 items <span style="float:right; font-weight:400; text-transform:none;">(loose leaves)</span></div>
+          </div>
+        </div>
+
+        <!-- detail: a LEAF selected -->
+        <div class="detail">
+          <div class="dhead">
+            <div>
+              <div class="t">MS TMT Bar 12mm</div>
+              <div class="crumbs"><a>Steel</a> › <a>MS TMT Bar</a> › <b>12mm</b> · billed 21× · <span style="color:var(--warn-fg);">unconfirmed</span></div>
+            </div>
+            <button style="border:1px solid var(--line); border-radius:6px; background:var(--card); padding:5px 9px; font-size:11px; color:var(--muted);">⋯</button>
+          </div>
+
+          <div class="sec" style="border-top:none; padding-top:0;">
+            <div class="st">This size</div>
+            <div class="fgrid">
+              <div class="fl"><label>Size label</label><div class="inp">12mm</div></div>
+              <div class="fl"><label>Size text</label><div class="inp">12mm</div></div>
+              <div class="fl"><label>Size pos</label><div class="inp mono">1</div></div>
+              <div class="fl"><label>Default rate (₹/kg)</label><div class="inp mono" style="border-color:var(--accent);">58.00</div></div>
+              <div class="fl"><label>Optimum min</label><div class="inp mono">55.00</div></div>
+              <div class="fl"><label>Optimum max</label><div class="inp mono">64.00</div></div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="st">From the group <span style="text-transform:none; letter-spacing:0; color:var(--faint);">· MS TMT Bar — edit on the group, or override here</span></div>
+            <div class="fgrid">
+              <div class="fl"><label>Category</label><div class="inp inherit">Steel ↑</div></div>
+              <div class="fl"><label>Type</label><div class="inp inherit">⚖ BULK ↑</div></div>
+              <div class="fl"><label>UOM</label><div class="inp inherit">kg ↑</div></div>
+              <div class="fl"><label>HSN</label><div class="inp inherit mono">72142000 ↑</div></div>
+              <div class="fl"><label>GST</label><div class="inp inherit mono">18% ↑ (from HSN)</div></div>
+              <div class="fl"><label>Metal · Shape · Grade</label><div class="inp inherit">MS · round_bar · IS1786 ↑</div></div>
+            </div>
+            <div class="hint">↑ = inherited from the group. Type a value in any of these to override just this size.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top:16px;">
+      Picking a <strong>group</strong> row instead shows the group's shared fields on top and a compact size grid:
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">…/items/g_tmt</span></div>
+      <div class="pane" style="min-height:auto;">
+        <div class="rail" style="display:none;"></div>
+        <div class="detail" style="grid-column:1 / -1;">
+          <div class="dhead">
+            <div><div class="t">MS TMT Bar <span class="badge bulk" style="align-self:center;">group · bulk</span></div>
+            <div class="crumbs"><a>Steel</a> › <b>MS TMT Bar</b> · 4 sizes · billed 74× total</div></div>
+          </div>
+          <div class="fgrid">
+            <div class="fl"><label>Group name</label><div class="inp" style="border-color:var(--accent);">MS TMT Bar</div></div>
+            <div class="fl"><label>Category</label><div class="inp">Steel ▾</div></div>
+            <div class="fl"><label>Type</label><div class="inp">⚖ BULK ▾</div></div>
+            <div class="fl"><label>UOM</label><div class="inp">kg ▾</div></div>
+            <div class="fl"><label>HSN</label><div class="inp mono">72142000 · GST 18%</div></div>
+            <div class="fl"><label>Metal · Shape · Grade</label><div class="inp">MS · round_bar · IS1786</div></div>
+          </div>
+          <div class="sec">
+            <div class="st">Sizes</div>
+            <div class="sizes">
+              <div class="sh"><span>Pos</span><span>Size label</span><span>Rate</span><span>Last sold</span><span></span></div>
+              <div class="sr"><span class="m">1</span><span>12mm</span><span class="m">58.00</span><span class="m">2d ago</span><span>›</span></div>
+              <div class="sr"><span class="m">2</span><span>16mm</span><span class="m">57.00</span><span class="m">5d ago</span><span>›</span></div>
+              <div class="sr"><span class="m">3</span><span>20mm</span><span class="m">56.50</span><span class="m">1d ago</span><span>›</span></div>
+              <div class="sr"><span class="m">4</span><span>25mm</span><span class="m">56.00</span><span class="m">9d ago</span><span>›</span></div>
+              <div class="add">+ add a size</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HOW THE TWO FLOWS MAP ============ -->
+  <section class="blk">
+    <h2>Inward names the group · the sale names the leaf</h2>
+    <div class="flow2">
+      <div class="flowcard">
+        <h3>Inward bill line → resolve</h3>
+        <ol>
+          <li><span class="mono">normalize("MS TMT Bar 12mm")</span> exact-matches a leaf → <b>done</b> (specific bill).</li>
+          <li>No leaf. <span class="mono">normalize("MS TMT Bar")</span> matches a <b>product_group</b> → link the line to the group. On approve: if the size is on the line (a dimension token), pick / create that leaf; else the reviewer chooses, or the line stays group-level (mixed sizes billed by weight).</li>
+          <li>Fuzzy over leaves + groups + aliases. A group hit is shown as <span class="mono">→ MS TMT Bar (group)</span> in the review cell with a size picker.</li>
+          <li>No hit → stage a <b>new item</b> under the best-guess category, no group.</li>
+        </ol>
+        <div style="font-size:11px; color:var(--muted); margin-top:8px;">
+          New step vs today: the ladder now also checks <code>product_group.name_normalized</code>. Purchase rate lands on the group's leaves (or the group's <code>last_purchase_rate</code> if line is group-level).
+        </div>
+      </div>
+      <div class="flowcard">
+        <h3>Sales invoice line → resolve</h3>
+        <ol>
+          <li>Type-ahead searches <b>leaves</b> first (that's what you bill).</li>
+          <li>If the top hit is a <b>group</b>, the combobox expands it inline — <span class="mono">MS TMT Bar › [12mm] [16mm] [20mm] [25mm]</span> — pick a size.</li>
+          <li>Free-typed name, no hit → stays as text; the leaf is created at finalize (<code>source=auto_from_invoice</code>), no group unless the name clearly matches one.</li>
+        </ol>
+        <div style="font-size:11px; color:var(--muted); margin-top:8px;">
+          A sale line's <code>item_id</code> is always a leaf. A group is never billed directly — it resolves to one of its sizes.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EXTENDIBILITY ============ -->
+  <section class="blk">
+    <h2>Why this generalises</h2>
+    <div class="note" style="margin-top:0;">
+      Nothing above says "metal". The three tables are generic:
+      <ul>
+        <li><b>Utensils</b> — category <code>utensils</code> → group <code>SS Balti</code> → leaves <code>No.1 … No.5</code>. Same model, <code>size_label</code> = the number.</li>
+        <li><b>Fittings</b> — category <code>fittings</code> → group <code>GI Elbow</code> → leaves by bore <code>1/2" … 2"</code>.</li>
+        <li><b>A one-off</b> — a loose <code>item</code> with a <code>category_id</code> and no group. Still fully billable.</li>
+        <li><b>A new business line</b> — add a category, add groups under it. No schema change, no code change.</li>
+      </ul>
+      The "mapping" a shop tunes over time is <b>two things</b>: <code>item.group_id</code> (structural — done in the Items page or by the Tally importer from Stock Groups) and <code>item_alias</code> rows (learned — "this supplier's wording means this leaf/group", written on inward approve).
+    </div>
+  </section>
+
+  <!-- ============ SPEC + BACKEND ============ -->
+  <section class="blk">
+    <h2>The slice — spec</h2>
+    <div class="ctable">
+      <table>
+        <thead><tr><th>Area</th><th>What</th><th>API / detail</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Category CRUD</td><td>Per-tenant <code>item_category(id, tenant_id, name, sort)</code>. Seeded steel/aluminium/iron/utensils/fittings/scrap/hardware on register. List + create + rename + delete (delete blocked if any group/item uses it → reassign).</td><td class="op">GET/POST/PATCH/DELETE /api/item-categories</td><td class="st-new">new table + router</td></tr>
+          <tr><td>Group CRUD</td><td>Surface <code>product_group</code>: name, category_id, hsn_code, uom, item_type, metal/shape/grade, default_gst_rate. List (tree), create, edit, delete (blocked if it has items → detach first or cascade to loose).</td><td class="op">GET/POST/PATCH/DELETE /api/item-groups · GET /api/item-groups/:id (with its items)</td><td class="st-new">new router (table exists)</td></tr>
+          <tr><td>Item ↔ group</td><td><code>item.group_id</code> settable on create/patch. When set, the item inherits category/hsn/uom/type/metal/shape/grade from the group unless its own column is non-null (override). Read payload marks each field <code>inherited</code> vs <code>own</code>.</td><td class="op">PATCH /api/items/:id {group_id}</td><td class="st-change">items router + read-model</td></tr>
+          <tr><td>Category on item</td><td><code>item.category</code> string → <code>item.category_id</code> FK. Migration <code>0008</code>: add <code>category_id</code> to <code>item</code> + <code>product_group</code>, backfill from the existing string against the seeded rows, drop the string after. <code>hsn_code.default_gst_rate</code> unchanged.</td><td class="op">—</td><td class="st-change">migration 0008</td></tr>
+          <tr><td>Resolution ladder</td><td><code>resolve_item</code> gains a group check: after exact/alias leaf, before fuzzy, try exact <code>product_group.name_normalized</code>; fuzzy step scores groups too. Returns <code>kind: "item" | "group"</code>.</td><td class="op">POST /api/items/resolve</td><td class="st-change">item_resolution.py</td></tr>
+          <tr><td>alias → group</td><td><code>item_alias</code> gains nullable <code>group_id</code> (xor with <code>item_id</code>). Inward approve writes an alias to the group when a line matched a group by wording.</td><td class="op">—</td><td class="st-new">migration 0008 (same)</td></tr>
+          <tr><td>Items page (web)</td><td>Rail gets Tree / Flat toggle + a Categories manager. Group editor + size grid. Item editor shows inherited fields greyed with ↑, override on type.</td><td class="op">—</td><td class="st-change">ItemsPage + new GroupForm, CategoryManager</td></tr>
+          <tr><td>Tally item import</td><td><b>Now in scope</b> (was deferred): Stock Groups → <code>product_group</code> (category from the group's own parent-group name mapped to a category, else prompt), Stock Items → leaves with <code>group_id</code> from <code>&lt;PARENT&gt;</code>.</td><td class="op">POST /api/items/import</td><td class="st-change">folds into the Tally-item-import slice</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>Migration <code>0008</code></b> (<code>down_revision = "0007"</code>, i.e. after the Tally-item-import staging table): new <code>item_category</code> table; <code>item.category_id</code> + <code>product_group.category_id</code> FKs (backfill from the <code>category</code> string, then drop the string); <code>item_alias.group_id</code> nullable FK + a check that exactly one of <code>item_id</code>/<code>group_id</code> is set. <code>product_group</code> already has every other column it needs.
+      <br><br>
+      <b>Not this slice:</b> stack barcodes (<code>group_code</code> stays dormant), variant matrices beyond a single size axis, per-size stock (Stage 3), auto-suggesting a group for loose items already in the catalogue (a later "tidy up" tool).
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Builds on: <code>docs/visual-plan/items-crud-review.html</code> (0006)</span>
+    <span>Feeds: <code>docs/visual-plan/tally-item-import-review.html</code> · the inward line matcher</span>
+    <span>Reuses: <code>product_group</code>, <code>item.group_id/size_pos/size_label</code> — dormant since 0001</span>
+    <span>Mid-fi · for sign-off before coding</span>
+  </footer>
+</div>

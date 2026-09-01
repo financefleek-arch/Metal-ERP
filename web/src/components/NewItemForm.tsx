@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useVocab } from "../lib/reference";
-import type { Item, ItemType } from "../lib/types";
+import type { GroupOut, Item, ItemCategoryRow, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
 
 /**
@@ -19,6 +19,8 @@ export function NewItemForm({
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [itemType, setItemType] = useState<ItemType>("bulk");
+  const [categoryId, setCategoryId] = useState("");
+  const [groupId, setGroupId] = useState("");
   const [metal, setMetal] = useState("");
   const [shape, setShape] = useState("");
   const [uom, setUom] = useState("");
@@ -29,6 +31,15 @@ export function NewItemForm({
   const metals = useVocab("metals");
   const shapes = useVocab("shapes");
   const uoms = useVocab("uoms");
+  const cats = useQuery({
+    queryKey: ["item-categories"],
+    queryFn: () => api<ItemCategoryRow[]>("/item-categories"),
+  });
+  const groups = useQuery({
+    queryKey: ["item-groups", categoryId],
+    queryFn: () =>
+      api<GroupOut[]>(`/item-groups${categoryId ? `?category_id=${categoryId}` : ""}`),
+  });
 
   const create = useMutation({
     mutationFn: () =>
@@ -37,6 +48,8 @@ export function NewItemForm({
         body: {
           name: name.trim(),
           item_type: itemType,
+          category_id: categoryId || null,
+          group_id: groupId || null,
           metal: metal || null,
           shape: shape || null,
           uom: uom || null,
@@ -46,6 +59,7 @@ export function NewItemForm({
       }),
     onSuccess: (it) => {
       qc.invalidateQueries({ queryKey: ["items"] });
+      qc.invalidateQueries({ queryKey: ["item-tree"] });
       onCreated(it);
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Create failed"),
@@ -94,6 +108,39 @@ export function NewItemForm({
           >
             <option value="bulk">⚖ BULK</option>
             <option value="mrp">📦 MRP</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">Category</label>
+          <select
+            className="field"
+            value={categoryId}
+            onChange={(e) => {
+              setCategoryId(e.target.value);
+              setGroupId("");
+            }}
+          >
+            <option value="">—</option>
+            {cats.data?.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Group</label>
+          <select
+            className="field"
+            value={groupId}
+            onChange={(e) => setGroupId(e.target.value)}
+          >
+            <option value="">— (loose)</option>
+            {groups.data?.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
           </select>
         </div>
         <div>

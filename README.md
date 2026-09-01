@@ -32,6 +32,7 @@ Out of scope for M1 (designed-for, dormant): GST/IRN/e-Way Bill, weighbridge int
 | Frontend — auth page, app shell, Firm page, Parties two-pane (rail + inline detail form) | ✅ `web/` |
 | Deploy — push-to-`main` → build → migrate → live at `metal.fleekfinance.in` | ✅ (API; SPA builds once `web/Dockerfile` is present — it now is) |
 | Item catalogue — two-pane list+detail, metal-trade attributes (metal/shape/grade/size/dims/finish + uom-conversion), price optimum-band, fuzzy search, dedupe on normalized name, confirm/merge, HSN lookup + HSN→GST auto-fill | ✅ `/api/items`, `/api/reference/hsn\|uoms\|categories\|shapes\|metals` |
+| Catalogue hierarchy — category → product-group → item; per-tenant categories, group editor + size grid (drag-reorder), leaf↔group inheritance, Items **tree** view; the rules-first `product_parse` + `resolve_group` for the (later) inward + billing learning loops | ✅ `/api/item-categories`, `/api/item-groups`, `/api/items/tree` |
 | Invoice editor + finalize + PDF | ⬜ |
 
 ## Stack (planned)

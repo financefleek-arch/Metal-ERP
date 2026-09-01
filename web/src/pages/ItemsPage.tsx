@@ -5,8 +5,12 @@ import { api } from "../lib/api";
 import type { Item, ItemListItem } from "../lib/types";
 import { ItemForm } from "../components/ItemForm";
 import { NewItemForm } from "../components/NewItemForm";
+import { ItemTree } from "../components/ItemTree";
+import { GroupForm } from "../components/GroupForm";
+import { CategoryManager } from "../components/CategoryManager";
 
 type Scope = "" | "bulk" | "mrp" | "unconfirmed" | "no_hsn" | "price_review" | "archived";
+type View = "tree" | "flat";
 
 const FILTERS: { key: Scope; label: string }[] = [
   { key: "", label: "All" },
@@ -31,17 +35,20 @@ function buildQuery(q: string, scope: Scope) {
 
 export function ItemsPage() {
   const nav = useNavigate();
-  const { id } = useParams();
+  const { id, groupId } = useParams();
   const { pathname } = useLocation();
   const isNew = pathname === "/items/new";
-  const selectedId = isNew ? null : (id ?? null);
+  const isCats = pathname === "/items/categories";
+  const selectedId = isNew || groupId ? null : (id ?? null);
 
+  const [view, setView] = useState<View>("tree");
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<Scope>("");
 
   const list = useQuery({
     queryKey: ["items", q, scope],
     queryFn: () => api<ItemListItem[]>(`/items?${buildQuery(q, scope)}`),
+    enabled: view === "flat",
   });
 
   const detail = useQuery({
@@ -65,27 +72,52 @@ export function ItemsPage() {
               + New
             </button>
           </div>
-          <input
-            className="field h-8 text-xs"
-            placeholder="search name, grade, size, HSN…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <div className="flex flex-wrap gap-1">
-            {FILTERS.map((f) => (
+          <div className="flex gap-1">
+            {(["tree", "flat"] as const).map((v) => (
               <button
-                key={f.key}
-                onClick={() => setScope(f.key)}
-                className={`rounded-full border px-2.5 py-0.5 text-[10px] ${
-                  scope === f.key
+                key={v}
+                onClick={() => setView(v)}
+                className={`rounded-full border px-2.5 py-0.5 text-[10px] capitalize ${
+                  view === v
                     ? "border-ink bg-ink text-ground"
                     : "border-line bg-card text-muted hover:bg-ground"
                 }`}
               >
-                {f.label}
+                {v}
               </button>
             ))}
+            <button
+              onClick={() => nav("/items/categories")}
+              className="rounded-full border border-line bg-card px-2.5 py-0.5 text-[10px] text-muted hover:bg-ground"
+            >
+              Categories…
+            </button>
           </div>
+          {view === "flat" && (
+            <>
+              <input
+                className="field h-8 text-xs"
+                placeholder="search name, grade, size, HSN…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+              <div className="flex flex-wrap gap-1">
+                {FILTERS.map((f) => (
+                  <button
+                    key={f.key}
+                    onClick={() => setScope(f.key)}
+                    className={`rounded-full border px-2.5 py-0.5 text-[10px] ${
+                      scope === f.key
+                        ? "border-ink bg-ink text-ground"
+                        : "border-line bg-card text-muted hover:bg-ground"
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -95,64 +127,75 @@ export function ItemsPage() {
               <div className="text-[10px] text-muted">fill name to save</div>
             </div>
           )}
-          {list.isLoading && <div className="px-3 py-6 text-xs text-muted">Loading…</div>}
-          {!list.isLoading && list.data?.length === 0 && !isNew && (
-            <div className="px-3 py-8 text-center text-xs text-muted">
-              {q || scope ? "No matches." : "No items yet."}
-            </div>
-          )}
-          {list.data?.map((it) => (
-            <button
-              key={it.id}
-              onClick={() => nav(`/items/${it.id}`)}
-              className={`block w-full border-b border-[#f3eee4] px-3 py-2 text-left ${
-                it.id === selectedId
-                  ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
-                  : "hover:bg-accent-soft"
-              }`}
-            >
-              <div className="flex items-center gap-1.5 text-xs">
-                <span
-                  className={`rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase ${
-                    it.item_type === "bulk"
-                      ? "bg-accent-soft text-accent"
-                      : "bg-[#f1e7d6] text-warn"
+
+          {view === "tree" ? (
+            <ItemTree selectedItemId={selectedId} selectedGroupId={groupId ?? null} />
+          ) : (
+            <>
+              {list.isLoading && <div className="px-3 py-6 text-xs text-muted">Loading…</div>}
+              {!list.isLoading && list.data?.length === 0 && !isNew && (
+                <div className="px-3 py-8 text-center text-xs text-muted">
+                  {q || scope ? "No matches." : "No items yet."}
+                </div>
+              )}
+              {list.data?.map((it) => (
+                <button
+                  key={it.id}
+                  onClick={() => nav(`/items/${it.id}`)}
+                  className={`block w-full border-b border-[#f3eee4] px-3 py-2 text-left ${
+                    it.id === selectedId
+                      ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
+                      : "hover:bg-accent-soft"
                   }`}
                 >
-                  {it.item_type}
-                </span>
-                <span className="font-medium">{it.name}</span>
-                {it.status === "unconfirmed" && (
-                  <span className="ml-auto rounded-sm bg-[#f1e7d6] px-1 py-0.5 text-[8px] font-bold uppercase text-warn">
-                    unconfirmed
-                  </span>
-                )}
-                {it.status === "confirmed" && !it.hsn_code && (
-                  <span className="ml-auto rounded-sm bg-[#efe9df] px-1 py-0.5 text-[8px] font-bold uppercase text-muted">
-                    no HSN
-                  </span>
-                )}
-              </div>
-              <div className="mt-0.5 text-[10px] text-muted">
-                {[it.shape, it.grade && `${it.metal ?? ""} ${it.grade}`.trim()]
-                  .filter(Boolean)
-                  .join(" · ")}
-                {it.default_rate != null &&
-                  ` · ₹${it.default_rate}${it.uom ? `/${it.uom}` : ""}`}
-                {` · billed ${it.times_billed}×`}
-              </div>
-            </button>
-          ))}
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <span
+                      className={`rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase ${
+                        it.item_type === "bulk"
+                          ? "bg-accent-soft text-accent"
+                          : "bg-[#f1e7d6] text-warn"
+                      }`}
+                    >
+                      {it.item_type}
+                    </span>
+                    <span className="font-medium">{it.name}</span>
+                    {it.status === "unconfirmed" && (
+                      <span className="ml-auto rounded-sm bg-[#f1e7d6] px-1 py-0.5 text-[8px] font-bold uppercase text-warn">
+                        unconfirmed
+                      </span>
+                    )}
+                    {it.status === "confirmed" && !it.hsn_code && (
+                      <span className="ml-auto rounded-sm bg-[#efe9df] px-1 py-0.5 text-[8px] font-bold uppercase text-muted">
+                        no HSN
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[10px] text-muted">
+                    {[it.shape, it.grade && `${it.metal ?? ""} ${it.grade}`.trim()]
+                      .filter(Boolean)
+                      .join(" · ")}
+                    {it.default_rate != null &&
+                      ` · ₹${it.default_rate}${it.uom ? `/${it.uom}` : ""}`}
+                    {` · billed ${it.times_billed}×`}
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
       {/* detail */}
       <div className="flex-1 overflow-y-auto p-5">
-        {isNew ? (
+        {isCats ? (
+          <CategoryManager onClose={() => nav("/items")} />
+        ) : groupId ? (
+          <GroupForm key={groupId} groupId={groupId} />
+        ) : isNew ? (
           <NewItemForm onCreated={(it) => nav(`/items/${it.id}`)} onCancel={() => nav("/items")} />
         ) : !selectedId ? (
           <div className="grid h-full place-items-center text-sm text-muted">
-            Select an item, or add a new one.
+            Select an item or group, or add a new one.
           </div>
         ) : detail.isLoading ? (
           <div className="grid h-full place-items-center text-sm text-muted">Loading…</div>
