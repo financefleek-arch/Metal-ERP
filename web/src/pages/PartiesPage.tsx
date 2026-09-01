@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { lastSeenLabel, missingLabel } from "../lib/format";
@@ -34,7 +34,9 @@ function buildQuery(q: string, scope: Scope) {
 export function PartiesPage() {
   const nav = useNavigate();
   const { id } = useParams();
-  const isNew = id === "new";
+  const { pathname } = useLocation();
+  // The /parties/new route has no :id param, so read it from the path.
+  const isNew = pathname === "/parties/new";
   const selectedId = isNew ? null : (id ?? null);
 
   const [q, setQ] = useState("");
