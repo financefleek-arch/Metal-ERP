@@ -67,9 +67,18 @@ export function PartiesPage() {
         <div className="flex flex-col gap-2 border-b border-line p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">Parties</span>
-            <button className="btn-primary h-7 px-3 text-xs" onClick={() => nav("/parties/new")}>
-              + New
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                className="btn-ghost h-7 px-2.5 text-xs"
+                title="Bulk import from a Tally masters XML"
+                onClick={() => nav("/parties/import")}
+              >
+                ⇧ Tally
+              </button>
+              <button className="btn-primary h-7 px-3 text-xs" onClick={() => nav("/parties/new")}>
+                + New
+              </button>
+            </div>
           </div>
           <input
             className="field h-8 text-xs"

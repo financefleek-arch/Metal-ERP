@@ -81,6 +81,10 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     mrp: Mapped[float | None] = mapped_column(Numeric(15, 2))
     default_discount_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
 
+    # Purchase side — bumped on inward-bill approve (ext_inward_import).
+    last_purchase_rate: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    last_purchased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
     # Variant within a group
     size_pos: Mapped[int | None] = mapped_column(Integer)
     size_label: Mapped[str | None] = mapped_column(String(50))

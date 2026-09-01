@@ -36,6 +36,13 @@ def test_all_tables_registered() -> None:
         "invoice_line",
         "number_sequence",
         "audit_log",
+        # ext_inward_import (migration 0004)
+        "inward_bill",
+        "inward_bill_line",
+        "supplier_template",
+        "tally_ledger_config",
+        "extraction_run",
+        "job",
     }
     assert expected <= set(Base.metadata.tables)
 

@@ -69,3 +69,27 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   }
   return data as T;
 }
+
+/** multipart/form-data POST (file upload). Same auth + error handling as `api`. */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  const t = getToken();
+  if (t) headers["Authorization"] = `Bearer ${t}`;
+
+  const res = await fetch(`/api${path}`, { method: "POST", headers, body: form });
+  if (res.status === 204) return undefined as T;
+
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : undefined;
+  if (!res.ok) {
+    if (res.status === 401) setToken(null);
+    const detail =
+      data?.detail && typeof data.detail === "string"
+        ? data.detail
+        : Array.isArray(data?.detail)
+          ? data.detail.map((d: { msg?: string }) => d.msg).join("; ")
+          : res.statusText;
+    throw new ApiError(res.status, detail);
+  }
+  return data as T;
+}

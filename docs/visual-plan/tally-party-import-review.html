@@ -1,0 +1,386 @@
+<title>Tally Party Import Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --new-fg:#2f6f89;    --new-bg:#e3eef2;
+    --link-fg:#3a5a48;   --link-bg:#e6efe8;
+    --flag-fg:#8a6a1f;   --flag-bg:#f1e7d6;
+    --skip-fg:#7c766a;   --skip-bg:#efe9df;
+    --danger-fg:#a23b2e; --danger-bg:#f4e3df;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --new-fg:#8fc3d7;    --new-bg:#22333a;
+    --link-fg:#9cc9ad;   --link-bg:#24322a;
+    --flag-fg:#d8b878;   --flag-bg:#38301f;
+    --skip-fg:#b3aa99;   --skip-bg:#322e28;
+    --danger-fg:#dd9488; --danger-bg:#3a2723;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --new-fg:#8fc3d7;    --new-bg:#22333a;
+    --link-fg:#9cc9ad;   --link-bg:#24322a;
+    --flag-fg:#d8b878;   --flag-bg:#38301f;
+    --skip-fg:#b3aa99;   --skip-bg:#322e28;
+    --danger-fg:#dd9488; --danger-bg:#3a2723;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1140px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:8px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(26px,4vw,36px);
+    line-height:1.12; margin:0 0 12px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:72ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .statusrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:11px; }
+  .chip { padding:3px 9px; border-radius:999px; font-weight:500; }
+  .chip.new { background:var(--new-bg); color:var(--new-fg); }
+  .chip.reuse { background:var(--link-bg); color:var(--link-fg); }
+
+  section.blk { margin-top:46px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:82ch; }
+
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .tabbar { display:flex; align-items:center; gap:7px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line); }
+  .tabbar i { width:10px; height:10px; border-radius:50%; background:var(--faint); }
+  .tabbar .url { margin-left:10px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted);
+    background:var(--card); border:1px solid var(--line); border-radius:5px; padding:3px 10px; }
+  .topnav { display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 18px;
+    background:var(--shell); color:var(--shell-text); }
+  .topnav .brand { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:15px; }
+  .topnav nav { display:flex; gap:16px; font-size:12.5px; color:var(--shell-dim); }
+  .topnav nav a { color:var(--shell-dim); text-decoration:none; padding-bottom:14px; }
+  .topnav nav a.active { color:var(--shell-text); border-bottom:2px solid var(--accent); }
+  .topnav nav a.ext { color:var(--shell-text); background:color-mix(in srgb,var(--accent) 32%,transparent); border-radius:5px; padding:2px 8px; align-self:center; }
+  .topnav .who { font-size:11px; color:var(--shell-dim); }
+
+  .body { padding:18px 20px; }
+
+  /* step 1 — upload / scope */
+  .drop { border:1.5px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 6%,var(--card));
+    padding:22px; text-align:center; color:var(--accent); font-size:13px; }
+  .drop small { display:block; color:var(--muted); margin-top:4px; font-size:11px; }
+  .scopebox { margin-top:14px; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .scopebox .h { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:8px; }
+  .grp { display:flex; align-items:center; gap:7px; font-size:12px; padding:4px 0; }
+  .grp .cb { width:14px; height:14px; border:1px solid var(--faint); border-radius:3px; display:inline-grid; place-items:center; font-size:9px; }
+  .grp .cb.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .grp .cnt { margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); }
+  .grp .locked { color:var(--faint); font-size:9px; }
+
+  /* summary band */
+  .summary { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+  .scard { border:1px solid var(--line); border-radius:9px; padding:9px 13px; min-width:120px; }
+  .scard .n { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:19px; }
+  .scard .l { font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-top:2px; }
+  .scard.new { border-color:color-mix(in srgb,var(--new-fg) 40%,var(--line)); }
+  .scard.flag { border-color:color-mix(in srgb,var(--flag-fg) 40%,var(--line)); }
+
+  .filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .filters .f { font-size:10px; border:1px solid var(--line); border-radius:999px; padding:3px 10px; color:var(--muted); background:var(--card); }
+  .filters .f.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+
+  table.rows { width:100%; border-collapse:collapse; }
+  table.rows th { text-align:left; font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:8px 9px; background:var(--band); border-bottom:1px solid var(--line); }
+  table.rows td { padding:9px; font-size:11.5px; border-top:1px solid var(--line-soft); vertical-align:middle; }
+  table.rows tr.flagrow td { background:color-mix(in srgb,var(--flag-fg) 7%,transparent); }
+  .out { font-size:8px; letter-spacing:0.03em; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+  .out.new { background:var(--new-bg); color:var(--new-fg); }
+  .out.link { background:var(--link-bg); color:var(--link-fg); }
+  .out.flag { background:var(--flag-bg); color:var(--flag-fg); }
+  .out.skip { background:var(--skip-bg); color:var(--skip-fg); }
+  .rolepick { border:1px solid var(--line); border-radius:5px; background:var(--card); font-size:10px; padding:2px 5px; color:var(--ink-soft); }
+  .actlink { color:var(--accent); text-decoration:none; font-size:10px; }
+  .gst { font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); }
+  .miss { color:var(--flag-fg); font-size:10px; }
+
+  .bulkbar { display:flex; align-items:center; gap:10px; margin:10px 0; font-size:11px; color:var(--muted); }
+  .bulkbar select { border:1px solid var(--line); border-radius:5px; background:var(--card); font-size:11px; padding:3px 6px; }
+  .bulkbar .btn { font-size:11px; border:1px solid var(--line); border-radius:6px; padding:4px 10px; background:var(--card); cursor:pointer; }
+
+  .commitbar { display:flex; align-items:center; justify-content:space-between; margin-top:14px; padding:12px 14px;
+    border:1px solid var(--line); border-radius:10px; background:var(--band); }
+  .commitbar .btn { font-size:12px; font-weight:600; border:none; border-radius:7px; padding:7px 16px; cursor:pointer; }
+  .commitbar .btn.primary { background:var(--accent); color:#fff; }
+  .commitbar .btn.ghost { background:var(--card); border:1px solid var(--line); color:var(--ink-soft); }
+
+  .ctable { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:20px; background:var(--card); }
+  .ctable table { width:100%; border-collapse:collapse; }
+  .ctable th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:10px 12px; background:var(--band); border-bottom:1px solid var(--line); }
+  .ctable td { padding:11px 12px; font-size:12px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .ctable td:first-child { font-weight:600; white-space:nowrap; width:120px; }
+  .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
+
+  .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
+    padding:14px 16px; margin-top:20px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
+  .note b { color:var(--accent-dark); }
+  .note ul { margin:8px 0 0; padding-left:18px; } .note li { margin:4px 0; }
+  .note code { font-family:"IBM Plex Mono",monospace; font-size:0.9em; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:0 4px; border-radius:3px; }
+
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:18px 0 0; font-size:11.5px; }
+  .flow .n { background:var(--card); border:1px solid var(--line); border-radius:7px; padding:7px 11px; display:flex; flex-direction:column; gap:1px; }
+  .flow .n b { font-size:11.5px; } .flow .n span { font-size:9.5px; color:var(--muted); }
+  .flow .n.hl { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+  .flow .a { color:var(--faint); }
+
+  footer.page { margin-top:56px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    table.rows { display:block; overflow-x:auto; }
+    .topnav nav { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual review · Tally party import · completes the Parties slice</p>
+    <h1 class="page">Bulk import parties from Tally</h1>
+    <p class="lede">
+      Upload a Tally-exported masters XML → the system parses the <strong>Ledgers</strong> under
+      <em>Sundry Debtors / Sundry Creditors</em> (plus any groups you tick), matches each against your existing
+      parties by <strong>GSTIN then PAN then name</strong>, and shows a review screen: what it will
+      <strong>create</strong>, what it will <strong>update in place</strong>, and what <strong>needs a decision</strong>.
+      Nothing is written until you press <strong>Import</strong>.
+    </p>
+    <div class="statusrow">
+      <span class="chip reuse">✓ reuse: party.source / source_ref / tally_guid (from 0003), the fuzzy-name index, all field validators</span>
+      <span class="chip new">＋ new: staging_tally_party table, tools/tally_import parser, /api/parties/import endpoints, the review screen</span>
+    </div>
+    <div class="flow" aria-label="pipeline">
+      <div class="n"><b>Upload XML</b><span>Parties rail</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Parse</b><span>lxml · UTF-16/BOM aware</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Stage</b><span>staging_tally_party rows</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Match</b><span>GSTIN → PAN → name</span></div>
+      <span class="a">→</span>
+      <div class="n hl"><b>Review</b><span>new / update / flagged</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Import</b><span>write party + party_address</span></div>
+    </div>
+  </header>
+
+  <!-- ============ STEP 1 — UPLOAD + SCOPE ============ -->
+  <section class="blk">
+    <h2>Step 1 — upload &amp; choose groups</h2>
+    <p class="sub">
+      In Tally: <em>Gateway → Display More Reports → List of Accounts → Ledgers</em>, then <span class="mono">Alt+E</span> →
+      format <strong>XML</strong> (or <em>Export → Masters → All Masters</em>). Drop that file here.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/parties/import</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#" class="ext">◆ Inward</a><a href="#">Items</a><a href="#" class="active">Parties</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="body">
+        <div class="drop">
+          Drop the Tally masters XML here, or click to choose
+          <small>.xml · UTF-16 or UTF-8 · up to 10 MB · one file</small>
+        </div>
+        <div class="scopebox">
+          <div class="h">Ledger groups to import <span style="text-transform:none; letter-spacing:0; color:var(--faint);">— from the file's group tree</span></div>
+          <div class="grp"><span class="cb on">✓</span> Sundry Debtors <span class="locked">· always · → customer</span> <span class="cnt">96 ledgers</span></div>
+          <div class="grp"><span class="cb on">✓</span> Sundry Creditors <span class="locked">· always · → supplier</span> <span class="cnt">38 ledgers</span></div>
+          <div class="grp"><span class="cb">&nbsp;</span> Transporters <span style="color:var(--faint); font-size:9px;">→ pick a role on import</span> <span class="cnt">7 ledgers</span></div>
+          <div class="grp"><span class="cb">&nbsp;</span> Loans &amp; Advances (Asset) <span class="cnt">4 ledgers</span></div>
+          <div class="grp"><span class="cb">&nbsp;</span> Employee Advances <span class="cnt">11 ledgers</span></div>
+          <div style="font-size:10px; color:var(--muted); margin-top:8px;">Debtors &amp; Creditors are always included; tick extras only if that group really holds trade parties.</div>
+        </div>
+        <div style="margin-top:12px; display:flex; justify-content:flex-end;">
+          <button class="btn" style="font-size:12px; font-weight:600; border:none; border-radius:7px; padding:7px 16px; background:var(--accent); color:#fff; cursor:pointer;">Parse &amp; review →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STEP 2 — REVIEW ============ -->
+  <section class="blk">
+    <h2>Step 2 — review the batch</h2>
+    <p class="sub">
+      142 ledgers parsed. Each row shows its <strong>outcome</strong>, the <strong>role</strong> (from its group, editable),
+      the matched party if any, and what's missing. Rows that need a human decision are tinted and collected under
+      <strong>Needs attention</strong>.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/parties/import</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#" class="ext">◆ Inward</a><a href="#">Items</a><a href="#" class="active">Parties</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="body">
+        <div class="summary">
+          <div class="scard new"><div class="n">118</div><div class="l">New — will create</div></div>
+          <div class="scard"><div class="n">20</div><div class="l">Match — fill blanks</div></div>
+          <div class="scard flag"><div class="n">4</div><div class="l">Needs attention</div></div>
+          <div class="scard"><div class="n">0</div><div class="l">Skipped</div></div>
+        </div>
+
+        <div class="filters">
+          <span class="f on">All 142</span><span class="f">New 118</span><span class="f">Matched 20</span><span class="f">Needs attention 4</span>
+        </div>
+
+        <table class="rows">
+          <thead>
+            <tr><th style="width:22px;"></th><th>Tally ledger</th><th>GSTIN</th><th>Role</th><th>Outcome</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Metro Steel Corp<br><span class="gst">Sundry Creditors › Steel Cos</span></td>
+              <td class="gst">19AABCM4521Q1ZP</td>
+              <td><select class="rolepick"><option selected>supplier</option><option>customer</option><option>both</option></select></td>
+              <td><span class="out new">new</span></td>
+              <td class="miss">no address in ledger</td>
+            </tr>
+            <tr>
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Balaji Traders<br><span class="gst">Sundry Debtors › Local</span></td>
+              <td class="gst">19AAJCB1234K1ZM</td>
+              <td><select class="rolepick"><option selected>customer</option><option>supplier</option><option>both</option></select></td>
+              <td><span class="out link">match → fill blanks</span></td>
+              <td style="color:var(--muted);">GSTIN = party p_8f21 · fills phone, PIN · links tally_guid</td>
+            </tr>
+            <tr>
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Nilkanth Hardware<br><span class="gst">Sundry Debtors › Local</span></td>
+              <td class="gst">—</td>
+              <td><select class="rolepick"><option selected>customer</option><option>supplier</option><option>both</option></select></td>
+              <td><span class="out new">new</span></td>
+              <td class="miss">no GSTIN · PAN AJKPN…9F present</td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Balaji Trdrs<br><span class="gst">Sundry Debtors › Local</span></td>
+              <td class="gst">—</td>
+              <td><select class="rolepick"><option selected>customer</option><option>supplier</option><option>both</option></select></td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>~0.87 name match to <b>Balaji Traders</b> · <a class="actlink">link to it</a> / <a class="actlink">create new</a></td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Jai Ambe Steel &amp; Metal Mart Pvt Ltd (Siliguri Branch Office Godown 2)<br><span class="gst">Sundry Creditors</span></td>
+              <td class="gst">19AACCJ7788L1Z4</td>
+              <td><select class="rolepick"><option selected>supplier</option><option>customer</option><option>both</option></select></td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>name &gt; 140 chars · <a class="actlink">edit before import</a></td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>M/s R.K. Enterprise<br><span class="gst">Sundry Debtors · also Sundry Creditors</span></td>
+              <td class="gst">19AAEFR9012M1ZK</td>
+              <td><select class="rolepick"><option>customer</option><option>supplier</option><option selected>both</option></select></td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>ledger appears under both group trees → proposed role <b>both</b> · confirm</td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Cash Sales Party<br><span class="gst">Sundry Debtors</span></td>
+              <td class="gst">27ABCDE1234F1Z9 <span class="miss">✗ bad check digit</span></td>
+              <td><select class="rolepick"><option selected>customer</option><option>supplier</option><option>both</option></select></td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>GSTIN fails validation · <a class="actlink">import without GSTIN</a> / <a class="actlink">fix</a> / <a class="actlink">skip</a></td>
+            </tr>
+            <tr><td colspan="6" style="font-size:10px; color:var(--muted);">… 135 more rows (118 new, 17 matched)</td></tr>
+          </tbody>
+        </table>
+
+        <div class="bulkbar">
+          <span>Selected 142 ·</span>
+          <span>set role to</span>
+          <select><option>— pick —</option><option>customer</option><option>supplier</option><option>both</option></select>
+          <button class="btn">apply</button>
+          <span style="margin-left:auto;">the 4 flagged rows are excluded from Import until resolved</span>
+        </div>
+
+        <div class="commitbar">
+          <div style="font-size:12px;"><b>138</b> ready · <b>4</b> need a decision first</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn ghost">Cancel</button>
+            <button class="btn primary">Import 138 parties</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MATCHING RULES ============ -->
+  <section class="blk">
+    <h2>Matching &amp; write rules</h2>
+    <div class="note" style="margin-top:0;">
+      <b>Per ledger, in order:</b>
+      <ul>
+        <li><b>GSTIN exact</b> against <code>party.gstin</code> (any role) → <b>link + fill blanks</b>: set <code>tally_guid</code>, and copy phone / email / PAN / address / PIN <em>only into fields that are currently empty</em>. Never overwrites a non-blank value. If the matched party's role differs, widen to <code>both</code> (never narrow).</li>
+        <li><b>No GSTIN on the ledger → PAN exact</b> against <code>party.pan</code> → same link + fill-blanks.</li>
+        <li><b>No PAN match → normalized-name trigram</b> ≥ 0.82 to a single party → <b>flag for review</b>: the row offers <em>link to it</em> / <em>create new</em>. Never auto-links on a name alone.</li>
+        <li><b>No match</b> → <b>create new</b>: <code>source = tally_import</code>, <code>source_ref = &lt;Tally GUID&gt;</code>, role from the group lineage, one <code>party_address</code> (type <code>both</code>) from the ledger's <code>&lt;ADDRESS.LIST&gt;</code> + <code>PINCODE</code>, state from <code>LEDSTATENAME</code> (mapped to a code) or the GSTIN prefix.</li>
+      </ul>
+      <b>Auto-flagged (excluded from Import until fixed):</b> a name-only near-match; a legal name &gt; 140 chars or with disallowed characters; a GSTIN/PAN that fails validation; a ledger under both Debtors and Creditors lineages; a duplicate GSTIN within the file itself.
+    </div>
+  </section>
+
+  <!-- ============ CRUD SPEC + BACKEND ============ -->
+  <section class="blk">
+    <h2>The slice — spec</h2>
+    <div class="ctable">
+      <table>
+        <thead><tr><th>Step</th><th>Trigger</th><th>Behaviour</th><th>API</th></tr></thead>
+        <tbody>
+          <tr><td>Upload &amp; parse</td><td><code>⇧ Import from Tally</code> in the Parties rail → file picker</td><td>Multipart XML → <code>lxml</code> parse (UTF-16/BOM aware, control-char entities stripped) → walk the group tree → one <code>staging_tally_party</code> row per in-scope ledger, raw blob + Tally GUID kept. Returns a batch id + the group list with counts.</td><td class="op">POST /api/parties/import</td></tr>
+          <tr><td>Review</td><td>Redirect to <code>/parties/import</code> (or <code>/parties/import/:batch</code>)</td><td>Runs the match rules over the staged rows, returns each with outcome (new / link / flag), proposed role, matched party id, missing-field list, per-row validation errors.</td><td class="op">GET /api/parties/import/:batch</td></tr>
+          <tr><td>Adjust</td><td>Per-row role change, link/create/skip on a flagged row, bulk role set, edit a too-long name</td><td>Patches the staging row's <code>decision</code> + <code>role_override</code> + <code>edited_name</code>. Re-validates.</td><td class="op">PATCH /api/parties/import/:batch/rows/:id</td></tr>
+          <tr><td>Import</td><td><code>Import N parties</code></td><td>One transaction: for each ready row, create or fill-blanks per the rules; write <code>party</code> + <code>party_address</code>; set <code>source</code>/<code>source_ref</code>/<code>tally_guid</code>; <code>audit_log</code> per row. Flagged rows left in staging. Returns created/updated/skipped counts.</td><td class="op">POST /api/parties/import/:batch/commit</td></tr>
+          <tr><td>Discard</td><td>Cancel</td><td>Drops the batch's staging rows.</td><td class="op">DELETE /api/parties/import/:batch</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>Backend — this slice</b>
+      <ul>
+        <li><b>Migration <code>0005</code></b> (<code>down_revision = "0004"</code> — the inward module's migration; rebase to <code>0004</code> if that hasn't merged): one table <code>staging_tally_party</code> — <code>id, tenant_id, batch_id, tally_guid, raw_xml, ledger_name, parent_group, gstin, pan, state_name, phone, email, address_lines_json, pincode, proposed_role, decision (pending|create|link|skip), role_override, link_party_id, edited_name, match_method, match_party_id, flags_json, created_at</code>. No changes to <code>party</code> (0003 already added everything needed).</li>
+        <li><code>tools/tally_import/</code> — <code>parser.py</code> (lxml → list of <code>TallyLedger</code> dataclasses; encoding + control-char handling), <code>groups.py</code> (build the group tree, resolve Debtors/Creditors lineage → role), <code>match.py</code> (the GSTIN→PAN→name ladder, reuses <code>app/services/parties</code> helpers). Pure, unit-tested against committed sample XML fixtures.</li>
+        <li><code>app/routers/parties_import.py</code> — the 5 endpoints above. Registered in <code>main.py</code> (one line — the only shared-file touch).</li>
+        <li>Reuses verbatim: every validator in <code>app/reference.py</code>, <code>party.source</code>/<code>source_ref</code>/<code>tally_guid</code>, the <code>legal_name</code> trigram index, the <code>StateSelect</code> / state-name→code mapping (add a name→code lookup in <code>reference.py</code>).</li>
+        <li>Frontend: <code>web/src/pages/parties/ImportPage.tsx</code> (the two screens above) + a <code>⇧ Import from Tally</code> button in the Parties rail header, route <code>/parties/import</code>.</li>
+        <li>Tests: parser against 2–3 real exported XML fixtures (with an all-masters file and a ledgers-only file); match ladder (GSTIN hit, PAN hit, name flag, no match); commit txn (create + fill-blanks-not-overwrite + role widen); a flagged row stays unwritten.</li>
+      </ul>
+      <div style="margin-top:8px;"><b>Not this slice:</b> a CLI entrypoint (upload-only for now — the module functions are importable so a CLI is trivial to add later), re-sync / diff against a second export, item / stock-group import (that's the Items slice + execution-plan §9).</div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Completes: <code>docs/visual-plan/parties-crud-review.html</code></span>
+    <span>Precedent: execution-plan §9 (Tally XML import)</span>
+    <span>Parallel work: another session owns the inward-bill import flow (migration 0004)</span>
+    <span>Mid-fi · for sign-off before coding</span>
+  </footer>
+</div>

@@ -51,6 +51,11 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     gst_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     gstin: Mapped[str | None] = mapped_column(String(15))
 
+    # Extension flag: Inward Bill Import module. Off by default; when false the
+    # /api/inward-bills* routes 404 and the "Inward" nav item is hidden.
+    # Toggled by a DB update / seed until an admin screen exists.
+    ext_inward_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
 
 

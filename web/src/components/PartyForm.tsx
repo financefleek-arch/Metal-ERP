@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
-import { gstinError, panError } from "../lib/reference";
+import {
+  MAXLEN,
+  addressLineError,
+  cityError,
+  emailError,
+  gstinError,
+  legalNameError,
+  panError,
+  phoneError,
+  pincodeError,
+} from "../lib/reference";
 import { missingLabel } from "../lib/format";
 import type { Party, PartyRole } from "../lib/types";
 import { StateSelect } from "./StateSelect";
@@ -131,16 +141,30 @@ export function PartyForm({
     },
   });
 
+  function fieldErrors(f: Fields) {
+    return {
+      legal_name: legalNameError(f.legal_name),
+      phone: phoneError(f.phone),
+      email: emailError(f.email),
+      pan: panError(f.pan),
+      gstin: gstinError(f.gstin),
+      addr_line1: addressLineError(f.addr_line1),
+      addr_city: cityError(f.addr_city),
+      addr_pincode: pincodeError(f.addr_pincode),
+    };
+  }
+
+  const errs = fieldErrors(v);
+
   function patch(next: Partial<Fields>) {
     const merged = { ...v, ...next };
     setV(merged);
     setErrMsg(null);
 
-    const pe = panError(merged.pan);
-    const ge = gstinError(merged.gstin);
-    if (!merged.legal_name.trim() || pe || ge) {
+    const blocking = Object.values(fieldErrors(merged)).find(Boolean);
+    if (blocking) {
       setSaveState("dirty");
-      setErrMsg(pe ?? ge ?? "Name is required");
+      setErrMsg(blocking);
       window.clearTimeout(timer.current);
       return;
     }
@@ -241,9 +265,11 @@ export function PartyForm({
           <label className="label">Legal name *</label>
           <input
             className="field"
+            maxLength={MAXLEN.legalName}
             value={v.legal_name}
             onChange={(e) => patch({ legal_name: e.target.value })}
           />
+          {errs.legal_name && <p className="err">{errs.legal_name}</p>}
         </div>
         <div>
           <label className="label">Role</label>
@@ -259,34 +285,47 @@ export function PartyForm({
         </div>
         <div>
           <label className="label">Phone</label>
-          <input className="field" value={v.phone} onChange={(e) => patch({ phone: e.target.value })} />
+          <input
+            className="field"
+            inputMode="tel"
+            maxLength={MAXLEN.phone}
+            value={v.phone}
+            onChange={(e) => patch({ phone: e.target.value })}
+          />
+          {errs.phone && <p className="err">{errs.phone}</p>}
         </div>
         <div>
           <label className="label">Email</label>
           <input
             className="field"
             type="email"
+            maxLength={MAXLEN.email}
             value={v.email}
             onChange={(e) => patch({ email: e.target.value })}
           />
+          {errs.email && <p className="err">{errs.email}</p>}
         </div>
         <div>
           <label className="label">PAN</label>
           <input
             className="field uppercase"
             placeholder="AAAAA9999A"
+            maxLength={MAXLEN.pan}
             value={v.pan}
             onChange={(e) => patch({ pan: e.target.value.toUpperCase() })}
           />
+          {errs.pan && <p className="err">{errs.pan}</p>}
         </div>
         <div>
           <label className="label">GSTIN</label>
           <input
             className="field uppercase"
             placeholder="27AAAAA9999A1Z5"
+            maxLength={MAXLEN.gstin}
             value={v.gstin}
             onChange={(e) => patch({ gstin: e.target.value.toUpperCase() })}
           />
+          {errs.gstin && <p className="err">{errs.gstin}</p>}
         </div>
         <div>
           <label className="label">Default state</label>
@@ -307,29 +346,42 @@ export function PartyForm({
           )}
         </p>
         <div className="space-y-3">
-          <input
-            className="field"
-            placeholder="Address line"
-            value={v.addr_line1}
-            onChange={(e) => patch({ addr_line1: e.target.value })}
-          />
-          <div className="grid grid-cols-3 gap-3">
+          <div>
             <input
               className="field"
-              placeholder="City"
-              value={v.addr_city}
-              onChange={(e) => patch({ addr_city: e.target.value })}
+              placeholder="Address line"
+              maxLength={MAXLEN.addressLine}
+              value={v.addr_line1}
+              onChange={(e) => patch({ addr_line1: e.target.value })}
             />
+            {errs.addr_line1 && <p className="err">{errs.addr_line1}</p>}
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <input
+                className="field"
+                placeholder="City"
+                maxLength={MAXLEN.city}
+                value={v.addr_city}
+                onChange={(e) => patch({ addr_city: e.target.value })}
+              />
+              {errs.addr_city && <p className="err">{errs.addr_city}</p>}
+            </div>
             <StateSelect
               value={v.addr_state_code}
               onChange={(e) => patch({ addr_state_code: e.target.value })}
             />
-            <input
-              className="field"
-              placeholder="PIN"
-              value={v.addr_pincode}
-              onChange={(e) => patch({ addr_pincode: e.target.value })}
-            />
+            <div>
+              <input
+                className="field"
+                placeholder="PIN"
+                inputMode="numeric"
+                maxLength={MAXLEN.pincode}
+                value={v.addr_pincode}
+                onChange={(e) => patch({ addr_pincode: e.target.value })}
+              />
+              {errs.addr_pincode && <p className="err">{errs.addr_pincode}</p>}
+            </div>
           </div>
         </div>
       </div>

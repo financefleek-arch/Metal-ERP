@@ -1,7 +1,17 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
-import { gstinError, panError } from "../lib/reference";
+import {
+  MAXLEN,
+  addressLineError,
+  cityError,
+  emailError,
+  gstinError,
+  legalNameError,
+  panError,
+  phoneError,
+  pincodeError,
+} from "../lib/reference";
 import type { Party, PartyRole } from "../lib/types";
 import { StateSelect } from "./StateSelect";
 
@@ -85,9 +95,18 @@ export function NewPartyForm({
     onError: (e) => setServerError(e instanceof ApiError ? e.message : "Create failed"),
   });
 
-  const pe = panError(v.pan);
-  const ge = gstinError(v.gstin);
-  const canCreate = !!v.legal_name.trim() && !pe && !ge && !create.isPending;
+  const errs = {
+    legal_name: legalNameError(v.legal_name),
+    phone: phoneError(v.phone),
+    email: emailError(v.email),
+    pan: panError(v.pan),
+    gstin: gstinError(v.gstin),
+    addr_line1: addressLineError(v.addr_line1),
+    addr_city: cityError(v.addr_city),
+    addr_pincode: pincodeError(v.addr_pincode),
+  };
+  const canCreate =
+    !!v.legal_name.trim() && !Object.values(errs).some(Boolean) && !create.isPending;
 
   return (
     <form
@@ -117,9 +136,11 @@ export function NewPartyForm({
             className="field"
             autoFocus
             placeholder="Type the party name…"
+            maxLength={MAXLEN.legalName}
             value={v.legal_name}
             onChange={(e) => setV({ ...v, legal_name: e.target.value })}
           />
+          {v.legal_name.trim() && errs.legal_name && <p className="err">{errs.legal_name}</p>}
         </div>
         <div>
           <label className="label">Role</label>
@@ -135,36 +156,47 @@ export function NewPartyForm({
         </div>
         <div>
           <label className="label">Phone</label>
-          <input className="field" value={v.phone} onChange={(e) => setV({ ...v, phone: e.target.value })} />
+          <input
+            className="field"
+            inputMode="tel"
+            maxLength={MAXLEN.phone}
+            value={v.phone}
+            onChange={(e) => setV({ ...v, phone: e.target.value })}
+          />
+          {errs.phone && <p className="err">{errs.phone}</p>}
         </div>
         <div>
           <label className="label">Email</label>
           <input
             className="field"
             type="email"
+            maxLength={MAXLEN.email}
             value={v.email}
             onChange={(e) => setV({ ...v, email: e.target.value })}
           />
+          {errs.email && <p className="err">{errs.email}</p>}
         </div>
         <div>
           <label className="label">PAN</label>
           <input
             className="field uppercase"
             placeholder="AAAAA9999A"
+            maxLength={MAXLEN.pan}
             value={v.pan}
             onChange={(e) => setV({ ...v, pan: e.target.value.toUpperCase() })}
           />
-          {pe && <p className="err">{pe}</p>}
+          {errs.pan && <p className="err">{errs.pan}</p>}
         </div>
         <div>
           <label className="label">GSTIN</label>
           <input
             className="field uppercase"
             placeholder="27AAAAA9999A1Z5"
+            maxLength={MAXLEN.gstin}
             value={v.gstin}
             onChange={(e) => setV({ ...v, gstin: e.target.value.toUpperCase() })}
           />
-          {ge && <p className="err">{ge}</p>}
+          {errs.gstin && <p className="err">{errs.gstin}</p>}
         </div>
         <div>
           <label className="label">Default state</label>
@@ -178,29 +210,42 @@ export function NewPartyForm({
       <div className="border-t border-line pt-4">
         <p className="label">Address</p>
         <div className="space-y-3">
-          <input
-            className="field"
-            placeholder="Address line"
-            value={v.addr_line1}
-            onChange={(e) => setV({ ...v, addr_line1: e.target.value })}
-          />
-          <div className="grid grid-cols-3 gap-3">
+          <div>
             <input
               className="field"
-              placeholder="City"
-              value={v.addr_city}
-              onChange={(e) => setV({ ...v, addr_city: e.target.value })}
+              placeholder="Address line"
+              maxLength={MAXLEN.addressLine}
+              value={v.addr_line1}
+              onChange={(e) => setV({ ...v, addr_line1: e.target.value })}
             />
+            {errs.addr_line1 && <p className="err">{errs.addr_line1}</p>}
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <input
+                className="field"
+                placeholder="City"
+                maxLength={MAXLEN.city}
+                value={v.addr_city}
+                onChange={(e) => setV({ ...v, addr_city: e.target.value })}
+              />
+              {errs.addr_city && <p className="err">{errs.addr_city}</p>}
+            </div>
             <StateSelect
               value={v.addr_state_code}
               onChange={(e) => setV({ ...v, addr_state_code: e.target.value })}
             />
-            <input
-              className="field"
-              placeholder="PIN"
-              value={v.addr_pincode}
-              onChange={(e) => setV({ ...v, addr_pincode: e.target.value })}
-            />
+            <div>
+              <input
+                className="field"
+                placeholder="PIN"
+                inputMode="numeric"
+                maxLength={MAXLEN.pincode}
+                value={v.addr_pincode}
+                onChange={(e) => setV({ ...v, addr_pincode: e.target.value })}
+              />
+              {errs.addr_pincode && <p className="err">{errs.addr_pincode}</p>}
+            </div>
           </div>
         </div>
       </div>

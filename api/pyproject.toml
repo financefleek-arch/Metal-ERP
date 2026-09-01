@@ -54,7 +54,7 @@ disallow_untyped_defs = true
 exclude = ["alembic/versions/", "tests/"]
 
 [[tool.mypy.overrides]]
-module = ["passlib.*", "weasyprint.*", "segno.*", "jose.*"]
+module = ["passlib.*", "weasyprint.*", "segno.*", "jose.*", "lxml.*", "pdfplumber.*", "fitz.*", "pymupdf.*", "pyzbar.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

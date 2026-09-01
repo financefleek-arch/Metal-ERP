@@ -35,7 +35,7 @@ def test_register_login_me_flow(client: TestClient) -> None:
     # duplicate email rejected
     dup = client.post(
         "/api/auth/register",
-        json={"firm_name": "X", "email": "flow@sethia.example.com", "password": "another-pass"},
+        json={"firm_name": "Xy", "email": "flow@sethia.example.com", "password": "another-pass"},
     )
     assert dup.status_code == 409
 
@@ -154,7 +154,8 @@ def test_party_crud_and_tenant_isolation(client: TestClient) -> None:
         json={"phone": "98320 11223", "role": "both", "addresses": []},
     )
     assert upd.status_code == 200
-    assert upd.json()["phone"] == "98320 11223"
+    # a bare 10-digit number is normalised to +91 form
+    assert upd.json()["phone"] == "+919832011223"
     assert upd.json()["role"] == "both"
     assert upd.json()["addresses"] == []
 
@@ -229,6 +230,15 @@ def test_party_pan_gstin_state_validation(client: TestClient) -> None:
     )
     assert r.status_code == 422
 
+    # GSTIN with a bad check digit -> 422
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Bad Check Co", "gstin": "27ABCPP7809D1Z5"},
+    )
+    assert r.status_code == 422
+    assert "check digit" in r.text.lower()
+
     # all valid -> 201, values normalised to upper
     r = client.post(
         "/api/parties",
@@ -236,7 +246,7 @@ def test_party_pan_gstin_state_validation(client: TestClient) -> None:
         json={
             "legal_name": "Good Co",
             "pan": "abcpp7809d",
-            "gstin": "27abcpp7809d1z5",
+            "gstin": "27abcpp7809d1zn",  # valid check digit for ABCPP7809D
             "default_state_code": "27",
             "addresses": [{"type": "both", "state_code": "27", "is_default": True}],
         },
@@ -244,7 +254,7 @@ def test_party_pan_gstin_state_validation(client: TestClient) -> None:
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["pan"] == "ABCPP7809D"
-    assert body["gstin"] == "27ABCPP7809D1Z5"
+    assert body["gstin"] == "27ABCPP7809D1ZN"
     assert body["default_state_code"] == "27"
     assert body["addresses"][0]["state_code"] == "27"
 

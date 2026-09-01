@@ -13,7 +13,15 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import engine
-from app.routers import auth, parties, reference, tenant
+from app.routers import (
+    auth,
+    inward,
+    inward_debug,
+    parties,
+    parties_import,
+    reference,
+    tenant,
+)
 
 settings = get_settings()
 
@@ -39,6 +47,11 @@ app.include_router(auth.router)
 app.include_router(reference.router)
 app.include_router(tenant.router)
 app.include_router(parties.router)
+app.include_router(parties_import.router)
+app.include_router(inward.router)
+if not settings.is_production:
+    # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.
+    app.include_router(inward_debug.router)
 
 
 @app.get("/health")

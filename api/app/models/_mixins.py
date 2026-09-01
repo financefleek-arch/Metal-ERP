@@ -102,3 +102,43 @@ class PdfStatus(enum.StrEnum):
     none = "none"
     rendered = "rendered"
     failed = "failed"
+
+
+# --- inward bill import (ext_inward_import) ---
+
+
+class InwardStatus(enum.StrEnum):
+    uploaded = "uploaded"
+    extracting = "extracting"
+    needs_review = "needs_review"
+    approved = "approved"
+    rejected = "rejected"
+    error = "error"
+
+
+class ExtractionMethod(enum.StrEnum):
+    einvoice_qr = "einvoice_qr"
+    template = "template"
+    table = "table"
+    vision_llm = "vision_llm"
+
+
+class MatchMethod(enum.StrEnum):
+    exact = "exact"
+    alias = "alias"
+    fuzzy = "fuzzy"
+    llm = "llm"
+    new = "new"
+    manual = "manual"
+
+
+class SupplyType(enum.StrEnum):
+    intra = "intra"  # supplier state == buyer state → CGST + SGST
+    inter = "inter"  # different states → IGST
+
+
+class JobStatus(enum.StrEnum):
+    queued = "queued"
+    running = "running"
+    done = "done"
+    failed = "failed"

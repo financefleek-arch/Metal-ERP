@@ -2,13 +2,17 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 
-const nav = [
+const baseNav = [
   { to: "/parties", label: "Parties" },
   { to: "/firm", label: "Firm" },
 ];
 
 export function Shell({ children }: { children: ReactNode }) {
   const { me, logout } = useAuth();
+  // Inward appears only when the tenant has ext_inward_import.
+  const nav = me?.ext_inward_import
+    ? [...baseNav, { to: "/inward", label: "Inward" }]
+    : baseNav;
 
   return (
     <div className="flex min-h-full flex-col">

@@ -71,5 +71,12 @@ def login(body: LoginRequest, session: SessionDep) -> TokenResponse:
 
 
 @router.get("/me", response_model=UserOut)
-def me(user: CurrentUser) -> User:
-    return user
+def me(user: CurrentUser, session: SessionDep) -> UserOut:
+    tenant = session.get(Tenant, user.tenant_id)
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        role=user.role,
+        tenant_id=user.tenant_id,
+        ext_inward_import=bool(tenant and tenant.ext_inward_import),
+    )

@@ -51,6 +51,10 @@ alembic check                                        # models vs migrations drif
   (provenance), `party.last_txn_at` (dormancy), `tenant.dormant_party_days`
   (default 180), and a `pg_trgm` GIN index on `party.legal_name` (Postgres
   only) for fuzzy party search.
+- `0004` — inward bill import: `inward_bill*`, `supplier_template`,
+  `tally_ledger_config`, `extraction_run`, `job` tables + `tenant.ext_inward_import`.
+- `0005` — `staging_tally_party`: holds a parsed Tally masters-XML party
+  import between upload and commit. No changes to `party`.
 
 ## Layout
 

@@ -7,6 +7,8 @@ export interface Me {
   email: string;
   role: UserRole;
   tenant_id: string;
+  /** ext_inward_import — gates the Inward nav item and its routes. */
+  ext_inward_import: boolean;
 }
 
 export interface Tenant {
@@ -73,4 +75,57 @@ export interface Party extends PartyListItem {
   pan: string | null;
   addresses: PartyAddress[];
   document_count: number;
+}
+
+// --- Tally party import ---
+
+export type ImportOutcome = "new" | "link" | "flag" | "skip";
+
+export interface ImportGroup {
+  name: string;
+  ledger_count: number;
+  always: boolean;
+  implied_role: PartyRole | null;
+}
+
+export interface ImportBatch {
+  batch_id: string;
+  total: number;
+  groups: ImportGroup[];
+}
+
+export interface ImportFlag {
+  code: string;
+  message: string;
+}
+
+export interface StagedRow {
+  id: string;
+  ledger_name: string;
+  parent_group: string | null;
+  gstin: string | null;
+  pan: string | null;
+  outcome: ImportOutcome;
+  proposed_role: PartyRole;
+  role: PartyRole;
+  match_method: string;
+  match_party_id: string | null;
+  match_party_name: string | null;
+  decision: string;
+  edited_name: string | null;
+  flags: ImportFlag[];
+  missing: string[];
+}
+
+export interface ImportReview {
+  batch_id: string;
+  counts: Record<ImportOutcome, number>;
+  rows: StagedRow[];
+}
+
+export interface ImportCommitResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  still_flagged: number;
 }

@@ -12,8 +12,17 @@ what `alembic/env.py` targets for autogenerate.
 from app.models.audit import AuditLog
 from app.models.common import HsnCode, NumberSequence, Synonym
 from app.models.invoice import Invoice, InvoiceLine
+from app.models.inward import (
+    ExtractionRun,
+    InwardBill,
+    InwardBillLine,
+    Job,
+    SupplierTemplate,
+    TallyLedgerConfig,
+)
 from app.models.item import Item, ItemAlias, ProductGroup
 from app.models.party import Party, PartyAddress
+from app.models.tally_import import StagingTallyParty
 from app.models.tenant import Tenant, User
 
 __all__ = [
@@ -21,6 +30,12 @@ __all__ = [
     "HsnCode",
     "NumberSequence",
     "Synonym",
+    "ExtractionRun",
+    "InwardBill",
+    "InwardBillLine",
+    "Job",
+    "SupplierTemplate",
+    "TallyLedgerConfig",
     "Invoice",
     "InvoiceLine",
     "Item",
@@ -28,6 +43,7 @@ __all__ = [
     "ProductGroup",
     "Party",
     "PartyAddress",
+    "StagingTallyParty",
     "Tenant",
     "User",
 ]

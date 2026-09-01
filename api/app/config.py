@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     # PDF output directory (bind-mounted volume in prod)
     pdf_dir: str = "/data/pdfs"
 
+    # Inward Bill Import (ext_inward_import). Source PDFs + generated Tally XML
+    # live under here (a bind-mounted volume in prod, same "swap to S3 later"
+    # contract as pdf_dir).
+    inward_dir: str = "/data/inward"
+
+    # LLM line-disambiguation (X3) + vision extraction (X7). Off by default —
+    # fuzzy-only line matching until real bills show the miss rate. When true,
+    # anthropic_api_key must be set.
+    llm_enabled: bool = False
+    anthropic_api_key: str | None = None
+
     # Optional integrations
     # Brevo transactional-email HTTP API key — shared across the fleek
     # stack (secret/brevo/api). Used from Stage 1+ for invoice email.
