@@ -16,7 +16,6 @@ from app.db import engine
 from app.routers import (
     auth,
     inward,
-    inward_debug,
     parties,
     parties_import,
     reference,
@@ -51,6 +50,10 @@ app.include_router(parties_import.router)
 app.include_router(inward.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.
+    # Imported here (not at module top) so this dev tool can never affect
+    # a production boot.
+    from app.routers import inward_debug
+
     app.include_router(inward_debug.router)
 
 

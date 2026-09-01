@@ -1,0 +1,28 @@
+Metadata-Version: 2.4
+Name: metalerp-api
+Version: 0.1.0
+Summary: Metal ERP — billing/inventory API for a metal-trade business
+Requires-Python: >=3.12
+Requires-Dist: fastapi>=0.115
+Requires-Dist: uvicorn[standard]>=0.32
+Requires-Dist: sqlalchemy>=2.0.36
+Requires-Dist: alembic>=1.14
+Requires-Dist: psycopg[binary]>=3.2
+Requires-Dist: pydantic>=2.10
+Requires-Dist: pydantic-settings>=2.6
+Requires-Dist: passlib[argon2]>=1.7.4
+Requires-Dist: python-jose[cryptography]>=3.3
+Requires-Dist: python-multipart>=0.0.12
+Requires-Dist: email-validator>=2.2
+Requires-Dist: weasyprint>=63
+Requires-Dist: jinja2>=3.1
+Requires-Dist: segno>=1.6
+Requires-Dist: lxml>=5.3
+Requires-Dist: pdfplumber>=0.11
+Requires-Dist: pymupdf>=1.24
+Provides-Extra: dev
+Requires-Dist: pytest>=8.3; extra == "dev"
+Requires-Dist: pytest-cov>=6.0; extra == "dev"
+Requires-Dist: httpx>=0.28; extra == "dev"
+Requires-Dist: ruff>=0.8; extra == "dev"
+Requires-Dist: mypy>=1.13; extra == "dev"
