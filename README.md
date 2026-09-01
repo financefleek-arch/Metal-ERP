@@ -25,15 +25,16 @@ Out of scope for M1 (designed-for, dormant): GST/IRN/e-Way Bill, weighbridge int
 
 | Slice | State |
 |---|---|
-| Data model + migrations (all tables, GST/stock/barcode columns dormant) | ✅ `0001`, `0002`, `0003` |
-| Auth — register firm + owner, login, JWT, role gate | ✅ `/api/auth/*` |
+| Data model + migrations (all tables, GST/stock/barcode columns dormant) — chain `0001`→`0008`, single head | ✅ |
+| Auth — register firm + owner, login, JWT, role gate; **seeds 8 item categories on register** | ✅ `/api/auth/*` |
 | Firm profile — read + onboard (`PATCH /api/tenant`) | ✅ |
 | Parties — two-pane list+detail, fuzzy search (name/address/phone), create-in-place, autosave, archive vs delete guard, provenance, "details pending" + dormancy filters, **field validation** (phone/PAN/GSTIN-checksum/PIN/email/name/address), **bulk import from a Tally masters XML** | ✅ `/api/parties`, `/api/parties/import` |
-| Frontend — auth page, app shell, Firm page, Parties two-pane (rail + inline detail form) | ✅ `web/` |
-| Deploy — push-to-`main` → build → migrate → live at `metal.fleekfinance.in` | ✅ (API; SPA builds once `web/Dockerfile` is present — it now is) |
+| Frontend — auth page, app shell (mobile-first, `md:` desktop fallback), Firm page, Parties + Items two-pane (list⇄detail route collapse on mobile) | ✅ `web/` |
+| Deploy — push-to-`main` → build → migrate → live at `metal.fleekfinance.in` | ✅ |
 | Item catalogue — two-pane list+detail, metal-trade attributes (metal/shape/grade/size/dims/finish + uom-conversion), price optimum-band, fuzzy search, dedupe on normalized name, confirm/merge, HSN lookup + HSN→GST auto-fill | ✅ `/api/items`, `/api/reference/hsn\|uoms\|categories\|shapes\|metals` |
-| Catalogue hierarchy — category → product-group → item; per-tenant categories, group editor + size grid (drag-reorder), leaf↔group inheritance, Items **tree** view; the rules-first `product_parse` + `resolve_group` for the (later) inward + billing learning loops | ✅ `/api/item-categories`, `/api/item-groups`, `/api/items/tree` |
-| Tally item import — upload a stock-items XML → parse + name-parse → GUID→name→create match ladder (update-blanks-only) → review → commit; **builds product-groups from Tally Stock Groups** (category guessed from the name), auto-skips zero-history dummies, seeds an unseen HSN on request, re-import is a no-op | ✅ `/api/items/import` |
+| **Catalogue hierarchy** (migration `0007`) — `category → product-group → item`; per-tenant `item_category` (= brand for a bartan shop), `product_group` surfaced with `default_rate_mode` + `name_normalized`, `item.category_id` / `rate_mode` / `weight_per_piece`, `item_alias.group_id` + `source` + `last_used_at`; Items **tree** view + `GroupForm` (size grid, drag-reorder) + Categories manager; rules-first `app/domain/product_parse.py` (tested vs 5 real bills) + `resolve_group` + `generated_name` — the substrate for the (deferred) inward + billing learning loops | ✅ `/api/item-categories`, `/api/item-groups`, `/api/items/tree` |
+| **Tally item import** (migration `0008`, `staging_tally_item`) — upload a **Masters** stock-items XML → parse + name-parse → GUID→name→create match ladder (update-blanks-only) → review → commit; **builds product-groups from Tally Stock Groups** (category guessed from the name), auto-skips zero-history dummies, opt-in HSN seed, re-import is a no-op. *A `StkSum` / Stock-Summary report is not yet supported (no GUID/HSN/group) — needs a format-detect branch or a Masters re-export.* | ✅ `/api/items/import` |
+| Catalogue learning **Loop 1** (`learn_from_inward`) + **Loop 2** (billing type-ahead resolve+learn) + nightly alias sweep | ⬜ deferred — need the inward module + the invoice editor |
 | Invoice editor + finalize + PDF | ⬜ |
 
 ## Stack (planned)
@@ -72,4 +73,12 @@ docs/
 
 ## Status
 
-Planning. No application code yet — this commit is the plan and the visual design.
+M1 in progress. Built and passing (182 backend tests, ruff + mypy clean; web typecheck + lint + build clean):
+auth · firm profile · Parties CRUD + Tally party import · Items CRUD · catalogue hierarchy (`0007`) ·
+Tally item import (`0008`) · mobile-first web shell. Migration chain `0001`→`0008`, single head.
+
+**Next up:** the invoice editor + finalize + PDF (the last M1 slice). Then the catalogue-learning
+loops (`docs/visual-plan/catalogue-learning-review.html`) once the inward module and the invoice
+editor exist.
+
+Uncommitted working-tree changes are the norm here — the repo owner does all check-ins.

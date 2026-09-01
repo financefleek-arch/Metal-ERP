@@ -128,6 +128,15 @@
   .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
   .ctable .st-new { color:var(--grp-fg); font-weight:600; }
   .ctable .st-change { color:var(--warn-fg); font-weight:600; }
+  .ctable .st-done { color:var(--leaf-fg); font-weight:600; }
+  .ctable .st-done::before { content:"✓ "; }
+
+  .banner { border:1px solid var(--leaf-fg); border-radius:12px; background:var(--leaf-bg);
+    padding:16px 18px; margin-top:20px; font-size:12.5px; color:var(--leaf-fg); line-height:1.6; }
+  .banner b { color:var(--leaf-fg); }
+  .banner ul { margin:8px 0 0; padding-left:18px; } .banner li { margin:4px 0; }
+  .banner code { font-family:"IBM Plex Mono",monospace; font-size:0.9em;
+    background:color-mix(in srgb,var(--leaf-fg) 12%,transparent); padding:0 4px; border-radius:3px; }
 
   .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
     padding:14px 16px; margin-top:20px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
@@ -154,19 +163,29 @@
 
 <div class="wrap">
   <header class="page">
-    <p class="eyebrow">Metal ERP · Visual review · Catalogue learning · supersedes item-hierarchy-review</p>
+    <p class="eyebrow">Metal ERP · Catalogue learning · supersedes item-hierarchy-review · <b>phase 1 + Tally item import SHIPPED 2026-09-01</b></p>
     <h1 class="page">The catalogue teaches itself</h1>
     <p class="lede">
       The shop never maintains an item list. <strong>Inward bills</strong> seed a first-cut catalogue as they're
       uploaded. <strong>Billing</strong> refines it — the biller types the terse shorthand they always have
       (<em>hawkins 5</em>, <em>dhara kettly 10cup</em>, <em>ST storage box 12x18</em>) and the system resolves it to a
       product + size, learns the mapping, and <strong>generates the clean printed name</strong>. Two learning loops
-      over a three-level model; a rules-first parser; aliases that stick on the second use.
+      over a three-level model; a rules-first parser; aliases that stick on the first use, swept if unused for 90 days.
     </p>
     <div class="statusrow">
       <span class="chip reuse">✓ reuse: product_group + item.group_id / size_pos / size_label / sku (dormant since 0001); item_alias; normalize.py; resolve_item</span>
-      <span class="chip new">＋ new: item_category (per-tenant · = brand); item.rate_mode + weight_per_piece; item.sku active; item_alias.group_id + source + last_used_at; inward_bill_line.group_id + inward_line_size; product_parse.py; resolve_group; nightly stale-alias sweep</span>
-      <span class="chip change">↻ change: item.category string → category_id; resolve ladder gains a group step; Items page gets a tree</span>
+      <span class="chip new">＋ new: item_category (per-tenant · = brand); item.rate_mode + weight_per_piece; item.sku active; item_alias.group_id + source + last_used_at; product_parse.py; resolve_group; generated_name</span>
+      <span class="chip change">↻ change: item.category string kept + category_id added; resolve ladder gains a group step; Items page gets a tree</span>
+    </div>
+
+    <div class="banner">
+      <b>Build status — 2026-09-01</b>
+      <ul>
+        <li><b>✓ Phase 1 (hierarchy) — SHIPPED.</b> Migration <code>0007</code> (NOT 0008 — renumbered during build): <code>item_category</code> table (seeded 8 rows on register), <code>product_group.category_id</code> + <code>default_rate_mode</code> + <code>name_normalized</code>, <code>item.category_id</code> + <code>rate_mode</code> + <code>weight_per_piece</code>, <code>item_alias.group_id</code> + <code>source</code> + <code>last_used_at</code>. New routers <code>/api/item-categories</code>, <code>/api/item-groups</code>, <code>/api/items/tree</code>. <code>app/domain/product_parse.py</code> (rules-first, 19-line corpus from the 5 real bills + 11 unit tests) + <code>generated_name</code>. <code>resolve_group</code> added to <code>item_resolution.py</code>. Web: Items rail Tree/Flat toggle + <code>ItemTree</code> + <code>GroupForm</code> (size grid, drag-reorder) + <code>CategoryManager</code>; category+group pickers in <code>NewItemForm</code>.</li>
+        <li><b>✓ Tally item import — SHIPPED.</b> Migration <code>0008</code> (<code>staging_tally_item</code>). <code>/api/items/import</code> (upload → parse → GUID→name→create ladder → review → commit, update-blanks-only, opt-in HSN seed, zero-history dummy skip, re-import no-op). <b>Commit also builds <code>product_group</code>s from Tally Stock Groups</b> so an import lands straight in the tree. Web <code>ItemsImportPage</code> + <code>⇧ Tally</code> button. See <code>tally-item-import-review.html</code>. <b>Caveat:</b> parses the <b>Masters</b> XML shape (<code>&lt;STOCKITEM&gt;</code> w/ GUID/HSN/BASEUNITS/PARENT). A <b>Stock Summary</b> (<code>StkSum</code>) report — <code>&lt;DSPACCNAME&gt;/&lt;DSPSTKINFO&gt;</code>, no GUID/HSN/group — is NOT yet supported; needs a format-detect branch or the user re-exports as Masters.</li>
+        <li><b>⬜ Loop 1 (learn_from_inward), Loop 2 (billing-learning), nightly alias sweep</b> — deferred, depend on the inward module + the invoice editor. Not started. <code>inward_bill_line.group_id</code> + <code>inward_line_size</code> migration deferred with Loop 1.</li>
+        <li><b>182 backend tests pass</b>, ruff + mypy clean, migration chain <code>0001→0008</code> single head. Web typecheck + lint + build clean. Not committed — user does check-ins.</li>
+      </ul>
     </div>
   </header>
 
@@ -389,28 +408,29 @@
       <table>
         <thead><tr><th>Area</th><th>What</th><th>API / detail</th><th>Status</th></tr></thead>
         <tbody>
-          <tr><td>Categories</td><td>Per-tenant <code>item_category(id, tenant_id, name, sort)</code> — <b>this IS the brand</b> for a bartan shop (Hawkins / Mintage / ST / GS), a material for a metal-bar shop (Steel / Aluminium). <b>No separate brand table.</b> Seeded on register with a starter set the shop edits. CRUD; delete blocked if referenced → reassign.</td><td class="op">/api/item-categories</td><td class="st-new">new table + router</td></tr>
-          <tr><td>Groups</td><td>Surface <code>product_group</code>: name, category_id, hsn_code, item_type, <b>default rate_mode</b>, optional metal/shape/grade. Tree list, CRUD, size grid. <code>name_normalized</code> + group aliases.</td><td class="op">/api/item-groups · /api/item-groups/:id</td><td class="st-new">new router (table exists)</td></tr>
-          <tr><td>Migration 0008</td><td><code>down_revision = "0007"</code>. New <code>item_category(id, tenant_id, name, sort)</code>. <code>product_group</code>: <code>+ category_id</code> FK, <code>+ default_rate_mode</code>. <code>item</code>: <code>category</code> string → <code>category_id</code> FK (backfill vs seeded rows, drop the string), <code>+ rate_mode ENUM(piece,kg)</code>, <code>+ weight_per_piece NUMERIC(12,3)</code> (<code>sku</code> already exists — now used). <code>item_alias</code>: <code>+ group_id</code> nullable (xor with <code>item_id</code>), <code>+ source ENUM(auto_from_purchase, learned, manual)</code>, <code>+ last_used_at</code>. <code>inward_bill_line</code>: <code>+ group_id</code> nullable (xor with <code>matched_item_id</code>). New <code>inward_line_size(id, inward_bill_line_id, size_text, pieces)</code> — the pooled-line sub-detail.</td><td class="op">—</td><td class="st-change">migration 0008</td></tr>
-          <tr><td>Parser</td><td><code>app/domain/product_parse.py</code> — pure, rules-first: size grammar + tenant brand/category list + normalize + rate-mode heuristic → <code>ParsedLine</code> { brand, product, sku, size, size_kind, size_sort, rate_mode, qty, rate, confidence }. <b>Acceptance bar: a committed test corpus of every line from all 5 real bills.</b> LLM residue path stubbed.</td><td class="op">—</td><td class="st-new">new, shared</td></tr>
-          <tr><td>size_pos</td><td>Parser derives <code>size_sort</code> from the size string (5←"5Ltr", 12←"12X18" first dim, 10←"10cup", 14←"No.14"); failures/ties → created order. The group's size grid has <b>drag-to-reorder</b> that rewrites <code>size_pos</code>.</td><td class="op">PATCH /api/item-groups/:id/size-order</td><td class="st-new">in product_parse + GroupForm</td></tr>
-          <tr><td>Group resolver</td><td><code>resolve_group(session, tenant, text)</code> — exact name_normalized → group alias → trigram. <code>resolve_item</code> gains a group step (after leaf exact/alias, before fuzzy) and returns <code>kind: "item" | "group"</code>.</td><td class="op">POST /api/items/resolve (extended)</td><td class="st-change">item_resolution.py</td></tr>
-          <tr><td>Name generation</td><td><code>generated_name(leaf)</code> = <code>&lt;category&gt; &lt;sku&gt; &lt;size_label&gt;</code> when <code>sku</code> set (→ "Mintage 3499 5 Litre"), else <code>&lt;group.name&gt; &lt;size_label&gt;</code> (→ "ST Storage Box 12X18"). This is the printed invoice-line description; the biller's shorthand is only an alias.</td><td class="op">—</td><td class="st-new">helper, used by print + Loop 2</td></tr>
-          <tr><td>Items page</td><td>Rail: <b>Tree</b> (category → group → leaf, collapsible, counts, a permanent "Ungrouped" section) / <b>Flat</b> toggle (the current 0006 list) + a <b>Categories manager</b>. Group editor + size grid (drag-reorder, [split by weight]). Leaf editor: breadcrumb, inherited fields greyed with ↑ (override on type), <code>rate_mode</code> + <code>weight_per_piece</code> + <code>sku</code> per leaf.</td><td class="op">—</td><td class="st-change">ItemsPage + GroupForm + CategoryManager</td></tr>
-          <tr><td>Loop 1</td><td><code>app/services/catalogue/learn_from_inward.py</code> — called from inward approve. parse → resolve_group-or-create → for each size: resolve/create the leaf + <code>last_purchase_rate</code>; a <b>pooled-weight line</b> links to the <b>group</b> + writes <code>inward_line_size</code> rows, weight stays group-level until <code>weight_per_piece</code> is set (then [split]). Writes group/leaf aliases (<code>source=auto_from_purchase</code>). <b>Dry-run mode</b>: parse a bill, show what it would create, write nothing.</td><td class="op">(inward approve txn) · POST /api/inward-bills/:id/learn-dryrun</td><td class="st-new">after inward module ships</td></tr>
-          <tr><td>Loop 2</td><td>Invoice type-ahead: resolve → group-with-size-picker → bind leaf → <b>alias written on 1st use</b> (<code>source=learned</code>, <code>last_used_at</code>) → "create group+size" for misses. Line copies <code>leaf.rate_mode</code> but can flip it per bill. Printed description = <code>generated_name(leaf)</code>.</td><td class="op">(invoice editor)</td><td class="st-new">with the invoice editor</td></tr>
-          <tr><td>Stale-alias sweep</td><td>Nightly job: delete <code>item_alias</code> where <code>source=learned</code> and <code>last_used_at &lt; now() - 90d</code>. Typos self-clean. Inward-derived aliases (<code>auto_from_purchase</code>) never retire.</td><td class="op">Job kind <code>alias_sweep</code></td><td class="st-new">new job (reuses the job table)</td></tr>
+          <tr><td>Categories</td><td>Per-tenant <code>item_category(id, tenant_id, name, sort)</code> — <b>this IS the brand</b> for a bartan shop (Hawkins / Mintage / ST / GS), a material for a metal-bar shop (Steel / Aluminium). <b>No separate brand table.</b> Seeded 8 rows on register. CRUD; delete <b>detaches</b> (nulls) referencing groups/items, never blocks (takes a <code>{reassign_to}</code> body).</td><td class="op">/api/item-categories</td><td class="st-done">shipped 0007</td></tr>
+          <tr><td>Groups</td><td>Surface <code>product_group</code>: name, category_id, hsn_code, item_type, <b>default rate_mode</b>. Tree list, CRUD, <code>/{id}</code> with leaves + <code>generated_name</code>, <code>/{id}/size-order</code> drag-reorder, delete detaches leaves to loose. <code>name_normalized</code> + xor <code>item_alias.group_id</code>.</td><td class="op">/api/item-groups · /:id · /:id/size-order</td><td class="st-done">shipped 0007</td></tr>
+          <tr><td>Migration 0007</td><td><b>Renumbered from 0008 during build.</b> <code>down_revision = "0006"</code>. New <code>item_category(id, tenant_id, name, sort)</code>. <code>product_group</code>: <code>+ category_id</code> FK, <code>+ default_rate_mode</code>, <code>+ name_normalized</code>. <code>item</code>: <code>+ category_id</code> FK (<b>string <code>category</code> KEPT</b> — not dropped; category_id authoritative once set), <code>+ rate_mode ENUM(piece,kg)</code>, <code>+ weight_per_piece NUMERIC(12,3)</code> (<code>sku</code> already existed — now used). <code>item_alias</code>: <code>item_id</code> made nullable, <code>+ group_id</code> (xor), <code>+ source ENUM(manual, auto_from_purchase, learned)</code>, <code>+ last_used_at</code>. <b>No <code>inward_bill_line</code> / <code>inward_line_size</code> changes — deferred with Loop 1.</b></td><td class="op">—</td><td class="st-done">shipped</td></tr>
+          <tr><td>Parser</td><td><code>app/domain/product_parse.py</code> — pure, rules-first: size grammar + tenant brand/category list + normalize + rate-mode heuristic → <code>ParsedLine</code> { brand, product, sku, size, size_kind, size_sort, rate_mode, qty, rate, confidence }. <b>Acceptance corpus:</b> <code>tests/fixtures/real_bill_lines.py</code> — 19 lines from the 5 real bills + 11 unit tests. LLM residue path stubbed.</td><td class="op">—</td><td class="st-done">shipped</td></tr>
+          <tr><td>size_pos</td><td>Parser derives <code>size_sort</code> from the size string; failures/ties → created order. The group's size grid has <b>drag-to-reorder</b> that rewrites <code>size_pos</code>.</td><td class="op">PATCH /api/item-groups/:id/size-order</td><td class="st-done">shipped</td></tr>
+          <tr><td>Group resolver</td><td><code>resolve_group(session, tenant, text)</code> — exact name_normalized → group-scoped alias → trigram (PG only). Added to <code>item_resolution.py</code>. <code>resolve_item</code> itself unchanged this slice — the group step folds in with Loop 2.</td><td class="op">—</td><td class="st-done">shipped (partial)</td></tr>
+          <tr><td>Name generation</td><td><code>generated_name(category_name, group_name, sku, size_label)</code> = <code>&lt;category&gt; &lt;sku&gt; &lt;size&gt;</code> when <code>sku</code> set (→ "Mintage 3499 5 Litre"), else <code>&lt;group&gt; &lt;size&gt;</code> (→ "ST Storage Box 12X18"), falls back to group / category.</td><td class="op">—</td><td class="st-done">shipped</td></tr>
+          <tr><td>Items page</td><td>Rail: <b>Tree</b> (category → group → leaf, collapsible, counts, permanent "Ungrouped" / "Uncategorised" buckets) / <b>Flat</b> toggle + <b>Categories manager</b> at <code>/items/categories</code>. <code>GroupForm</code> = group editor + size grid (drag-reorder). <code>NewItemForm</code> gets category + group pickers (group list filters by category). Routes <code>/items/g/:groupId</code>, <code>/items/categories</code>. <b>Not yet:</b> the leaf editor's inherited-field ↑ markers + a group picker inside <code>ItemForm</code> — small follow-up.</td><td class="op">—</td><td class="st-done">shipped (see follow-up)</td></tr>
+          <tr><td>Loop 1</td><td><code>app/services/catalogue/learn_from_inward.py</code> — called from inward approve. parse → resolve_group-or-create → for each size: resolve/create the leaf + <code>last_purchase_rate</code>; a <b>pooled-weight line</b> links to the <b>group</b> + writes <code>inward_line_size</code> rows. Writes group/leaf aliases (<code>source=auto_from_purchase</code>). <b>Dry-run mode.</b></td><td class="op">(inward approve txn) · POST /api/inward-bills/:id/learn-dryrun</td><td class="st-new">deferred — needs inward module</td></tr>
+          <tr><td>Loop 2</td><td>Invoice type-ahead: resolve → group-with-size-picker → bind leaf → <b>alias written on 1st use</b> (<code>source=learned</code>, <code>last_used_at</code>) → "create group+size" for misses. Line copies <code>leaf.rate_mode</code> but can flip it per bill. Printed description = <code>generated_name(leaf)</code>.</td><td class="op">(invoice editor)</td><td class="st-new">deferred — needs invoice editor</td></tr>
+          <tr><td>Stale-alias sweep</td><td>Nightly job: delete <code>item_alias</code> where <code>source=learned</code> and <code>last_used_at &lt; now() - 90d</code>. Inward-derived aliases (<code>auto_from_purchase</code>) never retire.</td><td class="op">Job kind <code>alias_sweep</code></td><td class="st-new">deferred — with Loop 1</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="note">
-      <b>Sequencing</b> (locked: tables first)
-      <div class="phase"><span class="p">1</span><span><b>Hierarchy tables + parser + tree UI</b> — migration <code>0008</code> (as above); <code>product_parse.py</code> + the 5-bill test corpus; <code>resolve_group</code>; <code>generated_name</code>; Items <b>tree</b> + Flat toggle + group editor (size grid, drag-reorder) + Categories manager; extend <code>/api/items/resolve</code>. <b>No external dependency — build now.</b></span></div>
-      <div class="phase"><span class="p">2</span><span><b>Loop 1 — learn_from_inward</b> (+ dry-run endpoint) wired into the inward-approve transaction; the pooled-weight [split] action; the nightly alias sweep.<br><span class="dep">depends on the other session's inward module landing</span></span></div>
-      <div class="phase"><span class="p">3</span><span><b>Loop 2 — billing-learning</b> — resolve+learn in the invoice type-ahead; the group→size picker; per-line rate_mode flip.<br><span class="dep">depends on the invoice editor slice</span></span></div>
+      <b>Sequencing</b>
+      <div class="phase"><span class="p">1</span><span><b>✓ SHIPPED — Hierarchy tables + parser + tree UI</b> — migration <code>0007</code>; <code>product_parse.py</code> + the 5-bill test corpus; <code>resolve_group</code>; <code>generated_name</code>; Items tree + Flat toggle + group editor + Categories manager.</span></div>
+      <div class="phase"><span class="p">1b</span><span><b>✓ SHIPPED — Tally item import</b> — migration <code>0008</code> (<code>staging_tally_item</code>); <code>/api/items/import</code>; commit builds product-groups from Tally Stock Groups. Masters-XML shape only; StkSum report not yet supported.</span></div>
+      <div class="phase"><span class="p">2</span><span><b>⬜ Loop 1 — learn_from_inward</b> (+ dry-run endpoint) into the inward-approve transaction; the pooled-weight [split]; the nightly alias sweep; the <code>inward_bill_line.group_id</code> + <code>inward_line_size</code> migration.<br><span class="dep">depends on the inward module landing</span></span></div>
+      <div class="phase"><span class="p">3</span><span><b>⬜ Loop 2 — billing-learning</b> — resolve+learn in the invoice type-ahead; the group→size picker; per-line rate_mode flip.<br><span class="dep">depends on the invoice editor slice</span></span></div>
       <div style="margin-top:8px;"><b>Not any of these:</b> stack barcodes (<code>group_code</code> stays dormant), multi-axis variant matrices, per-size stock, an LLM-first parser, a "tidy up loose items into groups" batch tool, a separate brand table.</div>
-      <div style="margin-top:10px;"><b>Open risk carried into phase 1:</b> parser accuracy against real shorthand — only 5 bills to test on. Mitigations baked in: the committed 5-bill corpus is the acceptance bar, and Loop 1 ships with a dry-run mode so parser quality can be eyeballed on real inward PDFs before learning is switched on.</div>
+      <div style="margin-top:10px;"><b>Small follow-ups noted, not yet done:</b> (a) leaf editor (<code>ItemForm</code>) breadcrumb + inherited-field ↑ markers + a group picker; (b) StkSum / Stock-Summary XML parser branch for the item importer (no GUID/HSN/group — needs unit-from-qty + adjustment-row filter + negative-qty skip); (c) widen <code>_MRP_UNITS</code> in the importer to cover <code>doz / gross / box / nug</code>.</div>
     </div>
   </section>
 
@@ -418,6 +438,6 @@
     <span>Supersedes: <code>docs/visual-plan/item-hierarchy-review.html</code></span>
     <span>Builds on: <code>items-crud-review.html</code> (0006)</span>
     <span>Feeds: the inward line matcher · the invoice editor · <code>tally-item-import-review.html</code></span>
-    <span>Mid-fi · for sign-off before coding phase 1</span>
+    <span>Phase 1 + Tally item import shipped 2026-09-01 · Loops 1/2 pending</span>
   </footer>
 </div>

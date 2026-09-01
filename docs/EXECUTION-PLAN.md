@@ -13,14 +13,25 @@
 | Register / Login | 3 | ✅ done |
 | App shell + top nav + auth guard | 3 | ✅ done |
 | Firm profile (onboarding: address, bank block, document label, PAN/state validation) | 3 | ✅ done |
-| Parties — list + search + role filter, add/edit drawer (with one address, PAN/GSTIN/state validation) | 4 | ✅ done |
-| **Items — list + search + filter chips, Add/Edit-item drawer** | **4** | ⬜ |
+| Parties — list + search + role filter, two-pane inline editor (address, PAN/GSTIN/state validation), **+ Tally masters import** | 4 | ✅ done |
+| Items — two-pane list + detail, filter chips, structured metal-trade attributes, price band, HSN→GST, confirm/merge | 4 | ✅ done |
+| Item catalogue **hierarchy** — category → product-group → item, per-tenant categories, tree view, `product_parse` + `resolve_group` (migration `0007`) | 4+ | ✅ done |
+| **Tally item import** — Masters stock-items XML → GUID→name→create ladder → review → commit, builds product-groups (migration `0008`) | 9 | ✅ done |
 | **Invoice editor** — party picker, item type-ahead combobox, line grid, live totals panel, save draft | **5** | ⬜ |
 | **Printed invoice** — A4 (WeasyPrint) + an in-editor React preview that mirrors the same markup | **7** | ⬜ |
 | **Invoice list** — filters, open → view/download PDF, duplicate, cancel | **8** | ⬜ |
 | **Dashboard** — sales-this-month tile, recent invoices, unconfirmed-items count | **8** | ⬜ |
 
 Synonym-editor UI is deferred to Stage 1 — M1 ships the seeded ~35-entry list, no editor.
+
+> **Note (2026-09-01):** the item master grew well past the original "ItemDrawer" sketch below.
+> It's now a two-pane editor + a `category → product-group → item` hierarchy with a tree view,
+> a rules-first shorthand parser (`app/domain/product_parse.py`), and both a Tally party importer
+> and a Tally item importer. The self-learning-catalogue arc (inward bills seed items, billing
+> refines them) is designed in `docs/visual-plan/catalogue-learning-review.html` — phase 1
+> (hierarchy) + the Tally item importer are **done**; the two learning loops wait on the inward
+> module and the invoice editor. The rows below describe the original minimal plan and are kept
+> for history.
 
 ---
 
@@ -46,8 +57,9 @@ Synonym-editor UI is deferred to Stage 1 — M1 ships the seeded ~35-entry list,
 SQLAlchemy 2.0 models (typed `mapped_column`) with the **full** table set from the design, GST/stock/barcode columns present but nullable/defaulted. Alembic autogenerate → reviewed migration → `alembic upgrade head`.
 
 - `tenant`, `user`
-- `party`, `party_address`
-- `item`, `item_alias`, `synonym`, `item_category` (enum-backed), `product_group` *(table exists, unused)*
+- `party`, `party_address` *(+ `staging_tally_party`, `0005`)*
+- `item`, `item_alias`, `synonym`, `item_category` *(per-tenant table, `0007` — was planned enum-backed)*, `product_group` *(surfaced `0007`; `category_id` / `default_rate_mode` / `name_normalized` added)*
+- `staging_tally_item` *(`0008`)*
 - `hsn_code` (reference table, seeded)
 - `uom` (enum or small table)
 - `invoice`, `invoice_line`
@@ -212,18 +224,24 @@ Only if the shop wants their existing catalogue loaded before bill #1.
 | Phase | Duration | Status | Notes |
 |---|---|---|---|
 | 0 Foundations | 0.5 wk | ✅ done | repo, CI, Docker, deploy pipeline, Vault, shared PG DB |
-| 1 Data model (SQLAlchemy + Alembic) | 0.5 wk | ✅ done | 13 tables, `0001`/`0002`, `seed.py` |
+| 1 Data model (SQLAlchemy + Alembic) | 0.5 wk | ✅ done | migrations `0001`→`0008`, single head, `seed.py` |
 | 2 `domain/tax.py` + vectors | 0.5 wk | ⬜ | pure math + amount-in-words + `previewTotal.ts` |
-| 3 Auth + shell | 0.5 wk | ✅ done | register/login/JWT, React shell, Firm profile |
-| 4 Party CRUD + validation | — | ✅ done | parties + PAN/GSTIN/state validation + StateSelect |
-| 4 Item CRUD + normalization | 1 wk | ⬜ | Items page + ItemDrawer + `domain/normalize.py` + HSN lookup |
-| 5 Invoice editor + preview | 1.5 wk | ⬜ | critical path — ItemCombobox, line grid, live totals, A4 preview |
+| 3 Auth + shell | 0.5 wk | ✅ done | register/login/JWT, React shell (mobile-first), Firm profile |
+| 4 Party CRUD + validation | — | ✅ done | parties + validation + StateSelect + **Tally party import** |
+| 4 Item CRUD + normalization | 1 wk | ✅ done | Items two-pane + `domain/normalize.py` + HSN lookup + confirm/merge |
+| 4+ Item catalogue hierarchy | — | ✅ done | category→group→item, tree view, `product_parse` + `resolve_group` (`0007`) |
+| 9 Tally item import | — | ✅ done | Masters stock-items XML → review → commit, builds product-groups (`0008`) |
+| 5 Invoice editor + preview | 1.5 wk | ⬜ | **critical path** — ItemCombobox, line grid, live totals, A4 preview |
 | 6 Finalize + numbering + accretion | 1 wk | ⬜ | finalize txn, gap-free number, item auto-create, finalized view |
 | 7 PDF rendering (WeasyPrint) | 1.5 wk | ⬜ | critical path; can start the template in parallel |
 | 8 Invoice list + dashboard | 0.5 wk | ⬜ | InvoicesPage, DashboardPage, duplicate/cancel, CSV |
 | 10 Hardening + go-live | 0.5 wk | ⬜ | prod seed, per-DB backup, runbook, bill #1 walkthrough |
-| **Remaining critical path** | **~6–7 wk** | | one full-stack dev, from here |
-| 9 Tally import (optional) | +1 wk | ⬜ | parallel, off critical path |
+| **Remaining critical path** | **~5 wk** | | invoice editor → finalize → PDF → list/dashboard → go-live |
+
+**Also done, off the original plan:** the mobile-first web migration, and the design for the
+self-learning catalogue (`docs/visual-plan/catalogue-learning-review.html`) — its Loop 1
+(`learn_from_inward`) and Loop 2 (billing type-ahead resolve+learn) wait on the inward module
+and the invoice editor respectively.
 
 **Two devs from here:** one owns tax/normalize/items-API/finalize (§2, §4-item, §6), the other owns items-UI/editor/preview/PDF template (§4-item UI, §5, §7) → **~4 weeks** remaining.
 

@@ -96,6 +96,10 @@ _PHONE_SHAPE_RE = re.compile(r"^\+?[0-9]{7,15}$")
 # Legal name: at least one letter; letters, digits, spaces and a small set of
 # business punctuation. Rupee/ampersand shops, "M/s", "S.K. Traders (P) Ltd".
 _LEGAL_NAME_ALLOWED_RE = re.compile(r"^[A-Za-z0-9 &.,\-/()'@]+$")
+# Item names carry sizes, pack counts, variant/SKU notation the way a shop
+# writes them: "10*10 GOLD BAJOT", "CUP SAUCER 6+6 PCS", "Stove Glass 18%",
+# "ZHULA NO : 5", "Prestige SKU_41992", "24x4.5".
+_ITEM_NAME_ALLOWED_RE = re.compile(r"^[A-Za-z0-9 &.,\-/()'@*%+x×:_\"]+$")
 _HAS_LETTER_RE = re.compile(r"[A-Za-z]")
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f]")
 _WS_RUN_RE = re.compile(r"\s{2,}")
@@ -212,6 +216,24 @@ def validate_legal_name(value: str) -> str:
     if not _LEGAL_NAME_ALLOWED_RE.match(v):
         raise ValueError(
             "Name may use letters, digits, spaces and & . , - / ( ) ' @ only"
+        )
+    return v
+
+
+def validate_item_name(value: str) -> str:
+    """Like validate_legal_name but for catalogue item names, which also
+    carry dimension and pack notation: * % + x × and straight quotes.
+    """
+    v = _collapse_ws(value)
+    if len(v) < 2:
+        raise ValueError("Name must be at least 2 characters")
+    if len(v) > LEGAL_NAME_MAX:
+        raise ValueError(f"Name must be at most {LEGAL_NAME_MAX} characters")
+    if not _HAS_LETTER_RE.search(v):
+        raise ValueError("Name must contain at least one letter")
+    if not _ITEM_NAME_ALLOWED_RE.match(v):
+        raise ValueError(
+            "Name may use letters, digits, spaces and & . , - / ( ) ' @ * % + : _ x only"
         )
     return v
 

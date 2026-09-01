@@ -228,3 +228,44 @@ def test_upload_rejects_junk(client: TestClient) -> None:
         "/api/items/import", headers=h, files={"file": ("j.xml", b"not xml", "text/xml")}
     )
     assert r.status_code == 422
+
+
+# --------------------------------------------------------------------------
+# real full-catalogue "All Masters" export (SETHIA METAL STORE, ~2094 items)
+# --------------------------------------------------------------------------
+
+_REAL_MASTER = Path(r"C:\tmp\Master (3).xml")
+
+
+@pytest.mark.skipif(not _REAL_MASTER.exists(), reason="real Tally export not present")
+def test_real_all_masters_export_imports(client: TestClient) -> None:
+    h = _h(_token(client, "ii-real@x.example.com"))
+
+    with _REAL_MASTER.open("rb") as fh:
+        r = client.post(
+            "/api/items/import?seed_all_hsn=true",
+            headers=h,
+            files={"file": ("Master (3).xml", fh, "text/xml")},
+        )
+    assert r.status_code == 201, r.text[:500]
+    b = r.json()
+    assert b["total"] > 2000
+    assert b["dummies_skipped"] == 0
+
+    rev = client.get(f"/api/items/import/{b['batch_id']}", headers=h).json()
+    codes = {c for row in rev["rows"] for f in row["flags"] for c in [f["code"]]}
+    # item names carry * % + : _ as size / SKU notation -> no name-shape flag
+    assert "name_bad_chars" not in codes
+    # bad_hsn may still be *listed* on a row, but seed_all_hsn clears it as a
+    # blocker, so nothing is flagged and the whole file is "new".
+    flagged = [r for r in rev["rows"] if r["outcome"] == "flag"]
+    assert flagged == [], [r["stock_name"] for r in flagged[:20]]
+    assert rev["counts"]["new"] > 2000
+
+    out = client.post(f"/api/items/import/{b['batch_id']}/commit", headers=h).json()
+    assert out["created"] > 2000
+    assert out["still_flagged"] == 0
+    assert out["hsn_seeded"] > 0
+
+    items = client.get("/api/items", headers=h).json()
+    assert len(items) > 2000

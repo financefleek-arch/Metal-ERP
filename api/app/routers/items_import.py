@@ -20,12 +20,15 @@ from app.domain.product_parse import parse_product_line
 from app.models import HsnCode, Item, ItemCategory, ProductGroup, StagingTallyItem
 from app.models._mixins import ItemSource, ItemStatus, ItemType, RateMode
 from app.services.item_resolution import resolve_group
-from tools.tally_import.item_match import match_stock_item
+from tools.tally_import.item_match import match_stock_items_bulk
 from tools.tally_import.parser import is_zero_history_dummy, parse_stock_items
 
 router = APIRouter(prefix="/api/items/import", tags=["items-import"])
 
-_MAX_BYTES = 10 * 1024 * 1024
+# A full-catalogue TallyPrime "All Masters" export runs 30-40 MB (UTF-16,
+# every stock item with its GST/HSN detail lists). Only STOCKITEM nodes are
+# read, so the parse stays fast; the cap just needs headroom.
+_MAX_BYTES = 64 * 1024 * 1024
 Outcome = Literal["new", "link", "skip", "flag"]
 
 
@@ -206,10 +209,19 @@ async def upload(
     user: WriteUser,
     session: SessionDep,
     file: UploadFile = File(...),
+    seed_all_hsn: bool = False,
 ) -> ImportBatchOut:
+    """Stage a Tally stock-items XML for review.
+
+    `seed_all_hsn` pre-arms every row to add its HSN to the reference table
+    on commit (code + the parsed GST rate). Useful for a first full-catalogue
+    import, where none of the shop's HSN codes are in the reference list yet.
+    """
     raw = await file.read()
     if len(raw) > _MAX_BYTES:
-        raise HTTPException(status_code=413, detail="File is larger than 10 MB")
+        raise HTTPException(
+            status_code=413, detail=f"File is larger than {_MAX_BYTES // (1024 * 1024)} MB"
+        )
     try:
         stock = parse_stock_items(raw)
     except Exception as e:  # noqa: BLE001
@@ -233,19 +245,24 @@ async def upload(
     batch_id = str(uuid.uuid4())
     grp_counts: dict[str, int] = {}
     staged = 0
-    dummies = 0
 
-    for si in stock.items:
-        if is_zero_history_dummy(si):
-            dummies += 1
-            continue
+    kept = [si for si in stock.items if not is_zero_history_dummy(si)]
+    dummies = len(stock.items) - len(kept)
+
+    # A TallyPrime STOCKITEM node is ~7 KB of mostly-unused tax boilerplate;
+    # nothing reads raw_xml back, so keep only a debugging prefix rather than
+    # staging ~16 MB for a full-catalogue import.
+    _RAW_XML_KEEP = 2000
+
+    matches = match_stock_items_bulk(
+        session, user.tenant_id, kept, guids_in_file=guids_in_file, synonyms=synonyms
+    )
+
+    for si, mr in zip(kept, matches, strict=True):
         top = (si.parent or "(ungrouped)").strip() or "(ungrouped)"
         grp_counts[top] = grp_counts.get(top, 0) + 1
 
         p = parse_product_line(si.name, brands=brands, synonyms=synonyms)
-        mr = match_stock_item(
-            session, user.tenant_id, si, guids_in_file=guids_in_file, synonyms=synonyms
-        )
         session.add(
             StagingTallyItem(
                 tenant_id=user.tenant_id,
@@ -257,7 +274,7 @@ async def upload(
                 hsn=si.hsn,
                 gst_rate=si.gst_rate,
                 standard_rate=si.standard_rate,
-                raw_xml=si.raw_xml,
+                raw_xml=(si.raw_xml or "")[:_RAW_XML_KEEP] or None,
                 proposed_type=_proposed_type(si.base_units),
                 proposed_uom=_map_uom(si.base_units),
                 proposed_rate_mode=(p.rate_mode or RateMode.piece),
@@ -270,6 +287,7 @@ async def upload(
                 match_item_id=mr.item_id,
                 guid_fillable=mr.fillable,
                 flags_json=mr.flags or None,
+                seed_hsn=bool(seed_all_hsn and si.hsn and si.hsn.strip()),
             )
         )
         staged += 1
@@ -390,6 +408,43 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     created = updated = skipped = still_flagged = hsn_seeded = 0
     groups_created = [0]
 
+    committable = [
+        r for r in rows if not r.committed_as and _outcome(r) in {"new", "link"}
+    ]
+
+    # --- HSN pre-pass: one query for the whole batch, seed each new code once ---
+    file_codes = {
+        (r.hsn or "").strip() for r in committable if (r.hsn or "").strip()
+    }
+    known_codes: set[str] = set()
+    if file_codes:
+        known_codes = set(
+            session.scalars(
+                select(HsnCode.code).where(HsnCode.code.in_(file_codes))
+            ).all()
+        )
+    # code -> a gst rate to seed with (first non-null wins)
+    seed_rate: dict[str, object | None] = {}
+    for r in committable:
+        code = (r.hsn or "").strip()
+        if code and r.seed_hsn and code not in known_codes:
+            seed_rate.setdefault(code, None)
+            if seed_rate[code] is None and r.gst_rate is not None:
+                seed_rate[code] = r.gst_rate
+    for code, rate in seed_rate.items():
+        session.add(
+            HsnCode(
+                code=code,
+                description="(from Tally import)",
+                chapter=code[:2],
+                default_gst_rate=rate,
+            )
+        )
+        hsn_seeded += 1
+    if seed_rate:
+        session.flush()
+        known_codes |= set(seed_rate)
+
     for row in rows:
         if row.committed_as:
             continue
@@ -401,22 +456,9 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             still_flagged += 1
             continue
 
-        # seed an unseen HSN if the reviewer opted in
         hsn = (row.hsn or "").strip() or None
-        if hsn and session.scalar(select(HsnCode).where(HsnCode.code == hsn)) is None:
-            if row.seed_hsn:
-                session.add(
-                    HsnCode(
-                        code=hsn,
-                        description="(from Tally import)",
-                        chapter=hsn[:2],
-                        default_gst_rate=row.gst_rate,
-                    )
-                )
-                session.flush()
-                hsn_seeded += 1
-            else:
-                hsn = None  # import without HSN
+        if hsn and hsn not in known_codes:
+            hsn = None  # not in reference and not seeded -> import without HSN
 
         if oc == "link" and row.match_item_id:
             it = session.get(Item, row.match_item_id)

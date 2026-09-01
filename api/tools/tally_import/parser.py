@@ -158,8 +158,44 @@ def _num(v: str | None) -> float | None:
     return float(m.group(0)) if m else None
 
 
+def _hsn(si: etree._Element) -> str | None:
+    """HSN code, direct child in old exports, nested in HSNDETAILS.LIST in
+    TallyPrime "All Masters" exports.
+    """
+    v = _first(si, "HSNCODE", "HSNMASTERNAME")
+    if v:
+        return v
+    for node in si.iter("HSNCODE"):
+        if node.text and node.text.strip():
+            return node.text.strip()
+    return None
+
+
 def _gst_rate(si: etree._Element) -> float | None:
-    # <GSTDETAILS.LIST><GSTRATE>18</GSTRATE> ... or a nested RATEDETAILS
+    """Effective GST rate for the item.
+
+    Old exports carry a flat <GSTRATE>18</GSTRATE>. TallyPrime "All Masters"
+    exports nest it as GSTDETAILS.LIST > STATEWISEDETAILS.LIST >
+    RATEDETAILS.LIST, one row per duty head (CGST 6 / SGST 6 / IGST 12 / Cess).
+    The item rate is the IGST line, or CGST + SGST when there is no IGST.
+    """
+    # Nested TallyPrime shape first.
+    for sw in si.iter("STATEWISEDETAILS.LIST"):
+        heads: dict[str, float] = {}
+        for rd in sw.iter("RATEDETAILS.LIST"):
+            head = (rd.findtext("GSTRATEDUTYHEAD") or "").strip().upper()
+            rate = _num(rd.findtext("GSTRATE"))
+            if head and rate is not None:
+                heads[head] = rate
+        if "IGST" in heads:
+            return heads["IGST"]
+        if "CGST" in heads or "SGST/UTGST" in heads or "SGST" in heads:
+            return (
+                heads.get("CGST", 0.0)
+                + heads.get("SGST/UTGST", heads.get("SGST", 0.0))
+            ) or None
+
+    # Flat / legacy shape.
     for tag in ("GSTRATE", "RATE"):
         for node in si.iter(tag):
             r = _num(node.text)
@@ -183,10 +219,13 @@ def parse_stock_items(raw: bytes) -> TallyStock:
         name = si.get("NAME") or _t(si, "NAME")
         if not name:
             continue
-        # any batch/opening/transaction sub-node ⇒ "has history"
+        # a batch/opening sub-node with real content ⇒ "has history".
+        # TallyPrime emits an empty <BATCHALLOCATIONS.LIST>     </...> on every
+        # item, so presence alone is not enough - require a child element.
         has_txn = any(
-            si.find(t) is not None
+            len(node) > 0
             for t in ("BATCHALLOCATIONS.LIST", "OPENINGBATCHALLOCATIONS.LIST")
+            for node in si.iter(t)
         )
         items.append(
             TallyStockItem(
@@ -194,7 +233,7 @@ def parse_stock_items(raw: bytes) -> TallyStock:
                 parent=_first(si, "PARENT"),
                 guid=_first(si, "GUID", "MASTERID"),
                 base_units=_first(si, "BASEUNITS", "ADDITIONALUNITS"),
-                hsn=_first(si, "HSNCODE", "HSNMASTERNAME"),
+                hsn=_hsn(si),
                 gst_rate=_gst_rate(si),
                 standard_rate=_num(
                     _first(si, "STANDARDPRICE", "OPENINGRATE", "STANDARDCOST")

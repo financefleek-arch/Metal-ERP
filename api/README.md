@@ -1,8 +1,21 @@
 # Metal ERP API
 
-FastAPI + SQLAlchemy 2 + Alembic. Milestone 1 delivers the data model
-and a `/health` route; the domain routes (party, item, invoice, finalize,
-PDF) land in later phases.
+FastAPI + SQLAlchemy 2 + Alembic. Live routes: auth, firm profile,
+parties (+ Tally masters import), items (+ catalogue hierarchy +
+Tally stock-items import). Still to come for M1: the invoice editor,
+finalize, and PDF.
+
+Key non-obvious modules:
+- `app/domain/product_parse.py` — pure rules-first parser for terse trade
+  shorthand → `ParsedLine` (brand / product / sku / size / rate_mode / …).
+  Acceptance corpus: `tests/fixtures/real_bill_lines.py` (19 lines from 5
+  real bills). Used by the Tally item importer; will drive the catalogue-
+  learning loops.
+- `app/services/item_resolution.py` — `resolve_item` (exact → alias →
+  pg_trgm fuzzy) **and** `resolve_group` (same ladder, one level up).
+- `tools/tally_import/` — `parser.py` (party masters + stock-items +
+  stock-groups), `item_match.py` (GUID→name→create ladder for items),
+  `match.py` / `groups.py` (party side).
 
 ## Local development
 
@@ -67,7 +80,13 @@ alembic check                                        # models vs migrations drif
   `item_alias` gains `group_id` (xor with `item_id`) + `source` +
   `last_used_at` for the catalogue-learning loops.
 - `0008` — `staging_tally_item`: holds a parsed Tally stock-items XML
-  import between upload and commit. No changes to `item`.
+  import between upload and commit. No changes to `item`. Commit also
+  resolves-or-creates `product_group`s from the Tally Stock Groups so
+  an import lands in the tree. Parses the **Masters** XML shape
+  (`<STOCKITEM>` w/ GUID/HSNCODE/BASEUNITS/PARENT); a **Stock Summary**
+  (`StkSum`, `<DSPACCNAME>`/`<DSPSTKINFO>`) report is not yet supported.
+- Deferred (with catalogue-learning Loop 1): `inward_bill_line.group_id`
+  + `inward_line_size` for pooled-weight inward lines.
 
 ## Layout
 
