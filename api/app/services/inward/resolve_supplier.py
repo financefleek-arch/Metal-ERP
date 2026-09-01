@@ -57,6 +57,7 @@ def resolve_supplier(
     supplier_gstin: str | None,
     buyer_gstin: str | None,
     place_of_supply_state_code: str | None,
+    supplier_phone: str | None = None,
     address_block: dict[str, Any] | None = None,
 ) -> SupplierResolution:
     res = SupplierResolution()
@@ -116,10 +117,11 @@ def resolve_supplier(
         "gstin": supplier_gstin,
         "pan": _pan_from_gstin(supplier_gstin),
         "default_state_code": supplier_prefix,
+        "phone": supplier_phone,  # validated (or dropped) at approve time
         "role": PartyRole.supplier.value,
         "status": PartyStatus.active.value,
     }
-    if address_block:
+    if address_block and any(address_block.get(k) for k in ("line1", "line2", "pincode")):
         staged["address"] = {
             "type": "both",
             "line1": address_block.get("line1"),

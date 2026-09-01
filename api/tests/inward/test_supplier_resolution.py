@@ -78,6 +78,8 @@ def test_no_match_stages_new_with_derived_fields(
     assert staged["pan"] == "BHBPK1450P"
     assert staged["default_state_code"] == "19"
     assert staged["role"] == "supplier"
+    assert staged["phone"] == "8513057060"
+    assert staged["address"]["pincode"] == "734005"
 
 
 class TestResolverUnit:
@@ -114,3 +116,60 @@ class TestResolverUnit:
                 place_of_supply_state_code=None,
             )
             assert res.new_supplier_staged["pan"] == "BHBPK1450P"
+
+    def test_phone_and_address_land_in_staged_json(self) -> None:
+        with SessionLocal() as s:
+            res = resolve_supplier(
+                s,
+                "t",
+                supplier_name="A",
+                supplier_gstin="19BHBPK1450P1Z3",
+                buyer_gstin=None,
+                place_of_supply_state_code=None,
+                supplier_phone="8513057060",
+                address_block={
+                    "line1": "179/1/244 Agrasen Road, Siliguri",
+                    "line2": None,
+                    "city": "Siliguri",
+                    "state_code": "19",
+                    "pincode": "734005",
+                },
+            )
+            staged = res.new_supplier_staged
+            assert staged["phone"] == "8513057060"
+            assert staged["address"]["line1"] == "179/1/244 Agrasen Road, Siliguri"
+            assert staged["address"]["pincode"] == "734005"
+
+
+def test_malformed_phone_is_dropped_not_422(
+    inward_client: tuple[TestClient, dict[str, str]],
+    sugal_pdf_bytes: bytes,
+    seeded_hsn: None,
+) -> None:
+    """A junk extracted phone must not block the whole approval."""
+    from app.db import SessionLocal as SL
+    from app.models import InwardBill
+
+    client, headers = inward_client
+    bill = client.post(
+        "/api/inward-bills",
+        headers=headers,
+        files={"files": ("s.pdf", sugal_pdf_bytes, "application/pdf")},
+    ).json()[0]
+    bid = bill["id"]
+
+    # corrupt the staged phone to something validate_phone rejects
+    with SL() as s:
+        b = s.get(InwardBill, bid)
+        staged = dict(b.new_supplier_staged_json)
+        staged["phone"] = "not-a-number-!!!"
+        b.new_supplier_staged_json = staged
+        s.commit()
+
+    r = client.post(f"/api/inward-bills/{bid}/approve", headers=headers)
+    assert r.status_code == 200, r.text
+    with SL() as s:
+        b = s.get(InwardBill, bid)
+        sup = s.get(Party, r.json()["created_supplier_id"])
+        assert sup.phone is None  # dropped, not fatal
+        assert sup.legal_name == "SUGAL FOODS"

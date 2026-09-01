@@ -9,6 +9,13 @@ function money(v: string | null): string {
   return Number.isNaN(n) ? v : n.toLocaleString("en-IN", { minimumFractionDigits: 2 });
 }
 
+function supplierAddress(staged: Record<string, unknown> | null): string | null {
+  const a = staged?.address as Record<string, string | null> | undefined;
+  if (!a) return null;
+  const parts = [a.line1, a.line2, a.city, a.pincode].filter(Boolean);
+  return parts.length ? parts.join(", ") : null;
+}
+
 function flagChip(flag: string | null) {
   if (!flag) return null;
   const map: Record<string, string> = {
@@ -185,6 +192,18 @@ export function InwardReviewPane({ billId }: { billId: string }) {
               </div>
             </div>
             <div>
+              <div className="label">Phone</div>
+              <div className="field flex h-8 items-center font-mono text-[11px]">
+                {(b.supplier.staged?.phone as string) ?? "—"}
+              </div>
+            </div>
+            <div className="col-span-2">
+              <div className="label">Address</div>
+              <div className="field flex h-8 items-center truncate text-[11px]">
+                {supplierAddress(b.supplier.staged) ?? "—"}
+              </div>
+            </div>
+            <div>
               <div className="label">Supply</div>
               <div className="field flex h-8 items-center text-xs">
                 {b.supplier.supply_type ?? "—"} · POS{" "}
@@ -192,6 +211,12 @@ export function InwardReviewPane({ billId }: { billId: string }) {
               </div>
             </div>
           </div>
+          {!b.supplier.matched_party_id && (
+            <p className="mt-2 text-[11px] text-muted">
+              A new supplier party is staged (name · GSTIN · PAN · phone · one
+              address). Created only on Approve.
+            </p>
+          )}
         </div>
 
         {/* totals check */}

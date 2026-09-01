@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,7 +44,26 @@ from app.models._mixins import (
     PartySource,
     PartyStatus,
 )
+from app.reference import (
+    validate_address_line,
+    validate_city,
+    validate_phone,
+    validate_pincode,
+    validate_state_code,
+)
 from app.services.inward.tally_xml import LedgerConfig, build_xml_bytes
+
+
+def _safe[T](validator: Callable[[str | None], T], value: object) -> T | None:
+    """Run a reference validator; on a malformed extracted value, drop it
+    rather than 422 the whole approval. `None`/blank pass straight through.
+    """
+    if value in (None, ""):
+        return None
+    try:
+        return validator(str(value))
+    except ValueError:
+        return None
 
 
 class ApproveError(Exception):
@@ -120,6 +140,7 @@ def approve_bill(
             legal_name=staged.get("legal_name") or bill.supplier_name or "Unknown Supplier",
             gstin=staged.get("gstin"),
             pan=staged.get("pan"),
+            phone=_safe(validate_phone, staged.get("phone")),
             default_state_code=staged.get("default_state_code"),
             role=PartyRole.supplier,
             status=PartyStatus.active,
@@ -127,15 +148,15 @@ def approve_bill(
             source_ref=bill.id,
         )
         addr = staged.get("address")
-        if addr:
+        if addr and any(addr.get(k) for k in ("line1", "line2", "pincode")):
             party.addresses.append(
                 PartyAddress(
                     type=AddressType.both,
-                    line1=addr.get("line1"),
-                    line2=addr.get("line2"),
-                    city=addr.get("city"),
-                    state_code=addr.get("state_code"),
-                    pincode=addr.get("pincode"),
+                    line1=_safe(validate_address_line, addr.get("line1")),
+                    line2=_safe(validate_address_line, addr.get("line2")),
+                    city=_safe(validate_city, addr.get("city")),
+                    state_code=_safe(validate_state_code, addr.get("state_code")),
+                    pincode=_safe(validate_pincode, addr.get("pincode")),
                     is_default=True,
                 )
             )

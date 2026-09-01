@@ -101,10 +101,21 @@ class RawLine:
 
 
 @dataclass
+class SupplierAddress:
+    line1: str | None = None
+    line2: str | None = None
+    city: str | None = None
+    state_code: str | None = None
+    pincode: str | None = None
+
+
+@dataclass
 class RawExtraction:
     # header
     supplier_name: str | None = None
     supplier_gstin: str | None = None
+    supplier_phone: str | None = None
+    supplier_address: SupplierAddress | None = None
     buyer_gstin: str | None = None
     bill_no: str | None = None
     bill_date: str | None = None  # ISO
@@ -146,6 +157,22 @@ _WORDS_RE = re.compile(r"Total\s+In\s+Words\s*[:\-]?\s*(.+)", re.IGNORECASE)
 
 _LOW_TEXT_CHARS_PER_PAGE = 120
 
+# Supplier phone — the header carries the seller's ("Phone 8513057060"), the
+# "Bill To" block the buyer's. Anchor before "Bill To". 7-15 digits, optional +.
+_SUPPLIER_PHONE_RE = re.compile(
+    r"(?:Phone|Ph|Mobile|Mob|Contact|Tel)\s*[:.\-]?\s*(\+?[\d][\d\s\-]{6,17}\d)",
+    re.IGNORECASE,
+)
+_PINCODE_RE = re.compile(r"\b([1-9]\d{5})\b")
+# Lines in the supplier block that are never part of a postal address.
+_ADDR_NOISE_RE = re.compile(
+    r"^(TAX\s+INVOICE|GSTIN|FSSAI|MSME|UDYAM|CIN|PAN|Phone|Ph|Mobile|Mob|Contact|"
+    r"Tel|E-?mail|Email|Website|www\.|Invoice\s*#|Invoice\s*Date|Bill\s*To|"
+    r"Ship\s*To|Sales\s*Order|Delivery|Place\s*Of\s*Supply|Original|Duplicate|"
+    r"Triplicate)\b",
+    re.IGNORECASE,
+)
+
 
 def _first_gstin_before(text: str, marker: str) -> str | None:
     """Supplier GSTIN is the first one, and appears before 'Bill To'."""
@@ -157,6 +184,85 @@ def _first_gstin_before(text: str, marker: str) -> str | None:
 
 def _all_gstins(text: str) -> list[str]:
     return _GSTIN_RE.findall(text)
+
+
+def _supplier_block(text: str) -> list[str]:
+    """The lines from the top of the invoice down to (not including) the first
+    of 'Bill To' / 'Invoice Date' / 'Place Of Supply' — i.e. the seller's
+    header. `pdfplumber` interleaves a right-aligned 'TAX INVOICE' / 'Invoice#'
+    line into this region; callers filter noise.
+    """
+    lines: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        low = line.lower()
+        if (
+            low.startswith("bill to")
+            or low.startswith("invoice date")
+            or low.startswith("place of supply")
+        ):
+            break
+        lines.append(line)
+    return lines
+
+
+def _clean_state_and_pin(line: str) -> tuple[str | None, str | None, str]:
+    """Pull a trailing '<State Name> <pincode>' off an address line.
+    Returns (state_code, pincode, line_without_them).
+    """
+    from app.reference import STATE_CODES
+
+    state_code = pincode = None
+    m = _PINCODE_RE.search(line)
+    if m:
+        pincode = m.group(1)
+    # longest state name first, case-insensitive, word-bounded
+    for code, name in sorted(STATE_CODES.items(), key=lambda kv: -len(kv[1])):
+        if re.search(rf"\b{re.escape(name)}\b", line, re.IGNORECASE):
+            state_code = code
+            line = re.sub(rf"\b{re.escape(name)}\b", "", line, flags=re.IGNORECASE)
+            break
+    if pincode:
+        line = line.replace(pincode, "")
+    line = re.sub(r"\bIndia\b", "", line, flags=re.IGNORECASE)
+    line = _WS_RE.sub(" ", line).strip(" ,-")
+    return state_code, pincode, line
+
+
+def _parse_supplier_address(text: str) -> SupplierAddress | None:
+    block = _supplier_block(text)
+    if not block:
+        return None
+    # skip the name (first non-empty), then take up to 3 address-ish lines
+    body = [
+        ln
+        for ln in block[1:]
+        if ln and not _ADDR_NOISE_RE.match(ln) and ln.upper() != "TAX INVOICE"
+    ]
+    if not body:
+        return None
+
+    addr = SupplierAddress()
+    # state + pincode live on whichever line has the pincode (usually line 1)
+    remainders: list[str] = []
+    for ln in body[:3]:
+        sc, pin, rest = _clean_state_and_pin(ln)
+        addr.state_code = addr.state_code or sc
+        addr.pincode = addr.pincode or pin
+        if rest:
+            remainders.append(rest)
+
+    # city: the token just before "State pincode" is a decent guess — take the
+    # last comma-part of the pincode line's remainder.
+    if remainders:
+        first = remainders[0]
+        addr.line1 = first
+        parts = [p.strip() for p in first.split(",") if p.strip()]
+        if len(parts) >= 2:
+            addr.city = parts[-1]
+        if len(remainders) > 1:
+            addr.line2 = " ".join(remainders[1:])[:200] or None
+    return addr
 
 
 def _parse_header(text: str, ext: RawExtraction) -> None:
@@ -183,6 +289,18 @@ def _parse_header(text: str, ext: RawExtraction) -> None:
         ext.place_of_supply_state_code = pos.group(1)
     elif ext.supplier_gstin:
         ext.place_of_supply_state_code = ext.supplier_gstin[:2]
+
+    # supplier phone — scoped to the header, before "Bill To"
+    cut = text.find("Bill To")
+    header_scope = text[:cut] if cut != -1 else text
+    if ph := _SUPPLIER_PHONE_RE.search(header_scope):
+        ext.supplier_phone = re.sub(r"[\s\-]", "", ph.group(1))
+
+    # supplier postal address from the header block
+    ext.supplier_address = _parse_supplier_address(text)
+    # backfill state from GSTIN prefix if the address text didn't name a state
+    if ext.supplier_address and not ext.supplier_address.state_code and ext.supplier_gstin:
+        ext.supplier_address.state_code = ext.supplier_gstin[:2]
 
 
 def _parse_totals(text: str, ext: RawExtraction) -> None:
@@ -313,6 +431,13 @@ def _confidence(ext: RawExtraction) -> dict[str, float]:
         "grand_total": has(ext.grand_total),
         "lines": 0.9 if ext.lines else 0.0,
     }
+    # phone / address are nice-to-have — a lower weight, and only when present
+    if ext.supplier_phone:
+        conf["supplier_phone"] = 0.7
+    if ext.supplier_address and (
+        ext.supplier_address.line1 or ext.supplier_address.pincode
+    ):
+        conf["supplier_address"] = 0.6
     return conf
 
 

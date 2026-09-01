@@ -272,8 +272,8 @@
         <div class="maprow">
           <div class="area">Parties<small>/parties</small></div>
           <div class="cards">
-            <div class="scard"><div class="t"><span class="tag done"></span>Parties page <span class="st done">done</span></div><div class="d">List, search, role chips</div></div>
-            <div class="scard"><div class="t"><span class="tag done"></span>PartyDrawer <span class="st done">done</span></div><div class="d">PAN/GSTIN/state validation, one address</div></div>
+            <div class="scard"><div class="t"><span class="tag done"></span>Parties page <span class="st done">done</span></div><div class="d">List, search, role chips, CRUD; status &amp; source (manual / inward_bill / tally_import)</div></div>
+            <div class="scard"><div class="t"><span class="tag done"></span>PartyDrawer <span class="st done">done</span></div><div class="d">PAN/GSTIN/state validation, one address; archive vs delete</div></div>
           </div>
         </div>
 
@@ -317,7 +317,7 @@
         <h3>Untouched</h3>
         <ul>
           <li>Every M1 screen — Dashboard, Sales, Items, Parties, Firm — renders identically whether the flag is on or off.</li>
-          <li>The shared tables. <span class="mono">party</span>, <span class="mono">item</span>, <span class="mono">item_alias</span>, <span class="mono">hsn_code</span> get <strong>no new columns</strong> for this module (two purchase-rate fields on <span class="mono">item</span> were already in the dormant schema).</li>
+          <li>The shared tables. <span class="mono">party</span>, <span class="mono">item</span>, <span class="mono">item_alias</span>, <span class="mono">hsn_code</span> get <strong>no new columns</strong> for this module. It writes the <span class="mono">party.source</span> / <span class="mono">source_ref</span> / <span class="mono">last_txn_at</span> columns that migration <span class="mono">0003</span> already added; the two purchase-rate fields on <span class="mono">item</span> ride along in the module's own <span class="mono">0004</span>.</li>
           <li>Auth, tenant model, role gate, deploy pipeline — one container, one DB, one migration chain.</li>
         </ul>
       </div>
@@ -326,7 +326,7 @@
         <ul>
           <li><strong>Shell nav</strong> — one conditional item at the end of the bar.</li>
           <li><strong>Items page</strong> — purchase-created items land here as <span class="mono">unconfirmed</span> alongside sale-created ones; the existing "Unconfirmed" chip already covers them. A new <span class="mono">source = auto_from_purchase</span> value is the only tell.</li>
-          <li><strong>Parties page</strong> — a supplier auto-created from a bill shows up like any other; a matched customer may be promoted <span class="mono">customer → both</span>.</li>
+          <li><strong>Parties page</strong> — a supplier auto-created from a bill shows up like any other, tagged <span class="mono">source = inward_bill</span> with a <span class="mono">source_ref</span> deep-link back to the bill; a matched customer may be promoted <span class="mono">customer → both</span> (its original <span class="mono">source</span> preserved). Inward-approve is the second writer of <span class="mono">party.last_txn_at</span>.</li>
           <li><strong>Shared services</strong> — <span class="mono">domain/normalize.py</span> and the item-resolution ladder are built once and called by both sales finalize and inward line-matching.</li>
         </ul>
       </div>

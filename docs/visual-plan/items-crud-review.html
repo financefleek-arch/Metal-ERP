@@ -1,0 +1,516 @@
+<title>Items CRUD Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --bulk-fg:#2f6f89;  --bulk-bg:#e3eef2;
+    --mrp-fg:#8a6a1f;   --mrp-bg:#f1e7d6;
+    --ok-fg:#3a5a48;    --ok-bg:#e6efe8;
+    --warn-fg:#8a6a1f;  --warn-bg:#f1e7d6;
+    --danger-fg:#a23b2e;--danger-bg:#f4e3df;
+    --new-fg:#2f6f89;   --new-bg:#e3eef2;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --bulk-fg:#8fc3d7;  --bulk-bg:#22333a;
+    --mrp-fg:#d8b878;   --mrp-bg:#38301f;
+    --ok-fg:#9cc9ad;    --ok-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --bulk-fg:#8fc3d7;  --bulk-bg:#22333a;
+    --mrp-fg:#d8b878;   --mrp-bg:#38301f;
+    --ok-fg:#9cc9ad;    --ok-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1160px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:8px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(26px,4vw,36px);
+    line-height:1.12; margin:0 0 12px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:72ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .statusrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:11px; }
+  .chip { padding:3px 9px; border-radius:999px; font-weight:500; }
+  .chip.have { background:var(--ok-bg); color:var(--ok-fg); }
+  .chip.change { background:var(--warn-bg); color:var(--warn-fg); }
+  .chip.new { background:var(--new-bg); color:var(--new-fg); }
+
+  section.blk { margin-top:46px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:82ch; }
+
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .tabbar { display:flex; align-items:center; gap:7px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line); }
+  .tabbar i { width:10px; height:10px; border-radius:50%; background:var(--faint); }
+  .tabbar .url { margin-left:10px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted);
+    background:var(--card); border:1px solid var(--line); border-radius:5px; padding:3px 10px; }
+  .topnav { display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 18px;
+    background:var(--shell); color:var(--shell-text); }
+  .topnav .brand { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:15px; }
+  .topnav nav { display:flex; gap:16px; font-size:12.5px; color:var(--shell-dim); }
+  .topnav nav a { color:var(--shell-dim); text-decoration:none; padding-bottom:14px; }
+  .topnav nav a.active { color:var(--shell-text); border-bottom:2px solid var(--accent); }
+  .topnav nav a.ext { color:var(--shell-text); background:color-mix(in srgb,var(--accent) 32%,transparent); border-radius:5px; padding:2px 8px; align-self:center; }
+  .topnav .who { font-size:11px; color:var(--shell-dim); }
+
+  .pane { display:grid; grid-template-columns:310px 1fr; min-height:520px; }
+  .rail { border-right:1px solid var(--line); background:var(--paper); display:flex; flex-direction:column; }
+  .railhead { padding:11px 13px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:9px; }
+  .railhead .top { display:flex; align-items:center; justify-content:space-between; }
+  .railhead .top .sc { font-size:12.5px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .railhead .top .sc .car { color:var(--faint); font-size:10px; }
+  .newbtn { font-size:11.5px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px; padding:5px 11px; cursor:pointer; }
+  .search { font-size:11px; border:1px solid var(--line); border-radius:6px; background:var(--card); padding:5px 8px; color:var(--muted); }
+  .filters { display:flex; gap:5px; flex-wrap:wrap; }
+  .filters .f { font-size:9.5px; border:1px solid var(--line); border-radius:999px; padding:2px 9px; color:var(--muted); background:var(--card); }
+  .filters .f.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .rows { flex:1; overflow:auto; }
+  .rrow { display:flex; flex-direction:column; gap:2px; padding:8px 13px; border-bottom:1px solid var(--line-soft); cursor:pointer; }
+  .rrow:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
+  .rrow.sel { background:var(--card); box-shadow:inset 2px 0 0 var(--accent); }
+  .rrow.unsaved { box-shadow:inset 2px 0 0 var(--new-fg); }
+  .rrow .l1 { display:flex; align-items:center; gap:6px; font-size:11.5px; }
+  .rrow .l1 .nm { font-weight:500; }
+  .rrow .l1 .nm.new { color:var(--new-fg); }
+  .rrow .l2 { font-size:9.5px; color:var(--muted); }
+  .badge { font-size:7.5px; letter-spacing:0.03em; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+  .badge.bulk { background:var(--bulk-bg); color:var(--bulk-fg); }
+  .badge.mrp { background:var(--mrp-bg); color:var(--mrp-fg); }
+  .pend { font-size:7.5px; letter-spacing:0.03em; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase;
+    background:var(--warn-bg); color:var(--warn-fg); margin-left:auto; }
+  .pend.price { background:var(--danger-bg); color:var(--danger-fg); }
+
+  .detail { padding:16px 20px; display:flex; flex-direction:column; gap:13px; }
+  .dhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .dhead .t { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .dhead .sub { font-size:10.5px; color:var(--muted); margin-top:3px; }
+  .dbtn { font-size:10.5px; border:1px solid var(--line); border-radius:6px; padding:5px 10px; background:var(--card); color:var(--ink-soft); cursor:pointer; }
+  .dbtn.primary { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
+  .dbtn.kebab { padding:5px 8px; }
+
+  .sec { border-top:1px solid var(--line); padding-top:11px; }
+  .sec .st { font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; display:flex; align-items:center; gap:8px; }
+  .sec .st .aside { text-transform:none; letter-spacing:0; color:var(--faint); font-weight:400; }
+  .fgrid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:9px 12px; }
+  .fgrid.two { grid-template-columns:1fr 1fr; }
+  .fgrid .full { grid-column:1/-1; }
+  .fgrid .span2 { grid-column:span 2; }
+  .fl label { font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:3px; }
+  .fl .inp { border:1px solid var(--line); border-radius:6px; background:var(--card); padding:5px 8px; font-size:11px; color:var(--ink-soft); min-height:28px; display:flex; align-items:center; }
+  .fl .inp.mono { font-family:"IBM Plex Mono",monospace; }
+  .fl .inp.focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,transparent); }
+  .fl .inp.ph { color:var(--faint); }
+  .fl .hint { font-size:9px; color:var(--muted); margin-top:3px; }
+
+  .priceband {
+    border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line)); border-radius:8px;
+    background:color-mix(in srgb,var(--accent) 5%,var(--card)); padding:10px 12px;
+  }
+  .priceband .bar { position:relative; height:26px; border-radius:5px; background:var(--band); margin:8px 0 4px; overflow:hidden; }
+  .priceband .zone { position:absolute; top:0; bottom:0; background:color-mix(in srgb,var(--ok-fg) 22%,transparent); }
+  .priceband .mark { position:absolute; top:-3px; bottom:-3px; width:2px; background:var(--accent); }
+  .priceband .mark::after { content:attr(data-l); position:absolute; top:-14px; left:50%; transform:translateX(-50%);
+    font-size:8px; color:var(--accent-dark); white-space:nowrap; font-family:"IBM Plex Mono",monospace; }
+  .priceband .scale { display:flex; justify-content:space-between; font-size:8px; color:var(--muted); font-family:"IBM Plex Mono",monospace; }
+  .priceband .note { font-size:10px; color:var(--muted); margin-top:6px; }
+
+  .savebar { display:flex; align-items:center; gap:8px; font-size:10px; color:var(--muted); }
+  .savebar .dot { width:6px; height:6px; border-radius:50%; }
+  .savebar .dot.ok { background:var(--ok-fg); } .savebar .dot.dirty { background:var(--warn-fg); } .savebar .dot.idle { background:var(--line); }
+
+  .menu { position:relative; }
+  .menucard { position:absolute; right:0; top:28px; background:var(--card); border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 10px 28px -12px rgba(35,32,27,0.3); min-width:190px; overflow:hidden; z-index:5; }
+  .menucard .mi { padding:8px 12px; font-size:10.5px; display:flex; align-items:center; gap:8px; border-top:1px solid var(--line-soft); }
+  .menucard .mi:first-child { border-top:none; }
+  .menucard .mi.danger { color:var(--danger-fg); }
+  .menucard .mi.disabled { color:var(--faint); }
+  .menucard .mi .op { font-family:"IBM Plex Mono",monospace; font-size:8px; color:var(--faint); margin-left:auto; }
+
+  .ctable { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:20px; background:var(--card); }
+  .ctable table { width:100%; border-collapse:collapse; }
+  .ctable th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:10px 12px; background:var(--band); border-bottom:1px solid var(--line); }
+  .ctable td { padding:11px 12px; font-size:12px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .ctable td:first-child { font-weight:600; white-space:nowrap; width:96px; }
+  .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
+  .ctable .st-have { color:var(--ok-fg); font-weight:600; }
+  .ctable .st-change { color:var(--warn-fg); font-weight:600; }
+  .ctable .st-new { color:var(--new-fg); font-weight:600; }
+
+  .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
+    padding:14px 16px; margin-top:20px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
+  .note b { color:var(--accent-dark); }
+  .note ul { margin:8px 0 0; padding-left:18px; }
+  .note li { margin:4px 0; }
+  .note code { font-family:"IBM Plex Mono",monospace; font-size:0.9em; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:0 4px; border-radius:3px; }
+
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .fieldtable { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .fieldtable th { text-align:left; padding:7px 9px; background:var(--band); font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); }
+  .fieldtable td { padding:6px 9px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .fieldtable td.f { font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--ink-soft); white-space:nowrap; }
+  .tag-now { color:var(--ok-fg); font-weight:600; font-size:9px; }
+  .tag-dorm { color:var(--faint); font-weight:600; font-size:9px; }
+
+  footer.page { margin-top:56px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    .pane { grid-template-columns:1fr; }
+    .rail { border-right:none; border-bottom:1px solid var(--line); }
+    .fgrid, .fgrid.two { grid-template-columns:1fr; }
+    .grid2 { grid-template-columns:1fr; }
+    .topnav nav { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual review · Items CRUD · 1B two-pane / 2B dense</p>
+    <h1 class="page">Items — create, read, update, delete</h1>
+    <p class="lede">
+      Same shell as Parties: <strong>list rail + inline detail pane</strong>, create-in-place, autosave, an
+      <code>⋯</code> menu with archive-vs-delete. Items are <strong>not standard SKUs</strong> — a name is
+      <em>metal · shape · grade · size</em> ("SS 304 Patta 4in 2mm"), so the catalogue accretes from what gets
+      billed and purchased, resolved by <strong>fuzzy search, not an LLM</strong>. Price carries an
+      <strong>optimum band</strong> that warns (never blocks) on an out-of-range invoice rate.
+    </p>
+    <div class="statusrow">
+      <span class="chip have">✓ have: item / item_alias / product_group tables, pg_trgm on name_normalized (0002)</span>
+      <span class="chip have">✓ have: normalize.py plan (shared with inward)</span>
+      <span class="chip change">↻ change: table → two-pane; drawer → inline pane</span>
+      <span class="chip new">＋ new: metal-trade attributes (shape/metal/grade/size/dims/finish/uom-conversion)</span>
+      <span class="chip new">＋ new: price_min / price_max band + out-of-range warning</span>
+      <span class="chip new">＋ new: everything starts UNCONFIRMED; Confirm action + review filters</span>
+      <span class="chip new">＋ new: /api/items CRUD + search + reference/hsn/uoms/categories</span>
+    </div>
+  </header>
+
+  <!-- ============ RESOLUTION: FUZZY, NOT LLM ============ -->
+  <section class="blk">
+    <h2>Resolution — normalize + trigram, no LLM</h2>
+    <p class="sub">
+      Metal item names are compositional, not prose. The variation is token order, abbreviations and unit spelling —
+      exactly what a synonym map + <code>pg_trgm</code> handles. An LLM adds latency, cost and non-determinism to a
+      mid-sale type-ahead for no gain when the fallback is "pick from 5 rows or type the name once".
+    </p>
+    <div class="note">
+      <b>The shared ladder</b> (<code>services/item_resolution.py</code>, used by invoice-finalize accretion <em>and</em> inward line-matching):
+      <ul>
+        <li><code>normalize(text)</code> — lowercase → collapse whitespace → strip punctuation → apply the tenant <code>synonym</code> map (stainless→ss, alu→aluminium, thk→thick, mm.→mm) → <b>canonicalise dimensions</b> (<code>40 x 40</code>/<code>40*40</code>/<code>40X40</code> → <code>40x40</code>; <code>2"</code>/<code>2 inch</code>/<code>2in</code> → <code>2in</code>; strip thousands separators) → keep token order.</li>
+        <li>Step 1 — exact <code>name_normalized</code> match (tenant-scoped). Step 2 — <code>item_alias</code> match. Step 3 — <code>pg_trgm</code> similarity ≥ 0.55 over name + aliases, HSN as a boost/tie-break.</li>
+        <li>No hit → <b>on the invoice</b> the free-typed name stays as line text and the <code>item</code> row is created at <b>finalize</b> (<code>source=auto_from_invoice</code>); <b>on an inward bill</b> it's a staged new item created on <b>Approve</b> (<code>source=auto_from_purchase</code>). Both land <code>status=unconfirmed</code>.</li>
+        <li>LLM disambiguation: an <b>inward-only</b>, batched, opt-in step for the ambiguous residue — shipped as a stub, off by default. The invoice type-ahead never calls it.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ THE SHELL / READ + UPDATE ============ -->
+  <section class="blk">
+    <h2>Read &amp; Update — the detail pane</h2>
+    <p class="sub">
+      Grouped 2B-dense: <strong>Identity</strong> (name + facets) · <strong>Classification</strong> (type / category / HSN / UOM) ·
+      <strong>Units &amp; conversion</strong> · <strong>Price</strong> (band + last rates). Edits autosave; the
+      <code>⋯</code> menu has Confirm, Merge into…, Archive, Delete.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/items/it_7c02</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#" class="ext">◆ Inward</a><a href="#" class="active">Items</a><a href="#">Parties</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="pane">
+        <!-- rail -->
+        <div class="rail">
+          <div class="railhead">
+            <div class="top"><span class="sc">Items <span class="car">▾</span></span><button class="newbtn">+ New</button></div>
+            <input class="search" value="ss patta 4" />
+            <div class="filters">
+              <span class="f on">All</span><span class="f">⚖ BULK</span><span class="f">📦 MRP</span>
+              <span class="f">Unconfirmed</span><span class="f">No HSN</span><span class="f">Price review</span><span class="f">Archived</span>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="rrow sel">
+              <div class="l1"><span class="badge bulk">bulk</span><span class="nm">SS 304 Patta 4in 2mm</span></div>
+              <div class="l2">sheet · SS 304 · ₹268/kg · billed 23×</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="badge bulk">bulk</span><span class="nm">SS 304 Patta 6in 2mm</span></div>
+              <div class="l2">sheet · SS 304 · ₹266/kg · billed 14×</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="badge bulk">bulk</span><span class="nm">SS Patti 4" 2mm</span><span class="pend">unconfirmed</span></div>
+              <div class="l2">◆ from inward bill · looks like “SS 304 Patta 4in 2mm”</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="badge mrp">mrp</span><span class="nm">Prestige Tope 3L</span><span class="pend price">price review</span></div>
+              <div class="l2">utensil · MRP ₹560 · rate ₹532 → system suggests review</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="badge bulk">bulk</span><span class="nm">MS Angle 40x40x5</span><span class="pend">no HSN</span></div>
+              <div class="l2">angle · MS · ₹58/kg · billed 21×</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- detail -->
+        <div class="detail">
+          <div class="dhead">
+            <div>
+              <div class="t">SS 304 Patta 4in 2mm <span class="badge bulk" style="align-self:center;">bulk</span></div>
+              <div class="sub">billed 23× · last sold 28 Aug 2026 · last purchased 25 Aug 2026 @ ₹242/kg · <span style="color:var(--ok-fg);">✓ confirmed</span></div>
+            </div>
+            <div class="menu">
+              <button class="dbtn kebab">⋯</button>
+              <div class="menucard">
+                <div class="mi disabled">Confirm <span class="op">already confirmed</span></div>
+                <div class="mi">Merge into… <span class="op">PATCH merged_into_id</span></div>
+                <div class="mi danger">Archive <span class="op">PATCH status</span></div>
+                <div class="mi disabled">Delete <span class="op">blocked · 23 docs</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec" style="border-top:none; padding-top:0;">
+            <div class="st">Identity <span class="aside">· name is what the type-ahead matches; facets sharpen search &amp; the printed line</span></div>
+            <div class="fgrid">
+              <div class="fl full"><label>Name *</label><div class="inp focus">SS 304 Patta 4in 2mm</div><div class="hint mono">normalized → ss 304 patta 4in 2mm</div></div>
+              <div class="fl"><label>Metal</label><div class="inp">SS ▾</div></div>
+              <div class="fl"><label>Shape</label><div class="inp">Sheet / Patta ▾</div></div>
+              <div class="fl"><label>Grade</label><div class="inp">304</div></div>
+              <div class="fl"><label>Size (as written)</label><div class="inp">4in</div></div>
+              <div class="fl"><label>Thickness (mm)</label><div class="inp mono">2.00</div></div>
+              <div class="fl"><label>Width (mm)</label><div class="inp mono ph">—</div></div>
+              <div class="fl"><label>Length (mm)</label><div class="inp mono ph">—</div></div>
+              <div class="fl"><label>Finish</label><div class="inp">Mill ▾</div></div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="st">Classification</div>
+            <div class="fgrid">
+              <div class="fl"><label>Type</label><div class="inp">⚖ BULK ▾</div></div>
+              <div class="fl"><label>Category</label><div class="inp">Stainless flat ▾</div></div>
+              <div class="fl"><label>HSN</label><div class="inp mono">72193590 <span style="font-family:'IBM Plex Sans';color:var(--faint);">· lookup</span></div></div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="st">Units &amp; conversion <span class="aside">· stored now; invoice editor wiring is a later slice</span></div>
+            <div class="fgrid">
+              <div class="fl"><label>Bill in (UOM)</label><div class="inp">kg ▾</div></div>
+              <div class="fl"><label>Also counted in</label><div class="inp">pcs ▾</div></div>
+              <div class="fl"><label>Weight per pcs (kg)</label><div class="inp mono">2.850</div><div class="hint">factor &gt; 0 · used later for “3 pcs ≈ 8.55 kg”</div></div>
+              <div class="fl"><label>Purchase UOM</label><div class="inp">kg ▾</div></div>
+              <div class="fl span2"><label>Secondary → primary factor</label><div class="inp mono">1 pcs = 2.850 kg</div></div>
+            </div>
+          </div>
+
+          <div class="sec">
+            <div class="st">Price</div>
+            <div class="fgrid two" style="margin-bottom:10px;">
+              <div class="fl"><label>Default rate (₹/kg)</label><div class="inp mono focus">268.00</div></div>
+              <div class="fl"><label>Last sold rate</label><div class="inp mono">268.00 <span style="font-family:'IBM Plex Sans';color:var(--faint);">· 28 Aug</span></div></div>
+              <div class="fl"><label>Optimum min (₹/kg)</label><div class="inp mono">255.00</div></div>
+              <div class="fl"><label>Optimum max (₹/kg)</label><div class="inp mono">295.00</div></div>
+              <div class="fl"><label>MRP</label><div class="inp mono ph">— (BULK)</div></div>
+              <div class="fl"><label>Default discount %</label><div class="inp mono ph">—</div></div>
+            </div>
+            <div class="priceband">
+              <div style="font-size:11px; font-weight:600; color:var(--accent-dark);">Optimum band</div>
+              <div class="bar">
+                <div class="zone" style="left:22%; right:18%;"></div>
+                <div class="mark" style="left:52%;" data-l="₹268 default"></div>
+              </div>
+              <div class="scale"><span>₹230</span><span>₹255 min</span><span>₹295 max</span><span>₹320</span></div>
+              <div class="note">On an invoice, a rate outside [255–295] shows a soft “below/above optimum range” warning — it never blocks finalize in M1. No system suggestion or accept/reject workflow this slice — that lands once there’s purchase + sale history to learn from.</div>
+            </div>
+          </div>
+
+          <div class="savebar"><span class="dot ok"></span> Saved · 15:22 · <span class="mono">PATCH /api/items/it_7c02</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CREATE ============ -->
+  <section class="blk">
+    <h2>Create — three paths</h2>
+    <p class="sub">
+      Like Parties: a deliberate <code>+ New</code>, plus two accretion paths that don't touch this screen. Everything
+      lands <strong>UNCONFIRMED</strong> — even a hand-made item passes through the review queue once.
+    </p>
+    <div class="grid2">
+      <div class="frame">
+        <div class="tabbar"><i></i><i></i><i></i><span class="url">…/items/new</span></div>
+        <div class="pane" style="min-height:300px; grid-template-columns:250px 1fr;">
+          <div class="rail">
+            <div class="railhead"><div class="top"><span class="sc">Items ▾</span><button class="newbtn">+ New</button></div><input class="search" value="search…" /></div>
+            <div class="rows">
+              <div class="rrow sel unsaved"><div class="l1"><span class="badge bulk">bulk</span><span class="nm new">New item — unsaved</span></div><div class="l2">fill name to save</div></div>
+              <div class="rrow"><div class="l1"><span class="badge bulk">bulk</span><span class="nm">SS 304 Patta 4in 2mm</span></div><div class="l2">sheet · ₹268/kg</div></div>
+            </div>
+          </div>
+          <div class="detail">
+            <div class="dhead">
+              <div class="t" style="color:var(--new-fg);">New item</div>
+              <div style="display:flex; gap:6px;"><button class="dbtn">Cancel</button><button class="dbtn primary">Create</button></div>
+            </div>
+            <div class="fgrid">
+              <div class="fl full"><label>Name *</label><div class="inp focus ph">e.g. SS 304 Patta 4in 2mm</div></div>
+              <div class="fl"><label>Type</label><div class="inp">⚖ BULK ▾</div></div>
+              <div class="fl"><label>Metal</label><div class="inp ph">—</div></div>
+              <div class="fl"><label>Shape</label><div class="inp ph">—</div></div>
+            </div>
+            <div class="savebar"><span class="dot idle"></span> Nothing saved until Create · <span class="mono">POST /api/items</span> → status <b>unconfirmed</b></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="note" style="margin-top:0;">
+          <b>The three create paths</b>
+          <ul>
+            <li><b>Items <code>+ New</code></b> → <code>POST /api/items</code>, <code>source=manual</code>, <code>status=unconfirmed</code>. Explicit Create button (no row to autosave into yet). Normalized-key collision → <code>409</code> with a link to the existing item.</li>
+            <li><b>Invoice, free-typed name, no match</b> → stays as line text; the <code>item</code> is created inside the <b>finalize</b> transaction, <code>source=auto_from_invoice</code>, uom + last_rate from the line.</li>
+            <li><b>Inward bill line, no match</b> → staged; created on <b>Approve</b>, <code>source=auto_from_purchase</code>, <code>last_purchase_rate</code> from the line, HSN if the code is in the reference list.</li>
+          </ul>
+          All three appear in the rail under <b>Unconfirmed</b> until someone opens them and hits <b>Confirm</b> (or Merge).
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DEDUPE / MERGE / DELETE ============ -->
+  <section class="blk">
+    <h2>Dedupe, Confirm, Merge, Archive, Delete</h2>
+    <div class="grid2">
+      <div class="note" style="margin-top:0;">
+        <b>Curation actions (the <code>⋯</code> menu + review filters)</b>
+        <ul>
+          <li><b>Confirm</b> — <code>unconfirmed → confirmed</code>. The rail’s <b>Unconfirmed</b> filter is the review queue; a confirmed item drops out of it.</li>
+          <li><b>Merge into…</b> — pick a target item; sets <code>merged_into_id</code>, moves the loser’s name to an <code>item_alias</code> of the winner (so the next inward/invoice line with that wording matches at step 2), repoints existing <code>invoice_line.item_id</code>. The merged row is hidden but kept.</li>
+          <li><b>Archive</b> — <code>status=archived</code>: out of the type-ahead and default list, kept for old invoices. Reversible.</li>
+          <li><b>Delete</b> — hard, only when <code>times_billed = 0</code> <b>and</b> no <code>invoice_line</code> / <code>inward_bill_line</code> references it. Otherwise blocked with the count → Archive instead.</li>
+        </ul>
+      </div>
+      <div class="note" style="margin-top:0; border-style:solid;">
+        <b>Collision on create / rename</b>
+        <ul>
+          <li>Same <code>name_normalized</code> for the tenant → <code>409</code>: <em>“looks like an existing item: SS 304 Patta 4in 2mm”</em> with a link.</li>
+          <li>A <b>near</b>-match (trigram ≥ 0.8, not exact) on the <code>+ New</code> form → inline soft banner, Create still allowed (it might genuinely be a different size).</li>
+          <li>The unique constraint <code>uq_item_tenant_normname</code> already exists — this is enforced, not advisory.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FIELD LEDGER ============ -->
+  <section class="blk">
+    <h2>Fields — what’s on <code>item</code> after this slice</h2>
+    <p class="sub">Existing columns unchanged; new ones nullable. “now” = surfaced in the UI/API this slice; “dormant” = column reserved, no UI (Stage 2/3, like <code>gst_rate</code>/<code>stock_qty</code> today).</p>
+    <div class="frame" style="padding:0;">
+      <div style="overflow-x:auto;">
+        <table class="fieldtable">
+          <thead><tr><th>Field</th><th>Type</th><th>Purpose</th><th style="width:60px;">This slice</th></tr></thead>
+          <tbody>
+            <tr><td class="f">name, name_normalized</td><td>str(300)</td><td>display + dedupe/search key (exists)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">item_type</td><td>bulk | mrp</td><td>weight-goods vs MRP-goods (exists)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">metal</td><td>str(20) enum-ish</td><td>MS / SS / GI / aluminium / brass / copper / cast iron</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">shape</td><td>str(24)</td><td>angle / channel / beam / flat-patta / round-bar / square-bar / sheet / coil / pipe-tube / wire / ingot / scrap / utensil / fitting</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">grade</td><td>str(32)</td><td>“304”, “202”, “IS2062”, “6063” — metal-specific free text</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">size_text</td><td>str(60)</td><td>human dimension as written (“40x40x5”, “1250mm”, “No.3”) — canonicalised by normalize</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">thickness_mm, width_mm, length_mm</td><td>numeric(9,2)</td><td>structured dims — search &amp; (later) theoretical-weight</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">finish</td><td>str(24)</td><td>mill / polished / matte / galvanised / PVC-coated</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">uom</td><td>str(20)</td><td>billing unit (exists)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">secondary_uom</td><td>str(20)</td><td>counting unit (pcs / ft / m)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">conversion_factor</td><td>numeric(12,4)</td><td>1 secondary = N primary (kg per pc). Validated &gt; 0.</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">weight_per_uom</td><td>numeric(12,3)</td><td>theoretical kg per secondary unit (feeds weighbridge later)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">purchase_uom</td><td>str(20)</td><td>supplier’s unit (MT vs kg)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">hsn_code</td><td>str(8) → FK</td><td>picked from a lookup on the manual side; <b>copied verbatim from the supplier PDF</b> on inward. The FK is kept — an unseen HSN is auto-seeded into <code>hsn_code</code> on inward Approve (code + "from supplier bill" + rate), so the reference table grows from real bills.</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">gst_rate</td><td>numeric(5,2)</td><td>NOT dormant anymore — inward populates it from the purchase bill's line rate; auto-fills from <code>hsn_code.default_gst_rate</code> when an HSN is picked. Shown read-ish in the pane ("GST 18% · from HSN …" / "· from inward bill"). Not printed on a sales invoice in M1.</td><td class="tag-now">now (read-ish)</td></tr>
+            <tr><td class="f">category</td><td>str(50)</td><td>coarse bucket for filter chips (exists)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">default_rate, last_rate, last_sold_at, times_billed, mrp, default_discount_pct</td><td>—</td><td>pricing + usage (exist)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">price_min, price_max</td><td>numeric(15,2)</td><td>optimum band; out-of-range invoice rate → soft warning</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">last_purchase_rate, last_purchased_at</td><td>numeric, ts</td><td>added by inward's 0004; set on inward Approve; the future price engine's main input. Read-only in the pane.</td><td class="tag-now">now (read-only)</td></tr>
+            <tr><td class="f">markup_pct</td><td>numeric(5,2)</td><td>per-item override of tenant.default_markup_pct — reserved for the price engine</td><td class="tag-dorm">dormant</td></tr>
+            <tr><td class="f">suggested_rate, suggested_rate_basis, suggested_rate_at, price_review_pending</td><td>—</td><td>system price suggestion + approval workflow</td><td class="tag-dorm">dormant</td></tr>
+            <tr><td class="f">source, status, merged_into_id</td><td>—</td><td>provenance + lifecycle + merge (exist; status default flips to <b>unconfirmed for all</b>)</td><td class="tag-now">now</td></tr>
+            <tr><td class="f">barcode, sku</td><td>str</td><td>Stage 2 scanning</td><td class="tag-dorm">dormant</td></tr>
+            <tr><td class="f">reorder_level, stock_tracking, stock_qty</td><td>—</td><td>Stage 3 inventory (stock_* exist)</td><td class="tag-dorm">dormant</td></tr>
+            <tr><td class="f">notes</td><td>text</td><td>free notes</td><td class="tag-now">now</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CRUD SPEC + BACKEND ============ -->
+  <section class="blk">
+    <h2>The verbs — spec</h2>
+    <div class="ctable">
+      <table>
+        <thead><tr><th>Verb</th><th>Trigger</th><th>Behaviour</th><th>API</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Create</td><td><code>+ New</code> / invoice finalize / inward approve</td><td>Manual: explicit Create, <code>source=manual</code>. Accretion: created in the finalize/approve txn. All → <code>status=unconfirmed</code>. Normalized-key collision → 409.</td><td class="op">POST /api/items</td><td class="st-new">new router</td></tr>
+          <tr><td>Read</td><td>Click a rail row</td><td>Loads into the grouped detail pane; URL <code>/items/:id</code>. Header shows times_billed, last sold/purchased, confirm state.</td><td class="op">GET /api/items · GET /api/items/:id</td><td class="st-new">new</td></tr>
+          <tr><td>Update</td><td>Edit any field</td><td>Debounced autosave (no Save button). <code>conversion_factor &gt; 0</code>, <code>price_min ≤ price_max</code> validated. Rename → normalized-key 409 guard.</td><td class="op">PATCH /api/items/:id</td><td class="st-new">new</td></tr>
+          <tr><td>Confirm</td><td><code>⋯</code> → Confirm</td><td><code>unconfirmed → confirmed</code>; drops out of the Unconfirmed filter. Writes audit_log.</td><td class="op">PATCH /api/items/:id {status}</td><td class="st-new">new</td></tr>
+          <tr><td>Merge</td><td><code>⋯</code> → Merge into…</td><td>Pick target → <code>merged_into_id</code>, loser name → target <code>item_alias</code>, repoint <code>invoice_line.item_id</code>. Hidden, kept.</td><td class="op">POST /api/items/:id/merge {target_id}</td><td class="st-new">new</td></tr>
+          <tr><td>Archive</td><td><code>⋯</code> → Archive</td><td><code>status=archived</code>; out of type-ahead + default list; reversible.</td><td class="op">PATCH /api/items/:id {status}</td><td class="st-new">new</td></tr>
+          <tr><td>Delete</td><td><code>⋯</code> → Delete</td><td>Hard, only if <code>times_billed=0</code> and no line references it; else 409 → Archive.</td><td class="op">DELETE /api/items/:id</td><td class="st-new">new</td></tr>
+          <tr><td>Search</td><td>Rail search box</td><td>Trigram on <code>name_normalized</code> + aliases (PG); substring on name/grade/size_text/HSN elsewhere. Confirmed-first, then times_billed.</td><td class="op">GET /api/items?q=</td><td class="st-new">new (index exists)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>Backend — this slice</b>
+      <ul>
+        <li><b>Migration <code>0006</code></b> (<code>down_revision = "0005"</code> — inward's <code>0004</code> and Tally-import's <code>0005</code> are both merged): add to <code>item</code> — <code>metal, shape, grade, size_text, thickness_mm, width_mm, length_mm, finish, secondary_uom, conversion_factor, weight_per_uom, purchase_uom, price_min, price_max, notes</code> (all nullable) + dormant <code>markup_pct, suggested_rate, suggested_rate_basis, suggested_rate_at, price_review_pending, barcode, sku, reorder_level</code>. <b>Note:</b> <code>last_purchase_rate</code> / <code>last_purchased_at</code> were already added by the inward module's <code>0004</code> — do <b>not</b> re-add. Add <code>tenant.default_markup_pct</code> (numeric(5,2), null). <code>item.status</code> already defaults to <code>unconfirmed</code> — no change. <code>pg_trgm</code> GIN on <code>name_normalized</code> + <code>item_alias.alias_normalized</code> already exist (0002).</li>
+        <li><code>app/domain/normalize.py</code> — the pipeline incl. dimension canonicalisation. Pure, unit-tested. <b>Shared prerequisite</b> with the inward plan.</li>
+        <li><code>app/services/item_resolution.py</code> — steps 1–3 (exact / alias / trigram+HSN). Shared with invoice-finalize accretion &amp; inward X3. LLM step is a stub.</li>
+        <li><code>app/routers/items.py</code> — full CRUD + <code>?q</code>, <code>?type</code>, <code>?status</code>, <code>?no_hsn</code>, <code>?price_review</code>; merge + confirm endpoints; <code>document_count</code>-style guard on delete.</li>
+        <li><code>app/routers/reference.py</code> — add <code>GET /reference/hsn?q=</code>, <code>/reference/uoms</code>, <code>/reference/categories</code>, <code>/reference/shapes</code>, <code>/reference/metals</code>.</li>
+        <li>Seed — extend <code>synonym</code> with dimension/shape rewrites; seed the <code>shape</code> / <code>metal</code> / <code>finish</code> enum lists (code or small reference).</li>
+      </ul>
+      <div style="margin-top:8px;"><b>Not this slice:</b> the price-suggestion engine + accept/reject workflow, <code>markup_pct</code> UI, per-piece↔per-kg behaviour in the invoice editor (fields stored + editable only), barcode/SKU UI, reorder/stock. Move with the price-engine, invoice-editor, and Stage-2/3 slices.</div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Shell: <code>docs/visual-plan/ui-simplification-options.html</code> · <code>level1-crud.html</code></span>
+    <span>Parties precedent: <code>docs/visual-plan/parties-crud-review.html</code></span>
+    <span>Current model: <code>api/app/models/item.py</code></span>
+    <span>Mid-fi · for sign-off before coding</span>
+  </footer>
+</div>

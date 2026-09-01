@@ -707,7 +707,7 @@
           </div>
           <div class="col">
             <h3>On Approve — one transaction</h3>
-            <div class="checkitem"><span class="mk pass">1</span><span class="d">Create the staged new supplier party + address <em>(none here — GSTIN matched)</em></span></div>
+            <div class="checkitem"><span class="mk pass">1</span><span class="d">Create the staged new supplier party + address <em>(none here — GSTIN matched; on a matched party, bump <span class="mono">last_txn_at</span>)</em></span></div>
             <div class="checkitem"><span class="mk pass">2</span><span class="d">Create staged new items <em>source = auto_from_purchase, status = unconfirmed</em></span></div>
             <div class="checkitem"><span class="mk pass">3</span><span class="d">Link every line's <span class="mono">matched_item_id</span>; bump last_purchase_rate</span></div>
             <div class="checkitem"><span class="mk pass">4</span><span class="d">Build the Tally Purchase-voucher XML → write to the volume</span></div>
@@ -743,10 +743,10 @@
         <div>
           <div class="created">
             <h4>Masters touched</h4>
-            <div class="row"><span class="chip ok">linked</span> Sugal Foods <span style="color:var(--muted);">· Sundry Creditors</span></div>
+            <div class="row"><span class="chip ok">linked</span> Sugal Foods <span style="color:var(--muted);">· Sundry Creditors · last&nbsp;txn 25&nbsp;Aug&nbsp;25</span></div>
             <div class="row"><span class="chip new">created</span> Monin Coconut Syrup 1000Mlx6 <span style="color:var(--muted);">· unconfirmed · HSN 21069092</span></div>
             <div class="row"><span class="chip new">created</span> Monin Triple Sec 1L <span style="color:var(--muted);">· unconfirmed · HSN 21069092</span></div>
-            <div class="row"><span style="color:var(--muted); font-size:11px;">→ both appear on the Items page filtered to Unconfirmed for merge / confirm</span></div>
+            <div class="row"><span style="color:var(--muted); font-size:11px;">→ a NEW supplier is written with <span class="mono">source = inward_bill</span> + <span class="mono">source_ref</span> back to this bill; a matched customer is promoted to <span class="mono">both</span>. Both new items land on the Items page filtered to Unconfirmed.</span></div>
           </div>
           <div class="prompt">
             <span>First bill from <strong>Sugal Foods</strong> — save its column layout &amp; ledger map as a template?</span>

@@ -91,6 +91,7 @@ def run_extraction(session: Session, bill: InwardBill) -> InwardBill:
         bill.reconcile_discrepancy = recon.discrepancy
 
         # supplier
+        addr = raw.supplier_address
         sup = resolve_supplier(
             session,
             bill.tenant_id,
@@ -98,6 +99,18 @@ def run_extraction(session: Session, bill: InwardBill) -> InwardBill:
             supplier_gstin=raw.supplier_gstin,
             buyer_gstin=raw.buyer_gstin,
             place_of_supply_state_code=raw.place_of_supply_state_code,
+            supplier_phone=raw.supplier_phone,
+            address_block=(
+                {
+                    "line1": addr.line1,
+                    "line2": addr.line2,
+                    "city": addr.city,
+                    "state_code": addr.state_code,
+                    "pincode": addr.pincode,
+                }
+                if addr is not None
+                else None
+            ),
         )
         bill.matched_party_id = sup.matched_party_id
         bill.new_supplier_staged_json = sup.new_supplier_staged
@@ -146,6 +159,10 @@ def run_extraction(session: Session, bill: InwardBill) -> InwardBill:
 def _apply_header(bill: InwardBill, raw: extract_text.RawExtraction) -> None:
     bill.supplier_name = raw.supplier_name
     bill.supplier_gstin = raw.supplier_gstin
+    if raw.supplier_gstin:
+        bill.supplier_state_code = raw.supplier_gstin[:2]
+    if raw.supplier_address and raw.supplier_address.state_code:
+        bill.supplier_state_code = raw.supplier_address.state_code
     bill.bill_no = raw.bill_no
     if raw.bill_date:
         bill.bill_date = date.fromisoformat(raw.bill_date)

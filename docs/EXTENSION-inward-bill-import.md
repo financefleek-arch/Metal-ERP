@@ -63,7 +63,9 @@ microservice.
   │     • totals check panel (must be green to approve)
   │
   └─ Approve →
-        • create the NEW supplier party (role = supplier or both) if staged
+        • create the NEW supplier party if staged (role = supplier, status = active,
+            source = inward_bill, source_ref = <inward_bill.id>);  a matched customer → both
+        • set party.last_txn_at = bill_date (forward-only), for matched or created
         • create the NEW items (source = AUTO_FROM_PURCHASE, status = UNCONFIRMED)
         • link every line to its item_id; bump last_purchase_rate / last_purchased_at
         • build the Tally Purchase VOUCHER XML
@@ -94,9 +96,18 @@ Primary key is the **supplier GSTIN** (15 chars, validated by
    - `gstin` = extracted GSTIN
    - `pan` = derived from the GSTIN (chars 3–12) if it passes `PAN_RE`
    - `default_state_code` = GSTIN prefix (chars 1–2)
-   - `role` = `supplier`
+   - `role` = `supplier`, `status` = `active`
    - one `party_address` (type `both`) from the header address block
    - created only on **Approve**, so a rejected bill leaves no party behind.
+
+**Provenance (columns shipped in migration `0003`).** On Approve, a
+module-created supplier is written with `source = inward_bill` and
+`source_ref = <inward_bill.id>` (deep-links the Parties page back to the
+bill). A *matched* `customer` promoted to `both` keeps its original
+`source` untouched — the promotion doesn't rewrite where the party came
+from. Either way, `party.last_txn_at` is bumped to the bill date
+(forward-only — never moved backwards by an older bill); inward-approve
+is the second writer of that column alongside invoice-finalize.
 
 `party.tally_guid` stays null for module-created suppliers — it's only set
 by the Tally *import* path. The XML's `<LEDGER>` create message uses the
@@ -250,7 +261,8 @@ inward_bill(
   source_filename, source_pdf_path,          -- PDF on the same volume as invoice PDFs
   supplier_name, supplier_gstin, supplier_pan, supplier_state_code,
   matched_party_id NULL,                     -- set on resolve; null = new supplier staged
-  new_supplier_staged_json NULL,             -- the party we'll create on approve
+  new_supplier_staged_json NULL,             -- party fields we'll create on approve
+                                             --   (with source=inward_bill, source_ref=this id)
   bill_no, bill_date, sales_order_ref NULL,
   place_of_supply_state_code, supply_type,   -- INTRA | INTER
   currency DEFAULT 'INR',
@@ -299,10 +311,19 @@ extraction_run(                              -- audit / retry
 )
 ```
 
-Reused as-is: `party`, `party_address`, `item`, `item_alias`,
-`hsn_code`, `synonym`, `audit_log`, `job`, `domain/normalize.py`.
+Reused as-is: `party` (incl. the `status` / `source` / `source_ref` /
+`last_txn_at` columns added in migration `0003` — this module writes
+`source = inward_bill` / `source_ref` / `last_txn_at` on approve and does
+**not** add columns of its own to `party`), `party_address`, `item`,
+`item_alias`, `hsn_code`, `synonym`, `audit_log`, `job`,
+`domain/normalize.py`. `ItemSource.auto_from_purchase` and
+`PartySource.inward_bill` already exist in `app/models/_mixins.py`.
 
 Flag on the existing `tenant` table: `ext_inward_import BOOLEAN DEFAULT false`.
+
+New tables + `item.last_purchase_rate` / `item.last_purchased_at` +
+`tenant.ext_inward_import` land in **migration `0004`** (`0003` is the
+party-provenance migration already on `main`).
 
 ---
 
@@ -344,12 +365,12 @@ Nav item "Inward" appears only when `me` → tenant has `ext_inward_import`.
 
 | # | Deliverable | Size |
 |---|---|---|
-| **X0** | Schema + migration (all tables + `tenant.ext_inward_import`), feature-flag plumbing, `/api/inward-bills` skeleton, nav gating, PDF storage on the existing volume. | 0.5 wk |
+| **X0** | Schema + migration **`0004`** (all tables + `tenant.ext_inward_import` + the two `item` purchase-rate columns; `down_revision = "0003"`), feature-flag plumbing, `/api/inward-bills` skeleton, nav gating, PDF storage on the existing volume. | 0.5 wk |
 | **X1** | **Extractor — text path**: pdfplumber table + header/totals regex, e-invoice QR decode, reconciliation gate, `extraction_run` logging. `no-text-layer` detection wired but the image path returns "unsupported" for now. Unit tests against 4–5 real supplier PDFs incl. the Sugal Foods sample. | 1.5 wk |
-| **X2** | **Supplier resolution** — GSTIN match → link; no-match → stage new party (name/GSTIN/PAN/state/address). PAN-from-GSTIN, state-from-GSTIN. Tests incl. customer→both promotion. | 0.5 wk |
+| **X2** | **Supplier resolution** — GSTIN match → link; no-match → stage new party (name/GSTIN/PAN/state/address, `source=inward_bill` + `source_ref` set at Approve-time creation). PAN-from-GSTIN, state-from-GSTIN. `last_txn_at` bumped on approve. Tests incl. customer→both promotion (original `source` preserved). | 0.5 wk |
 | **X3** | **Line resolution** — the 5-step ladder: exact / alias / trigram+HSN / LLM disambiguation (batched, tenant-catalogue-only) / new-item stage. Confidence + `review_flag`. Introduces the shared `llm` service module. Tests: exact, fuzzy win, HSN tie-break, ambiguous→LLM, new. | 1 wk |
 | **X4** | **Review UI** — `InwardListPage` + `InwardReviewPage` (PDF pane, header form, totals check, lines table with match override), `PATCH` wiring. | 1.5 wk |
-| **X5** | **Approve + XML** — stage→create party/items in one txn, link lines, `tally_ledger_config`, Purchase `VOUCHER` builder (+ `<LEDGER>`/`<STOCKITEM>` for new masters, `UDF:METALERP_REF`, intra/inter split), `/xml` download. **Validate against a real Tally import.** | 1 wk |
+| **X5** | **Approve + XML** — stage→create party/items in one txn (supplier gets `source=inward_bill` / `source_ref`; matched/created party `last_txn_at` bumped forward-only), link lines, `tally_ledger_config`, Purchase `VOUCHER` builder (+ `<LEDGER>`/`<STOCKITEM>` for new masters, `UDF:METALERP_REF`, intra/inter split), `/xml` download. **Validate against a real Tally import.** | 1 wk |
 | **X6** | **`supplier_template`** — save-from-bill, apply-on-next, the "save as template?" prompt, re-extract with a template. Settings page. | 0.5 wk |
 | **X7** | **Extractor — image path**: `pymupdf` page render + the vision-LLM call through the X3 `llm` module (reuses its client + token logging), `extraction_method = VISION_LLM`, page images kept for the review pane. Batch upload → `job`-queued extraction. Hardening, docs. | 0.5 wk |
 | **Total** | | **~7 weeks**, fully independent of the M1 billing critical path (can run in parallel with a second dev, or after M1). |

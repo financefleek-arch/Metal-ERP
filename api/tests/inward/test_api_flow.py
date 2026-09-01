@@ -64,6 +64,11 @@ def test_upload_extracts_and_reconciles(
     assert sup["staged"]["gstin"] == "19BHBPK1450P1Z3"
     assert sup["staged"]["pan"] == "BHBPK1450P"  # GSTIN chars 3-12
     assert sup["staged"]["default_state_code"] == "19"
+    assert sup["staged"]["phone"] == "8513057060"
+    assert sup["staged"]["address"]["line1"] == "179/1/244 Agrasen Road, Siliguri"
+    assert sup["staged"]["address"]["city"] == "Siliguri"
+    assert sup["staged"]["address"]["state_code"] == "19"
+    assert sup["staged"]["address"]["pincode"] == "734005"
     assert sup["supply_type"] == "intra"  # 19 == 19
 
     assert bill["approve_blockers"] == []
@@ -98,6 +103,14 @@ def test_full_approve_creates_masters_and_xml(
         assert sup.source == "inward_bill"
         assert sup.source_ref == bill_id
         assert sup.last_txn_at is not None  # bumped to bill_date
+        # phone normalized to +91 form; address created from the header block
+        assert sup.phone == "+918513057060"
+        assert len(sup.addresses) == 1
+        a = sup.addresses[0]
+        assert a.line1 == "179/1/244 Agrasen Road, Siliguri"
+        assert a.city == "Siliguri"
+        assert a.state_code == "19"
+        assert a.pincode == "734005"
 
         items = list(
             s.scalars(select(Item).where(Item.id.in_(result["created_item_ids"]))).all()

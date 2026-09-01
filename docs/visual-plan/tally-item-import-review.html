@@ -1,0 +1,411 @@
+<title>Tally Item Import Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --new-fg:#2f6f89;   --new-bg:#e3eef2;
+    --link-fg:#3a5a48;  --link-bg:#e6efe8;
+    --flag-fg:#8a6a1f;  --flag-bg:#f1e7d6;
+    --skip-fg:#7c766a;  --skip-bg:#efe9df;
+    --danger-fg:#a23b2e;--danger-bg:#f4e3df;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --link-fg:#9cc9ad;  --link-bg:#24322a;
+    --flag-fg:#d8b878;  --flag-bg:#38301f;
+    --skip-fg:#b3aa99;  --skip-bg:#322e28;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --link-fg:#9cc9ad;  --link-bg:#24322a;
+    --flag-fg:#d8b878;  --flag-bg:#38301f;
+    --skip-fg:#b3aa99;  --skip-bg:#322e28;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1160px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:8px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(26px,4vw,36px);
+    line-height:1.12; margin:0 0 12px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:74ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .statusrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:11px; }
+  .chip { padding:3px 9px; border-radius:999px; font-weight:500; }
+  .chip.reuse { background:var(--link-bg); color:var(--link-fg); }
+  .chip.new { background:var(--new-bg); color:var(--new-fg); }
+
+  section.blk { margin-top:46px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:82ch; }
+
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .tabbar { display:flex; align-items:center; gap:7px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line); }
+  .tabbar i { width:10px; height:10px; border-radius:50%; background:var(--faint); }
+  .tabbar .url { margin-left:10px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted);
+    background:var(--card); border:1px solid var(--line); border-radius:5px; padding:3px 10px; }
+  .topnav { display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 18px;
+    background:var(--shell); color:var(--shell-text); }
+  .topnav .brand { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:15px; }
+  .topnav nav { display:flex; gap:16px; font-size:12.5px; color:var(--shell-dim); }
+  .topnav nav a { color:var(--shell-dim); text-decoration:none; padding-bottom:14px; }
+  .topnav nav a.active { color:var(--shell-text); border-bottom:2px solid var(--accent); }
+  .topnav .who { font-size:11px; color:var(--shell-dim); }
+
+  .body { padding:18px 20px; }
+
+  .drop { border:1.5px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 6%,var(--card));
+    padding:22px; text-align:center; color:var(--accent); font-size:13px; }
+  .drop small { display:block; color:var(--muted); margin-top:4px; font-size:11px; }
+  .scopebox { margin-top:14px; border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .scopebox .h { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:8px; }
+  .grp { display:flex; align-items:center; gap:7px; font-size:12px; padding:4px 0; }
+  .grp .cb { width:14px; height:14px; border:1px solid var(--faint); border-radius:3px; display:inline-grid; place-items:center; font-size:9px; }
+  .grp .cb.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .grp .cnt { margin-left:auto; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); }
+
+  .summary { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+  .scard { border:1px solid var(--line); border-radius:9px; padding:9px 13px; min-width:120px; }
+  .scard .n { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:19px; }
+  .scard .l { font-size:10px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-top:2px; }
+  .scard.new { border-color:color-mix(in srgb,var(--new-fg) 40%,var(--line)); }
+  .scard.flag { border-color:color-mix(in srgb,var(--flag-fg) 40%,var(--line)); }
+
+  .filters { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .filters .f { font-size:10px; border:1px solid var(--line); border-radius:999px; padding:3px 10px; color:var(--muted); background:var(--card); }
+  .filters .f.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+
+  table.rows { width:100%; border-collapse:collapse; }
+  table.rows th { text-align:left; font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:8px 9px; background:var(--band); border-bottom:1px solid var(--line); }
+  table.rows td { padding:9px; font-size:11.5px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  table.rows tr.flagrow td { background:color-mix(in srgb,var(--flag-fg) 7%,transparent); }
+  .out { font-size:8px; letter-spacing:0.03em; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+  .out.new { background:var(--new-bg); color:var(--new-fg); }
+  .out.link { background:var(--link-bg); color:var(--link-fg); }
+  .out.flag { background:var(--flag-bg); color:var(--flag-fg); }
+  .out.skip { background:var(--skip-bg); color:var(--skip-fg); }
+  .typpick { border:1px solid var(--line); border-radius:5px; background:var(--card); font-size:10px; padding:2px 5px; color:var(--ink-soft); }
+  .mono10 { font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); }
+  .parsed { font-size:10px; color:var(--ink-soft); }
+  .parsed .k { color:var(--muted); }
+  .lowconf { color:var(--flag-fg); }
+  .actlink { color:var(--accent); text-decoration:none; font-size:10px; }
+
+  .commitbar { display:flex; align-items:center; justify-content:space-between; margin-top:14px; padding:12px 14px;
+    border:1px solid var(--line); border-radius:10px; background:var(--band); }
+  .commitbar .btn { font-size:12px; font-weight:600; border:none; border-radius:7px; padding:7px 16px; cursor:pointer; }
+  .commitbar .btn.primary { background:var(--accent); color:#fff; }
+  .commitbar .btn.ghost { background:var(--card); border:1px solid var(--line); color:var(--ink-soft); }
+
+  .ctable { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:20px; background:var(--card); }
+  .ctable table { width:100%; border-collapse:collapse; }
+  .ctable th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:10px 12px; background:var(--band); border-bottom:1px solid var(--line); }
+  .ctable td { padding:11px 12px; font-size:12px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .ctable td:first-child { font-weight:600; white-space:nowrap; width:120px; }
+  .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
+
+  .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
+    padding:14px 16px; margin-top:20px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
+  .note b { color:var(--accent-dark); }
+  .note ul { margin:8px 0 0; padding-left:18px; } .note li { margin:4px 0; }
+  .note code { font-family:"IBM Plex Mono",monospace; font-size:0.9em; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:0 4px; border-radius:3px; }
+
+  .flow { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:18px 0 0; font-size:11.5px; }
+  .flow .n { background:var(--card); border:1px solid var(--line); border-radius:7px; padding:7px 11px; display:flex; flex-direction:column; gap:1px; }
+  .flow .n b { font-size:11.5px; } .flow .n span { font-size:9.5px; color:var(--muted); }
+  .flow .n.hl { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+  .flow .a { color:var(--faint); }
+
+  .maptable { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .maptable th { text-align:left; padding:7px 9px; background:var(--band); font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); }
+  .maptable td { padding:6px 9px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .maptable td.f { font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--ink-soft); white-space:nowrap; }
+
+  footer.page { margin-top:56px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    table.rows { display:block; overflow-x:auto; }
+    .topnav nav { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual review · Tally item import · mirrors the party importer</p>
+    <h1 class="page">Bulk import items from Tally</h1>
+    <p class="lede">
+      Upload a Tally Prime <strong>Stock Items</strong> export (or All-Masters XML). The system parses every
+      <code>&lt;STOCKITEM&gt;</code>, <strong>maps the clean fields</strong> (name / unit / HSN / GST / type),
+      <strong>parses the name</strong> for metal · shape · grade · size, matches each against the catalogue by
+      <strong>Tally GUID → normalized name → new</strong>, and shows a review screen. A GUID we've imported before is
+      recognised and only its <strong>blank fields are filled</strong> — your manual edits are never overwritten.
+      Nothing is written until you press <strong>Import</strong>.
+    </p>
+    <div class="statusrow">
+      <span class="chip reuse">✓ reuse: item.tally_guid / source / status (0001, 0006), normalize.py, resolve_item, /reference/hsn, all vocab lists</span>
+      <span class="chip new">＋ new: staging_tally_item table, tools/tally_import item parser + name-parser, /api/items/import endpoints, the review screen</span>
+    </div>
+    <div class="flow" aria-label="pipeline">
+      <div class="n"><b>Upload XML</b><span>Items rail</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Parse</b><span>lxml · skip dummies</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Map + name-parse</b><span>metal/shape/grade/size</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Match</b><span>GUID → name → new</span></div>
+      <span class="a">→</span>
+      <div class="n hl"><b>Review</b><span>new / update / flagged</span></div>
+      <span class="a">→</span>
+      <div class="n"><b>Import</b><span>write item + seed HSN</span></div>
+    </div>
+  </header>
+
+  <!-- ============ STEP 1 — UPLOAD ============ -->
+  <section class="blk">
+    <h2>Step 1 — upload &amp; choose stock groups</h2>
+    <p class="sub">
+      In Tally: <em>Gateway → Display More Reports → Inventory Books → Stock Items</em>, then <span class="mono">Alt+E</span>
+      → format <strong>XML</strong> (or <em>Export → Masters → All Masters</em>). Drop it here.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/items/import</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#">Parties</a><a href="#" class="active">Items</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="body">
+        <div class="drop">
+          Drop the Tally Stock Items XML here, or click to choose
+          <small>.xml · UTF-16 or UTF-8 · up to 10 MB · one file</small>
+        </div>
+        <div class="scopebox">
+          <div class="h">Stock groups to import <span style="text-transform:none; letter-spacing:0; color:var(--faint);">— from the file</span></div>
+          <div class="grp"><span class="cb on">✓</span> Stainless Steel <span class="cnt">96 items</span></div>
+          <div class="grp"><span class="cb on">✓</span> Mild Steel <span class="cnt">88 items</span></div>
+          <div class="grp"><span class="cb on">✓</span> Aluminium <span class="cnt">41 items</span></div>
+          <div class="grp"><span class="cb on">✓</span> Fittings &amp; Hardware <span class="cnt">63 items</span></div>
+          <div class="grp"><span class="cb on">✓</span> (ungrouped) <span class="cnt">18 items</span></div>
+          <div style="font-size:10px; color:var(--muted); margin-top:8px;">All groups on by default. Untick one to leave that group out of this import.</div>
+        </div>
+        <div style="margin-top:12px; font-size:11px; color:var(--muted);">
+          <b>12</b> zero-history items (no unit, no HSN, no opening balance, no transactions) will be skipped automatically — Tally scratch / rounding entries.
+        </div>
+        <div style="margin-top:12px; display:flex; justify-content:flex-end;">
+          <button class="btn" style="font-size:12px; font-weight:600; border:none; border-radius:7px; padding:7px 16px; background:var(--accent); color:#fff; cursor:pointer;">Parse &amp; review →</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ FIELD MAPPING ============ -->
+  <section class="blk">
+    <h2>How a Tally stock item maps</h2>
+    <div class="frame" style="padding:0;">
+      <div style="overflow-x:auto;">
+        <table class="maptable">
+          <thead><tr><th>Tally XML</th><th>→ our field</th><th>Rule</th></tr></thead>
+          <tbody>
+            <tr><td class="f">&lt;NAME&gt;</td><td class="f">item.name</td><td>as-is; <code>name_normalized</code> from <code>normalize.py</code> (the dedupe key)</td></tr>
+            <tr><td class="f">&lt;GUID&gt; / &lt;MASTERID&gt;</td><td class="f">item.tally_guid</td><td>the stable cross-export key — drives match &amp; re-import safety</td></tr>
+            <tr><td class="f">&lt;BASEUNITS&gt;</td><td class="f">item.uom + item_type</td><td>unit mapped to our vocab; <b>Nos / Pcs / Set → MRP</b>, else <b>BULK</b></td></tr>
+            <tr><td class="f">&lt;HSNMASTERNAME&gt; / &lt;HSNCODE&gt;</td><td class="f">item.hsn_code</td><td>set if the code is known; <b>unseen HSN → auto-seeded into <code>hsn_code</code></b> on commit (code + "from Tally import" + the rate below)</td></tr>
+            <tr><td class="f">&lt;GSTDETAILS.LIST&gt;&lt;GSTRATE&gt;</td><td class="f">item.gst_rate</td><td>taken as-is; also fills the new <code>hsn_code</code> row's <code>default_gst_rate</code> when we seed it</td></tr>
+            <tr><td class="f">&lt;STANDARDPRICE&gt; / &lt;OPENINGRATE&gt;</td><td class="f">item.default_rate</td><td>whichever is present; else blank</td></tr>
+            <tr><td class="f">&lt;NAME&gt; (parsed)</td><td class="f">metal · shape · grade · size_text</td><td><b>light name-parser</b>: token scan against the metal / shape vocab + a dimension regex (<code>40x40x5</code>, <code>4in</code>, <code>2mm</code>). A guess it isn't sure of → the row's <b>flags</b>, editable in review, never blocks.</td></tr>
+            <tr><td class="f">&lt;OPENINGBALANCE&gt; / &lt;OPENINGVALUE&gt;</td><td class="f">— ignored</td><td>stock is Stage 3; not imported</td></tr>
+            <tr><td class="f">&lt;PARENT&gt; (stock group)</td><td class="f">item.category (proposed)</td><td>mapped to our category vocab where it lines up; otherwise left for the reviewer</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ STEP 2 — REVIEW ============ -->
+  <section class="blk">
+    <h2>Step 2 — review the batch</h2>
+    <p class="sub">
+      288 stock items parsed. Each row: its <strong>outcome</strong>, the <strong>parsed attributes</strong> (low-confidence
+      ones marked), the matched item if any, and what will change. Flagged rows are excluded from Import until resolved.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/items/import</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#">Parties</a><a href="#" class="active">Items</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="body">
+        <div class="summary">
+          <div class="scard new"><div class="n">231</div><div class="l">New — will create</div></div>
+          <div class="scard"><div class="n">44</div><div class="l">Match — fill blanks</div></div>
+          <div class="scard"><div class="n">6</div><div class="l">GUID seen — skip</div></div>
+          <div class="scard flag"><div class="n">7</div><div class="l">Needs attention</div></div>
+        </div>
+
+        <div class="filters">
+          <span class="f on">All 288</span><span class="f">New 231</span><span class="f">Matched 44</span><span class="f">Skip 6</span><span class="f">Needs attention 7</span>
+        </div>
+
+        <table class="rows">
+          <thead>
+            <tr><th style="width:22px;"></th><th>Tally stock item</th><th>Unit · HSN · GST</th><th>Type</th><th>Parsed</th><th>Outcome</th><th>Notes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>SS 304 Patta 4in 2mm<br><span class="mono10">Stainless Steel</span></td>
+              <td class="mono10">kg · 72193590 · 18%</td>
+              <td><select class="typpick"><option selected>BULK</option><option>MRP</option></select></td>
+              <td class="parsed"><span class="k">metal</span> SS · <span class="k">shape</span> patta · <span class="k">grade</span> 304 · <span class="k">size</span> 4in 2mm</td>
+              <td><span class="out new">new</span></td>
+              <td style="color:var(--muted);">HSN 72193590 known · rate ₹268 from STANDARDPRICE</td>
+            </tr>
+            <tr>
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>MS Angle 40x40x5<br><span class="mono10">Mild Steel</span></td>
+              <td class="mono10">kg · 72169910 · 18%</td>
+              <td><select class="typpick"><option selected>BULK</option><option>MRP</option></select></td>
+              <td class="parsed"><span class="k">metal</span> MS · <span class="k">shape</span> angle · <span class="k">size</span> 40x40x5</td>
+              <td><span class="out link">match → fill blanks</span></td>
+              <td style="color:var(--muted);">normalized name = item m_31 · fills uom, hsn, gst · sets tally_guid</td>
+            </tr>
+            <tr>
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>SS 202 Pipe 25.4mm 16G<br><span class="mono10">Stainless Steel</span></td>
+              <td class="mono10">kg · 73063090 · 18%</td>
+              <td><select class="typpick"><option selected>BULK</option><option>MRP</option></select></td>
+              <td class="parsed"><span class="k">metal</span> SS · <span class="k">shape</span> pipe · <span class="k">grade</span> 202 · <span class="k">size</span> 25.4mm</td>
+              <td><span class="out link">GUID seen</span></td>
+              <td style="color:var(--muted);">already imported (batch 8 Aug) · nothing blank to fill → <b>skipped</b></td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>SS Utensil Assorted<br><span class="mono10">Fittings &amp; Hardware</span></td>
+              <td class="mono10">Nos · 73239390 · 12%</td>
+              <td><select class="typpick"><option>BULK</option><option selected>MRP</option></select></td>
+              <td class="parsed"><span class="k">metal</span> SS · <span class="lowconf">shape ? (no match)</span></td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>shape not recognised · <a class="actlink">set shape</a> / <a class="actlink">leave blank &amp; import</a></td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Alu Patti 6" 2mm<br><span class="mono10">Aluminium</span></td>
+              <td class="mono10">kg · <span class="lowconf">76069210 ✗ not in reference</span> · 18%</td>
+              <td><select class="typpick"><option selected>BULK</option><option>MRP</option></select></td>
+              <td class="parsed"><span class="k">metal</span> aluminium · <span class="k">shape</span> patta · <span class="k">size</span> 6in 2mm</td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>HSN 76069210 not in our list · <a class="actlink">seed it (GST 18%)</a> / <a class="actlink">import without HSN</a></td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>SS Patti 4" 2mm<br><span class="mono10">Stainless Steel</span></td>
+              <td class="mono10">kg · 72193590 · 18%</td>
+              <td><select class="typpick"><option selected>BULK</option><option>MRP</option></select></td>
+              <td class="parsed"><span class="k">metal</span> SS · <span class="k">shape</span> patta · <span class="k">size</span> 4in 2mm</td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>~0.88 name match to <b>SS 304 Patta 4in 2mm</b> · <a class="actlink">link</a> / <a class="actlink">create new</a></td>
+            </tr>
+            <tr class="flagrow">
+              <td><span style="color:var(--faint);">☑</span></td>
+              <td>Item Long Description That Exceeds Two Hundred Characters … (a supplier's export sometimes stuffs a spec sheet into the name field) …<br><span class="mono10">(ungrouped)</span></td>
+              <td class="mono10">kg · — · —</td>
+              <td><select class="typpick"><option selected>BULK</option><option>MRP</option></select></td>
+              <td class="parsed">—</td>
+              <td><span class="out flag">needs decision</span></td>
+              <td>name &gt; 200 chars · <a class="actlink">edit before import</a></td>
+            </tr>
+            <tr><td colspan="7" style="font-size:10px; color:var(--muted);">… 281 more rows</td></tr>
+          </tbody>
+        </table>
+
+        <div class="commitbar">
+          <div style="font-size:12px;"><b>275</b> ready (231 new + 44 fill) · <b>6</b> skip · <b>7</b> need a decision</div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn ghost">Cancel</button>
+            <button class="btn primary">Import 275 items</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MATCH RULES ============ -->
+  <section class="blk">
+    <h2>Match &amp; write rules</h2>
+    <div class="note" style="margin-top:0;">
+      <b>Per stock item, in order:</b>
+      <ul>
+        <li><b>GUID</b> — <code>item.tally_guid == &lt;GUID&gt;</code> (already linked from a prior import) → <b>update blank fields only</b> (uom / hsn / gst / default_rate). If nothing is blank → <b>skip</b> (re-import is a no-op).</li>
+        <li><b>Normalized name</b> — <code>normalize(&lt;NAME&gt;)</code> == an <code>item.name_normalized</code> (not archived, not merged) → <b>link</b>: set <code>tally_guid</code>, fill blanks. A single strong trigram near-match (≥ 0.82, not exact) → <b>flag</b> (link / create), never auto-links.</li>
+        <li><b>No match</b> → <b>create</b>: <code>source = import</code>, <code>status = unconfirmed</code>, name + name_normalized, uom, item_type, hsn (seeding <code>hsn_code</code> if unseen), gst_rate, default_rate, and the parsed metal / shape / grade / size_text.</li>
+      </ul>
+      <b>Auto-flagged (held back from Import):</b> a name-only near-match; a name &gt; 200 chars or with disallowed characters; an HSN not in the reference list (offer: seed it with the Tally GST rate, or import without); a stock group that maps to no category (proceeds — category just left blank, not a hard flag); a duplicate GUID within the file.
+      <br><br>
+      <b>Never overwritten:</b> a field you already set on an existing item. The importer only fills blanks. Your <code>metal/shape/grade</code> edits, a hand-set <code>price_min/max</code>, a corrected HSN — all survive a re-import untouched.
+    </div>
+  </section>
+
+  <!-- ============ SPEC + BACKEND ============ -->
+  <section class="blk">
+    <h2>The slice — spec</h2>
+    <div class="ctable">
+      <table>
+        <thead><tr><th>Step</th><th>Trigger</th><th>Behaviour</th><th>API</th></tr></thead>
+        <tbody>
+          <tr><td>Upload &amp; parse</td><td><code>⇧ Tally</code> in the Items rail → file picker</td><td>Multipart XML → <code>lxml</code> parse → walk stock groups → skip zero-history dummies → one <code>staging_tally_item</code> row per kept <code>&lt;STOCKITEM&gt;</code> (raw blob + GUID). Name-parser fills the guessed attributes + low-confidence flags. Returns batch id + group counts.</td><td class="op">POST /api/items/import</td></tr>
+          <tr><td>Review</td><td>Redirect to <code>/items/import</code></td><td>Runs the GUID→name→new ladder over the staged rows, returns each with outcome (new / link / skip / flag), the parsed attributes, matched item id, per-row flags.</td><td class="op">GET /api/items/import/:batch</td></tr>
+          <tr><td>Adjust</td><td>Per-row type change, set/clear a parsed attribute, link/create on a flagged row, seed-or-skip an unknown HSN, edit a too-long name</td><td>Patches the staging row's <code>decision</code> + overrides. Re-validates.</td><td class="op">PATCH /api/items/import/:batch/rows/:id</td></tr>
+          <tr><td>Import</td><td><code>Import N items</code></td><td>One transaction: for each ready row — seed any unseen HSN into <code>hsn_code</code>; create or fill-blanks per the rules; write <code>item</code>; set <code>source</code>/<code>status</code>/<code>tally_guid</code>; <code>audit_log</code> per row. Flagged rows stay in staging.</td><td class="op">POST /api/items/import/:batch/commit</td></tr>
+          <tr><td>Discard</td><td>Cancel</td><td>Drops the batch's staging rows.</td><td class="op">DELETE /api/items/import/:batch</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>Backend — this slice</b>
+      <ul>
+        <li><b>Migration <code>0007</code></b> (<code>down_revision = "0006"</code>): one table <code>staging_tally_item</code> — <code>id, tenant_id, batch_id, tally_guid, raw_xml, stock_name, parent_group, base_units, hsn, gst_rate, standard_rate, proposed_type, proposed_category, parsed_metal, parsed_shape, parsed_grade, parsed_size_text, decision (pending|create|link|skip), type_override, attr_overrides_json, edited_name, seed_hsn (bool), match_method, match_item_id, flags_json, created_at</code>. No changes to <code>item</code> (0006 has everything).</li>
+        <li><code>tools/tally_import/</code> — extend the existing package: <code>parser.py</code> gains <code>parse_stock_items()</code> (reads <code>&lt;STOCKITEM&gt;</code>, same encoding handling as the ledger path); <code>name_parse.py</code> (new — token scan against the <code>reference.py</code> METALS / SHAPES lists + a dimension regex → <code>{metal, shape, grade, size_text, confidence}</code>); <code>item_match.py</code> (new — the GUID→name ladder, reuses <code>app/services/item_resolution</code>'s normalize + trigram).</li>
+        <li><code>app/routers/items_import.py</code> — the 5 endpoints. Registered in <code>main.py</code> (one line).</li>
+        <li>Reuses verbatim: <code>item.tally_guid</code> (0001), <code>item.source</code> / <code>status</code> (0006), <code>domain/normalize.py</code>, <code>services/item_resolution.resolve_item</code>, <code>reference.py</code> vocab lists + <code>hsn_code</code> seeding pattern, all the item field validators from <code>schemas_item.py</code>.</li>
+        <li>Frontend: <code>web/src/pages/items/ImportPage.tsx</code> (the two screens above) + a <code>⇧ Tally</code> button in the Items rail, route <code>/items/import</code> (before <code>/items/:id</code>). Pattern-identical to <code>pages/parties/ImportPage.tsx</code>.</li>
+        <li>Tests: parser against a committed stock-items XML fixture; name-parser table (SS 304 Patta 4in 2mm → all four; "SS Utensil Assorted" → metal only; junk → nothing); match ladder (GUID hit → skip / fill; name hit → link; near-match → flag; new); commit txn (create + fill-blanks-not-overwrite + HSN seed); flagged row unwritten; re-import same file → all skip.</li>
+      </ul>
+      <div style="margin-top:8px;"><b>Not this slice:</b> stock-group → product-group / variant import, opening stock (Stage 3), a CLI entrypoint (module fns are importable), price-band inference from Tally min/max levels.</div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Mirrors: <code>docs/visual-plan/tally-party-import-review.html</code></span>
+    <span>Builds on: <code>docs/visual-plan/items-crud-review.html</code> (migration 0006)</span>
+    <span>Precedent: execution-plan §9 (Tally XML import)</span>
+    <span>Mid-fi · for sign-off before coding</span>
+  </footer>
+</div>

@@ -30,6 +30,19 @@ def test_header_fields() -> None:
     assert e.low_text is False
 
 
+def test_supplier_phone_and_address() -> None:
+    e = _ext()
+    # the header phone ("Phone 8513057060"), NOT the buyer's "+919832137599"
+    assert e.supplier_phone == "8513057060"
+
+    a = e.supplier_address
+    assert a is not None
+    assert a.line1 == "179/1/244 Agrasen Road, Siliguri"
+    assert a.city == "Siliguri"
+    assert a.state_code == "19"  # West Bengal
+    assert a.pincode == "734005"
+
+
 def test_totals_to_the_paise() -> None:
     e = _ext()
     assert e.taxable_total == Decimal("35970.22")
