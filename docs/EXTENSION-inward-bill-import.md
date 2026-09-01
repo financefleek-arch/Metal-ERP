@@ -38,11 +38,16 @@ microservice.
   ├─ Upload — drag a PDF (or several). Each → an `inward_bill` row, status UPLOADED.
   │
   ├─ Extraction runs (sync for a single small PDF; a Postgres `job` for a batch):
-  │     1. pull text (pdfplumber / pymupdf).  If no text layer → OCR (Tesseract) → lower confidence.
-  │     2. detect a GST e-invoice signed-QR → decode → near-perfect, skip the rest.
-  │     3. else if a supplier_template exists for the supplier GSTIN → apply it.
-  │     4. else table-extract the line grid; regex the header/totals.
-  │     5. reconcile: taxable + CGST + SGST + IGST + round-off == grand total (±0.05).
+  │     1. pull text (pdfplumber / pymupdf).
+  │     2. HAS a usable text layer:
+  │          a. GST e-invoice signed-QR present → decode → near-perfect, skip the rest.
+  │          b. else supplier_template for this GSTIN → apply it.
+  │          c. else table-extract the line grid + regex the header/totals.
+  │     3. NO / sparse text layer (scanned or image-only) → render each page to
+  │        an image → one VISION-LLM call: page image(s) + the target JSON schema
+  │        → structured header + lines + totals.  (Same LLM the line-matcher uses;
+  │        no separate OCR engine.)  Confidence banded one notch below the text path.
+  │     4. reconcile: taxable + CGST + SGST + IGST + round-off == grand total (±0.05).
   │        If any step is low-confidence OR reconciliation fails → status NEEDS_REVIEW.
   │
   ├─ Supplier resolution (see "Party matching" below):
@@ -140,15 +145,28 @@ supplier matches at step 2.
 `pdfplumber.extract_table()` with column boundaries derived from the
 header row x-positions. Handles the column-wrap hazard (`Discoun\nt`,
 `11,689.3\n0`, `1,052.04 (\n9%)`) by reading cells, not lines. Header and
-totals via labelled-field regex.
+totals via labelled-field regex. No LLM.
 
-**Scanned / image-only invoices.** No text layer → Tesseract OCR →
-extraction confidence drops one band → always `NEEDS_REVIEW`.
+**Scanned / image-only invoices.** `pdfplumber` returns little or no
+text (below a per-page char threshold) → render each page to a PNG
+(`pymupdf`, ~150 dpi) → **one vision-LLM call**: the page image(s) plus
+the target JSON schema (header fields, line array, totals) → structured
+output. This is the same LLM/provider the line-matcher uses (Claude via
+the shared key) — no Tesseract, no separate OCR service, one dependency.
+Confidence is banded one notch below the text path, so an
+image-extracted bill effectively always lands in `NEEDS_REVIEW`; the
+reconciliation gate still applies. The rendered page images are kept
+alongside the PDF for the review screen.
 
 **GST e-invoices.** If the PDF carries the signed-QR (JWT), decode it —
 it contains supplier/buyer GSTIN, doc no/date, total, HSN summary, and
 the IRN. Highest confidence; the line-level parse still runs for
 descriptions/qty but the money fields come from the QR.
+
+**One vision-LLM shape, two uses.** The extractor's image path and the
+line-matcher's disambiguation call share a small `llm` service module
+(prompt templates + the shared client + token logging into
+`extraction_run`). Nothing else in the module talks to an LLM.
 
 **Reconciliation gate** (always, regardless of method):
 `taxable_total + cgst_total + sgst_total + igst_total + round_off`
@@ -238,7 +256,7 @@ inward_bill(
   currency DEFAULT 'INR',
   taxable_total, cgst_total, sgst_total, igst_total, cess_total, round_off, grand_total,
   amount_in_words,
-  extraction_method ENUM('EINVOICE_QR','TEMPLATE','TABLE','OCR'),
+  extraction_method ENUM('EINVOICE_QR','TEMPLATE','TABLE','VISION_LLM'),
   extraction_confidence NUMERIC(4,3),
   reconciled BOOLEAN,
   status ENUM('UPLOADED','EXTRACTING','NEEDS_REVIEW','APPROVED','REJECTED','ERROR'),
@@ -327,33 +345,35 @@ Nav item "Inward" appears only when `me` → tenant has `ext_inward_import`.
 | # | Deliverable | Size |
 |---|---|---|
 | **X0** | Schema + migration (all tables + `tenant.ext_inward_import`), feature-flag plumbing, `/api/inward-bills` skeleton, nav gating, PDF storage on the existing volume. | 0.5 wk |
-| **X1** | **Extractor** — text path (pdfplumber table + header/totals regex), reconciliation gate, `extraction_run` logging. e-invoice QR decode. OCR fallback stubbed. Unit tests against 4–5 real supplier PDFs incl. the Sugal Foods sample. | 1.5 wk |
+| **X1** | **Extractor — text path**: pdfplumber table + header/totals regex, e-invoice QR decode, reconciliation gate, `extraction_run` logging. `no-text-layer` detection wired but the image path returns "unsupported" for now. Unit tests against 4–5 real supplier PDFs incl. the Sugal Foods sample. | 1.5 wk |
 | **X2** | **Supplier resolution** — GSTIN match → link; no-match → stage new party (name/GSTIN/PAN/state/address). PAN-from-GSTIN, state-from-GSTIN. Tests incl. customer→both promotion. | 0.5 wk |
-| **X3** | **Line resolution** — the 5-step ladder: exact / alias / trigram+HSN / LLM disambiguation (batched, tenant-catalogue-only) / new-item stage. Confidence + `review_flag`. Tests: exact, fuzzy win, HSN tie-break, ambiguous→LLM, new. | 1 wk |
+| **X3** | **Line resolution** — the 5-step ladder: exact / alias / trigram+HSN / LLM disambiguation (batched, tenant-catalogue-only) / new-item stage. Confidence + `review_flag`. Introduces the shared `llm` service module. Tests: exact, fuzzy win, HSN tie-break, ambiguous→LLM, new. | 1 wk |
 | **X4** | **Review UI** — `InwardListPage` + `InwardReviewPage` (PDF pane, header form, totals check, lines table with match override), `PATCH` wiring. | 1.5 wk |
 | **X5** | **Approve + XML** — stage→create party/items in one txn, link lines, `tally_ledger_config`, Purchase `VOUCHER` builder (+ `<LEDGER>`/`<STOCKITEM>` for new masters, `UDF:METALERP_REF`, intra/inter split), `/xml` download. **Validate against a real Tally import.** | 1 wk |
 | **X6** | **`supplier_template`** — save-from-bill, apply-on-next, the "save as template?" prompt, re-extract with a template. Settings page. | 0.5 wk |
-| **X7** | OCR path finished (Tesseract), batch upload → `job`-queued extraction, hardening, docs. | 0.5 wk |
+| **X7** | **Extractor — image path**: `pymupdf` page render + the vision-LLM call through the X3 `llm` module (reuses its client + token logging), `extraction_method = VISION_LLM`, page images kept for the review pane. Batch upload → `job`-queued extraction. Hardening, docs. | 0.5 wk |
 | **Total** | | **~7 weeks**, fully independent of the M1 billing critical path (can run in parallel with a second dev, or after M1). |
 
 ---
 
 ## Decisions to confirm
 
-1. **LLM in X3 from the start, or ship X3 fuzzy-only and add LLM in X7?**
-   (Recommend: fuzzy-only first; add LLM once real bills show the fuzzy
-   miss rate.)
-2. **OCR now or later?** If the tenants' suppliers all send text PDFs
-   (Zoho/Tally/Busy generated — like the sample), OCR can slip to X7 or
-   past v1.
-3. **`tally_ledger_config` defaults** — are `Purchase Accounts` / `CGST`
+1. **LLM in X3 from the start, or ship X3 fuzzy-only and add the LLM
+   disambiguation call once real bills show the fuzzy miss rate?**
+   (Recommend: fuzzy-only first — the shared `llm` module still lands in
+   X3 as a stub so X7's image path can build on it without rework.)
+2. **`tally_ledger_config` defaults** — are `Purchase Accounts` / `CGST`
    / `SGST` / `Round Off` the right default ledger names, or does the
    shop's chart of accounts use different ones? (One-time per tenant,
    but the defaults should match the common case.)
-4. **XML encoding** — confirm UTF-16 vs UTF-8 against the target Tally
+3. **XML encoding** — confirm UTF-16 vs UTF-8 against the target Tally
    version on the first real import; bake the winner into the default.
-5. **Batch upload volume** — how many inward PDFs per day per tenant?
+4. **Batch upload volume** — how many inward PDFs per day per tenant?
    Sets whether X7's job-queue is needed or a nice-to-have.
+5. **Vision-LLM cost ceiling** — image extraction is one multi-page
+   vision call per scanned bill. If a tenant dumps hundreds of scans,
+   that adds up. Worth a per-tenant monthly page-render cap (soft warn,
+   hard stop) — decide the numbers before X7.
 
 ---
 
