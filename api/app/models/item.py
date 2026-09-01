@@ -73,6 +73,26 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     uom: Mapped[str | None] = mapped_column(String(20))
     hsn_code: Mapped[str | None] = mapped_column(ForeignKey("hsn_code.code"))
 
+    # --- metal-trade attributes (all optional; sharpen search + the printed line) ---
+    # metal: MS/SS/GI/aluminium/brass/copper/cast_iron
+    metal: Mapped[str | None] = mapped_column(String(20))
+    # shape: angle/channel/beam/flat/round_bar/sheet/coil/pipe/…
+    shape: Mapped[str | None] = mapped_column(String(24))
+    grade: Mapped[str | None] = mapped_column(String(32))  # "304", "IS2062", "6063"
+    size_text: Mapped[str | None] = mapped_column(String(60))  # "40x40x5", "1250mm"
+    thickness_mm: Mapped[float | None] = mapped_column(Numeric(9, 2))
+    width_mm: Mapped[float | None] = mapped_column(Numeric(9, 2))
+    length_mm: Mapped[float | None] = mapped_column(Numeric(9, 2))
+    # finish: mill/polished/matte/galvanised/pvc_coated
+    finish: Mapped[str | None] = mapped_column(String(24))
+
+    # --- units & conversion (stored now; invoice-editor wiring is a later slice) ---
+    secondary_uom: Mapped[str | None] = mapped_column(String(20))  # pcs / ft / m
+    # 1 secondary unit = N primary units (e.g. 1 pipe = 6.2 kg)
+    conversion_factor: Mapped[float | None] = mapped_column(Numeric(12, 4))
+    weight_per_uom: Mapped[float | None] = mapped_column(Numeric(12, 3))  # theoretical kg
+    purchase_uom: Mapped[str | None] = mapped_column(String(20))  # supplier's unit
+
     # Pricing
     default_rate: Mapped[float | None] = mapped_column(Numeric(15, 2))
     last_rate: Mapped[float | None] = mapped_column(Numeric(15, 2))
@@ -81,9 +101,27 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     mrp: Mapped[float | None] = mapped_column(Numeric(15, 2))
     default_discount_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
 
+    # Optimum price band — an out-of-range invoice rate warns, never blocks (M1).
+    price_min: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    price_max: Mapped[float | None] = mapped_column(Numeric(15, 2))
+
     # Purchase side — bumped on inward-bill approve (ext_inward_import).
     last_purchase_rate: Mapped[float | None] = mapped_column(Numeric(15, 2))
     last_purchased_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # --- reserved for the price-suggestion engine (dormant this slice) ---
+    markup_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    suggested_rate: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    suggested_rate_basis: Mapped[str | None] = mapped_column(String(120))
+    suggested_rate_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    price_review_pending: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # --- reserved for Stage 2/3 (dormant) ---
+    barcode: Mapped[str | None] = mapped_column(String(64), index=True)
+    sku: Mapped[str | None] = mapped_column(String(64))
+    reorder_level: Mapped[float | None] = mapped_column(Numeric(15, 3))
+
+    notes: Mapped[str | None] = mapped_column(String(1000))
 
     # Variant within a group
     size_pos: Mapped[int | None] = mapped_column(Integer)

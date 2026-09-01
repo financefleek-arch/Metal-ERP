@@ -17,7 +17,15 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.deps import SessionDep, get_current_user, require_write
-from app.models import InwardBill, Item, Party, TallyLedgerConfig, Tenant, User
+from app.models import (
+    InwardBill,
+    InwardBillLine,
+    Item,
+    Party,
+    TallyLedgerConfig,
+    Tenant,
+    User,
+)
 from app.models._mixins import InwardStatus, MatchMethod
 from app.schemas_inward import (
     ApproveOut,
@@ -178,8 +186,111 @@ def upload_bills(
         # Single small PDF: extract synchronously (X7 batches via `job`).
         run_extraction(session, bill)
         session.flush()
-        out.append(_out(session, bill))
+
+        # Re-upload of the same document (same tenant + supplier GSTIN + bill
+        # no): fold this fresh extraction into the existing row and drop the
+        # duplicate, so there's one bill per real invoice. An approved match
+        # is reset to needs_review — the accountant re-approves to regenerate
+        # the XML.
+        prior = _find_prior_bill(session, user.tenant_id, bill)
+        if prior is not None:
+            _replace_extraction(session, prior, bill)
+            session.flush()
+            out.append(_out(session, prior))
+        else:
+            out.append(_out(session, bill))
     return out
+
+
+_EXTRACTION_FIELDS = (
+    "supplier_name", "supplier_gstin", "supplier_pan", "supplier_state_code",
+    "matched_party_id", "new_supplier_staged_json",
+    "bill_no", "bill_date", "sales_order_ref",
+    "place_of_supply_state_code", "supply_type", "currency",
+    "taxable_total", "cgst_total", "sgst_total", "igst_total", "cess_total",
+    "round_off", "grand_total", "amount_in_words",
+    "extraction_method", "extraction_confidence", "reconciled",
+    "reconcile_discrepancy", "raw_text",
+)
+
+
+def _find_prior_bill(
+    session: SessionDep, tenant_id: str, fresh: InwardBill
+) -> InwardBill | None:
+    if not fresh.bill_no or not fresh.supplier_gstin:
+        return None
+    return session.scalar(
+        select(InwardBill).where(
+            InwardBill.tenant_id == tenant_id,
+            InwardBill.id != fresh.id,
+            InwardBill.supplier_gstin == fresh.supplier_gstin,
+            InwardBill.bill_no == fresh.bill_no,
+        )
+    )
+
+
+def _replace_extraction(
+    session: SessionDep, prior: InwardBill, fresh: InwardBill
+) -> None:
+    """Overwrite `prior`'s extracted data + lines with `fresh`'s, then delete
+    `fresh` (and its PDF). `prior` keeps its id, so its XML path is stable.
+    """
+    for field_name in _EXTRACTION_FIELDS:
+        setattr(prior, field_name, getattr(fresh, field_name))
+
+    # keep the newest source file
+    if fresh.source_pdf_path:
+        if prior.source_pdf_path:
+            Path(prior.source_pdf_path).unlink(missing_ok=True)
+        prior.source_pdf_path = fresh.source_pdf_path
+        prior.source_filename = fresh.source_filename
+        fresh.source_pdf_path = None  # ownership moved; don't delete on drop
+
+    # rebuild lines
+    prior.lines.clear()
+    session.flush()
+    for ln in list(fresh.lines):
+        prior.lines.append(
+            InwardBillLine(
+                sl_no=ln.sl_no,
+                description=ln.description,
+                hsn=ln.hsn,
+                quantity=ln.quantity,
+                uom=ln.uom,
+                unit_rate=ln.unit_rate,
+                discount_pct=ln.discount_pct,
+                discount_amt=ln.discount_amt,
+                taxable_value=ln.taxable_value,
+                cgst_rate=ln.cgst_rate,
+                cgst_amt=ln.cgst_amt,
+                sgst_rate=ln.sgst_rate,
+                sgst_amt=ln.sgst_amt,
+                igst_rate=ln.igst_rate,
+                igst_amt=ln.igst_amt,
+                line_total=ln.line_total,
+                match_method=ln.match_method,
+                match_confidence=ln.match_confidence,
+                matched_item_id=ln.matched_item_id,
+                new_item_staged_json=ln.new_item_staged_json,
+                review_flag=ln.review_flag,
+            )
+        )
+
+    # a re-upload re-opens the bill for review; stale XML is discarded
+    if prior.tally_xml_path:
+        Path(prior.tally_xml_path).unlink(missing_ok=True)
+        prior.tally_xml_path = None
+    prior.status = InwardStatus.needs_review
+    prior.reject_reason = None
+    prior.error_message = None
+
+    _drop_bill(session, fresh)
+
+
+def _drop_bill(session: SessionDep, bill: InwardBill) -> None:
+    if bill.source_pdf_path:
+        Path(bill.source_pdf_path).unlink(missing_ok=True)
+    session.delete(bill)
 
 
 # --------------------------------------------------------------------------

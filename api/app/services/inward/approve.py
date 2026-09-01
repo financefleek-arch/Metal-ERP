@@ -230,9 +230,18 @@ def approve_bill(
     )
     out_dir = Path(settings.inward_dir) / "xml"
     out_dir.mkdir(parents=True, exist_ok=True)
-    xml_path = out_dir / f"inward-{bill.bill_no or bill.id}.xml"
+    # Keyed on bill.id (stable, collision-proof). A re-approve of the same
+    # bill overwrites in place.
+    xml_path = out_dir / f"inward-{bill.id}.xml"
     xml_path.write_bytes(xml_bytes)
     bill.tally_xml_path = str(xml_path)
+
+    # The source PDF has served its purpose — the XML is the durable
+    # artefact from here on. Drop the PDF to keep the volume small; the
+    # user can always re-upload, which regenerates against a fresh bill.
+    if bill.source_pdf_path:
+        Path(bill.source_pdf_path).unlink(missing_ok=True)
+        bill.source_pdf_path = None
 
     # --- 6 + 7 ---
     bill.status = InwardStatus.approved

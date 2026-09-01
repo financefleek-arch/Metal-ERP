@@ -4,6 +4,7 @@ import { useAuth } from "../lib/auth";
 
 const baseNav = [
   { to: "/parties", label: "Parties" },
+  { to: "/items", label: "Items" },
   { to: "/firm", label: "Firm" },
 ];
 

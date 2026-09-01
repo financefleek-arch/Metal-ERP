@@ -15,6 +15,16 @@ export function useStates() {
   });
 }
 
+/** A fixed vocabulary list (uoms / categories / shapes / metals / finishes). */
+export function useVocab(kind: "uoms" | "categories" | "shapes" | "metals" | "finishes") {
+  return useQuery({
+    queryKey: ["reference", kind],
+    queryFn: () => api<string[]>(`/reference/${kind}`, { auth: true }),
+    staleTime: Infinity,
+    gcTime: Infinity,
+  });
+}
+
 // Client-side hints — the backend (app/reference.py) is the real guarantee (422).
 // Keep these in lockstep with the server regexes.
 

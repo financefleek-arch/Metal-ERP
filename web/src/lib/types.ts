@@ -129,3 +129,57 @@ export interface ImportCommitResult {
   skipped: number;
   still_flagged: number;
 }
+
+// --- items ---
+
+export type ItemType = "bulk" | "mrp";
+export type ItemStatus = "unconfirmed" | "confirmed" | "archived";
+export type ItemSource = "manual" | "auto_from_invoice" | "auto_from_purchase" | "import";
+
+export interface ItemListItem {
+  id: string;
+  name: string;
+  item_type: ItemType;
+  category: string | null;
+  uom: string | null;
+  hsn_code: string | null;
+  metal: string | null;
+  shape: string | null;
+  grade: string | null;
+  size_text: string | null;
+  default_rate: string | null;
+  last_rate: string | null;
+  last_purchase_rate: string | null;
+  gst_rate: string | null;
+  price_min: string | null;
+  price_max: string | null;
+  times_billed: number;
+  status: ItemStatus;
+  source: ItemSource;
+}
+
+export interface Item extends ItemListItem {
+  name_normalized: string;
+  thickness_mm: string | null;
+  width_mm: string | null;
+  length_mm: string | null;
+  finish: string | null;
+  secondary_uom: string | null;
+  conversion_factor: string | null;
+  weight_per_uom: string | null;
+  purchase_uom: string | null;
+  mrp: string | null;
+  default_discount_pct: string | null;
+  last_sold_at: string | null;
+  last_purchased_at: string | null;
+  merged_into_id: string | null;
+  notes: string | null;
+  rate_in_band: boolean | null;
+  document_count: number;
+}
+
+export interface HsnOption {
+  code: string;
+  description: string;
+  gst_rate: number | null;
+}

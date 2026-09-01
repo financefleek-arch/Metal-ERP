@@ -19,6 +19,7 @@ shared webhook receiver.
 | Frontend | static Vite build, served by Caddy from `/srv/metalerp-frontend` | built by `deploy-metalerp.sh` via `docker build --target build` + `docker cp` |
 | Reverse proxy | shared `caddy` | `metal.fleekfinance.in` → `/api/*` proxied to `metalerp-api:8000`, else the SPA |
 | PDFs | `metalerp_pdfs` named volume | WeasyPrint output; not object storage for M1 |
+| Inward files | `metalerp_inward` named volume (`INWARD_DIR=/data/inward`) | `ext_inward_import` only. Uploaded supplier PDFs at `/data/inward/pdf/<bill-id>.pdf`, **deleted once their Tally XML is built** (re-uploadable). Generated XML at `/data/inward/xml/inward-<bill-id>.xml` — the durable artefact, re-downloadable. A re-upload of the same invoice (same tenant + supplier GSTIN + bill no) folds into the existing row and discards stale XML. |
 | Secrets | Vault KV `secret/metalerp/core#jwt_secret` | `BREVO_API_KEY` shared; `METALERP_SENTRY_DSN` plain `.env` |
 
 The **infra-repo** side of the wiring lives in `fleek-infra`:
@@ -103,6 +104,15 @@ docker compose exec -T metalerp-api python -m app.seed        # HSN + synonyms
 docker compose up -d --force-recreate --no-deps caddy         # NOT restart — a
 #    new volumes: entry isn't applied by restart. Vault sourced (step 5) so
 #    ytpipe/builds basicauth hashes don't blank.
+
+# 9. Adding the metalerp_inward volume to an already-running stack needs a
+#    recreate (a `volumes:` change is not applied by `restart` or plain `up -d`):
+docker compose up -d --force-recreate --no-deps metalerp-api
+
+# 10. Turn on Inward Bill Import for a tenant (no admin UI yet):
+docker compose exec -T postgres psql -U "$POSTGRES_ADMIN_USER" -d metalerp \
+  -c "UPDATE tenant SET ext_inward_import = true WHERE legal_name = '<Firm Name>';"
+#    Then hard-refresh the browser so the SPA re-reads /auth/me.
 ```
 
 ---

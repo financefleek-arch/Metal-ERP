@@ -31,7 +31,7 @@ Out of scope for M1 (designed-for, dormant): GST/IRN/e-Way Bill, weighbridge int
 | Parties — two-pane list+detail, fuzzy search (name/address/phone), create-in-place, autosave, archive vs delete guard, provenance, "details pending" + dormancy filters, **field validation** (phone/PAN/GSTIN-checksum/PIN/email/name/address), **bulk import from a Tally masters XML** | ✅ `/api/parties`, `/api/parties/import` |
 | Frontend — auth page, app shell, Firm page, Parties two-pane (rail + inline detail form) | ✅ `web/` |
 | Deploy — push-to-`main` → build → migrate → live at `metal.fleekfinance.in` | ✅ (API; SPA builds once `web/Dockerfile` is present — it now is) |
-| Item catalogue + normalization | ⬜ next |
+| Item catalogue — two-pane list+detail, metal-trade attributes (metal/shape/grade/size/dims/finish + uom-conversion), price optimum-band, fuzzy search, dedupe on normalized name, confirm/merge, HSN lookup + HSN→GST auto-fill | ✅ `/api/items`, `/api/reference/hsn\|uoms\|categories\|shapes\|metals` |
 | Invoice editor + finalize + PDF | ⬜ |
 
 ## Stack (planned)

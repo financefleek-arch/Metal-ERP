@@ -211,3 +211,71 @@ def test_reject_blocks_approve(
     assert r.status_code == 200
     assert r.json()["status"] == "rejected"
     assert client.post(f"/api/inward-bills/{bid}/approve", headers=headers).status_code == 422
+
+
+def test_approve_deletes_the_source_pdf(
+    inward_client: tuple[TestClient, dict[str, str]],
+    sugal_pdf_bytes: bytes,
+    seeded_hsn: None,
+) -> None:
+    from pathlib import Path
+
+    from app.models import InwardBill
+
+    client, headers = inward_client
+    bill = _upload_sugal(client, headers, sugal_pdf_bytes)
+    bid = bill["id"]
+
+    with SessionLocal() as s:
+        pdf_path = s.get(InwardBill, bid).source_pdf_path
+    assert pdf_path and Path(pdf_path).exists()
+
+    assert client.post(f"/api/inward-bills/{bid}/approve", headers=headers).status_code == 200
+
+    # PDF gone, path nulled, XML remains
+    assert not Path(pdf_path).exists()
+    with SessionLocal() as s:
+        b = s.get(InwardBill, bid)
+        assert b.source_pdf_path is None
+        assert b.tally_xml_path and Path(b.tally_xml_path).exists()
+
+    # the PDF route now 404s, the XML route still serves
+    assert client.get(f"/api/inward-bills/{bid}/pdf", headers=headers).status_code == 404
+    assert client.get(f"/api/inward-bills/{bid}/xml", headers=headers).status_code == 200
+
+
+def test_reupload_folds_into_the_prior_bill(
+    inward_client: tuple[TestClient, dict[str, str]],
+    sugal_pdf_bytes: bytes,
+    seeded_hsn: None,
+) -> None:
+    from app.models import InwardBill
+
+    client, headers = inward_client
+
+    first = _upload_sugal(client, headers, sugal_pdf_bytes)
+    fid = first["id"]
+
+    # reject it, then upload the same invoice again
+    client.post(f"/api/inward-bills/{fid}/reject", headers=headers, json={"reason": "oops"})
+    second = _upload_sugal(client, headers, sugal_pdf_bytes)
+
+    # same row, not a duplicate
+    assert second["id"] == fid
+    assert second["status"] == "needs_review"  # re-opened
+    assert second["reject_reason"] is None
+    assert len(second["lines"]) == 12
+
+    r = client.get("/api/inward-bills", headers=headers)
+    assert len([b for b in r.json() if b["supplier_gstin"] == "19BHBPK1450P1Z3"]) == 1
+
+    # re-upload after approve → re-opens for review, stale XML discarded
+    assert client.post(f"/api/inward-bills/{fid}/approve", headers=headers).status_code == 200
+    with SessionLocal() as s:
+        xml_path = s.get(InwardBill, fid).tally_xml_path
+    third = _upload_sugal(client, headers, sugal_pdf_bytes)
+    assert third["id"] == fid
+    assert third["status"] == "needs_review"
+    from pathlib import Path
+
+    assert xml_path and not Path(xml_path).exists()

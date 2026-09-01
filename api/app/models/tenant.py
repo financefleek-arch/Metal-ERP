@@ -6,7 +6,15 @@ multi-tenant is not a retrofit.
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -46,6 +54,9 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     # A party with no transaction inside this window is flagged "dormant"
     # (data + filter only for M1; no dashboard tile yet).
     dormant_party_days: Mapped[int] = mapped_column(Integer, default=180, nullable=False)
+
+    # Baseline markup for the (future) price-suggestion engine. Null = not set.
+    default_markup_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
 
     # Phase 2 — dormant.
     gst_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -4,6 +4,7 @@ import { Shell } from "./components/Shell";
 import { AuthPage } from "./pages/AuthPage";
 import { FirmPage } from "./pages/FirmPage";
 import { PartiesPage } from "./pages/PartiesPage";
+import { ItemsPage } from "./pages/ItemsPage";
 import { ImportPage } from "./pages/parties/ImportPage";
 import { InwardListPage } from "./pages/inward/InwardListPage";
 import { InwardSettingsPage } from "./pages/inward/InwardSettingsPage";
@@ -30,6 +31,9 @@ export function App() {
         <Route path="/parties/import" element={<ImportPage />} />
         <Route path="/parties/new" element={<PartiesPage />} />
         <Route path="/parties/:id" element={<PartiesPage />} />
+        <Route path="/items" element={<ItemsPage />} />
+        <Route path="/items/new" element={<ItemsPage />} />
+        <Route path="/items/:id" element={<ItemsPage />} />
 
         {/* Inward Bill Import — only when the tenant flag is on */}
         {inward && <Route path="/inward" element={<InwardListPage />} />}

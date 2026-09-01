@@ -55,6 +55,12 @@ alembic check                                        # models vs migrations drif
   `tally_ledger_config`, `extraction_run`, `job` tables + `tenant.ext_inward_import`.
 - `0005` — `staging_tally_party`: holds a parsed Tally masters-XML party
   import between upload and commit. No changes to `party`.
+- `0006` — `item`: metal-trade attributes (metal/shape/grade/size_text/
+  thickness/width/length_mm/finish), units & conversion (secondary_uom/
+  conversion_factor/weight_per_uom/purchase_uom), price band (price_min/
+  price_max), notes; + dormant columns for the price engine
+  (markup_pct/suggested_rate/…/price_review_pending) and Stage 2/3
+  (barcode/sku/reorder_level). `tenant.default_markup_pct`.
 
 ## Layout
 
