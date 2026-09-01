@@ -95,8 +95,12 @@ class RateMode(enum.StrEnum):
 
 class AliasSource(enum.StrEnum):
     manual = "manual"
-    auto_from_purchase = "auto_from_purchase"  # off a real inward document — never auto-retired
-    learned = "learned"  # from the billing type-ahead — swept if unused for 90 days
+    # off a real inward document — never auto-retired
+    auto_from_purchase = "auto_from_purchase"
+    # explicit "create new" on a sales line — never auto-retired
+    auto_from_invoice = "auto_from_invoice"
+    # from the billing type-ahead — swept if unused for 90 days
+    learned = "learned"
 
 
 class DocType(enum.StrEnum):

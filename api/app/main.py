@@ -15,6 +15,7 @@ from app.config import get_settings
 from app.db import engine
 from app.routers import (
     auth,
+    invoices,
     inward,
     item_categories,
     item_groups,
@@ -55,6 +56,7 @@ app.include_router(items_import.router)
 app.include_router(items.router)
 app.include_router(item_categories.router)
 app.include_router(item_groups.router)
+app.include_router(invoices.router)
 app.include_router(inward.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.

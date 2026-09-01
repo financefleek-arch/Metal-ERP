@@ -7,6 +7,8 @@ import { PartiesPage } from "./pages/PartiesPage";
 import { ItemsPage } from "./pages/ItemsPage";
 import { ImportPage } from "./pages/parties/ImportPage";
 import { ItemsImportPage } from "./pages/items/ImportPage";
+import { InvoiceListPage } from "./pages/invoices/InvoiceListPage";
+import { InvoiceEditorPage } from "./pages/invoices/InvoiceEditorPage";
 import { InwardListPage } from "./pages/inward/InwardListPage";
 import { InwardSettingsPage } from "./pages/inward/InwardSettingsPage";
 import { InwardDebugPage } from "./pages/inward/InwardDebugPage";
@@ -26,8 +28,11 @@ export function App() {
   return (
     <Shell>
       <Routes>
-        <Route path="/" element={<Navigate to="/parties" replace />} />
+        <Route path="/" element={<Navigate to="/invoices" replace />} />
         <Route path="/firm" element={<FirmPage />} />
+        <Route path="/invoices" element={<InvoiceListPage />} />
+        <Route path="/invoices/new" element={<InvoiceEditorPage />} />
+        <Route path="/invoices/:id" element={<InvoiceEditorPage />} />
         <Route path="/parties" element={<PartiesPage />} />
         <Route path="/parties/import" element={<ImportPage />} />
         <Route path="/parties/new" element={<PartiesPage />} />
@@ -45,7 +50,7 @@ export function App() {
         {inward && <Route path="/inward/debug" element={<InwardDebugPage />} />}
         {inward && <Route path="/inward/:id" element={<InwardListPage />} />}
 
-        <Route path="*" element={<Navigate to="/parties" replace />} />
+        <Route path="*" element={<Navigate to="/invoices" replace />} />
       </Routes>
     </Shell>
   );

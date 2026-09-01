@@ -1,0 +1,191 @@
+{
+  "_comment": "Shared truth table for app/domain/tax.py (Python) and web/src/lib/previewTotal.ts (JS). Every case: given lines + invoice_discount, assert subtotal / discount_total / taxable_total / round_off / grand_total / amount_in_words. Keep both test suites pointed here.",
+  "cases": [
+    {
+      "name": "empty invoice",
+      "input": { "lines": [], "invoice_discount": "0" },
+      "expect": {
+        "subtotal": "0.00",
+        "discount_total": "0.00",
+        "taxable_total": "0.00",
+        "round_off": "0.00",
+        "grand_total": "0.00",
+        "amount_in_words": "INR Zero Only"
+      }
+    },
+    {
+      "name": "single whole-rupee line, no rounding",
+      "input": {
+        "lines": [{ "quantity": "10", "unit_rate": "100.00", "discount": "0" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "1000.00",
+        "discount_total": "0.00",
+        "taxable_total": "1000.00",
+        "round_off": "0.00",
+        "grand_total": "1000.00",
+        "amount_in_words": "INR One Thousand Only"
+      }
+    },
+    {
+      "name": "kg line with fractional qty rounds up at grand total",
+      "input": {
+        "lines": [{ "quantity": "900.00", "unit_rate": "264.00", "discount": "0" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "237600.00",
+        "discount_total": "0.00",
+        "taxable_total": "237600.00",
+        "round_off": "0.00",
+        "grand_total": "237600.00",
+        "amount_in_words": "INR Two Lakh Thirty Seven Thousand Six Hundred Only"
+      }
+    },
+    {
+      "name": "sample-bill line 226287.36 -> rounds down",
+      "input": {
+        "lines": [{ "quantity": "857.15", "unit_rate": "264.00", "discount": "0" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "226287.60",
+        "discount_total": "0.00",
+        "taxable_total": "226287.60",
+        "round_off": "0.40",
+        "grand_total": "226288.00",
+        "amount_in_words": "INR Two Lakh Twenty Six Thousand Two Hundred Eighty Eight Only"
+      }
+    },
+    {
+      "name": "round-off negative (x.51 rounds down to .00 ... actually up); use x.20 to round down",
+      "input": {
+        "lines": [{ "quantity": "3", "unit_rate": "1064.40", "discount": "0" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "3193.20",
+        "discount_total": "0.00",
+        "taxable_total": "3193.20",
+        "round_off": "-0.20",
+        "grand_total": "3193.00",
+        "amount_in_words": "INR Three Thousand One Hundred Ninety Three Only"
+      }
+    },
+    {
+      "name": "half-up: x.50 rounds up",
+      "input": {
+        "lines": [{ "quantity": "1", "unit_rate": "99.50", "discount": "0" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "99.50",
+        "discount_total": "0.00",
+        "taxable_total": "99.50",
+        "round_off": "0.50",
+        "grand_total": "100.00",
+        "amount_in_words": "INR One Hundred Only"
+      }
+    },
+    {
+      "name": "line discount reduces line total",
+      "input": {
+        "lines": [{ "quantity": "10", "unit_rate": "100.00", "discount": "150.00" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "850.00",
+        "discount_total": "150.00",
+        "taxable_total": "850.00",
+        "round_off": "0.00",
+        "grand_total": "850.00",
+        "amount_in_words": "INR Eight Hundred Fifty Only"
+      }
+    },
+    {
+      "name": "line discount cannot push a line negative",
+      "input": {
+        "lines": [{ "quantity": "1", "unit_rate": "100.00", "discount": "250.00" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "0.00",
+        "discount_total": "250.00",
+        "taxable_total": "0.00",
+        "round_off": "0.00",
+        "grand_total": "0.00",
+        "amount_in_words": "INR Zero Only"
+      }
+    },
+    {
+      "name": "invoice-level discount applied after subtotal, before round-off",
+      "input": {
+        "lines": [
+          { "quantity": "10", "unit_rate": "100.00", "discount": "0" },
+          { "quantity": "5", "unit_rate": "200.00", "discount": "0" }
+        ],
+        "invoice_discount": "125.40"
+      },
+      "expect": {
+        "subtotal": "2000.00",
+        "discount_total": "125.40",
+        "taxable_total": "1874.60",
+        "round_off": "0.40",
+        "grand_total": "1875.00",
+        "amount_in_words": "INR One Thousand Eight Hundred Seventy Five Only"
+      }
+    },
+    {
+      "name": "line + invoice discount combine in discount_total",
+      "input": {
+        "lines": [
+          { "quantity": "10", "unit_rate": "100.00", "discount": "50.00" },
+          { "quantity": "5", "unit_rate": "200.00", "discount": "25.00" }
+        ],
+        "invoice_discount": "100.00"
+      },
+      "expect": {
+        "subtotal": "1925.00",
+        "discount_total": "175.00",
+        "taxable_total": "1825.00",
+        "round_off": "0.00",
+        "grand_total": "1825.00",
+        "amount_in_words": "INR One Thousand Eight Hundred Twenty Five Only"
+      }
+    },
+    {
+      "name": "multi-line lakhs, amount in words",
+      "input": {
+        "lines": [
+          { "quantity": "1200.5", "unit_rate": "264.00", "discount": "0" },
+          { "quantity": "40", "unit_rate": "532.00", "discount": "0" }
+        ],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "338212.00",
+        "discount_total": "0.00",
+        "taxable_total": "338212.00",
+        "round_off": "0.00",
+        "grand_total": "338212.00",
+        "amount_in_words": "INR Three Lakh Thirty Eight Thousand Two Hundred Twelve Only"
+      }
+    },
+    {
+      "name": "crore boundary",
+      "input": {
+        "lines": [{ "quantity": "1", "unit_rate": "12345678.00", "discount": "0" }],
+        "invoice_discount": "0"
+      },
+      "expect": {
+        "subtotal": "12345678.00",
+        "discount_total": "0.00",
+        "taxable_total": "12345678.00",
+        "round_off": "0.00",
+        "grand_total": "12345678.00",
+        "amount_in_words": "INR One Crore Twenty Three Lakh Forty Five Thousand Six Hundred Seventy Eight Only"
+      }
+    }
+  ]
+}

@@ -9,6 +9,7 @@ finalized invoice is immutable in practice. Phase-2 (GST) and Stage-2+
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -64,6 +65,11 @@ class Invoice(PkUuidMixin, TimestampMixin, Base):
     terms_snapshot: Mapped[str | None] = mapped_column(Text)
     declaration_snapshot: Mapped[str | None] = mapped_column(Text)
 
+    # Editor input: an absolute amount off the whole bill. `domain.tax`
+    # applies it after subtotal, before round-off; `discount_total` (below)
+    # is the frozen line+invoice sum written at finalize.
+    invoice_discount: Mapped[Decimal] = mapped_column(_MONEY, default=0, nullable=False)
+
     status: Mapped[InvoiceStatus] = mapped_column(
         String(10), default=InvoiceStatus.draft, nullable=False, index=True
     )
@@ -76,21 +82,21 @@ class Invoice(PkUuidMixin, TimestampMixin, Base):
     )
 
     # --- frozen at finalize ---
-    subtotal: Mapped[float | None] = mapped_column(_MONEY)
-    discount_total: Mapped[float | None] = mapped_column(_MONEY)
-    round_off: Mapped[float | None] = mapped_column(_MONEY)
-    grand_total: Mapped[float | None] = mapped_column(_MONEY)
+    subtotal: Mapped[Decimal | None] = mapped_column(_MONEY)
+    discount_total: Mapped[Decimal | None] = mapped_column(_MONEY)
+    round_off: Mapped[Decimal | None] = mapped_column(_MONEY)
+    grand_total: Mapped[Decimal | None] = mapped_column(_MONEY)
     amount_in_words: Mapped[str | None] = mapped_column(String(500))
 
     # --- Phase 2 (GST) — dormant ---
     place_of_supply_state_code: Mapped[str | None] = mapped_column(String(2))
     supply_type: Mapped[str | None] = mapped_column(String(20))
     reverse_charge: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    taxable_total: Mapped[float | None] = mapped_column(_MONEY)
-    cgst_total: Mapped[float | None] = mapped_column(_MONEY)
-    sgst_total: Mapped[float | None] = mapped_column(_MONEY)
-    igst_total: Mapped[float | None] = mapped_column(_MONEY)
-    cess_total: Mapped[float | None] = mapped_column(_MONEY)
+    taxable_total: Mapped[Decimal | None] = mapped_column(_MONEY)
+    cgst_total: Mapped[Decimal | None] = mapped_column(_MONEY)
+    sgst_total: Mapped[Decimal | None] = mapped_column(_MONEY)
+    igst_total: Mapped[Decimal | None] = mapped_column(_MONEY)
+    cess_total: Mapped[Decimal | None] = mapped_column(_MONEY)
     tax_in_words: Mapped[str | None] = mapped_column(String(500))
     irn: Mapped[str | None] = mapped_column(String(100))
     ack_no: Mapped[str | None] = mapped_column(String(50))
@@ -129,20 +135,20 @@ class InvoiceLine(PkUuidMixin, TimestampMixin, Base):
 
     description: Mapped[str] = mapped_column(String(300), nullable=False)
     hsn_code: Mapped[str | None] = mapped_column(ForeignKey("hsn_code.code"))
-    quantity: Mapped[float] = mapped_column(Numeric(15, 3), nullable=False)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(15, 3), nullable=False)
     uom: Mapped[str | None] = mapped_column(String(20))
-    unit_rate: Mapped[float] = mapped_column(_MONEY, nullable=False)
-    discount: Mapped[float] = mapped_column(_MONEY, default=0, nullable=False)
-    line_total: Mapped[float | None] = mapped_column(_MONEY)
+    unit_rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    discount: Mapped[Decimal] = mapped_column(_MONEY, default=0, nullable=False)
+    line_total: Mapped[Decimal | None] = mapped_column(_MONEY)
 
     # --- Phase 2 (GST) — dormant ---
-    gst_rate: Mapped[float] = mapped_column(Numeric(5, 2), default=0, nullable=False)
+    gst_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0, nullable=False)
     is_rate_inclusive: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    taxable_value: Mapped[float | None] = mapped_column(_MONEY)
-    cgst_amt: Mapped[float | None] = mapped_column(_MONEY)
-    sgst_amt: Mapped[float | None] = mapped_column(_MONEY)
-    igst_amt: Mapped[float | None] = mapped_column(_MONEY)
-    cess_amt: Mapped[float | None] = mapped_column(_MONEY)
+    taxable_value: Mapped[Decimal | None] = mapped_column(_MONEY)
+    cgst_amt: Mapped[Decimal | None] = mapped_column(_MONEY)
+    sgst_amt: Mapped[Decimal | None] = mapped_column(_MONEY)
+    igst_amt: Mapped[Decimal | None] = mapped_column(_MONEY)
+    cess_amt: Mapped[Decimal | None] = mapped_column(_MONEY)
 
     # --- Stage 2+ — dormant ---
     weighment_id: Mapped[str | None] = mapped_column(String(36))

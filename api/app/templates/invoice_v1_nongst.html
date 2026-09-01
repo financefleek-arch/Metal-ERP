@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ doc_label }} {{ invoice.number or '' }}</title>
+  <style>
+    @page { size: A4; margin: 12mm 12mm 14mm 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9pt; color: #000; margin: 0; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { border: 0.5pt solid #000; padding: 2pt 4pt; vertical-align: top; }
+    .noborder td { border: none; padding: 1pt 4pt; }
+    .r { text-align: right; }
+    .c { text-align: center; }
+    .b { font-weight: bold; }
+    .title { text-align: center; font-weight: bold; font-size: 12pt; margin-bottom: 4pt; }
+    .muted { color: #555; font-size: 8pt; }
+    .lines th { background: #eee; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.02em; }
+    .lines td { font-size: 9pt; }
+    .totrow td { border: none; }
+    .grand { font-weight: bold; font-size: 10.5pt; }
+    .foot { margin-top: 8pt; font-size: 8pt; }
+    .sub-hdr td { font-weight: bold; background: #f6f6f6; }
+    .cgi { text-align: center; margin-top: 10pt; font-size: 8pt; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="title">{{ doc_label }}</div>
+
+  <table>
+    <tr>
+      <td style="width: 55%;">
+        <div class="b" style="font-size: 11pt;">{{ tenant.trade_name or tenant.legal_name }}</div>
+        {% if tenant.address %}<div>{{ tenant.address }}</div>{% endif %}
+        <div>
+          {%- set loc = [] -%}
+          {%- if tenant.city %}{% set _ = loc.append(tenant.city) %}{% endif -%}
+          {%- if tenant.pincode %}{% set _ = loc.append("PIN " ~ tenant.pincode) %}{% endif -%}
+          {{ loc | join(", ") }}
+        </div>
+        {% if tenant.pan %}<div>PAN: {{ tenant.pan }}</div>{% endif %}
+        {% if tenant.phone %}<div>Contact: {{ tenant.phone }}</div>{% endif %}
+      </td>
+      <td>
+        <table class="noborder" style="width:100%;">
+          <tr><td style="width:45%;">Invoice No.</td><td class="b">{{ invoice.number or "DRAFT" }}</td></tr>
+          <tr><td>Dated</td><td class="b">{{ invoice.date.strftime("%d-%b-%y") }}</td></tr>
+          <tr><td>Series / FY</td><td>{{ invoice.series }} · {{ invoice.fy }}</td></tr>
+          <tr><td>Mode/Terms of Payment</td><td>&nbsp;</td></tr>
+          <tr><td>Buyer's Order No.</td><td>&nbsp;</td></tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <div class="muted">Consignee (Ship to)</div>
+        <div class="b">{{ party.legal_name }}</div>
+        {% for l in ship_to_lines %}<div>{{ l }}</div>{% endfor %}
+        {% if party.pan %}<div>PAN: {{ party.pan }}</div>{% endif %}
+      </td>
+      <td>
+        <div class="muted">Buyer (Bill to)</div>
+        <div class="b">{{ party.legal_name }}</div>
+        {% for l in bill_to_lines %}<div>{{ l }}</div>{% endfor %}
+        {% if party.pan %}<div>PAN: {{ party.pan }}</div>{% endif %}
+      </td>
+    </tr>
+  </table>
+
+  <table class="lines" style="margin-top: 6pt;">
+    <thead>
+      <tr>
+        <th style="width: 26pt;">Sl</th>
+        <th>Description of Goods</th>
+        <th style="width: 54pt;">HSN/SAC</th>
+        <th style="width: 54pt;" class="r">Qty</th>
+        <th style="width: 40pt;">Unit</th>
+        <th style="width: 60pt;" class="r">Rate</th>
+        <th style="width: 54pt;" class="r">Disc.</th>
+        <th style="width: 74pt;" class="r">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for ln in lines %}
+      <tr>
+        <td class="c">{{ ln.sl_no }}</td>
+        <td>{{ ln.description }}</td>
+        <td class="c">{{ ln.hsn_code or "" }}</td>
+        <td class="r">{{ "%.3f"|format(ln.quantity|float) }}</td>
+        <td>{{ ln.uom or "" }}</td>
+        <td class="r">{{ ln.unit_rate|money }}</td>
+        <td class="r">{{ (ln.discount|money) if (ln.discount and ln.discount|float) else "" }}</td>
+        <td class="r">{{ ln.line_total|money }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <table style="margin-top: 6pt;">
+    <tr>
+      <td style="width: 62%; border: none;">
+        <div class="b">Amount Chargeable (in words)</div>
+        <div>{{ invoice.amount_in_words }}</div>
+        {% if invoice.notes %}<div class="foot"><span class="b">Note:</span> {{ invoice.notes }}</div>{% endif %}
+      </td>
+      <td style="border: none; padding: 0;">
+        <table style="width: 100%;">
+          <tr class="totrow"><td>Subtotal</td><td class="r">{{ invoice.subtotal|money }}</td></tr>
+          {% if invoice.discount_total and invoice.discount_total|float %}
+          <tr class="totrow"><td>Discount</td><td class="r">- {{ invoice.discount_total|money }}</td></tr>
+          {% endif %}
+          <tr class="totrow"><td>Round Off</td><td class="r">{{ invoice.round_off|money }}</td></tr>
+          <tr class="grand"><td>Grand Total</td><td class="r">{{ invoice.grand_total|money }}</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  {% if tenant.bank_name or tenant.bank_ac_no %}
+  <div class="foot">
+    <span class="b">Bank:</span>
+    {{ tenant.bank_name or "" }}
+    {% if tenant.bank_ac_no %} · A/C {{ tenant.bank_ac_no }}{% endif %}
+    {% if tenant.bank_ifsc %} · IFSC {{ tenant.bank_ifsc }}{% endif %}
+    {% if tenant.bank_branch %} · {{ tenant.bank_branch }}{% endif %}
+    {% if tenant.upi_id %} · UPI {{ tenant.upi_id }}{% endif %}
+  </div>
+  {% endif %}
+
+  {% if invoice.declaration_snapshot %}
+  <div class="foot"><span class="b">Declaration:</span> {{ invoice.declaration_snapshot }}</div>
+  {% endif %}
+  {% if invoice.terms_snapshot %}
+  <div class="foot"><span class="b">Terms:</span> {{ invoice.terms_snapshot }}</div>
+  {% endif %}
+  {% if tenant.jurisdiction_text %}
+  <div class="foot">{{ tenant.jurisdiction_text }}</div>
+  {% endif %}
+
+  <div class="foot r" style="margin-top: 18pt;">for {{ tenant.trade_name or tenant.legal_name }}</div>
+  <div class="foot r" style="margin-top: 24pt;">Authorised Signatory</div>
+
+  <div class="cgi">This is a Computer Generated Invoice</div>
+</body>
+</html>

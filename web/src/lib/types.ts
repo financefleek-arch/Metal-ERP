@@ -304,3 +304,108 @@ export interface ItemImportCommitResult {
   hsn_seeded: number;
   groups_created: number;
 }
+
+// --- invoices ---
+
+export type InvoiceStatus = "draft" | "final" | "cancelled";
+export type PdfStatus = "none" | "rendered" | "failed";
+
+export interface InvoiceLineIn {
+  item_id: string | null;
+  group_id: string | null;
+  description: string;
+  hsn_code: string | null;
+  quantity: string;
+  uom: string | null;
+  unit_rate: string;
+  discount: string;
+  size_pos: number | null;
+}
+
+export interface InvoiceLineOut {
+  id: string;
+  sl_no: number;
+  item_id: string | null;
+  description: string;
+  hsn_code: string | null;
+  quantity: string;
+  uom: string | null;
+  unit_rate: string;
+  discount: string;
+  line_total: string | null;
+}
+
+export interface InvoiceTotals {
+  subtotal: string;
+  discount_total: string;
+  taxable_total: string;
+  round_off: string;
+  grand_total: string;
+  amount_in_words: string;
+}
+
+export interface PartyBrief {
+  id: string;
+  legal_name: string;
+  gstin: string | null;
+  pan: string | null;
+  default_state_code: string | null;
+}
+
+export interface Invoice {
+  id: string;
+  doc_type: string;
+  series: string;
+  number: number | null;
+  fy: string;
+  date: string;
+  status: InvoiceStatus;
+  template_version: string;
+  party_id: string;
+  party: PartyBrief | null;
+  bill_to_addr_id: string | null;
+  ship_to_addr_id: string | null;
+  notes: string | null;
+  terms_snapshot: string | null;
+  declaration_snapshot: string | null;
+  invoice_discount: string;
+  totals: InvoiceTotals;
+  pdf_status: PdfStatus;
+  has_pdf: boolean;
+  lines: InvoiceLineOut[];
+  finalize_blockers: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceListItem {
+  id: string;
+  number: number | null;
+  fy: string;
+  date: string;
+  status: InvoiceStatus;
+  party_id: string;
+  party_name: string;
+  grand_total: string | null;
+  pdf_status: PdfStatus;
+}
+
+export interface FinalizeResult {
+  id: string;
+  number: number;
+  fy: string;
+  status: InvoiceStatus;
+  totals: InvoiceTotals;
+  pdf_status: PdfStatus;
+  created_item_ids: string[];
+  learned_group_ids: string[];
+}
+
+/** Result of POST /api/items/resolve — drives the line type-ahead. */
+export interface ItemResolveResult {
+  item_id: string | null;
+  method: string | null;
+  confidence: number | null;
+  weak: boolean;
+  candidates: { item_id: string; name: string; score: number }[];
+}

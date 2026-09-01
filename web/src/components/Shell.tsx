@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
 
 const baseNav = [
+  { to: "/invoices", label: "Sales" },
   { to: "/parties", label: "Parties" },
   { to: "/items", label: "Items" },
   { to: "/firm", label: "Firm" },
