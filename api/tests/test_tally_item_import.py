@@ -256,6 +256,15 @@ def test_real_all_masters_export_imports(client: TestClient) -> None:
     codes = {c for row in rev["rows"] for f in row["flags"] for c in [f["code"]]}
     # item names carry * % + : _ as size / SKU notation -> no name-shape flag
     assert "name_bad_chars" not in codes
+
+    # SQLite won't reject over-length varchars, so assert the parsed_* hints
+    # fit their Postgres column widths (regression: parsed_shape overflowed 24).
+    for row in rev["rows"]:
+        p = row["parsed"]
+        assert p["metal"] is None or len(p["metal"]) <= 20
+        assert p["shape"] is None or len(p["shape"]) <= 24
+        assert p["size_text"] is None or len(p["size_text"]) <= 60
+        assert p["sku"] is None or len(p["sku"]) <= 64
     # bad_hsn may still be *listed* on a row, but seed_all_hsn clears it as a
     # blocker, so nothing is flagged and the whole file is "new".
     flagged = [r for r in rev["rows"] if r["outcome"] == "flag"]

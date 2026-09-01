@@ -105,11 +105,28 @@ class CommitOut(BaseModel):
 
 _MRP_UNITS = {"nos", "pcs", "pc", "set", "no"}
 
+# staging_tally_item column widths for the heuristic parsed_* hints. product_parse
+# can return most of a long kitchenware name as "product"; these are advisory
+# only, so clip to fit rather than fail the whole import.
+_PARSED_LIMITS = {
+    "parsed_metal": 20,
+    "parsed_shape": 24,
+    "parsed_grade": 32,
+    "parsed_size_text": 60,
+    "parsed_sku": 64,
+    "proposed_uom": 20,
+}
+
+
+def _clip(value: str | None, field: str) -> str | None:
+    if not value:
+        return None
+    return value[: _PARSED_LIMITS[field]]
+
 
 def _map_uom(base_units: str | None) -> str | None:
-    if not base_units:
-        return None
-    return base_units.strip().lower() or None
+    u = (base_units or "").strip().lower()
+    return u[:20] or None
 
 
 def _proposed_type(base_units: str | None) -> ItemType:
@@ -278,11 +295,11 @@ async def upload(
                 proposed_type=_proposed_type(si.base_units),
                 proposed_uom=_map_uom(si.base_units),
                 proposed_rate_mode=(p.rate_mode or RateMode.piece),
-                parsed_metal=p.brand if p.brand in {"MS", "SS", "GI"} else p.brand,
-                parsed_shape=p.product or None,
+                parsed_metal=_clip(p.brand, "parsed_metal"),
+                parsed_shape=_clip(p.product, "parsed_shape"),
                 parsed_grade=None,
-                parsed_size_text=p.size,
-                parsed_sku=p.sku,
+                parsed_size_text=_clip(p.size, "parsed_size_text"),
+                parsed_sku=_clip(p.sku, "parsed_sku"),
                 match_method=mr.method,
                 match_item_id=mr.item_id,
                 guid_fillable=mr.fillable,
@@ -445,6 +462,17 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         session.flush()
         known_codes |= set(seed_rate)
 
+    # --- name pre-pass: one query for the tenant's existing normalized names,
+    # so the per-row dedup check is a dict lookup, not 2000+ SELECTs ---
+    existing_by_key: dict[str, str] = dict(
+        session.execute(
+            select(Item.name_normalized, Item.id).where(
+                Item.tenant_id == user.tenant_id
+            )
+        ).all()
+    )
+
+    new_items: list[Item] = []
     for row in rows:
         if row.committed_as:
             continue
@@ -483,13 +511,9 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             if not key:
                 still_flagged += 1
                 continue
-            clash = session.scalar(
-                select(Item).where(
-                    Item.tenant_id == user.tenant_id, Item.name_normalized == key
-                )
-            )
-            if clash is not None:
-                row.committed_as = clash.id  # dedupe race → link
+            clash_id = existing_by_key.get(key)
+            if clash_id is not None:
+                row.committed_as = clash_id  # same name already in catalogue → link
                 updated += 1
                 continue
 
@@ -518,7 +542,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 metal=row.parsed_metal,
                 shape=row.parsed_shape,
                 size_text=row.parsed_size_text,
-                size_label=row.parsed_size_text,
+                size_label=(row.parsed_size_text or None) and row.parsed_size_text[:50],
                 sku=row.parsed_sku,
                 default_rate=row.standard_rate,
                 gst_rate=float(row.gst_rate) if row.gst_rate is not None else 0.0,
@@ -526,10 +550,15 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 status=ItemStatus.unconfirmed,
                 tally_guid=row.tally_guid,
             )
-            session.add(it)
-            session.flush()
+            # id is a Python-side uuid default, so it is set now, no flush.
+            new_items.append(it)
             row.committed_as = it.id
+            existing_by_key[key] = it.id  # a later row with the same name links
             created += 1
+
+    if new_items:
+        session.add_all(new_items)
+        session.flush()
 
     return CommitOut(
         created=created,
