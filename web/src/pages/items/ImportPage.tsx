@@ -83,12 +83,13 @@ export function ItemsImportPage() {
     return (
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
         <h1 className="font-serif text-2xl font-semibold">Import complete</h1>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Stat n={done.created} label="Created" />
           <Stat n={done.updated} label="Updated" />
           <Stat n={done.skipped} label="Skipped" />
           <Stat n={done.still_flagged} label="Left flagged" />
           <Stat n={done.hsn_seeded} label="HSN seeded" />
+          <Stat n={done.groups_created} label="Groups built" />
         </div>
         {done.still_flagged > 0 && (
           <p className="mt-3 text-sm text-warn">

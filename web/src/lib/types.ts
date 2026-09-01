@@ -302,4 +302,5 @@ export interface ItemImportCommitResult {
   skipped: number;
   still_flagged: number;
   hsn_seeded: number;
+  groups_created: number;
 }

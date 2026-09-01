@@ -33,7 +33,7 @@ Out of scope for M1 (designed-for, dormant): GST/IRN/e-Way Bill, weighbridge int
 | Deploy — push-to-`main` → build → migrate → live at `metal.fleekfinance.in` | ✅ (API; SPA builds once `web/Dockerfile` is present — it now is) |
 | Item catalogue — two-pane list+detail, metal-trade attributes (metal/shape/grade/size/dims/finish + uom-conversion), price optimum-band, fuzzy search, dedupe on normalized name, confirm/merge, HSN lookup + HSN→GST auto-fill | ✅ `/api/items`, `/api/reference/hsn\|uoms\|categories\|shapes\|metals` |
 | Catalogue hierarchy — category → product-group → item; per-tenant categories, group editor + size grid (drag-reorder), leaf↔group inheritance, Items **tree** view; the rules-first `product_parse` + `resolve_group` for the (later) inward + billing learning loops | ✅ `/api/item-categories`, `/api/item-groups`, `/api/items/tree` |
-| Tally item import — upload a stock-items XML → parse + name-parse → GUID→name→create match ladder (update-blanks-only) → review → commit; auto-skips zero-history dummies, seeds an unseen HSN on request, re-import is a no-op | ✅ `/api/items/import` |
+| Tally item import — upload a stock-items XML → parse + name-parse → GUID→name→create match ladder (update-blanks-only) → review → commit; **builds product-groups from Tally Stock Groups** (category guessed from the name), auto-skips zero-history dummies, seeds an unseen HSN on request, re-import is a no-op | ✅ `/api/items/import` |
 | Invoice editor + finalize + PDF | ⬜ |
 
 ## Stack (planned)

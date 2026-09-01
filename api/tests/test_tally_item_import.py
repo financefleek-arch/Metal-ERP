@@ -125,6 +125,31 @@ def test_commit_creates_items_with_import_source(client: TestClient) -> None:
     assert full["default_rate"] == "268.00"
 
 
+def test_commit_builds_groups_from_stock_groups(client: TestClient) -> None:
+    h = _h(_token(client, "ii-grp@x.example.com"))
+    batch = _upload(client, h).json()["batch_id"]
+    out = client.post(f"/api/items/import/{batch}/commit", headers=h).json()
+    # "Stainless Steel" and "Utensils" Tally stock groups -> 2 product groups
+    assert out["groups_created"] == 2
+
+    # the tree now places the imported items, not "Uncategorised/Ungrouped"
+    tree = client.get("/api/items/tree", headers=h).json()
+    all_group_names = {
+        g["name"] for cat in tree for g in cat["groups"]
+    }
+    assert {"Stainless Steel", "Utensils"} <= all_group_names
+
+    patta = next(
+        i for i in client.get("/api/items", headers=h).json()
+        if i["name"] == "SS 304 Patta 4in 2mm"
+    )
+    full = client.get(f"/api/items/{patta['id']}", headers=h).json()
+    assert full["group_id"] is not None
+    # "Stainless Steel" stock group → matched the seeded "Stainless" category
+    grp = client.get(f"/api/item-groups/{full['group_id']}", headers=h).json()
+    assert grp["category_name"] == "Stainless"
+
+
 def test_flagged_hsn_row_can_seed_and_commit(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
     h = _h(_token(client, "ii-4@x.example.com"))
     batch = _upload(client, h).json()["batch_id"]

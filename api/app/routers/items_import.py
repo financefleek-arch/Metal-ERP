@@ -17,8 +17,9 @@ from sqlalchemy import delete, select
 from app.deps import SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.domain.product_parse import parse_product_line
-from app.models import HsnCode, Item, ItemCategory, StagingTallyItem
+from app.models import HsnCode, Item, ItemCategory, ProductGroup, StagingTallyItem
 from app.models._mixins import ItemSource, ItemStatus, ItemType, RateMode
+from app.services.item_resolution import resolve_group
 from tools.tally_import.item_match import match_stock_item
 from tools.tally_import.parser import is_zero_history_dummy, parse_stock_items
 
@@ -92,6 +93,7 @@ class CommitOut(BaseModel):
     skipped: int
     still_flagged: int
     hsn_seeded: int
+    groups_created: int
 
 
 # --------------------------------------------------------------------------
@@ -328,11 +330,65 @@ def patch_row(
     return _row_out(session, row)
 
 
+def _resolve_or_create_group(
+    session: SessionDep,
+    tenant_id: str,
+    group_name: str,
+    synonyms: dict[str, str],
+    item_type: ItemType,
+    rate_mode: RateMode,
+    hsn: str | None,
+    *,
+    counter: list[int],
+) -> str | None:
+    """Map a Tally Stock Group name to a product_group, creating it if new.
+    The category is guessed from the first token of the group name against
+    the tenant's categories (case-insensitive prefix), else left null.
+    """
+    name = (group_name or "").strip()
+    if not name or name.lower() in {"primary", "(ungrouped)"}:
+        return None
+
+    m = resolve_group(session, tenant_id, name, synonyms=synonyms)
+    if m.group_id is not None:
+        return m.group_id
+
+    cats = {
+        c.name.lower(): c.id
+        for c in session.scalars(
+            select(ItemCategory).where(ItemCategory.tenant_id == tenant_id)
+        ).all()
+    }
+    first = name.split()[0].lower() if name.split() else ""
+    category_id = cats.get(name.lower()) or cats.get(first)
+    # also try "a category name that starts with the group's first token"
+    if category_id is None and first:
+        for cname, cid in cats.items():
+            if cname.startswith(first) or first.startswith(cname):
+                category_id = cid
+                break
+
+    grp = ProductGroup(
+        tenant_id=tenant_id,
+        name=name,
+        name_normalized=normalize_name(name, synonyms),
+        category_id=category_id,
+        item_type=item_type,
+        default_rate_mode=rate_mode,
+        hsn_code=hsn,
+    )
+    session.add(grp)
+    session.flush()
+    counter[0] += 1
+    return grp.id
+
+
 @router.post("/{batch_id}/commit", response_model=CommitOut)
 def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     rows = _rows(session, user.tenant_id, batch_id)
     synonyms = load_synonym_map(session, user.tenant_id)
     created = updated = skipped = still_flagged = hsn_seeded = 0
+    groups_created = [0]
 
     for row in rows:
         if row.committed_as:
@@ -394,17 +450,33 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 row.committed_as = clash.id  # dedupe race → link
                 updated += 1
                 continue
+
+            group_id = _resolve_or_create_group(
+                session,
+                user.tenant_id,
+                row.parent_group or "",
+                synonyms,
+                _effective_type(row),
+                row.proposed_rate_mode,
+                hsn,
+                counter=groups_created,
+            )
+            grp = session.get(ProductGroup, group_id) if group_id else None
+
             it = Item(
                 tenant_id=user.tenant_id,
                 name=name,
                 name_normalized=key,
                 item_type=_effective_type(row),
+                group_id=group_id,
+                category_id=grp.category_id if grp else None,
                 uom=row.proposed_uom,
                 hsn_code=hsn,
                 rate_mode=row.proposed_rate_mode,
                 metal=row.parsed_metal,
                 shape=row.parsed_shape,
                 size_text=row.parsed_size_text,
+                size_label=row.parsed_size_text,
                 sku=row.parsed_sku,
                 default_rate=row.standard_rate,
                 gst_rate=float(row.gst_rate) if row.gst_rate is not None else 0.0,
@@ -423,6 +495,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         skipped=skipped,
         still_flagged=still_flagged,
         hsn_seeded=hsn_seeded,
+        groups_created=groups_created[0],
     )
 
 
