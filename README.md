@@ -10,7 +10,8 @@ See:
 
 - [`docs/EXECUTION-PLAN.md`](docs/EXECUTION-PLAN.md) — the plan to first printed bill (~8–9 weeks, one dev)
 - [`docs/DESIGN.md`](docs/DESIGN.md) — full architecture, data model, and the maturity ladder (Stage 0 → 4)
-- [`docs/visual-plan/`](docs/visual-plan/) — mid-fi screen mockups (16 artboards). Open `metal-billing-visual-plan.html` in a browser, or view the published canvas:
+- [`docs/EXTENSION-inward-bill-import.md`](docs/EXTENSION-inward-bill-import.md) — pluggable module: upload a supplier PDF → auto-match/create party & items → downloadable Tally Purchase-voucher XML (~7 weeks, parallel to M1)
+- [`docs/visual-plan/`](docs/visual-plan/) — mid-fi screen mockups. Open `metal-billing-visual-plan.html` in a browser, or view the published canvas:
   **https://claude.ai/code/artifact/765d91ca-02c1-48a0-adac-0468aff631f8**
 
 ## Milestone 1 — First Printed Bill
