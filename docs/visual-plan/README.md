@@ -1,6 +1,6 @@
 # Visual Plan
 
-Mid-fi screen mockups for Metal ERP — 16 artboards across 6 pages.
+Mid-fi screen mockups for Metal ERP — 19 artboards across 8 pages.
 
 ## Viewing
 
@@ -20,7 +20,10 @@ Mid-fi screen mockups for Metal ERP — 16 artboards across 6 pages.
 | **3 · Multi-touchpoint & weighbridge** | Bill lifecycle (DRAFT → AWAITING WEIGHT → AWAITING RATE → READY → FINALIZED); weighbridge capture (RS-232 → bridge agent → weighment queue → attach) |
 | **4 · Barcode & mobile** | Stack-of-sizes barcode → "size #?" number entry; scan-mode billing + mobile touchpoints |
 | **5 · Tally integration** | Tally → our software (import masters); our software → Tally (push Sales vouchers) |
-| **6 · Roadmap** | Phase 2 GST detail + the full Stage 0 → 4 maturity ladder |
+| **6 · Inward bill import** | The pluggable extension: PDF → Tally XML pipeline + line-matching ladder; the review-screen mockup (PDF pane, supplier/totals check, per-line match cell). Plan: `docs/EXTENSION-inward-bill-import.md` |
+| **7 · Roadmap** | Phase 2 GST detail + the full Stage 0 → 4 maturity ladder |
+
+(A **Build status** page sits before page 1.)
 
 ## Interactive artboards
 

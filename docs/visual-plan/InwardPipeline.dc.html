@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .box { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; }
+    .mono { font-family: monospace; font-size: 11px; }
+    td { padding: 8px 10px; font-size: 12px; border-top: 1px solid #f0ebe1; vertical-align: top; }
+    .step { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: #2f6f89; color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; min-height: 1000px; background: #f4f1ec; padding: 30px 34px;">
+  <h1 class="serif" style="font-size: 24px; font-weight: 600; margin: 0 0 4px;">Inward Bill Import &mdash; pipeline &amp; matching</h1>
+  <p style="font-size: 13px; color: #7c766a; margin: 0 0 22px; max-width: 940px;">
+    Pluggable extension, same platform, gated by <span class="mono">tenant.ext_inward_import</span>. Upload a supplier PDF &rarr; extract &rarr;
+    auto-match or auto-create the supplier and every line &rarr; reconcile &rarr; review &rarr; Approve &rarr; <b>downloadable Tally Purchase-voucher XML</b>
+    the accountant imports by hand. No live push in this scope.
+  </p>
+
+  <!-- pipeline strip -->
+  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 24px; font-size: 12px;">
+    <div class="box" style="padding: 10px 12px; text-align: center; width: 130px;"><b>Upload PDF</b><br><span style="color:#7c766a;">/inward drop-zone</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 10px 12px; text-align: center; width: 210px; border-color:#9cc3d4;"><b>Extract</b><br><span style="color:#7c766a;">text: pdfplumber table + regex<br>e-invoice QR decode<br>no text &rarr; vision-LLM on page images</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 10px 12px; text-align: center; width: 150px;"><b>Resolve</b><br><span style="color:#7c766a;">supplier by GSTIN<br>each line by the ladder</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 10px 12px; text-align: center; width: 130px; border-color:#e0c98a;"><b>Reconcile</b><br><span style="color:#7c766a;">totals gate</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 10px 12px; text-align: center; width: 120px;"><b>Review</b><br><span style="color:#7c766a;">PDF + fields</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 10px 12px; text-align: center; width: 160px; border-color:#a9cbb2;"><b>Approve</b><br><span style="color:#7c766a;">create staged masters<br>build XML</span></div>
+    <span style="color:#c9c2b4;">&rarr;</span>
+    <div class="box" style="padding: 10px 12px; text-align: center; width: 120px; background:#efe9df;"><b>Download XML</b><br><span style="color:#7c766a;">Tally Import</span></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+    <!-- line matching ladder -->
+    <div class="box" style="padding: 16px 18px;">
+      <div style="font-weight: 600; font-size: 14px; margin-bottom: 12px;">Line &rarr; item: the resolution ladder (stop at first hit)</div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <div style="display:flex; gap:10px;"><div class="step">1</div><div><b>normalized-exact</b> &mdash; <span class="mono">normalize(description)</span> == an <span class="mono">item.name_normalized</span> (tenant-scoped). conf 1.00</div></div>
+        <div style="display:flex; gap:10px;"><div class="step">2</div><div><b>alias</b> &mdash; matches an <span class="mono">item_alias.alias_normalized</span> (this is how a supplier's wording learns over time). conf 0.98</div></div>
+        <div style="display:flex; gap:10px;"><div class="step">3</div><div><b>pg_trgm fuzzy</b> over names + aliases, <b>HSN as a boost / tie-break</b>: +0.15 same HSN, &minus;0.10 different. Take the top only if adjusted &ge; 0.72 <b>and</b> it beats #2 by &ge; 0.10.</div></div>
+        <div style="display:flex; gap:10px;"><div class="step">4</div><div><b>LLM disambiguation</b> &mdash; ambiguous / weak. One <b>batched</b> call per bill: line + this tenant's top-5 candidates (name, HSN, last rate) &rarr; an id or NONE. Never invents an item. conf capped 0.80, badged "AI-matched".</div></div>
+        <div style="display:flex; gap:10px;"><div class="step">5</div><div><b>new UNCONFIRMED item</b> &mdash; <span class="mono">source=AUTO_FROM_PURCHASE</span>, HSN validated against the shipped reference list (unknown HSN &rarr; review flag). Created on <b>Approve</b>.</div></div>
+      </div>
+      <div style="margin-top: 12px; border-top: 1px dashed #ddd5c8; padding-top: 10px; font-size: 11px; color: #7c766a; line-height:1.6;">
+        HSN is a strong <i>signal</i>, never a key &mdash; many products share one HSN (the whole Sugal Foods invoice is 21069092). New purchase items flow into the same catalogue-accretion story: they show up UNCONFIRMED on the Items page and get merged/confirmed with the existing tooling.
+      </div>
+    </div>
+
+    <!-- supplier + template + schema -->
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <div class="box" style="padding: 14px 16px;">
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">Supplier &rarr; party (GSTIN is the key)</div>
+        <div style="font-size: 12px; color: #3a362e; line-height: 1.7;">
+          GSTIN exact match on <span class="mono">party.gstin</span> (role supplier/both) &rarr; link; a matched <span class="mono">customer</span> is promoted to <span class="mono">both</span>.<br>
+          No GSTIN on the PDF &rarr; normalized-name trigram, proposed never auto-linked.<br>
+          No match &rarr; stage a <b>new party</b>: name from header, GSTIN, <b>PAN</b> from GSTIN chars 3&ndash;12, <b>state</b> from the prefix, one address. Created only on Approve.
+        </div>
+      </div>
+      <div class="box" style="padding: 14px 16px;">
+        <div style="font-weight: 600; font-size: 14px; margin-bottom: 8px;">supplier_template &mdash; learns per GSTIN</div>
+        <div style="font-size: 12px; color: #3a362e; line-height: 1.7;">
+          Saved on first Approve of a new supplier (opt-in "save as template?"). Stores column x-ranges, header anchors, the UOM map, and the default purchase / tax ledger names for that GSTIN. The tenant's <b>next</b> bill from the same supplier skips steps 3&ndash;5 and the LLM.
+        </div>
+      </div>
+      <div class="box" style="padding: 14px 16px;">
+        <div style="font-weight: 600; font-size: 13px; margin-bottom: 8px;">New tables</div>
+        <div class="mono" style="line-height: 1.8; color: #3a362e;">
+          inward_bill(&hellip;, supplier_gstin, matched_party_id, taxable/cgst/sgst/round/grand,<br>
+          &nbsp;&nbsp;extraction_method[EINVOICE_QR|TEMPLATE|TABLE|VISION_LLM], reconciled,<br>
+          &nbsp;&nbsp;status[UPLOADED|EXTRACTING|NEEDS_REVIEW|APPROVED|REJECTED], tally_xml_path)<br>
+          inward_bill_line(&hellip;, hsn, match_method[EXACT|ALIAS|FUZZY|LLM|NEW|MANUAL],<br>
+          &nbsp;&nbsp;match_confidence, matched_item_id, review_flag)<br>
+          supplier_template &middot; tally_ledger_config &middot; extraction_run<br>
+          <span style="color:#7c766a;">reused: party, item, item_alias, hsn_code, normalize.py, job</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- XML + phases -->
+  <div style="display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; margin-top: 18px;">
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Output &mdash; Tally Purchase voucher XML (download, hand-import)</div>
+      <div class="mono" style="line-height:1.7; color:#3a362e; background:#f7f4ee; border-radius:6px; padding:10px;">
+        &lt;ENVELOPE&gt;&lt;HEADER&gt;&lt;TALLYREQUEST&gt;Import Data&lt;/&hellip;&gt;<br>
+        &nbsp;&lt;TALLYMESSAGE&gt;&lt;LEDGER NAME="Sugal Foods" ACTION="Create"&gt; &hellip; Sundry Creditors, GSTIN &hellip;<br>
+        &nbsp;&lt;TALLYMESSAGE&gt;&lt;STOCKITEM NAME="Monin Coconut Syrup&hellip;" ACTION="Create"&gt; &hellip; &nbsp;<span style="color:#7c766a;">(NEW masters only)</span><br>
+        &nbsp;&lt;TALLYMESSAGE&gt;&lt;VOUCHER VCHTYPE="Purchase"&gt;<br>
+        &nbsp;&nbsp;&lt;DATE&gt;20250825&lt;/&gt; &lt;VOUCHERNUMBER&gt;INV2526-5667&lt;/&gt; &lt;PARTYLEDGERNAME&gt;Sugal Foods&lt;/&gt;<br>
+        &nbsp;&nbsp;&lt;UDF:METALERP_REF&gt;ib_9f3c&hellip;&lt;/&gt; &nbsp;<span style="color:#7c766a;">(idempotency + Tally's own dup-check on VOUCHERNUMBER)</span><br>
+        &nbsp;&nbsp;&lt;ALLINVENTORYENTRIES.LIST&gt; &hellip; &lt;LEDGERENTRIES.LIST&gt; Purchase, CGST 9, SGST 9, Round Off, party &hellip;
+      </div>
+      <div style="font-size:11px; color:#7c766a; margin-top:8px;">Ledger names from a one-time per-tenant <span class="mono">tally_ledger_config</span> (GST-standard defaults). Intra vs inter from the two GSTIN prefixes.</div>
+    </div>
+    <div class="box" style="padding: 14px 18px;">
+      <div style="font-weight:600; font-size:13px; margin-bottom:8px;">Phases &mdash; ~7 weeks, parallel to M1</div>
+      <table style="width:100%; border-collapse:collapse; font-size:11.5px;">
+        <tr><td style="width:38px;"><b>X0</b></td><td>schema + flag + router skeleton</td></tr>
+        <tr><td><b>X1</b></td><td>text extractor + QR + reconciliation gate</td></tr>
+        <tr><td><b>X2</b></td><td>supplier resolution (GSTIN &rarr; link / stage new)</td></tr>
+        <tr><td><b>X3</b></td><td>line ladder + shared <span class="mono">llm</span> module</td></tr>
+        <tr><td><b>X4</b></td><td>review UI (list + review page)</td></tr>
+        <tr><td><b>X5</b></td><td>Approve txn + Purchase VOUCHER XML + real-Tally validation</td></tr>
+        <tr><td><b>X6</b></td><td>supplier_template learn / apply, settings</td></tr>
+        <tr><td><b>X7</b></td><td>vision-LLM image path, batch upload, hardening</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

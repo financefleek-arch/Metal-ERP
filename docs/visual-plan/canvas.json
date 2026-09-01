@@ -1,45 +1,282 @@
 {
-  "pages": [
-    { "id": "page-0", "name": "Build status" },
-    { "id": "page-1", "name": "Core billing loop" },
-    { "id": "page-2", "name": "Data normalization" },
-    { "id": "page-3", "name": "Multi-touchpoint & weighbridge" },
-    { "id": "page-4", "name": "Barcode & mobile" },
-    { "id": "page-5", "name": "Tally integration" },
-    { "id": "page-6", "name": "Roadmap" }
-  ],
   "artboards": [
-    { "file": "BuildStatus.dc.html", "page": "page-0", "x": 0, "y": 0, "w": 1400, "h": 980, "title": "M1 build status" },
-    { "file": "Onboarding.dc.html", "page": "page-1", "x": 0, "y": 0, "w": 1000, "h": 860, "title": "1 · Business onboarding (interactive)", "is_interactive": true },
-    { "file": "Main.dc.html", "page": "page-1", "x": 1120, "y": 0, "w": 1440, "h": 900, "title": "2 · Dashboard" },
-    { "file": "Parties.dc.html", "page": "page-1", "x": 2680, "y": 0, "w": 1440, "h": 820, "title": "3 · Parties (customers + suppliers)" },
-    { "file": "PurchaseEntry.dc.html", "page": "page-1", "x": 0, "y": 1060, "w": 1440, "h": 860, "title": "4 · Purchase bill entry" },
-    { "file": "InvoiceEditor.dc.html", "page": "page-1", "x": 1560, "y": 1060, "w": 1440, "h": 1000, "title": "5 · Sales invoice editor (interactive)", "is_interactive": true },
-    { "file": "ItemCatalogue.dc.html", "page": "page-1", "x": 3120, "y": 1060, "w": 1440, "h": 1000, "title": "6 · Item catalogue (interactive)", "is_interactive": true },
-    { "file": "InvoicePrint.dc.html", "page": "page-1", "x": 0, "y": 2260, "w": 842, "h": 1200, "title": "7 · Printed invoice (A4)" },
-    { "file": "MonthlyReport.dc.html", "page": "page-1", "x": 1000, "y": 2260, "w": 1440, "h": 880, "title": "8 · Items-sold-this-month report" },
-
-    { "file": "Normalization.dc.html", "page": "page-2", "x": 0, "y": 0, "w": 1400, "h": 1000, "title": "Keeping data sane — six layers" },
-
-    { "file": "BillLifecycle.dc.html", "page": "page-3", "x": 0, "y": 0, "w": 1400, "h": 900, "title": "Bill lifecycle — assembled by several hands" },
-    { "file": "Weighbridge.dc.html", "page": "page-3", "x": 1500, "y": 0, "w": 1360, "h": 860, "title": "Weighbridge — feeding weight from the scale" },
-
-    { "file": "BarcodeLabels.dc.html", "page": "page-4", "x": 0, "y": 0, "w": 1400, "h": 940, "title": "Stacks of sizes — one barcode + a size number" },
-    { "file": "ScanMobile.dc.html", "page": "page-4", "x": 1500, "y": 0, "w": 1360, "h": 960, "title": "Scan-mode billing & mobile touchpoints" },
-
-    { "file": "TallyImport.dc.html", "page": "page-5", "x": 0, "y": 0, "w": 1420, "h": 1000, "title": "Tally → our software (import masters)" },
-    { "file": "TallyPush.dc.html", "page": "page-5", "x": 1520, "y": 0, "w": 1420, "h": 980, "title": "Our software → Tally (push vouchers)" },
-
-    { "file": "GstFuture.dc.html", "page": "page-6", "x": 0, "y": 0, "w": 1100, "h": 900, "title": "Phase 2 GST + full maturity ladder" }
+    {
+      "file": "BuildStatus.dc.html",
+      "page": "page-0",
+      "x": 0,
+      "y": 0,
+      "w": 1400,
+      "h": 980,
+      "title": "M1 build status"
+    },
+    {
+      "file": "Onboarding.dc.html",
+      "page": "page-1",
+      "x": 0,
+      "y": 0,
+      "w": 1000,
+      "h": 860,
+      "title": "1 · Business onboarding (interactive)",
+      "is_interactive": true
+    },
+    {
+      "file": "Main.dc.html",
+      "page": "page-1",
+      "x": 1120,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "2 · Dashboard"
+    },
+    {
+      "file": "Parties.dc.html",
+      "page": "page-1",
+      "x": 2680,
+      "y": 0,
+      "w": 1440,
+      "h": 820,
+      "title": "3 · Parties (customers + suppliers)"
+    },
+    {
+      "file": "PurchaseEntry.dc.html",
+      "page": "page-1",
+      "x": 0,
+      "y": 1060,
+      "w": 1440,
+      "h": 860,
+      "title": "4 · Purchase bill entry"
+    },
+    {
+      "file": "InvoiceEditor.dc.html",
+      "page": "page-1",
+      "x": 1560,
+      "y": 1060,
+      "w": 1440,
+      "h": 1000,
+      "title": "5 · Sales invoice editor (interactive)",
+      "is_interactive": true
+    },
+    {
+      "file": "ItemCatalogue.dc.html",
+      "page": "page-1",
+      "x": 3120,
+      "y": 1060,
+      "w": 1440,
+      "h": 1000,
+      "title": "6 · Item catalogue (interactive)",
+      "is_interactive": true
+    },
+    {
+      "file": "InvoicePrint.dc.html",
+      "page": "page-1",
+      "x": 0,
+      "y": 2260,
+      "w": 842,
+      "h": 1200,
+      "title": "7 · Printed invoice (A4)"
+    },
+    {
+      "file": "MonthlyReport.dc.html",
+      "page": "page-1",
+      "x": 1000,
+      "y": 2260,
+      "w": 1440,
+      "h": 880,
+      "title": "8 · Items-sold-this-month report"
+    },
+    {
+      "file": "Normalization.dc.html",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 1400,
+      "h": 1000,
+      "title": "Keeping data sane — six layers"
+    },
+    {
+      "file": "BillLifecycle.dc.html",
+      "page": "page-3",
+      "x": 0,
+      "y": 0,
+      "w": 1400,
+      "h": 900,
+      "title": "Bill lifecycle — assembled by several hands"
+    },
+    {
+      "file": "Weighbridge.dc.html",
+      "page": "page-3",
+      "x": 1500,
+      "y": 0,
+      "w": 1360,
+      "h": 860,
+      "title": "Weighbridge — feeding weight from the scale"
+    },
+    {
+      "file": "BarcodeLabels.dc.html",
+      "page": "page-4",
+      "x": 0,
+      "y": 0,
+      "w": 1400,
+      "h": 940,
+      "title": "Stacks of sizes — one barcode + a size number"
+    },
+    {
+      "file": "ScanMobile.dc.html",
+      "page": "page-4",
+      "x": 1500,
+      "y": 0,
+      "w": 1360,
+      "h": 960,
+      "title": "Scan-mode billing & mobile touchpoints"
+    },
+    {
+      "file": "TallyImport.dc.html",
+      "page": "page-5",
+      "x": 0,
+      "y": 0,
+      "w": 1420,
+      "h": 1000,
+      "title": "Tally → our software (import masters)"
+    },
+    {
+      "file": "TallyPush.dc.html",
+      "page": "page-5",
+      "x": 1520,
+      "y": 0,
+      "w": 1420,
+      "h": 980,
+      "title": "Our software → Tally (push vouchers)"
+    },
+    {
+      "file": "InwardPipeline.dc.html",
+      "page": "page-6",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1000,
+      "title": "Inward bill import — pipeline & matching"
+    },
+    {
+      "file": "InwardReview.dc.html",
+      "page": "page-6",
+      "x": 1540,
+      "y": 0,
+      "w": 1460,
+      "h": 1000,
+      "title": "Inward bill — review screen"
+    },
+    {
+      "file": "GstFuture.dc.html",
+      "page": "page-7",
+      "x": 0,
+      "y": 0,
+      "w": 1100,
+      "h": 900,
+      "title": "Phase 2 GST + full maturity ladder"
+    }
   ],
   "annotations": [
-    { "id": "status-note", "page": "page-0", "x": 0, "y": -120, "w": 900, "text": "BUILD STATUS — where Metal ERP stands against the execution plan. The billing loop on the next page is the M1 target; this board says which of those screens are shipped, in progress, or next. Full plan: docs/EXECUTION-PLAN.md in the repo." },
-    { "id": "loop-note", "page": "page-1", "x": 0, "y": -170, "w": 1040, "text": "CORE LOOP — non-GST billing first, GST as an additive Phase 2.\nSHIPPED: Onboarding (1) and Parties (3) are built and live at metal.fleekfinance.in. Item catalogue (6) is next; Invoice editor (5) + Printed invoice (7) after that.\nThe interactive artboards (1, 5, 6) are design prototypes with sample data — the live app looks close but is React, not this canvas. See the Build Status page." },
-    { "id": "norm-note", "page": "page-2", "x": 0, "y": -130, "w": 900, "text": "DATA NORMALIZATION — the answer to \"how do we not end up with data that makes no sense later.\" Shape the free field gently, constrain the structured fields hard, make cleanup continuous. All of this is Phase 1." },
-    { "id": "touch-note", "page": "page-3", "x": 0, "y": -140, "w": 900, "text": "MULTI-TOUCHPOINT — weight, count and price are separate fields filled by different roles from different devices. The bill tracks what's still missing; finalize is gated. The weighbridge agent is one small service on the counter PC." },
-    { "id": "scan-note", "page": "page-4", "x": 0, "y": -130, "w": 900, "text": "BARCODE & MOBILE — loose vessels can't each be labelled. One barcode per stack encodes a group code; scan → \"size #?\" → operator types 1–5 → line at that size's price. Boxed single-SKU goods still scan straight to one item." },
-    { "id": "tally-note", "page": "page-5", "x": 0, "y": -130, "w": 900, "text": "TALLY — Tally stays the accounting book. Read: import Stock Items / Ledgers / units to seed the catalogue at Stage 0. Write: push finished Sales vouchers back at Stage 2. Both via XML-over-HTTP through the connector agent (Tally is LAN-only, no REST/webhooks). Optional per tenant." },
-    { "id": "road-note", "page": "page-6", "x": 0, "y": -120, "w": 820, "text": "ROADMAP — each rung ships on its own. GST slots in at Stage 2 once the catalogue is curated. Everything in the schema is built from day one; half of it just stays dormant." }
+    {
+      "id": "status-note",
+      "page": "page-0",
+      "x": 0,
+      "y": -120,
+      "w": 900,
+      "text": "BUILD STATUS — where Metal ERP stands against the execution plan. The billing loop on the next page is the M1 target; this board says which of those screens are shipped, in progress, or next. Full plan: docs/EXECUTION-PLAN.md in the repo."
+    },
+    {
+      "id": "loop-note",
+      "page": "page-1",
+      "x": 0,
+      "y": -170,
+      "w": 1040,
+      "text": "CORE LOOP — non-GST billing first, GST as an additive Phase 2.\nSHIPPED: Onboarding (1) and Parties (3) are built and live at metal.fleekfinance.in. Item catalogue (6) is next; Invoice editor (5) + Printed invoice (7) after that.\nThe interactive artboards (1, 5, 6) are design prototypes with sample data — the live app looks close but is React, not this canvas. See the Build Status page."
+    },
+    {
+      "id": "norm-note",
+      "page": "page-2",
+      "x": 0,
+      "y": -130,
+      "w": 900,
+      "text": "DATA NORMALIZATION — the answer to \"how do we not end up with data that makes no sense later.\" Shape the free field gently, constrain the structured fields hard, make cleanup continuous. All of this is Phase 1."
+    },
+    {
+      "id": "touch-note",
+      "page": "page-3",
+      "x": 0,
+      "y": -140,
+      "w": 900,
+      "text": "MULTI-TOUCHPOINT — weight, count and price are separate fields filled by different roles from different devices. The bill tracks what's still missing; finalize is gated. The weighbridge agent is one small service on the counter PC."
+    },
+    {
+      "id": "scan-note",
+      "page": "page-4",
+      "x": 0,
+      "y": -130,
+      "w": 900,
+      "text": "BARCODE & MOBILE — loose vessels can't each be labelled. One barcode per stack encodes a group code; scan → \"size #?\" → operator types 1–5 → line at that size's price. Boxed single-SKU goods still scan straight to one item."
+    },
+    {
+      "id": "tally-note",
+      "page": "page-5",
+      "x": 0,
+      "y": -130,
+      "w": 900,
+      "text": "TALLY — Tally stays the accounting book. Read: import Stock Items / Ledgers / units to seed the catalogue at Stage 0. Write: push finished Sales vouchers back at Stage 2. Both via XML-over-HTTP through the connector agent (Tally is LAN-only, no REST/webhooks). Optional per tenant.\nSee also the Inward bill import page — supplier PDFs → downloadable Tally Purchase-voucher XML, no agent needed for that scope."
+    },
+    {
+      "id": "inward-note",
+      "page": "page-6",
+      "x": 0,
+      "y": -130,
+      "w": 940,
+      "text": "INWARD BILL IMPORT — a pluggable extension (tenant.ext_inward_import flag). Upload a supplier PDF → auto-match/create the supplier by GSTIN and each line by exact/alias/pg_trgm+HSN/LLM → reconcile totals → review → Approve → downloadable Tally Purchase-voucher XML (accountant imports by hand). Image-only PDFs use a vision-LLM call, not OCR. ~7 wk, parallel to M1. Full plan: docs/EXTENSION-inward-bill-import.md."
+    },
+    {
+      "id": "road-note",
+      "page": "page-7",
+      "x": 0,
+      "y": -120,
+      "w": 820,
+      "text": "ROADMAP — each rung ships on its own. GST slots in at Stage 2 once the catalogue is curated. Everything in the schema is built from day one; half of it just stays dormant."
+    }
   ],
-  "launch": { "view": "canvas", "page": "page-0" }
+  "launch": {
+    "view": "canvas",
+    "page": "page-0"
+  },
+  "pages": [
+    {
+      "id": "page-0",
+      "name": "Build status"
+    },
+    {
+      "id": "page-1",
+      "name": "Core billing loop"
+    },
+    {
+      "id": "page-2",
+      "name": "Data normalization"
+    },
+    {
+      "id": "page-3",
+      "name": "Multi-touchpoint & weighbridge"
+    },
+    {
+      "id": "page-4",
+      "name": "Barcode & mobile"
+    },
+    {
+      "id": "page-5",
+      "name": "Tally integration"
+    },
+    {
+      "id": "page-6",
+      "name": "Inward bill import"
+    },
+    {
+      "id": "page-7",
+      "name": "Roadmap"
+    }
+  ]
 }

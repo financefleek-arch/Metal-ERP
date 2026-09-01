@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+    a { color: #2f6f89; } a:hover { color: #245771; }
+    .serif { font-family: 'Fraunces', Georgia, serif; }
+    .lbl { font-size: 10px; color: #8a8272; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .field { height: 32px; border: 1px solid #cbc4b8; border-radius: 6px; background: #fff; padding: 0 9px; font-size: 12px; display: flex; align-items: center; color: #3a362e; }
+    .chip { font-size: 10px; padding: 2px 7px; border-radius: 9px; }
+    td { padding: 7px 9px; font-size: 11.5px; border-top: 1px solid #f0ebe1; }
+  </style>
+</helmet>
+
+<div style="width: 1460px; min-height: 1000px; background: #f4f1ec;">
+  <div style="display: flex; align-items: center; justify-content: space-between; height: 52px; padding: 0 24px; background: #23201b; color: #f4f1ec;">
+    <div class="serif" style="font-size: 17px; font-weight: 600;">Inward bill &middot; INV2526-5667 &middot; <span style="color:#e0a94a;">Needs review</span></div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <button style="height: 34px; padding: 0 14px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 12px; font-family: inherit;">Re-extract</button>
+      <button style="height: 34px; padding: 0 14px; border: 1px solid #56504740; background: #3a362e; color: #f4f1ec; border-radius: 6px; font-size: 12px; font-family: inherit;">Reject</button>
+      <button style="height: 34px; padding: 0 18px; border: none; background: #7c766a; color: #efe9df; border-radius: 6px; font-size: 12px; font-weight: 600; font-family: inherit; opacity: 0.7;">Approve &mdash; 2 lines need a match</button>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 460px 1fr; gap: 0;">
+    <!-- PDF pane -->
+    <div style="background: #d9d4ca; padding: 18px; border-right: 1px solid #cbc4b8;">
+      <div style="background: #fff; border: 1px solid #b8b1a2; border-radius: 4px; height: 620px; padding: 20px; font-size: 9px; color: #5a5344; line-height: 1.5; overflow: hidden;">
+        <div style="font-weight: 700; font-size: 12px;">SUGAL FOODS</div>
+        <div>179/1/244 Agrasen Road, Siliguri West Bengal 734005</div>
+        <div>GSTIN 19BHBPK1450P1Z3</div>
+        <div style="text-align:right; font-weight:700; font-size:13px; margin-top:-24px;">TAX INVOICE</div>
+        <div style="text-align:right;">Invoice# INV2526-5667</div>
+        <div style="margin-top:14px; border-top:1px solid #ddd; padding-top:8px;">Bill To : Rajdeep Stores (Sd) &middot; GSTIN 19AALFR8182P1Z3</div>
+        <div style="margin-top:6px;">Place Of Supply : West Bengal (19)</div>
+        <table style="width:100%; margin-top:10px; font-size:8px; border-collapse:collapse;">
+          <tr style="border-bottom:1px solid #ccc;"><td style="padding:2px;">#</td><td>Item</td><td>HSN</td><td>Qty</td><td>Rate</td><td>Amount</td></tr>
+          <tr><td style="padding:2px;">1</td><td>Monin Mojito Mint Syrup 1000Ml</td><td>21069092</td><td>18</td><td>669.49</td><td>11,689.30</td></tr>
+          <tr><td style="padding:2px;">2</td><td>Monin Blue Curacao Lime Syrup 1000Mlx6</td><td>21069092</td><td>12</td><td>669.49</td><td>7,792.86</td></tr>
+          <tr><td style="padding:2px;">&hellip;</td><td colspan="5">10 more lines</td></tr>
+        </table>
+        <div style="margin-top:12px; text-align:right;">Sub Total 35,970.22 &nbsp; CGST9 3,237.32 &nbsp; SGST9 3,237.32 &nbsp; Round 0.14</div>
+        <div style="text-align:right; font-weight:700; font-size:11px;">Total Rs.42,445.00</div>
+      </div>
+      <div style="margin-top: 10px; font-size: 11px; color: #5a5344; text-align: center;">source PDF &middot; page 1 of 2 &middot; <a>open full</a></div>
+    </div>
+
+    <!-- review form -->
+    <div style="padding: 20px 26px;">
+      <!-- supplier -->
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+          <div style="font-weight: 600; font-size: 13px;">Supplier</div>
+          <span class="chip" style="background:#e6efe8; color:#3a5a48;">&#10003; matched by GSTIN</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 2fr 1.3fr 1fr; gap: 12px;">
+          <div><div class="lbl">Party</div><div class="field" style="justify-content:space-between;">Sugal Foods <span style="color:#9a9284;">existing &#9662;</span></div></div>
+          <div><div class="lbl">GSTIN</div><div class="field">19BHBPK1450P1Z3</div></div>
+          <div><div class="lbl">State</div><div class="field">West Bengal (19)</div></div>
+        </div>
+        <div style="font-size: 11px; color: #7c766a; margin-top: 8px;">No GSTIN match &rarr; a new supplier party is staged: name + GSTIN + PAN (from GSTIN chars 3&ndash;12) + state (prefix) + address. Created only on Approve.</div>
+      </div>
+
+      <!-- totals check -->
+      <div style="background: #eef4f0; border: 1px solid #d3e3d9; border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 18px; font-size: 12px;">
+        <span style="font-weight: 600; color: #3a5a48;">Totals reconcile &#10003;</span>
+        <span style="color:#3a5a48;">taxable 35,970.22 + CGST 3,237.32 + SGST 3,237.32 + round 0.14 = <b>42,445.00</b></span>
+        <span style="color:#7c766a;">place of supply 19 = 19 &rarr; intra-state, CGST+SGST</span>
+      </div>
+
+      <!-- lines -->
+      <div style="background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden;">
+        <div style="display: grid; grid-template-columns: 26px 1fr 82px 44px 74px 84px 260px; gap: 8px; padding: 8px 12px; background: #efe9df; font-size: 9px; color: #6f685b; text-transform: uppercase; letter-spacing: 0.04em;">
+          <span>#</span><span>Description (from PDF)</span><span>HSN</span><span>Qty</span><span>Rate</span><span style="text-align:right;">Amount</span><span>Catalogue match</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 26px 1fr 82px 44px 74px 84px 260px; gap: 8px; padding: 8px 12px; border-top: 1px solid #f3eee4; font-size: 11.5px; align-items: center;">
+          <span style="color:#9a9284;">1</span><span>Monin Mojito Mint Syrup 1000Ml</span><span>21069092</span><span>18</span><span>669.49</span><span style="text-align:right;">11,689.30</span>
+          <span><span class="chip" style="background:#e6efe8; color:#3a5a48;">exact</span> Monin Mojito Mint Syrup 1000Ml</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr 82px 44px 74px 84px 260px; gap: 8px; padding: 8px 12px; border-top: 1px solid #f3eee4; font-size: 11.5px; align-items: center;">
+          <span style="color:#9a9284;">2</span><span>Monin Blue Curacao Lime Syrup 1000Mlx6</span><span>21069092</span><span>12</span><span>669.49</span><span style="text-align:right;">7,792.86</span>
+          <span><span class="chip" style="background:#e3eef2; color:#2f6f89;">fuzzy 88%</span> Monin Blue Curacao Syrup 1L &middot; <a>change</a></span>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr 82px 44px 74px 84px 260px; gap: 8px; padding: 8px 12px; border-top: 1px solid #f3eee4; font-size: 11.5px; align-items: center; background: #fdf8ef;">
+          <span style="color:#9a9284;">3</span><span>Monin Triple Sec Syrup 1000Mlx6</span><span>21069092</span><span>4</span><span>669.49</span><span style="text-align:right;">2,597.62</span>
+          <span><span class="chip" style="background:#f1e7d6; color:#8a6a1f;">AI-matched</span> Monin Triple Sec 1L &middot; <a>confirm</a> / <a>change</a></span>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr 82px 44px 74px 84px 260px; gap: 8px; padding: 8px 12px; border-top: 1px solid #f3eee4; font-size: 11.5px; align-items: center; background: #fdf8ef;">
+          <span style="color:#9a9284;">4</span><span>Monin Coconut Syrup 1000Mlx6</span><span>21069092</span><span>4</span><span>669.49</span><span style="text-align:right;">2,597.62</span>
+          <span><span class="chip" style="background:#efe9df; color:#7c766a;">NEW item</span> will be created (UNCONFIRMED) &middot; <a>pick existing</a></span>
+        </div>
+        <div style="display: grid; grid-template-columns: 26px 1fr 82px 44px 74px 84px 260px; gap: 8px; padding: 8px 12px; border-top: 1px solid #f3eee4; font-size: 11.5px; align-items: center;">
+          <span style="color:#9a9284;">5</span><span>Monin Pina Colada Syrup 700Ml</span><span>21069092</span><span>3</span><span>587.74</span><span style="text-align:right;">1,710.32</span>
+          <span><span class="chip" style="background:#e6efe8; color:#3a5a48;">alias</span> Monin Pina Colada 700</span>
+        </div>
+        <div style="padding: 8px 12px; border-top: 1px solid #f3eee4; font-size: 11px; color: #9a9284;">&hellip; 7 more lines &middot; 5 matched, 2 flagged</div>
+      </div>
+
+      <div style="margin-top: 14px; border: 1px dashed #2f6f89; background: #f0f6f8; padding: 10px 12px; font-size: 11px; color: #2f6f89; line-height: 1.6;">
+        Match ladder per line: <b>normalized-exact</b> &rarr; <b>alias</b> &rarr; <b>pg_trgm fuzzy</b> (HSN as a boost / tie-break, never a key &mdash; all 12 lines share 21069092) &rarr; <b>LLM disambiguation</b> (one batched call, this tenant's top-5 candidates, picks one or NONE) &rarr; <b>new UNCONFIRMED item</b>. Every AI match is overridable here.
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":1460,"height":1000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
