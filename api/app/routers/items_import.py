@@ -440,8 +440,14 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     ]
 
     # --- HSN pre-pass: one query for the whole batch, seed each new code once ---
+    def _valid_hsn(code: str) -> bool:
+        # hsn_code.code is varchar(8); a real HSN is 4/6/8 digits.
+        return code.isdigit() and len(code) in (4, 6, 8)
+
     file_codes = {
-        (r.hsn or "").strip() for r in committable if (r.hsn or "").strip()
+        (r.hsn or "").strip()
+        for r in committable
+        if _valid_hsn((r.hsn or "").strip())
     }
     known_codes: set[str] = set()
     if file_codes:
@@ -454,7 +460,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     seed_rate: dict[str, object | None] = {}
     for r in committable:
         code = (r.hsn or "").strip()
-        if code and r.seed_hsn and code not in known_codes:
+        if _valid_hsn(code) and r.seed_hsn and code not in known_codes:
             seed_rate.setdefault(code, None)
             if seed_rate[code] is None and r.gst_rate is not None:
                 seed_rate[code] = r.gst_rate

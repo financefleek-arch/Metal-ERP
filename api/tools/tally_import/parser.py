@@ -161,14 +161,25 @@ def _num(v: str | None) -> float | None:
 def _hsn(si: etree._Element) -> str | None:
     """HSN code, direct child in old exports, nested in HSNDETAILS.LIST in
     TallyPrime "All Masters" exports.
+
+    Tally lets users type anything in the HSN field; a real HSN is 4, 6 or 8
+    digits. Keep the leading digit run and only if it is a valid length -
+    anything else (a description, a 10-digit internal ref) is dropped so it
+    can't blow the varchar(8) reference column downstream.
     """
-    v = _first(si, "HSNCODE", "HSNMASTERNAME")
-    if v:
-        return v
-    for node in si.iter("HSNCODE"):
-        if node.text and node.text.strip():
-            return node.text.strip()
-    return None
+    raw = _first(si, "HSNCODE", "HSNMASTERNAME")
+    if not raw:
+        for node in si.iter("HSNCODE"):
+            if node.text and node.text.strip():
+                raw = node.text.strip()
+                break
+    if not raw:
+        return None
+    m = re.match(r"\s*(\d+)", raw)
+    if not m:
+        return None
+    digits = m.group(1)
+    return digits if len(digits) in (4, 6, 8) else None
 
 
 def _gst_rate(si: etree._Element) -> float | None:

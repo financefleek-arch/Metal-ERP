@@ -72,6 +72,33 @@ def test_parser_reads_stock_items_and_groups() -> None:
     assert {g.name for g in s.groups} == {"Stainless Steel", "Utensils"}
 
 
+def test_hsn_normalized_to_valid_length_only() -> None:
+    # Tally's HSN field is free text; only 4/6/8-digit codes are real.
+    env = (
+        "<ENVELOPE><BODY><IMPORTDATA><REQUESTDATA>"
+        + "".join(
+            f'<TALLYMESSAGE><STOCKITEM NAME="I{i}"><NAME>I{i}</NAME>'
+            f"<BASEUNITS>Pcs</BASEUNITS><HSNCODE>{raw}</HSNCODE></STOCKITEM></TALLYMESSAGE>"
+            for i, raw in enumerate(
+                [
+                    "4421",          # 4-digit  -> kept
+                    "732394",        # 6-digit  -> kept
+                    "85169000",      # 8-digit  -> kept
+                    "7615102199",    # 10-digit -> dropped (not a valid length)
+                    "chair 9403",    # leading text -> no leading digits -> dropped
+                    "",              # empty -> dropped
+                    "3926 plastic",  # 4-digit + note -> kept as 3926
+                    "73269",         # 5-digit -> dropped
+                ]
+            )
+        )
+        + "</REQUESTDATA></IMPORTDATA></BODY></ENVELOPE>"
+    )
+    s = parse_stock_items(env.encode("utf-8"))
+    got = [i.hsn for i in s.items]
+    assert got == ["4421", "732394", "85169000", None, None, None, "3926", None]
+
+
 def test_zero_history_dummy_detection() -> None:
     s = parse_stock_items(FIXTURE.read_bytes())
     dummy = next(i for i in s.items if i.name == "Rounding Off")
