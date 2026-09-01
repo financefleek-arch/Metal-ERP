@@ -47,10 +47,11 @@ def _h(t: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {t}"}
 
 
-def _upload(client: TestClient, h: dict[str, str]):
+def _upload(client: TestClient, h: dict[str, str], *, seed_all_hsn: bool = False):
+    qs = "?seed_all_hsn=true" if seed_all_hsn else ""
     with FIXTURE.open("rb") as fh:
         return client.post(
-            "/api/items/import", headers=h, files={"file": ("stock.xml", fh, "text/xml")}
+            f"/api/items/import{qs}", headers=h, files={"file": ("stock.xml", fh, "text/xml")}
         )
 
 
@@ -228,6 +229,53 @@ def test_upload_rejects_junk(client: TestClient) -> None:
         "/api/items/import", headers=h, files={"file": ("j.xml", b"not xml", "text/xml")}
     )
     assert r.status_code == 422
+
+
+def test_seed_all_hsn_arms_every_hsn_row(client: TestClient) -> None:
+    h = _h(_token(client, "ii-seedall@x.example.com"))
+    batch = _upload(client, h, seed_all_hsn=True).json()["batch_id"]
+    rev = client.get(f"/api/items/import/{batch}", headers=h).json()
+    # Hawkins HSN is unseeded -> would normally flag; seed_all_hsn clears it
+    assert rev["counts"]["flag"] == 0
+    hawk = next(r for r in rev["rows"] if r["stock_name"] == "Hawkins Cooker 5L")
+    assert hawk["seed_hsn"] is True
+    assert hawk["outcome"] == "new"
+
+    out = client.post(f"/api/items/import/{batch}/commit", headers=h).json()
+    assert out["created"] == 3
+    assert out["still_flagged"] == 0
+    assert out["hsn_seeded"] == 1  # only Hawkins' code was missing
+
+
+def test_reupload_discards_prior_uncommitted_batch(client: TestClient) -> None:
+    h = _h(_token(client, "ii-reup@x.example.com"))
+    b1 = _upload(client, h).json()["batch_id"]
+    # do NOT commit b1
+    b2 = _upload(client, h).json()["batch_id"]
+    assert b2 != b1
+    # b1's staging rows are gone
+    assert client.get(f"/api/items/import/{b1}", headers=h).status_code == 404
+    # b2 is intact
+    assert client.get(f"/api/items/import/{b2}", headers=h).status_code == 200
+
+
+def test_reupload_keeps_committed_batch(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    h = _h(_token(client, "ii-keep@x.example.com"))
+    b1 = _upload(client, h, seed_all_hsn=True).json()["batch_id"]
+    out = client.post(f"/api/items/import/{b1}/commit", headers=h).json()
+    assert out["created"] == 3
+    # a later upload must NOT wipe the committed audit rows
+    _upload(client, h, seed_all_hsn=True)
+    assert client.get(f"/api/items/import/{b1}", headers=h).status_code == 200
+
+    from app.models import StagingTallyItem
+
+    session.expire_all()
+    b1_rows = session.scalars(
+        select(StagingTallyItem).where(StagingTallyItem.batch_id == b1)
+    ).all()
+    assert len(b1_rows) == 3
+    assert all(r.committed_as is not None for r in b1_rows)
 
 
 # --------------------------------------------------------------------------

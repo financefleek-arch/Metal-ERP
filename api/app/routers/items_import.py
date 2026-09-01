@@ -246,6 +246,16 @@ async def upload(
     if not stock.items:
         raise HTTPException(status_code=422, detail="No stock items found in the file")
 
+    # One in-flight import per tenant: clear any earlier batch that was never
+    # committed (an abandoned upload, or one that failed mid-commit). Committed
+    # rows are kept as an audit trail.
+    session.execute(
+        delete(StagingTallyItem).where(
+            StagingTallyItem.tenant_id == user.tenant_id,
+            StagingTallyItem.committed_as.is_(None),
+        )
+    )
+
     synonyms = load_synonym_map(session, user.tenant_id)
     brands = [
         c.name
@@ -530,6 +540,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             grp = session.get(ProductGroup, group_id) if group_id else None
 
             it = Item(
+                id=str(uuid.uuid4()),
                 tenant_id=user.tenant_id,
                 name=name,
                 name_normalized=key,
@@ -550,7 +561,8 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 status=ItemStatus.unconfirmed,
                 tally_guid=row.tally_guid,
             )
-            # id is a Python-side uuid default, so it is set now, no flush.
+            # id set explicitly above (column default only fires at flush),
+            # so committed_as and the dedup map can use it before add_all.
             new_items.append(it)
             row.committed_as = it.id
             existing_by_key[key] = it.id  # a later row with the same name links

@@ -34,12 +34,14 @@ export function ItemsImportPage() {
   const [uploadErr, setUploadErr] = useState<string | null>(null);
   const [batchMeta, setBatchMeta] = useState<ItemImportBatch | null>(null);
   const [done, setDone] = useState<ItemImportCommitResult | null>(null);
+  const [seedAllHsn, setSeedAllHsn] = useState(true);
 
   const upload = useMutation({
     mutationFn: (f: File) => {
       const form = new FormData();
       form.append("file", f);
-      return apiUpload<ItemImportBatch>("/items/import", form);
+      const qs = seedAllHsn ? "?seed_all_hsn=true" : "";
+      return apiUpload<ItemImportBatch>(`/items/import${qs}`, form);
     },
     onSuccess: (b) => {
       setUploadErr(null);
@@ -109,9 +111,11 @@ export function ItemsImportPage() {
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
         <h1 className="font-serif text-2xl font-semibold">Import items from Tally</h1>
         <p className="mt-1 max-w-prose text-sm text-muted">
-          In Tally: <em>Gateway → Display More Reports → Inventory Books → Stock Items</em>,
-          then <span className="font-mono text-xs">Alt+E</span> → format <strong>XML</strong>{" "}
-          (or <em>Export → Masters → All Masters</em>). Drop that file here.
+          In TallyPrime: <span className="font-mono text-xs">Alt+G</span> →{" "}
+          <em>Chart of Accounts → Stock Items</em>, then{" "}
+          <span className="font-mono text-xs">Ctrl+E</span> → File Format:{" "}
+          <strong>XML (Data Interchange)</strong>. A Stock Summary report export
+          will not work — it has no HSN, units or GUID. Drop the masters file here.
         </p>
         <button
           className="mt-5 w-full rounded-xl border-2 border-dashed border-accent bg-accent-soft/50 p-8 text-sm text-accent"
@@ -120,7 +124,7 @@ export function ItemsImportPage() {
         >
           {upload.isPending ? "Parsing…" : "Click to choose the Tally stock-items XML"}
           <span className="mt-1 block text-[11px] text-muted">
-            .xml · UTF-16 or UTF-8 · up to 10 MB · zero-history dummies auto-skipped
+            .xml · UTF-16 or UTF-8 · zero-history dummies auto-skipped
           </span>
         </button>
         <input
@@ -134,6 +138,19 @@ export function ItemsImportPage() {
             e.target.value = "";
           }}
         />
+        <label className="mt-3 flex items-start gap-2 text-xs text-muted">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={seedAllHsn}
+            onChange={(e) => setSeedAllHsn(e.target.checked)}
+          />
+          <span>
+            Add every HSN code in the file to the reference list on import.
+            Leave this on for a first import — none of the shop&apos;s HSN codes
+            are in the list yet, so otherwise every item needs a manual decision.
+          </span>
+        </label>
         {uploadErr && <p className="err mt-2">{uploadErr}</p>}
         <button className="btn-ghost mt-5" onClick={() => nav("/items")}>
           Cancel
