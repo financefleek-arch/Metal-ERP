@@ -45,7 +45,7 @@ export function HsnPicker({
         onFocus={() => setOpen(true)}
       />
       {open && (results.data?.length ?? 0) > 0 && (
-        <div className="absolute z-20 mt-1 max-h-60 w-[320px] overflow-auto rounded-md border border-line bg-card shadow-xl">
+        <div className="absolute z-20 mt-1 max-h-60 w-[min(320px,calc(100vw-2rem))] overflow-auto rounded-md border border-line bg-card shadow-xl">
           {results.data!.map((h) => (
             <button
               key={h.code}

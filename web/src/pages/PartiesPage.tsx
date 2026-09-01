@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { lastSeenLabel, missingLabel } from "../lib/format";
+import { useIsDesktop } from "../lib/useIsDesktop";
 import type { Party, PartyListItem, PartyRole, PartyStatus } from "../lib/types";
 import { PartyForm } from "../components/PartyForm";
 import { NewPartyForm } from "../components/NewPartyForm";
@@ -41,6 +42,10 @@ export function PartiesPage() {
 
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<Scope>("");
+  const isDesktop = useIsDesktop();
+  // On mobile we show one pane at a time, driven by the route.
+  const showDetailPane = isDesktop || isNew || !!selectedId;
+  const showRailPane = isDesktop || (!isNew && !selectedId);
 
   const list = useQuery({
     queryKey: ["parties", q, scope],
@@ -61,9 +66,13 @@ export function PartiesPage() {
   }, [selectedId, list.data, detail.isError, nav]);
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl gap-0 overflow-hidden rounded-xl border border-line bg-card">
+    <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-5xl flex-col gap-0 rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
       {/* rail */}
-      <div className="flex w-[300px] shrink-0 flex-col border-r border-line bg-ground">
+      <div
+        className={`${
+          showRailPane ? "flex" : "hidden"
+        } w-full shrink-0 flex-col border-b border-line bg-ground md:flex md:w-[300px] md:border-b-0 md:border-r`}
+      >
         <div className="flex flex-col gap-2 border-b border-line p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">Parties</span>
@@ -86,12 +95,12 @@ export function PartiesPage() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5 md:gap-1">
             {FILTERS.map((f) => (
               <button
                 key={f.key}
                 onClick={() => setScope(f.key)}
-                className={`rounded-full border px-2.5 py-0.5 text-[10px] ${
+                className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
                   scope === f.key
                     ? "border-ink bg-ink text-ground"
                     : "border-line bg-card text-muted hover:bg-ground"
@@ -120,7 +129,7 @@ export function PartiesPage() {
             <button
               key={p.id}
               onClick={() => nav(`/parties/${p.id}`)}
-              className={`block w-full border-b border-[#f3eee4] px-3 py-2 text-left ${
+              className={`block w-full border-b border-[#f3eee4] px-3 py-3 text-left md:py-2 ${
                 p.id === selectedId
                   ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
                   : "hover:bg-accent-soft"
@@ -149,7 +158,16 @@ export function PartiesPage() {
       </div>
 
       {/* detail */}
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className={`${showDetailPane ? "flex" : "hidden"} min-w-0 flex-1 flex-col md:flex`}>
+        {!isDesktop && (isNew || selectedId) && (
+          <button
+            className="flex items-center gap-2 border-b border-line px-4 py-3 text-sm font-medium text-accent md:hidden"
+            onClick={() => nav("/parties")}
+          >
+            ← Parties
+          </button>
+        )}
+        <div className="flex-1 overflow-y-auto p-4 md:p-5">
         {isNew ? (
           <NewPartyForm
             onCreated={(p) => nav(`/parties/${p.id}`)}
@@ -171,6 +189,7 @@ export function PartiesPage() {
         ) : (
           <div className="grid h-full place-items-center text-sm text-muted">Party not found.</div>
         )}
+        </div>
       </div>
     </div>
   );

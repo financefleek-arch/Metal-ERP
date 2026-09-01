@@ -247,3 +247,59 @@ export interface TreeCategory {
   groups: TreeGroup[];
   loose: TreeLeaf[];
 }
+
+// --- Tally item import ---
+
+export type ItemImportOutcome = "new" | "link" | "skip" | "flag";
+
+export interface StockGroupCount {
+  name: string;
+  item_count: number;
+}
+
+export interface ItemImportBatch {
+  batch_id: string;
+  total: number;
+  dummies_skipped: number;
+  groups: StockGroupCount[];
+}
+
+export interface StagedItemRow {
+  id: string;
+  stock_name: string;
+  parent_group: string | null;
+  base_units: string | null;
+  hsn: string | null;
+  gst_rate: string | null;
+  standard_rate: string | null;
+  item_type: ItemType;
+  rate_mode: RateMode;
+  parsed: {
+    metal: string | null;
+    shape: string | null;
+    grade: string | null;
+    size_text: string | null;
+    sku: string | null;
+  };
+  outcome: ItemImportOutcome;
+  match_item_id: string | null;
+  match_item_name: string | null;
+  decision: string;
+  edited_name: string | null;
+  seed_hsn: boolean;
+  flags: { code: string; message: string }[];
+}
+
+export interface ItemImportReview {
+  batch_id: string;
+  counts: Record<ItemImportOutcome, number>;
+  rows: StagedItemRow[];
+}
+
+export interface ItemImportCommitResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  still_flagged: number;
+  hsn_seeded: number;
+}

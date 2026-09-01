@@ -51,7 +51,7 @@ export function ItemTree({
         return (
           <div key={catKey}>
             <button
-              className="flex w-full items-center gap-1.5 border-b border-[#f3eee4] bg-[#efe6d4]/50 px-3 py-1.5 text-left text-[10px] font-bold uppercase tracking-wide text-[#5a4a2f]"
+              className="flex w-full items-center gap-1.5 border-b border-[#f3eee4] bg-[#efe6d4]/50 px-3 py-2.5 text-left text-[10px] font-bold uppercase tracking-wide text-[#5a4a2f] md:py-1.5"
               onClick={() => toggle(openCats, setOpenCats, catKey)}
             >
               <span className="text-[8px] text-faint">{open ? "▾" : "▸"}</span>
@@ -67,14 +67,14 @@ export function ItemTree({
                   return (
                     <div key={g.id}>
                       <button
-                        className={`flex w-full items-center gap-1.5 border-b border-[#f3eee4] py-1.5 pl-6 pr-3 text-left ${
+                        className={`flex w-full items-center gap-1.5 border-b border-[#f3eee4] py-2.5 pl-6 pr-3 text-left md:py-1.5 ${
                           g.id === selectedGroupId
                             ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
                             : "hover:bg-accent-soft"
                         }`}
                       >
                         <span
-                          className="text-[8px] text-faint"
+                          className="-m-2 p-2 text-[8px] text-faint"
                           onClick={(e) => {
                             e.stopPropagation();
                             toggle(openGroups, setOpenGroups, g.id);
@@ -106,7 +106,7 @@ export function ItemTree({
                           <button
                             key={l.id}
                             onClick={() => nav(`/items/${l.id}`)}
-                            className={`flex w-full items-center gap-2 border-b border-[#f3eee4] py-1.5 pl-10 pr-3 text-left ${
+                            className={`flex w-full items-center gap-2 border-b border-[#f3eee4] py-2.5 pl-10 pr-3 text-left md:py-1.5 ${
                               l.id === selectedItemId
                                 ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
                                 : "hover:bg-accent-soft"
@@ -137,7 +137,7 @@ export function ItemTree({
                       <button
                         key={l.id}
                         onClick={() => nav(`/items/${l.id}`)}
-                        className={`flex w-full items-center gap-2 border-b border-[#f3eee4] py-1.5 pl-10 pr-3 text-left ${
+                        className={`flex w-full items-center gap-2 border-b border-[#f3eee4] py-2.5 pl-10 pr-3 text-left md:py-1.5 ${
                           l.id === selectedItemId
                             ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
                             : "hover:bg-accent-soft"

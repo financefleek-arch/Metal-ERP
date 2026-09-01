@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
-import { NavLink, useParams } from "react-router-dom";
+import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
+import { useIsDesktop } from "../../lib/useIsDesktop";
 import type { InwardBillListItem, InwardStatus } from "../../lib/inward";
 import { InwardReviewPane } from "./InwardReviewPane";
 
@@ -33,10 +34,14 @@ function StatusChip({ s }: { s: InwardStatus }) {
 
 export function InwardListPage() {
   const { id: selectedId } = useParams();
+  const nav = useNavigate();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const isDesktop = useIsDesktop();
+  const showRailPane = isDesktop || !selectedId;
+  const showDetailPane = isDesktop || !!selectedId;
 
   const list = useQuery({
     queryKey: ["inward-bills"],
@@ -73,9 +78,13 @@ export function InwardListPage() {
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-6xl overflow-hidden rounded-xl border border-line bg-card">
+    <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-6xl flex-col rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
       {/* rail */}
-      <div className="flex w-[340px] shrink-0 flex-col border-r border-line bg-ground">
+      <div
+        className={`${
+          showRailPane ? "flex" : "hidden"
+        } w-full shrink-0 flex-col border-b border-line bg-ground md:flex md:w-[340px] md:border-b-0 md:border-r`}
+      >
         <div className="border-b border-line p-3">
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-semibold">Inward bills</span>
@@ -103,7 +112,11 @@ export function InwardListPage() {
               onFiles(e.dataTransfer.files);
             }}
           >
-            {upload.isPending ? "Uploading…" : "Drop supplier PDFs, or click to choose"}
+            {upload.isPending
+              ? "Uploading…"
+              : isDesktop
+                ? "Drop supplier PDFs, or click to choose"
+                : "Tap to choose supplier PDFs"}
             <span className="mt-1 block text-[10px] text-muted">
               PDF only · 20 MB max · one file extracts now
             </span>
@@ -129,7 +142,7 @@ export function InwardListPage() {
               key={b.id}
               to={`/inward/${b.id}`}
               className={({ isActive }) =>
-                `block border-b border-line px-3 py-2.5 text-xs hover:bg-accent-soft/60 ${
+                `block border-b border-line px-3 py-3 text-xs hover:bg-accent-soft/60 md:py-2.5 ${
                   isActive ? "bg-accent-soft" : ""
                 }`
               }
@@ -153,14 +166,28 @@ export function InwardListPage() {
       </div>
 
       {/* detail */}
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        {selectedId ? (
-          <InwardReviewPane billId={selectedId} />
-        ) : (
-          <div className="grid h-full place-items-center text-sm text-muted">
-            Select a bill, or upload a supplier PDF.
-          </div>
+      <div
+        className={`${
+          showDetailPane ? "flex" : "hidden"
+        } min-w-0 flex-1 flex-col md:flex`}
+      >
+        {!isDesktop && selectedId && (
+          <button
+            className="flex items-center gap-2 border-b border-line px-4 py-3 text-sm font-medium text-accent md:hidden"
+            onClick={() => nav("/inward")}
+          >
+            ← Inward bills
+          </button>
         )}
+        <div className="min-w-0 flex-1 overflow-y-auto">
+          {selectedId ? (
+            <InwardReviewPane billId={selectedId} />
+          ) : (
+            <div className="grid h-full place-items-center text-sm text-muted">
+              Select a bill, or upload a supplier PDF.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

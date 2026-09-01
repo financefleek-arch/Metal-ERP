@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
+import { useIsDesktop } from "../lib/useIsDesktop";
 import type { Item, ItemListItem } from "../lib/types";
 import { ItemForm } from "../components/ItemForm";
 import { NewItemForm } from "../components/NewItemForm";
@@ -44,6 +45,11 @@ export function ItemsPage() {
   const [view, setView] = useState<View>("tree");
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<Scope>("");
+  const isDesktop = useIsDesktop();
+  // On mobile, show one pane at a time based on the route.
+  const inDetail = isNew || isCats || !!groupId || !!selectedId;
+  const showDetailPane = isDesktop || inDetail;
+  const showRailPane = isDesktop || !inDetail;
 
   const list = useQuery({
     queryKey: ["items", q, scope],
@@ -62,22 +68,35 @@ export function ItemsPage() {
   }, [selectedId, detail.isError, nav]);
 
   return (
-    <div className="mx-auto flex h-full max-w-5xl overflow-hidden rounded-xl border border-line bg-card">
+    <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-5xl flex-col rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
       {/* rail */}
-      <div className="flex w-[320px] shrink-0 flex-col border-r border-line bg-ground">
+      <div
+        className={`${
+          showRailPane ? "flex" : "hidden"
+        } w-full shrink-0 flex-col border-b border-line bg-ground md:flex md:w-[320px] md:border-b-0 md:border-r`}
+      >
         <div className="flex flex-col gap-2 border-b border-line p-3">
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">Items</span>
-            <button className="btn-primary h-7 px-3 text-xs" onClick={() => nav("/items/new")}>
-              + New
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                className="btn-ghost h-7 px-2.5 text-xs"
+                title="Bulk import from a Tally stock-items XML"
+                onClick={() => nav("/items/import")}
+              >
+                ⇧ Tally
+              </button>
+              <button className="btn-primary h-7 px-3 text-xs" onClick={() => nav("/items/new")}>
+                + New
+              </button>
+            </div>
           </div>
-          <div className="flex gap-1">
+          <div className="flex flex-wrap gap-1.5 md:gap-1">
             {(["tree", "flat"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`rounded-full border px-2.5 py-0.5 text-[10px] capitalize ${
+                className={`rounded-full border px-3 py-1 text-xs capitalize md:px-2.5 md:py-0.5 md:text-[10px] ${
                   view === v
                     ? "border-ink bg-ink text-ground"
                     : "border-line bg-card text-muted hover:bg-ground"
@@ -88,7 +107,7 @@ export function ItemsPage() {
             ))}
             <button
               onClick={() => nav("/items/categories")}
-              className="rounded-full border border-line bg-card px-2.5 py-0.5 text-[10px] text-muted hover:bg-ground"
+              className="rounded-full border border-line bg-card px-3 py-1 text-xs text-muted hover:bg-ground md:px-2.5 md:py-0.5 md:text-[10px]"
             >
               Categories…
             </button>
@@ -101,12 +120,12 @@ export function ItemsPage() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap gap-1.5 md:gap-1">
                 {FILTERS.map((f) => (
                   <button
                     key={f.key}
                     onClick={() => setScope(f.key)}
-                    className={`rounded-full border px-2.5 py-0.5 text-[10px] ${
+                    className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
                       scope === f.key
                         ? "border-ink bg-ink text-ground"
                         : "border-line bg-card text-muted hover:bg-ground"
@@ -142,7 +161,7 @@ export function ItemsPage() {
                 <button
                   key={it.id}
                   onClick={() => nav(`/items/${it.id}`)}
-                  className={`block w-full border-b border-[#f3eee4] px-3 py-2 text-left ${
+                  className={`block w-full border-b border-[#f3eee4] px-3 py-3 text-left md:py-2 ${
                     it.id === selectedId
                       ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
                       : "hover:bg-accent-soft"
@@ -186,7 +205,16 @@ export function ItemsPage() {
       </div>
 
       {/* detail */}
-      <div className="flex-1 overflow-y-auto p-5">
+      <div className={`${showDetailPane ? "flex" : "hidden"} min-w-0 flex-1 flex-col md:flex`}>
+        {!isDesktop && inDetail && (
+          <button
+            className="flex items-center gap-2 border-b border-line px-4 py-3 text-sm font-medium text-accent md:hidden"
+            onClick={() => nav("/items")}
+          >
+            ← Items
+          </button>
+        )}
+        <div className="flex-1 overflow-y-auto p-4 md:p-5">
         {isCats ? (
           <CategoryManager onClose={() => nav("/items")} />
         ) : groupId ? (
@@ -209,6 +237,7 @@ export function ItemsPage() {
         ) : (
           <div className="grid h-full place-items-center text-sm text-muted">Item not found.</div>
         )}
+        </div>
       </div>
     </div>
   );

@@ -66,6 +66,8 @@ alembic check                                        # models vs migrations drif
   `name_normalized`, `item.category_id` + `rate_mode` + `weight_per_piece`,
   `item_alias` gains `group_id` (xor with `item_id`) + `source` +
   `last_used_at` for the catalogue-learning loops.
+- `0008` — `staging_tally_item`: holds a parsed Tally stock-items XML
+  import between upload and commit. No changes to `item`.
 
 ## Layout
 

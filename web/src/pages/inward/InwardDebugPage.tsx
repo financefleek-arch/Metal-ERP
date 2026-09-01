@@ -75,7 +75,7 @@ export function InwardDebugPage() {
         into a fresh Tally company needs.
       </p>
 
-      <div className="card flex items-center gap-3 p-4">
+      <div className="card flex flex-wrap items-center gap-3 p-4">
         <input
           ref={fileRef}
           type="file"
@@ -89,8 +89,8 @@ export function InwardDebugPage() {
         <button className="btn-ghost" onClick={() => fileRef.current?.click()}>
           Choose PDF
         </button>
-        <span className="text-sm text-muted">{file?.name ?? "no file"}</span>
-        <div className="ml-auto flex gap-2">
+        <span className="min-w-0 flex-1 truncate text-sm text-muted">{file?.name ?? "no file"}</span>
+        <div className="flex w-full gap-2 sm:ml-auto sm:w-auto">
           <button
             className="btn-ghost"
             disabled={!file || busy}
@@ -133,14 +133,15 @@ export function InwardDebugPage() {
                 : `off by ${json.reconcile_discrepancy}`}
             </span>
           </div>
-          <div className="mb-3 grid grid-cols-3 gap-2 font-mono text-xs">
+          <div className="mb-3 grid grid-cols-2 gap-2 font-mono text-xs sm:grid-cols-3">
             {Object.entries(json.totals).map(([k, v]) => (
               <div key={k} className="rounded bg-ground px-2 py-1">
                 {k}: {v}
               </div>
             ))}
           </div>
-          <table className="w-full text-xs">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[32rem] text-xs">
             <thead className="bg-ground text-[10px] uppercase text-muted">
               <tr>
                 <th className="p-1 text-left">#</th>
@@ -164,6 +165,7 @@ export function InwardDebugPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>

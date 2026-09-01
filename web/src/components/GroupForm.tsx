@@ -91,8 +91,8 @@ export function GroupForm({ groupId }: { groupId: string }) {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-x-3 gap-y-3">
-        <div className="col-span-3">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="sm:col-span-2 lg:col-span-3">
           <label className="label">Group name</label>
           <input
             className="field"
@@ -150,7 +150,7 @@ export function GroupForm({ groupId }: { groupId: string }) {
             ))}
           </select>
         </div>
-        <div className="col-span-2">
+        <div className="sm:col-span-2 lg:col-span-2">
           <label className="label">HSN</label>
           <HsnPicker value={g.hsn_code ?? ""} onChange={(code) => patch({ hsn_code: code || null })} />
         </div>

@@ -3,64 +3,61 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiUpload, ApiError } from "../../lib/api";
 import type {
-  ImportBatch,
-  ImportCommitResult,
-  ImportOutcome,
-  ImportReview,
-  PartyRole,
-  StagedRow,
+  ItemImportBatch,
+  ItemImportCommitResult,
+  ItemImportOutcome,
+  ItemImportReview,
+  ItemType,
+  StagedItemRow,
 } from "../../lib/types";
 
-const OUTCOME_LABEL: Record<ImportOutcome, string> = {
+const OUTCOME_LABEL: Record<ItemImportOutcome, string> = {
   new: "new",
   link: "match → fill blanks",
+  skip: "GUID seen — skip",
   flag: "needs decision",
-  skip: "skipped",
 };
 
-const OUTCOME_CLASS: Record<ImportOutcome, string> = {
+const OUTCOME_CLASS: Record<ItemImportOutcome, string> = {
   new: "bg-accent-soft text-accent",
   link: "bg-[#e6efe8] text-ok",
-  flag: "bg-[#f1e7d6] text-warn",
   skip: "bg-[#efe9df] text-muted",
+  flag: "bg-[#f1e7d6] text-warn",
 };
 
-function missingLabel(tokens: string[]): string {
-  const m: Record<string, string> = { address: "address", "gstin/pan": "GSTIN/PAN", state: "state" };
-  return tokens.map((t) => m[t] ?? t).join(", ");
-}
-
-export function ImportPage() {
+export function ItemsImportPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [batchId, setBatchId] = useState<string | null>(null);
-  const [filter, setFilter] = useState<"all" | ImportOutcome>("all");
+  const [filter, setFilter] = useState<"all" | ItemImportOutcome>("all");
   const [uploadErr, setUploadErr] = useState<string | null>(null);
-  const [done, setDone] = useState<ImportCommitResult | null>(null);
+  const [batchMeta, setBatchMeta] = useState<ItemImportBatch | null>(null);
+  const [done, setDone] = useState<ItemImportCommitResult | null>(null);
 
   const upload = useMutation({
     mutationFn: (f: File) => {
       const form = new FormData();
       form.append("file", f);
-      return apiUpload<ImportBatch>("/parties/import", form);
+      return apiUpload<ItemImportBatch>("/items/import", form);
     },
     onSuccess: (b) => {
       setUploadErr(null);
+      setBatchMeta(b);
       setBatchId(b.batch_id);
     },
     onError: (e) => setUploadErr(e instanceof ApiError ? e.message : "Upload failed"),
   });
 
   const review = useQuery({
-    queryKey: ["party-import", batchId],
-    queryFn: () => api<ImportReview>(`/parties/import/${batchId}`),
+    queryKey: ["item-import", batchId],
+    queryFn: () => api<ItemImportReview>(`/items/import/${batchId}`),
     enabled: !!batchId && !done,
   });
 
   const patchRow = useMutation({
     mutationFn: (args: { id: string; body: Record<string, unknown> }) =>
-      api<StagedRow>(`/parties/import/${batchId}/rows/${args.id}`, {
+      api<StagedItemRow>(`/items/import/${batchId}/rows/${args.id}`, {
         method: "PATCH",
         body: args.body,
       }),
@@ -69,28 +66,29 @@ export function ImportPage() {
 
   const commit = useMutation({
     mutationFn: () =>
-      api<ImportCommitResult>(`/parties/import/${batchId}/commit`, { method: "POST" }),
+      api<ItemImportCommitResult>(`/items/import/${batchId}/commit`, { method: "POST" }),
     onSuccess: (r) => {
       setDone(r);
-      qc.invalidateQueries({ queryKey: ["parties"] });
+      qc.invalidateQueries({ queryKey: ["items"] });
+      qc.invalidateQueries({ queryKey: ["item-tree"] });
     },
   });
 
   const discard = useMutation({
-    mutationFn: () => api<void>(`/parties/import/${batchId}`, { method: "DELETE" }),
-    onSuccess: () => nav("/parties"),
+    mutationFn: () => api<void>(`/items/import/${batchId}`, { method: "DELETE" }),
+    onSuccess: () => nav("/items"),
   });
 
-  // ---- done state ----
   if (done) {
     return (
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
         <h1 className="font-serif text-2xl font-semibold">Import complete</h1>
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
           <Stat n={done.created} label="Created" />
           <Stat n={done.updated} label="Updated" />
           <Stat n={done.skipped} label="Skipped" />
           <Stat n={done.still_flagged} label="Left flagged" />
+          <Stat n={done.hsn_seeded} label="HSN seeded" />
         </div>
         {done.still_flagged > 0 && (
           <p className="mt-3 text-sm text-warn">
@@ -98,30 +96,31 @@ export function ImportPage() {
             re-open the import to resolve them.
           </p>
         )}
-        <button className="btn-primary mt-6" onClick={() => nav("/parties")}>
-          Back to Parties
+        <button className="btn-primary mt-6" onClick={() => nav("/items")}>
+          Back to Items
         </button>
       </div>
     );
   }
 
-  // ---- upload state ----
   if (!batchId) {
     return (
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
-        <h1 className="font-serif text-2xl font-semibold">Import parties from Tally</h1>
+        <h1 className="font-serif text-2xl font-semibold">Import items from Tally</h1>
         <p className="mt-1 max-w-prose text-sm text-muted">
-          In Tally: <em>Gateway → Display More Reports → List of Accounts → Ledgers</em>, then{" "}
-          <span className="font-mono text-xs">Alt+E</span> → format <strong>XML</strong> (or{" "}
-          <em>Export → Masters → All Masters</em>). Drop that file here.
+          In Tally: <em>Gateway → Display More Reports → Inventory Books → Stock Items</em>,
+          then <span className="font-mono text-xs">Alt+E</span> → format <strong>XML</strong>{" "}
+          (or <em>Export → Masters → All Masters</em>). Drop that file here.
         </p>
         <button
           className="mt-5 w-full rounded-xl border-2 border-dashed border-accent bg-accent-soft/50 p-8 text-sm text-accent"
           onClick={() => fileRef.current?.click()}
           disabled={upload.isPending}
         >
-          {upload.isPending ? "Parsing…" : "Click to choose the Tally masters XML"}
-          <span className="mt-1 block text-[11px] text-muted">.xml · UTF-16 or UTF-8 · up to 10 MB</span>
+          {upload.isPending ? "Parsing…" : "Click to choose the Tally stock-items XML"}
+          <span className="mt-1 block text-[11px] text-muted">
+            .xml · UTF-16 or UTF-8 · up to 10 MB · zero-history dummies auto-skipped
+          </span>
         </button>
         <input
           ref={fileRef}
@@ -135,36 +134,37 @@ export function ImportPage() {
           }}
         />
         {uploadErr && <p className="err mt-2">{uploadErr}</p>}
-        <button className="btn-ghost mt-5" onClick={() => nav("/parties")}>
+        <button className="btn-ghost mt-5" onClick={() => nav("/items")}>
           Cancel
         </button>
       </div>
     );
   }
 
-  // ---- review state ----
   const rows = review.data?.rows ?? [];
-  const counts = review.data?.counts ?? { new: 0, link: 0, flag: 0, skip: 0 };
+  const counts = review.data?.counts ?? { new: 0, link: 0, skip: 0, flag: 0 };
   const shown = filter === "all" ? rows : rows.filter((r) => r.outcome === filter);
   const ready = counts.new + counts.link;
   const flagged = counts.flag;
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
-      <div className="mb-4 flex items-baseline justify-between">
+      <div className="mb-2 flex items-baseline justify-between">
         <h1 className="font-serif text-2xl font-semibold">Review the batch</h1>
-        <span className="text-sm text-muted">{rows.length} ledgers parsed</span>
+        <span className="text-sm text-muted">
+          {rows.length} stock items · {batchMeta?.dummies_skipped ?? 0} dummies skipped
+        </span>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
         <Stat n={counts.new} label="New — will create" tone="accent" />
         <Stat n={counts.link} label="Match — fill blanks" tone="ok" />
+        <Stat n={counts.skip} label="GUID seen — skip" />
         <Stat n={counts.flag} label="Needs attention" tone="warn" />
-        <Stat n={counts.skip} label="Skipped" />
       </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
-        {(["all", "new", "link", "flag", "skip"] as const).map((f) => (
+        {(["all", "new", "link", "skip", "flag"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -180,11 +180,11 @@ export function ImportPage() {
       </div>
 
       <div className="card overflow-x-auto">
-        <div className="min-w-[640px]">
-          <div className="grid grid-cols-[1fr_130px_110px_130px_1fr] gap-3 bg-[#efe9df] px-4 py-2.5 text-[10px] uppercase tracking-wide text-muted">
-            <span>Tally ledger</span>
-            <span>GSTIN</span>
-            <span>Role</span>
+        <div className="min-w-[620px]">
+          <div className="grid grid-cols-[1fr_120px_110px_120px_1fr] gap-3 bg-[#efe9df] px-4 py-2.5 text-[10px] uppercase tracking-wide text-muted">
+            <span>Stock item</span>
+            <span>Unit · HSN</span>
+            <span>Type</span>
             <span>Outcome</span>
             <span>Notes</span>
           </div>
@@ -217,7 +217,7 @@ export function ImportPage() {
             disabled={ready === 0 || commit.isPending}
             onClick={() => commit.mutate()}
           >
-            {commit.isPending ? "Importing…" : `Import ${ready} part${ready === 1 ? "y" : "ies"}`}
+            {commit.isPending ? "Importing…" : `Import ${ready} item${ready === 1 ? "" : "s"}`}
           </button>
         </div>
       </div>
@@ -240,35 +240,44 @@ function Stat({ n, label, tone }: { n: number; label: string; tone?: "accent" | 
           ? "border-warn/40"
           : "border-line";
   return (
-    <div className={`min-w-[120px] rounded-lg border ${ring} bg-card px-3 py-2`}>
+    <div className={`min-w-[110px] rounded-lg border ${ring} bg-card px-3 py-2`}>
       <div className="font-serif text-lg font-semibold">{n}</div>
       <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
     </div>
   );
 }
 
-function Row({ r, onPatch }: { r: StagedRow; onPatch: (body: Record<string, unknown>) => void }) {
+function Row({ r, onPatch }: { r: StagedItemRow; onPatch: (body: Record<string, unknown>) => void }) {
+  const badHsn = r.flags.find((f) => f.code === "bad_hsn");
   const nearMatch = r.flags.find((f) => f.code === "name_near_match");
-  const blocking = r.flags.filter((f) => f.code !== "name_near_match");
+  const otherFlags = r.flags.filter(
+    (f) => f.code !== "bad_hsn" && f.code !== "name_near_match",
+  );
+  const parsedBits = [r.parsed.metal, r.parsed.shape, r.parsed.grade, r.parsed.size_text, r.parsed.sku]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
     <div
-      className={`grid grid-cols-[1fr_130px_110px_130px_1fr] items-center gap-3 border-t border-[#f3eee4] px-4 py-3 text-xs ${
+      className={`grid grid-cols-[1fr_120px_110px_120px_1fr] items-start gap-3 border-t border-[#f3eee4] px-4 py-3 text-xs ${
         r.outcome === "flag" ? "bg-[#fdf8ef]" : ""
       }`}
     >
       <div>
-        <div className="font-medium">{r.edited_name ?? r.ledger_name}</div>
+        <div className="font-medium">{r.edited_name ?? r.stock_name}</div>
         <div className="text-[10px] text-muted">{r.parent_group ?? "—"}</div>
+        {parsedBits && <div className="text-[10px] text-ink-soft/70">{parsedBits}</div>}
       </div>
-      <span className="font-mono text-[10px] text-muted">{r.gstin ?? "—"}</span>
+      <span className="font-mono text-[10px] text-muted">
+        {r.base_units ?? "—"} · {r.hsn ?? "—"}
+      </span>
       <select
         className="rounded border border-line bg-card px-1.5 py-1 text-[11px]"
-        value={r.role}
-        onChange={(e) => onPatch({ role_override: e.target.value as PartyRole })}
+        value={r.item_type}
+        onChange={(e) => onPatch({ type_override: e.target.value as ItemType })}
       >
-        <option value="customer">customer</option>
-        <option value="supplier">supplier</option>
-        <option value="both">both</option>
+        <option value="bulk">BULK</option>
+        <option value="mrp">MRP</option>
       </select>
       <span
         className={`inline-block w-fit rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${OUTCOME_CLASS[r.outcome]}`}
@@ -276,17 +285,35 @@ function Row({ r, onPatch }: { r: StagedRow; onPatch: (body: Record<string, unkn
         {OUTCOME_LABEL[r.outcome]}
       </span>
       <div className="text-[11px]">
-        {blocking.map((f) => (
+        {otherFlags.map((f) => (
           <div key={f.code} className="text-warn">
             {f.message}
           </div>
         ))}
-        {nearMatch && r.outcome === "flag" && (
+        {badHsn && (
           <div>
-            {nearMatch.message} to <strong>{r.match_party_name}</strong> ·{" "}
+            <span className="text-warn">{badHsn.message}</span> ·{" "}
             <button
               className="text-accent hover:underline"
-              onClick={() => onPatch({ decision: "link", link_party_id: r.match_party_id })}
+              onClick={() => onPatch({ seed_hsn: true, decision: "create" })}
+            >
+              seed it
+            </button>{" "}
+            /{" "}
+            <button
+              className="text-accent hover:underline"
+              onClick={() => onPatch({ seed_hsn: false, decision: "create" })}
+            >
+              import without HSN
+            </button>
+          </div>
+        )}
+        {nearMatch && r.outcome === "flag" && (
+          <div>
+            {nearMatch.message} to <strong>{r.match_item_name}</strong> ·{" "}
+            <button
+              className="text-accent hover:underline"
+              onClick={() => onPatch({ decision: "link" })}
             >
               link
             </button>{" "}
@@ -301,25 +328,21 @@ function Row({ r, onPatch }: { r: StagedRow; onPatch: (body: Record<string, unkn
         )}
         {r.outcome === "link" && !nearMatch && (
           <span className="text-muted">
-            {r.match_method === "exact_gstin" ? "GSTIN" : "PAN"} = {r.match_party_name} · fills blanks
+            {r.match_item_name} · fills unit / HSN / rate · sets tally_guid
           </span>
         )}
-        {r.missing.length > 0 && r.outcome !== "flag" && (
-          <span className="text-muted">missing {missingLabel(r.missing)}</span>
+        {r.outcome === "skip" && (
+          <span className="text-muted">already imported · nothing blank to fill</span>
         )}
-        {r.outcome !== "skip" ? (
+        {r.standard_rate != null && (
+          <span className="ml-2 font-mono text-muted">₹{r.standard_rate}</span>
+        )}
+        {r.outcome !== "skip" && (
           <button
             className="ml-2 text-[10px] text-muted hover:text-danger"
             onClick={() => onPatch({ decision: "skip" })}
           >
             skip
-          </button>
-        ) : (
-          <button
-            className="text-[10px] text-accent hover:underline"
-            onClick={() => onPatch({ decision: "pending" })}
-          >
-            include
           </button>
         )}
       </div>

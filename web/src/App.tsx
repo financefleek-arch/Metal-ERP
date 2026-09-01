@@ -6,6 +6,7 @@ import { FirmPage } from "./pages/FirmPage";
 import { PartiesPage } from "./pages/PartiesPage";
 import { ItemsPage } from "./pages/ItemsPage";
 import { ImportPage } from "./pages/parties/ImportPage";
+import { ItemsImportPage } from "./pages/items/ImportPage";
 import { InwardListPage } from "./pages/inward/InwardListPage";
 import { InwardSettingsPage } from "./pages/inward/InwardSettingsPage";
 import { InwardDebugPage } from "./pages/inward/InwardDebugPage";
@@ -32,6 +33,7 @@ export function App() {
         <Route path="/parties/new" element={<PartiesPage />} />
         <Route path="/parties/:id" element={<PartiesPage />} />
         <Route path="/items" element={<ItemsPage />} />
+        <Route path="/items/import" element={<ItemsImportPage />} />
         <Route path="/items/new" element={<ItemsPage />} />
         <Route path="/items/categories" element={<ItemsPage />} />
         <Route path="/items/g/:groupId" element={<ItemsPage />} />

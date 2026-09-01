@@ -87,10 +87,10 @@ export function FirmPage() {
         </div>
       </div>
 
-      <form onSubmit={onSubmit} className="card p-6">
-        <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+      <form onSubmit={onSubmit} className="card p-4 sm:p-6">
+        <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
           {FIELDS.map((f) => (
-            <div key={f.name} className={f.full ? "col-span-2" : ""}>
+            <div key={f.name} className={f.full ? "sm:col-span-2" : ""}>
               <label className="label">{f.label}</label>
               {f.kind === "textarea" ? (
                 <textarea

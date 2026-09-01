@@ -43,9 +43,29 @@ class TallyGroup:
 
 
 @dataclass
+class TallyStockItem:
+    name: str
+    parent: str | None = None  # the stock group
+    guid: str | None = None
+    base_units: str | None = None
+    hsn: str | None = None
+    gst_rate: float | None = None
+    standard_rate: float | None = None
+    opening_balance: str | None = None  # kept only to detect "zero-history" dummies
+    has_transactions: bool = False
+    raw_xml: str | None = None
+
+
+@dataclass
 class TallyMasters:
     ledgers: list[TallyLedger]
     groups: list[TallyGroup]
+
+
+@dataclass
+class TallyStock:
+    items: list[TallyStockItem]
+    groups: list[TallyGroup]  # stock groups (may nest via <PARENT>)
 
 
 def _decode(raw: bytes) -> bytes:
@@ -129,3 +149,73 @@ def parse_masters(raw: bytes) -> TallyMasters:
         )
 
     return TallyMasters(ledgers=ledgers, groups=groups)
+
+
+def _num(v: str | None) -> float | None:
+    if not v:
+        return None
+    m = re.search(r"-?\d+(?:\.\d+)?", v.replace(",", ""))
+    return float(m.group(0)) if m else None
+
+
+def _gst_rate(si: etree._Element) -> float | None:
+    # <GSTDETAILS.LIST><GSTRATE>18</GSTRATE> ... or a nested RATEDETAILS
+    for tag in ("GSTRATE", "RATE"):
+        for node in si.iter(tag):
+            r = _num(node.text)
+            if r is not None:
+                return r
+    return None
+
+
+def parse_stock_items(raw: bytes) -> TallyStock:
+    data = _decode(raw)
+    root = etree.fromstring(data)  # noqa: S320
+
+    groups: list[TallyGroup] = []
+    for grp in root.iter("STOCKGROUP"):
+        name = grp.get("NAME") or _t(grp, "NAME")
+        if name:
+            groups.append(TallyGroup(name=name.strip(), parent=_first(grp, "PARENT")))
+
+    items: list[TallyStockItem] = []
+    for si in root.iter("STOCKITEM"):
+        name = si.get("NAME") or _t(si, "NAME")
+        if not name:
+            continue
+        # any batch/opening/transaction sub-node ⇒ "has history"
+        has_txn = any(
+            si.find(t) is not None
+            for t in ("BATCHALLOCATIONS.LIST", "OPENINGBATCHALLOCATIONS.LIST")
+        )
+        items.append(
+            TallyStockItem(
+                name=name.strip(),
+                parent=_first(si, "PARENT"),
+                guid=_first(si, "GUID", "MASTERID"),
+                base_units=_first(si, "BASEUNITS", "ADDITIONALUNITS"),
+                hsn=_first(si, "HSNCODE", "HSNMASTERNAME"),
+                gst_rate=_gst_rate(si),
+                standard_rate=_num(
+                    _first(si, "STANDARDPRICE", "OPENINGRATE", "STANDARDCOST")
+                ),
+                opening_balance=_first(si, "OPENINGBALANCE", "OPENINGVALUE"),
+                has_transactions=has_txn,
+                raw_xml=etree.tostring(si, encoding="unicode"),
+            )
+        )
+
+    return TallyStock(items=items, groups=groups)
+
+
+def is_zero_history_dummy(si: TallyStockItem) -> bool:
+    """A Tally scratch/rounding entry: no unit, no HSN, no opening balance,
+    no transactions. Skipped on import.
+    """
+    ob = _num(si.opening_balance) or 0.0
+    return (
+        not (si.base_units and si.base_units.strip())
+        and not (si.hsn and si.hsn.strip())
+        and ob == 0.0
+        and not si.has_transactions
+    )

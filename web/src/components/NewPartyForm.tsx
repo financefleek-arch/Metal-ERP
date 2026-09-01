@@ -117,7 +117,7 @@ export function NewPartyForm({
         if (canCreate) create.mutate();
       }}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-serif text-lg font-semibold text-accent">New party</h2>
         <div className="flex gap-2">
           <button type="button" className="btn-ghost" onClick={onCancel}>
@@ -129,8 +129,8 @@ export function NewPartyForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
           <label className="label">Legal name *</label>
           <input
             className="field"
@@ -220,7 +220,7 @@ export function NewPartyForm({
             />
             {errs.addr_line1 && <p className="err">{errs.addr_line1}</p>}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <input
                 className="field"

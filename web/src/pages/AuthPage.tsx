@@ -33,7 +33,7 @@ export function AuthPage() {
   });
 
   return (
-    <div className="grid min-h-full place-items-center px-4">
+    <div className="grid min-h-[100dvh] place-items-center px-4 py-8">
       <div className="w-full max-w-sm">
         <h1 className="mb-1 font-serif text-2xl font-semibold">Metal ERP</h1>
         <p className="mb-6 text-sm text-muted">

@@ -222,7 +222,7 @@ export function PartyForm({
             ⋯
           </button>
           {menuOpen && (
-            <div className="absolute right-0 z-10 mt-1 min-w-[190px] overflow-hidden rounded-lg border border-line bg-card shadow-xl">
+            <div className="absolute right-0 z-10 mt-1 min-w-[190px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-line bg-card shadow-xl">
               {party.status === "active" ? (
                 <button
                   className="block w-full px-3 py-2 text-left text-xs text-danger hover:bg-ground"
@@ -260,8 +260,8 @@ export function PartyForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-        <div className="col-span-2">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
           <label className="label">Legal name *</label>
           <input
             className="field"
@@ -356,7 +356,7 @@ export function PartyForm({
             />
             {errs.addr_line1 && <p className="err">{errs.addr_line1}</p>}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <input
                 className="field"
@@ -386,7 +386,7 @@ export function PartyForm({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-[11px] text-muted">
+      <div className="sticky bottom-0 -mx-4 flex items-center gap-2 border-t border-line bg-card/95 px-4 py-2 text-[11px] text-muted backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none">
         <span
           className={`inline-block h-1.5 w-1.5 rounded-full ${
             saveState === "saved"

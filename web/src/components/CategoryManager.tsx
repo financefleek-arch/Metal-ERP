@@ -84,7 +84,7 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
 
       <div className="card divide-y divide-[#f3eee4] overflow-hidden">
         {cats.data?.map((c) => (
-          <div key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm">
+          <div key={c.id} className="flex items-center gap-2 px-3 py-2.5 text-sm md:py-2">
             {editing === c.id ? (
               <>
                 <input
@@ -109,12 +109,12 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
               </>
             ) : (
               <>
-                <span className="flex-1">{c.name}</span>
-                <span className="font-mono text-[10px] text-muted">
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                <span className="hidden font-mono text-[10px] text-muted sm:inline">
                   {c.group_count} grp · {c.item_count} items
                 </span>
                 <button
-                  className="text-xs text-muted hover:text-ink"
+                  className="shrink-0 px-1 text-xs text-muted hover:text-ink"
                   onClick={() => {
                     setEditing(c.id);
                     setEditName(c.name);
@@ -123,7 +123,7 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
                   Rename
                 </button>
                 <button
-                  className="text-xs text-danger hover:underline"
+                  className="shrink-0 px-1 text-xs text-danger hover:underline"
                   onClick={() => {
                     if (
                       confirm(

@@ -76,7 +76,7 @@ export function NewItemForm({
         if (canCreate) create.mutate();
       }}
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-serif text-lg font-semibold text-accent">New item</h2>
         <div className="flex gap-2">
           <button type="button" className="btn-ghost" onClick={onCancel}>
@@ -88,8 +88,8 @@ export function NewItemForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-x-3 gap-y-3">
-        <div className="col-span-3">
+      <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="sm:col-span-2 lg:col-span-3">
           <label className="label">Name *</label>
           <input
             className="field"

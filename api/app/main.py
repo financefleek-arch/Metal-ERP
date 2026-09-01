@@ -19,6 +19,7 @@ from app.routers import (
     item_categories,
     item_groups,
     items,
+    items_import,
     parties,
     parties_import,
     reference,
@@ -50,6 +51,7 @@ app.include_router(reference.router)
 app.include_router(tenant.router)
 app.include_router(parties.router)
 app.include_router(parties_import.router)
+app.include_router(items_import.router)
 app.include_router(items.router)
 app.include_router(item_categories.router)
 app.include_router(item_groups.router)

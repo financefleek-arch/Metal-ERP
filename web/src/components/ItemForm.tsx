@@ -208,7 +208,7 @@ export function ItemForm({
             ⋯
           </button>
           {menuOpen && (
-            <div className="absolute right-0 z-10 mt-1 min-w-[180px] overflow-hidden rounded-lg border border-line bg-card shadow-xl">
+            <div className="absolute right-0 z-10 mt-1 min-w-[180px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-line bg-card shadow-xl">
               {item.status !== "confirmed" && (
                 <button
                   className="block w-full px-3 py-2 text-left text-xs hover:bg-ground"
@@ -238,7 +238,7 @@ export function ItemForm({
 
       {/* Identity */}
       <Section title="Identity">
-        <div className="col-span-3">
+        <div className="sm:col-span-2 lg:col-span-3">
           <Label>Name *</Label>
           <input className="field" value={v.name} onChange={(e) => patch({ name: e.target.value })} />
           <p className="mt-1 font-mono text-[10px] text-muted">
@@ -401,7 +401,7 @@ export function ItemForm({
             </Field>
           </>
         )}
-        <div className="col-span-3 flex flex-wrap gap-x-6 gap-y-1 text-[11px] text-muted">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] text-muted sm:col-span-2 lg:col-span-3">
           {item.gst_rate != null && (
             <span>
               GST <strong>{item.gst_rate}%</strong>
@@ -417,7 +417,7 @@ export function ItemForm({
       </Section>
 
       <Section title="Notes">
-        <div className="col-span-3">
+        <div className="sm:col-span-2 lg:col-span-3">
           <textarea
             className="field h-16 resize-y py-2"
             value={v.notes}
@@ -426,7 +426,7 @@ export function ItemForm({
         </div>
       </Section>
 
-      <div className="flex items-center gap-2 text-[11px] text-muted">
+      <div className="sticky bottom-0 -mx-4 flex items-center gap-2 border-t border-line bg-card/95 px-4 py-2 text-[11px] text-muted backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:py-0 md:backdrop-blur-none">
         <span
           className={`inline-block h-1.5 w-1.5 rounded-full ${
             saveState === "saved"
@@ -459,7 +459,9 @@ function Section({
         {title}
         {note && <span className="ml-2 normal-case tracking-normal text-faint">· {note}</span>}
       </p>
-      <div className="grid grid-cols-3 gap-x-3 gap-y-2.5">{children}</div>
+      <div className="grid grid-cols-1 gap-x-3 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-3">
+        {children}
+      </div>
     </div>
   );
 }

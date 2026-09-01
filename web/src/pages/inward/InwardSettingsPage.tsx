@@ -41,7 +41,7 @@ export function InwardSettingsPage() {
         These names must match the shop's Tally chart of accounts, or the import throws a{" "}
         <code className="rounded bg-line px-1">&lt;LINEERROR&gt;</code>.
       </p>
-      <div className="card grid grid-cols-2 gap-4 p-4">
+      <div className="card grid grid-cols-1 gap-4 p-4 sm:grid-cols-2">
         {FIELDS.map((f) => (
           <div key={f.key}>
             <label className="label">{f.label}</label>
@@ -52,7 +52,7 @@ export function InwardSettingsPage() {
             />
           </div>
         ))}
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <label className="label">XML encoding</label>
           <div className="inline-flex overflow-hidden rounded-full border border-line text-xs">
             {(["UTF-16", "UTF-8"] as const).map((enc) => (
@@ -71,7 +71,7 @@ export function InwardSettingsPage() {
             confirm against the shop's Tally version on the first real import
           </span>
         </div>
-        <div className="col-span-2">
+        <div className="sm:col-span-2">
           <button
             className="btn-primary"
             onClick={() => save.mutate(form)}
