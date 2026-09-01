@@ -1,0 +1,432 @@
+<title>Two-Level UI Options</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --sale-fg:#3a5a48; --sale-bg:#e6efe8;
+    --buy-fg:#2f6f89;  --buy-bg:#e3eef2;
+    --wait-fg:#8a6a1f; --wait-bg:#f1e7d6;
+    --neutral-fg:#7c766a; --neutral-bg:#efe9df;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --sale-fg:#9cc9ad; --sale-bg:#24322a;
+    --buy-fg:#8fc3d7;  --buy-bg:#22333a;
+    --wait-fg:#d8b878; --wait-bg:#38301f;
+    --neutral-fg:#b3aa99; --neutral-bg:#322e28;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --sale-fg:#9cc9ad; --sale-bg:#24322a;
+    --buy-fg:#8fc3d7;  --buy-bg:#22333a;
+    --wait-fg:#d8b878; --wait-bg:#38301f;
+    --neutral-fg:#b3aa99; --neutral-bg:#322e28;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1180px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:26px; margin-bottom:10px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(27px,4vw,38px);
+    line-height:1.12; margin:0 0 14px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:68ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .levelnav { display:flex; gap:8px; margin:22px 0 0; font-size:12.5px; }
+  .levelnav a { text-decoration:none; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:5px 13px; }
+  .levelnav a.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+
+  section.level { margin-top:52px; }
+  .level > .head { display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:6px; }
+  .level .kicker { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:13px; color:var(--accent);
+    border:1px solid var(--accent); border-radius:999px; width:26px; height:26px; display:inline-grid; place-items:center; flex-shrink:0; }
+  .level h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:22px; margin:0; letter-spacing:-0.01em; }
+  .level > p.sub { margin:6px 0 0; font-size:13.5px; color:var(--muted); max-width:78ch; }
+
+  .opts { display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px; margin-top:24px; }
+  .opts.two { grid-template-columns:1fr 1fr; }
+  .opt { border:1px solid var(--line); border-radius:12px; background:var(--card); overflow:hidden; display:flex; flex-direction:column;
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 12px 30px -14px rgba(35,32,27,0.12); }
+  .opt > .cap { padding:13px 15px 11px; border-bottom:1px solid var(--line-soft); }
+  .opt .cap .oname { font-size:13.5px; font-weight:600; display:flex; align-items:center; gap:7px; }
+  .opt .cap .oname .letter { font-family:"Fraunces",Georgia,serif; color:var(--accent); font-weight:600; }
+  .opt .cap .odesc { font-size:11.5px; color:var(--muted); margin-top:4px; line-height:1.5; }
+  .opt .stage { flex:1; background:var(--band); padding:14px; display:flex; flex-direction:column; }
+  .opt .tradeoffs { padding:11px 15px 13px; font-size:11px; color:var(--ink-soft); }
+  .opt .tradeoffs b { color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:0.05em; font-size:9.5px; display:block; margin-bottom:3px; }
+  .opt .tradeoffs .plus::before { content:"+ "; color:var(--sale-fg); font-weight:700; }
+  .opt .tradeoffs .minus::before { content:"– "; color:var(--wait-fg); font-weight:700; }
+  .opt .tradeoffs div { margin:2px 0; }
+
+  /* ---- mini device ---- */
+  .mini { background:var(--card); border:1px solid var(--line); border-radius:9px; overflow:hidden; font-size:10.5px; flex:1; display:flex; flex-direction:column; }
+  .mini .bar { background:var(--shell); color:var(--shell-text); display:flex; align-items:center; gap:10px; padding:7px 10px; font-size:9.5px; }
+  .mini .bar .b { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:11px; }
+  .mini .bar nav { display:flex; gap:9px; color:var(--shell-dim); }
+  .mini .bar nav .a { color:var(--shell-text); border-bottom:1.5px solid var(--accent); padding-bottom:5px; }
+  .mini .bar nav .ext { color:var(--shell-text); background:color-mix(in srgb,var(--accent) 32%,transparent); border-radius:4px; padding:1px 5px; }
+  .mini .bar .sp { margin-left:auto; }
+  .mini .in { padding:11px 12px; display:flex; flex-direction:column; gap:8px; }
+
+  .qh { font-size:8.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+  .qrow { display:flex; align-items:center; justify-content:space-between; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:var(--card); }
+  .qrow .l { display:flex; align-items:center; gap:6px; }
+  .qrow .c { font-family:"IBM Plex Mono",monospace; background:var(--band); border-radius:999px; padding:0 6px; font-size:9px; color:var(--ink-soft); }
+  .qrow .go { color:var(--faint); }
+  .tag { font-size:8px; letter-spacing:0.04em; font-weight:700; padding:1px 5px; border-radius:3px; }
+  .tag.sale { background:var(--sale-bg); color:var(--sale-fg); }
+  .tag.buy { background:var(--buy-bg); color:var(--buy-fg); }
+  .pill { font-size:8.5px; padding:1px 6px; border-radius:999px; }
+  .pill.wait { background:var(--wait-bg); color:var(--wait-fg); }
+  .pill.sale { background:var(--sale-bg); color:var(--sale-fg); }
+  .pill.buy { background:var(--buy-bg); color:var(--buy-fg); }
+  .pill.n { background:var(--neutral-bg); color:var(--neutral-fg); }
+
+  .btnrow { display:flex; gap:6px; margin-top:2px; }
+  .mbtn { font-size:9px; border:1px solid var(--line); border-radius:5px; padding:4px 8px; background:var(--card); color:var(--ink-soft); }
+  .mbtn.primary { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
+
+  .split { display:grid; grid-template-columns:88px 1fr; height:100%; }
+  .split .rail { background:var(--band); border-right:1px solid var(--line); padding:8px 7px; display:flex; flex-direction:column; gap:5px; }
+  .split .rail .r { font-size:8.5px; padding:4px 6px; border-radius:5px; color:var(--muted); }
+  .split .rail .r.on { background:var(--card); color:var(--ink); border:1px solid var(--line); }
+  .split .detail { padding:10px 11px; display:flex; flex-direction:column; gap:7px; }
+
+  .fieldline { display:flex; align-items:center; gap:6px; }
+  .fieldline .k { font-size:8.5px; color:var(--muted); width:34px; }
+  .fieldbox { flex:1; border:1px solid var(--line); border-radius:5px; background:var(--card); padding:3px 6px; font-size:9px; color:var(--ink-soft); }
+
+  .lgrid { border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .lgrid .lh, .lgrid .lr { display:grid; gap:5px; padding:5px 7px; align-items:center; font-size:9px; }
+  .lgrid .lh { background:var(--band); font-size:7.5px; letter-spacing:0.04em; text-transform:uppercase; color:var(--muted); font-weight:600; }
+  .lgrid .lr { border-top:1px solid var(--line-soft); }
+  .lgrid .lr .m { font-family:"IBM Plex Mono",monospace; }
+  .lgrid .sub { padding:3px 7px 4px 34px; font-size:8px; color:var(--muted); border-top:1px dashed var(--line-soft); }
+  .cols-min .lh, .cols-min .lr { grid-template-columns:12px 1fr 30px 34px 46px; }
+  .cols-full .lh, .cols-full .lr { grid-template-columns:12px 1fr 46px 26px 24px 32px 44px; }
+
+  .totline { display:flex; justify-content:space-between; font-size:9px; padding:2px 0; }
+  .totline.g { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:11px; border-top:1px solid var(--line); margin-top:3px; padding-top:5px; }
+  .totcollapsed { display:flex; justify-content:space-between; align-items:center; border:1px solid var(--line); border-radius:6px; background:var(--card); padding:6px 9px; font-size:10px; }
+  .totcollapsed .g { font-family:"Fraunces",Georgia,serif; font-weight:600; }
+  .caret { color:var(--faint); font-size:9px; }
+
+  /* engine diagram */
+  .engine { margin-top:56px; border:1px solid var(--line); border-radius:14px; background:var(--card); padding:22px 24px;
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 34px -16px rgba(35,32,27,0.13); }
+  .engine h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:19px; margin:0 0 4px; }
+  .engine p.sub { margin:0 0 20px; font-size:13px; color:var(--muted); max-width:76ch; }
+  .ediagram { display:grid; grid-template-columns:1fr 200px 1fr; gap:16px; align-items:center; }
+  .ecard { border:1px solid var(--line); border-radius:10px; padding:13px 15px; }
+  .ecard h3 { margin:0 0 8px; font-size:12px; letter-spacing:0.02em; }
+  .ecard .rt { font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); }
+  .ecard ul { margin:8px 0 0; padding-left:16px; font-size:11.5px; color:var(--ink-soft); }
+  .ecard li { margin:4px 0; }
+  .ecore { border:1.5px solid var(--accent); border-radius:10px; padding:13px 14px; background:color-mix(in srgb,var(--accent) 6%,var(--card)); text-align:center; }
+  .ecore .n { font-size:11.5px; font-weight:600; color:var(--accent-dark); }
+  .ecore .f { font-family:"IBM Plex Mono",monospace; font-size:9.5px; color:var(--accent-dark); margin-top:6px; line-height:1.7; }
+  .ecore .arrows { font-size:14px; color:var(--faint); margin:6px 0; }
+
+  footer.page { margin-top:64px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:960px) {
+    .opts, .opts.two { grid-template-columns:1fr; }
+    .ediagram { grid-template-columns:1fr; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual plan · UI direction</p>
+    <h1 class="page">Two levels: process list, then data entry</h1>
+    <p class="lede">
+      The idea: one level lists <strong>what needs doing</strong> — sales drafts, inward bills to review, items to
+      confirm — and a second level is the <strong>focused editor</strong> for a single document. Sales invoicing and
+      inward-bill review stop competing for nav space; they become two entries in the same queue, feeding one shared
+      <code>item_resolution</code> engine. Below: options for each level, side by side.
+    </p>
+    <nav class="levelnav">
+      <a href="#l1" class="on">Level 1 — process list</a>
+      <a href="#l2">Level 2 — data entry</a>
+      <a href="#engine">The shared engine</a>
+    </nav>
+  </header>
+
+  <!-- ================= LEVEL 1 ================= -->
+  <section class="level" id="l1">
+    <div class="head">
+      <span class="kicker">1</span>
+      <h2>Level 1 — the process list</h2>
+    </div>
+    <p class="sub">
+      Where you land. Every actionable list in one place. Three ways to structure it — they differ in how much of
+      today's top nav survives and whether sales &amp; purchase share one stream.
+    </p>
+
+    <div class="opts">
+      <!-- 1A -->
+      <div class="opt">
+        <div class="cap">
+          <div class="oname"><span class="letter">A</span> Work-queue home</div>
+          <div class="odesc">Landing screen = every queue. Top nav shrinks to Work · Masters. Row click → full-screen editor.</div>
+        </div>
+        <div class="stage">
+          <div class="mini">
+            <div class="bar"><span class="b">Metal ERP</span><nav><span class="a">Work</span><span>Masters</span></nav><span class="sp"></span><span>HJ</span></div>
+            <div class="in">
+              <div class="qh">Needs you</div>
+              <div class="qrow"><span class="l">Sales drafts</span><span class="c">3</span><span class="go">›</span></div>
+              <div class="qrow"><span class="l"><span class="tag buy">◆</span> Inward · needs review</span><span class="c">2</span><span class="go">›</span></div>
+              <div class="qrow"><span class="l">Items to confirm</span><span class="c">28</span><span class="go">›</span></div>
+              <div class="qh" style="margin-top:4px;">Recent</div>
+              <div class="qrow"><span class="l">#1217 · finalized today</span><span class="go">›</span></div>
+              <div class="btnrow">
+                <span class="mbtn primary">+ New invoice</span>
+                <span class="mbtn">↑ Upload bill</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoffs">
+          <b>Trade-offs</b>
+          <div class="plus">Fewest nav decisions; "what's on my plate" is the home screen</div>
+          <div class="plus">Sales &amp; inward peers from day one</div>
+          <div class="minus">Biggest change from today's shell</div>
+          <div class="minus">Browsing all history needs a secondary view</div>
+        </div>
+      </div>
+
+      <!-- 1B -->
+      <div class="opt">
+        <div class="cap">
+          <div class="oname"><span class="letter">B</span> List + detail, two-pane</div>
+          <div class="odesc">Slim top nav switches section. Left rail lists that section's documents; right pane edits the selected one. Same pattern for Sales, Inward, Items.</div>
+        </div>
+        <div class="stage">
+          <div class="mini">
+            <div class="bar"><span class="b">Metal ERP</span><nav><span class="a">Sales</span><span class="ext">◆ Inward</span><span>Items</span><span>Parties</span></nav><span class="sp"></span><span>HJ</span></div>
+            <div class="split" style="flex:1;">
+              <div class="rail">
+                <div class="r">＋ new</div>
+                <div class="r on">#1218 Balaji</div>
+                <div class="r">#1217 Jay</div>
+                <div class="r">draft Shyam</div>
+                <div class="r">#1215 Nilk.</div>
+              </div>
+              <div class="detail">
+                <div class="fieldline"><span class="k">party</span><span class="fieldbox">Balaji Traders ▾</span></div>
+                <div class="lgrid cols-min">
+                  <div class="lh"><span>#</span><span>Item</span><span>Qty</span><span>Rate</span><span>Amt</span></div>
+                  <div class="lr"><span>1</span><span>SS Utensil</span><span class="m">900</span><span class="m">264</span><span class="m">2.37L</span></div>
+                </div>
+                <div class="totcollapsed"><span>Total</span><span class="g">₹2,37,600</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoffs">
+          <b>Trade-offs</b>
+          <div class="plus">List &amp; editor visible together — fast to move between docs</div>
+          <div class="plus">One learned pattern reused everywhere</div>
+          <div class="minus">Editor is narrower (a pane, not full width)</div>
+          <div class="minus">Section switch still a nav choice</div>
+        </div>
+      </div>
+
+      <!-- 1C -->
+      <div class="opt">
+        <div class="cap">
+          <div class="oname"><span class="letter">C</span> Keep nav, add "Work" tab</div>
+          <div class="odesc">Smallest change. Existing bar stays; a new first tab aggregates pending actions and links out to today's section editors.</div>
+        </div>
+        <div class="stage">
+          <div class="mini">
+            <div class="bar"><span class="b">Metal ERP</span><nav><span class="a">Work</span><span>Sales</span><span>Items</span><span>Parties</span><span class="ext">◆</span></nav><span class="sp"></span><span>HJ</span></div>
+            <div class="in">
+              <div class="qh">Work · everything pending</div>
+              <div class="qrow"><span class="l"><span class="tag sale">SALE</span> #1218 Balaji</span><span class="pill wait">draft</span></div>
+              <div class="qrow"><span class="l"><span class="tag buy">BUY</span> Sugal Foods.pdf</span><span class="pill wait">review</span></div>
+              <div class="qrow"><span class="l"><span class="tag sale">SALE</span> Shyam Steel</span><span class="pill wait">draft</span></div>
+              <div class="qrow"><span class="l">28 items unconfirmed</span><span class="go">›</span></div>
+              <div class="btnrow"><span class="mbtn primary">+ New invoice</span><span class="mbtn">↑ Upload bill</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoffs">
+          <b>Trade-offs</b>
+          <div class="plus">Almost no disruption; ships fast</div>
+          <div class="plus">Existing deep-links keep working</div>
+          <div class="minus">Two ways to reach the same editor (Work vs section)</div>
+          <div class="minus">Nav bar still long once M1 fills in</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top:22px;">
+      <strong>Cross-cutting choice — one stream or two?</strong> Independently of A/B/C, the pending list can keep
+      <em>separate queues</em> (Sales drafts │ Inward review, same columns) or merge into <em>one type-tagged
+      "Documents" stream</em> (<span class="tag sale">SALE</span> / <span class="tag buy">BUY</span> rows, filter by
+      type + status). Option&nbsp;A and C lean toward one stream; B naturally keeps them per-section.
+    </p>
+  </section>
+
+  <!-- ================= LEVEL 2 ================= -->
+  <section class="level" id="l2">
+    <div class="head">
+      <span class="kicker">2</span>
+      <h2>Level 2 — the data-entry screen</h2>
+    </div>
+    <p class="sub">
+      The focused editor for one document. Today's invoice-editor mockup shows every column at once (# · Item · HSN ·
+      Qty · UOM · Rate · Amount) plus a full totals panel. Two ways to simplify — same sample invoice in both.
+    </p>
+
+    <div class="opts two">
+      <!-- 2A progressive -->
+      <div class="opt">
+        <div class="cap">
+          <div class="oname"><span class="letter">A</span> Progressive — essentials first</div>
+          <div class="odesc">Line row shows Item · Qty · Rate · Amount only. HSN, UOM, discount sit under a per-line expander. Totals collapse to one line until opened.</div>
+        </div>
+        <div class="stage">
+          <div class="mini">
+            <div class="bar"><span class="b">New invoice</span><span class="sp"></span><span style="color:var(--wait-fg);">Draft</span></div>
+            <div class="in">
+              <div class="fieldline"><span class="k">party</span><span class="fieldbox">Balaji Traders ▾</span></div>
+              <div class="fieldline"><span class="k">date</span><span class="fieldbox">29 Aug 2026 · number auto on finalize</span></div>
+              <div class="lgrid cols-min">
+                <div class="lh"><span>#</span><span>Item</span><span>Qty</span><span>Rate</span><span>Amount</span></div>
+                <div class="lr"><span>1</span><span>SS Utensil ⌄</span><span class="m">900</span><span class="m">264</span><span class="m">2,37,600</span></div>
+                <div class="sub">HSN 73239390 · UOM Kgs · disc 0 · ⚖ BULK · last ₹264 · 41×</div>
+                <div class="lr"><span>2</span><span style="color:var(--muted);">type an item…</span><span></span><span></span><span>—</span></div>
+              </div>
+              <div class="totcollapsed"><span>Total <span class="caret">⌄ show breakdown</span></span><span class="g">₹2,37,600</span></div>
+              <div class="btnrow"><span class="mbtn">+ Add line</span><span class="mbtn primary">Finalize &amp; PDF</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoffs">
+          <b>Trade-offs</b>
+          <div class="plus">Row is scannable; matches how a quick sale is entered (name, qty, rate)</div>
+          <div class="plus">Same shape works on a narrow screen / tablet</div>
+          <div class="plus">HSN/UOM still one keystroke away, auto-filled from the item anyway</div>
+          <div class="minus">A user who wants to eyeball every HSN must expand rows</div>
+          <div class="minus">Slightly more interaction state to build &amp; test</div>
+        </div>
+      </div>
+
+      <!-- 2B dense -->
+      <div class="opt">
+        <div class="cap">
+          <div class="oname"><span class="letter">B</span> Dense — all columns, tighter</div>
+          <div class="odesc">Same fields as today, but denser rows and explicit grouping: header block · lines · totals ladder. Nothing hidden; better keyboard flow.</div>
+        </div>
+        <div class="stage">
+          <div class="mini">
+            <div class="bar"><span class="b">New invoice</span><span class="sp"></span><span style="color:var(--wait-fg);">Draft</span></div>
+            <div class="in">
+              <div class="qh">Header</div>
+              <div class="fieldline"><span class="k">party</span><span class="fieldbox">Balaji Traders ▾</span><span class="fieldbox" style="flex:0 0 92px;">29 Aug 26</span></div>
+              <div class="qh" style="margin-top:2px;">Lines</div>
+              <div class="lgrid cols-full">
+                <div class="lh"><span>#</span><span>Item</span><span>HSN</span><span>Qty</span><span>UOM</span><span>Rate</span><span>Amt</span></div>
+                <div class="lr"><span>1</span><span>SS Utensil</span><span class="m">73239390</span><span class="m">900</span><span>Kgs</span><span class="m">264</span><span class="m">2.37L</span></div>
+                <div class="lr"><span>2</span><span style="color:var(--muted);">type…</span><span>—</span><span></span><span></span><span></span><span>—</span></div>
+              </div>
+              <div class="qh" style="margin-top:2px;">Totals</div>
+              <div style="border:1px solid var(--line); border-radius:6px; background:var(--card); padding:6px 9px;">
+                <div class="totline"><span style="color:var(--muted);">Subtotal</span><span>2,37,600.00</span></div>
+                <div class="totline"><span style="color:var(--muted);">Round off</span><span>0.00</span></div>
+                <div class="totline g"><span>Grand total</span><span>₹2,37,600</span></div>
+              </div>
+              <div class="btnrow"><span class="mbtn">+ Add line</span><span class="mbtn primary">Finalize &amp; PDF</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="tradeoffs">
+          <b>Trade-offs</b>
+          <div class="plus">Everything visible — good for a careful check before finalize</div>
+          <div class="plus">Closest to the reference invoice layout &amp; to Tally habits</div>
+          <div class="plus">Least new behaviour to build</div>
+          <div class="minus">Wide grid is cramped on anything under a full desktop</div>
+          <div class="minus">More on screen = slower to scan a long bill</div>
+        </div>
+      </div>
+    </div>
+
+    <p class="sub" style="margin-top:20px;">
+      The <strong>inward review screen</strong> inherits whichever choice this is — its lines table gets the same
+      column set, with the match cell appended. So picking here settles both editors at once.
+    </p>
+  </section>
+
+  <!-- ================= ENGINE ================= -->
+  <section class="engine" id="engine">
+    <h2>Both editors, one engine — why the two-level split works</h2>
+    <p class="sub">
+      Level 2 looks like two screens but is one pattern: a party, a line grid, a gated primary button. The lines
+      resolve to catalogue items through the same code — so the process list can treat a sales draft and an inward
+      bill as the same kind of row.
+    </p>
+    <div class="ediagram">
+      <div class="ecard">
+        <h3>New / Edit sales invoice</h3>
+        <div class="rt">/sales/:id · doc = invoice</div>
+        <ul>
+          <li>Shop types each line into an <span class="mono">ItemCombobox</span></li>
+          <li>Totals <b>computed</b> — <span class="mono">domain/tax.py</span></li>
+          <li>On finalize: number assigned, PDF rendered</li>
+          <li>Unmatched line → item created <span class="mono">source=auto_from_invoice</span></li>
+        </ul>
+      </div>
+      <div class="ecore">
+        <div class="n">shared resolution</div>
+        <div class="arrows">↖&nbsp;&nbsp;↗</div>
+        <div class="f">
+          normalize.py<br>
+          ↓<br>
+          exact → alias → fuzzy(+HSN)<br>
+          → [LLM] → stage-new
+        </div>
+        <div class="arrows">↙&nbsp;&nbsp;↘</div>
+        <div class="n" style="font-size:9.5px; color:var(--muted);">new items land UNCONFIRMED on Items</div>
+      </div>
+      <div class="ecard">
+        <h3>Inward bill review</h3>
+        <div class="rt">/inward/:id · doc = inward_bill</div>
+        <ul>
+          <li>Extractor fills lines from the PDF</li>
+          <li>Totals <b>read off the bill</b> &amp; reconciled</li>
+          <li>On approve: staged masters created, Tally XML built</li>
+          <li>Unmatched line → item created <span class="mono">source=auto_from_purchase</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Related: <code>docs/visual-plan/inward-bill-import-ui.html</code></span>
+    <span><code>docs/visual-plan/app-with-inward.html</code></span>
+    <span>Plans: <code>docs/EXECUTION-PLAN.md</code> · <code>docs/EXECUTION-PLAN-inward-bill-import.md</code></span>
+    <span>Mid-fi · options for discussion · sample data illustrative</span>
+  </footer>
+</div>

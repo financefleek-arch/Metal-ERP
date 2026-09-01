@@ -1,0 +1,758 @@
+<title>Parties CRUD Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --new-fg:#2f6f89;   --new-bg:#e3eef2;
+    --ok-fg:#3a5a48;    --ok-bg:#e6efe8;
+    --warn-fg:#8a6a1f;  --warn-bg:#f1e7d6;
+    --danger-fg:#a23b2e;--danger-bg:#f4e3df;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --ok-fg:#9cc9ad;    --ok-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --ok-fg:#9cc9ad;    --ok-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1140px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:8px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(26px,4vw,36px);
+    line-height:1.12; margin:0 0 12px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:70ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .statusrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:11px; }
+  .chip { padding:3px 9px; border-radius:999px; font-weight:500; }
+  .chip.have { background:var(--ok-bg); color:var(--ok-fg); }
+  .chip.change { background:var(--warn-bg); color:var(--warn-fg); }
+  .chip.new { background:var(--new-bg); color:var(--new-fg); }
+
+  section.blk { margin-top:48px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:80ch; }
+
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .tabbar { display:flex; align-items:center; gap:7px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line); }
+  .tabbar i { width:10px; height:10px; border-radius:50%; background:var(--faint); }
+  .tabbar .url { margin-left:10px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted);
+    background:var(--card); border:1px solid var(--line); border-radius:5px; padding:3px 10px; }
+  .topnav { display:flex; align-items:center; justify-content:space-between; height:48px; padding:0 18px;
+    background:var(--shell); color:var(--shell-text); }
+  .topnav .brand { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:15px; }
+  .topnav nav { display:flex; gap:16px; font-size:12.5px; color:var(--shell-dim); }
+  .topnav nav a { color:var(--shell-dim); text-decoration:none; padding-bottom:14px; }
+  .topnav nav a.active { color:var(--shell-text); border-bottom:2px solid var(--accent); }
+  .topnav nav a.ext { color:var(--shell-text); background:color-mix(in srgb,var(--accent) 32%,transparent); border-radius:5px; padding:2px 8px; align-self:center; }
+  .topnav .who { font-size:11px; color:var(--shell-dim); }
+
+  .pane { display:grid; grid-template-columns:290px 1fr; min-height:460px; }
+  .rail { border-right:1px solid var(--line); background:var(--paper); display:flex; flex-direction:column; }
+  .railhead { padding:11px 13px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:9px; }
+  .railhead .top { display:flex; align-items:center; justify-content:space-between; }
+  .railhead .top .sc { font-size:12.5px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .railhead .top .sc .car { color:var(--faint); font-size:10px; }
+  .newbtn { font-size:11.5px; font-weight:600; background:var(--accent); color:#fff; border:none; border-radius:6px; padding:5px 11px; cursor:pointer; }
+  .search { font-size:11px; border:1px solid var(--line); border-radius:6px; background:var(--card); padding:5px 8px; color:var(--muted); }
+  .filters { display:flex; gap:5px; flex-wrap:wrap; }
+  .filters .f { font-size:9.5px; border:1px solid var(--line); border-radius:999px; padding:2px 9px; color:var(--muted); background:var(--card); }
+  .filters .f.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .rows { flex:1; overflow:auto; }
+  .rrow { display:flex; flex-direction:column; gap:2px; padding:9px 13px; border-bottom:1px solid var(--line-soft); cursor:pointer; }
+  .rrow:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
+  .rrow.sel { background:var(--card); box-shadow:inset 2px 0 0 var(--accent); }
+  .rrow.unsaved { box-shadow:inset 2px 0 0 var(--new-fg); }
+  .rrow.archived { opacity:0.55; }
+  .rrow .l1 { display:flex; align-items:center; gap:6px; font-size:12px; }
+  .rrow .l1 .nm { font-weight:500; }
+  .rrow .l1 .nm.new { color:var(--new-fg); }
+  .rrow .l2 { font-size:9.5px; color:var(--muted); }
+  .role { font-size:7.5px; letter-spacing:0.04em; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+  .role.cust { background:var(--ok-bg); color:var(--ok-fg); }
+  .role.supp { background:var(--new-bg); color:var(--new-fg); }
+  .role.both { background:var(--band); color:var(--ink-soft); }
+  .rrow .badge { margin-left:auto; font-size:8px; color:var(--muted); }
+
+  .detail { padding:18px 20px; display:flex; flex-direction:column; gap:13px; }
+  .dhead { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .dhead .t { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:16px; display:flex; align-items:center; gap:8px; }
+  .dhead .sub { font-size:10.5px; color:var(--muted); margin-top:3px; }
+  .dhead .acts { display:flex; gap:6px; align-items:center; }
+  .dbtn { font-size:10.5px; border:1px solid var(--line); border-radius:6px; padding:5px 10px; background:var(--card); color:var(--ink-soft); cursor:pointer; }
+  .dbtn.primary { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
+  .dbtn.kebab { padding:5px 8px; }
+  .menu { position:relative; }
+  .menucard { position:absolute; right:0; top:28px; background:var(--card); border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 10px 28px -12px rgba(35,32,27,0.3); min-width:184px; overflow:hidden; z-index:5; }
+  .menucard .mi { padding:8px 12px; font-size:10.5px; display:flex; align-items:center; gap:8px; border-top:1px solid var(--line-soft); }
+  .menucard .mi:first-child { border-top:none; }
+  .menucard .mi.danger { color:var(--danger-fg); }
+  .menucard .mi.disabled { color:var(--faint); }
+  .menucard .mi .op { font-family:"IBM Plex Mono",monospace; font-size:8px; color:var(--faint); margin-left:auto; }
+
+  .fgrid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
+  .fgrid .full { grid-column:1/-1; }
+  .fl label { font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:3px; }
+  .fl .inp { border:1px solid var(--line); border-radius:6px; background:var(--card); padding:5px 8px; font-size:11px; color:var(--ink-soft); min-height:28px; display:flex; align-items:center; }
+  .fl .inp.mono { font-family:"IBM Plex Mono",monospace; }
+  .fl .inp.focus { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 22%,transparent); }
+  .fl .hint { font-size:9px; color:var(--muted); margin-top:3px; }
+  .fl .err { font-size:9px; color:var(--danger-fg); margin-top:3px; }
+  .sec { border-top:1px solid var(--line); padding-top:11px; }
+  .sec .st { font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+
+  .savebar { display:flex; align-items:center; gap:8px; font-size:10px; color:var(--muted); }
+  .savebar .dot { width:6px; height:6px; border-radius:50%; }
+  .savebar .dot.ok { background:var(--ok-fg); }
+  .savebar .dot.pending { background:var(--faint); }
+  .savebar .dot.dirty { background:var(--warn-fg); }
+
+  /* dialog */
+  .dlg-scrim { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:color-mix(in srgb,var(--ink) 8%,var(--card)); padding:26px; display:flex; justify-content:center; }
+  .dlg { background:var(--card); border:1px solid var(--line); border-radius:10px; max-width:380px; width:100%; padding:16px 18px;
+    box-shadow:0 20px 50px -20px rgba(35,32,27,0.4); }
+  .dlg h3 { margin:0 0 8px; font-size:14px; font-family:"Fraunces",Georgia,serif; font-weight:600; }
+  .dlg p { margin:0 0 14px; font-size:12px; color:var(--ink-soft); line-height:1.55; }
+  .dlg p b { color:var(--ink); }
+  .dlg .row { display:flex; justify-content:flex-end; gap:8px; }
+  .dlg.block p .count { color:var(--danger-fg); font-weight:600; }
+
+  .ctable { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:20px; background:var(--card); }
+  .ctable table { width:100%; border-collapse:collapse; }
+  .ctable th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:10px 12px; background:var(--band); border-bottom:1px solid var(--line); }
+  .ctable td { padding:11px 12px; font-size:12px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .ctable td:first-child { font-weight:600; white-space:nowrap; width:78px; }
+  .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted); background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
+  .ctable .st-have { color:var(--ok-fg); font-weight:600; }
+  .ctable .st-change { color:var(--warn-fg); font-weight:600; }
+  .ctable .st-new { color:var(--new-fg); font-weight:600; }
+
+  .pendchip { font-size:7.5px; letter-spacing:0.03em; font-weight:700; padding:1px 5px; border-radius:3px;
+    background:var(--warn-bg); color:var(--warn-fg); text-transform:uppercase; }
+  .miss { font-size:10.5px; color:var(--warn-fg); }
+  .scopebox { border:1px solid var(--line); border-radius:10px; background:var(--card); padding:13px 15px; }
+  .scopebox h3 { margin:0 0 8px; font-size:12px; }
+  .scopebox .k { display:flex; gap:8px; font-size:11.5px; padding:5px 0; border-top:1px solid var(--line-soft); }
+  .scopebox .k:first-of-type { border-top:none; }
+  .scopebox .k .yn { flex-shrink:0; width:14px; height:14px; border-radius:4px; display:grid; place-items:center; font-size:9px; font-weight:700; }
+  .scopebox .k .yn.now { background:var(--ok-bg); color:var(--ok-fg); }
+  .scopebox .k .yn.later { background:var(--band); color:var(--faint); }
+  .scopebox .k .later-tag { margin-left:auto; font-size:8.5px; color:var(--faint); align-self:center; }
+
+  .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
+    padding:14px 16px; margin-top:20px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
+  .note b { color:var(--accent-dark); }
+  .note ul { margin:8px 0 0; padding-left:18px; }
+  .note li { margin:4px 0; }
+  .note code { font-family:"IBM Plex Mono",monospace; font-size:0.9em; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:0 4px; border-radius:3px; }
+
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+
+  footer.page { margin-top:56px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    .pane { grid-template-columns:1fr; }
+    .rail { border-right:none; border-bottom:1px solid var(--line); }
+    .fgrid { grid-template-columns:1fr; }
+    .grid2 { grid-template-columns:1fr; }
+    .topnav nav { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual review · Parties CRUD · 1B two-pane / 2B dense</p>
+    <h1 class="page">Parties — create, read, update, delete</h1>
+    <p class="lede">
+      First slice built on the locked shell. The current app already has a working Parties table + slide-in drawer +
+      a complete API (<code>GET/POST/PATCH/DELETE /api/parties</code>, dup-name 409, PAN/GSTIN/state validation). This
+      moves it into the <strong>list-rail + detail-pane</strong> layout, makes create happen in place, and adds the
+      <strong>archive</strong> path for a party that documents already reference.
+    </p>
+    <div class="statusrow">
+      <span class="chip have">✓ have: list + search + role filter</span>
+      <span class="chip have">✓ have: full CRUD API + validation</span>
+      <span class="chip change">↻ change: table → two-pane, drawer → inline pane</span>
+      <span class="chip change">↻ change: create-in-place, URL per row</span>
+      <span class="chip new">＋ new: Archive (party.status) + referenced-count guard on delete</span>
+      <span class="chip new">＋ new: provenance (manual vs from-inward-bill) on rail + header</span>
+      <span class="chip new">＋ new: fuzzy search (name trigram + address/phone substring)</span>
+      <span class="chip new">＋ new: last_txn_at + ?dormant= filter (data only, no UI push)</span>
+    </div>
+  </header>
+
+  <!-- ============ SEARCH ============ -->
+  <section class="blk">
+    <h2>Search — one box, three fields</h2>
+    <p class="sub">
+      The rail search fans out: <strong>name</strong> via <code>pg_trgm</code> trigram similarity (typo-tolerant —
+      <em>"balji trdrs"</em> still finds Balaji Traders), <strong>address</strong> (line 1 / city) and
+      <strong>phone</strong> as exact substring (phone digits-only, so <em>"9832"</em> matches
+      <code>+919832137599</code>). Results are ranked by name-similarity, then recency. Replaces today's plain
+      <code>LIKE</code> on the name only.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/parties?q=sevok+9832</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#" class="ext">◆ Inward</a><a href="#">Items</a><a href="#" class="active">Parties</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="pane" style="min-height:340px;">
+        <div class="rail">
+          <div class="railhead">
+            <div class="top"><span class="sc">Parties <span class="car">▾</span></span><button class="newbtn">+ New</button></div>
+            <input class="search" value="sevok 9832" style="color:var(--ink);" />
+            <div class="filters"><span class="f on">All</span><span class="f">Customers</span><span class="f">Suppliers</span><span class="f">Both</span><span class="f">Incomplete</span><span class="f">Archived</span></div>
+          </div>
+          <div class="rows">
+            <div class="rrow sel">
+              <div class="l1"><span class="role cust">cust</span><span class="nm">Balaji Traders</span><span class="badge">name 0.71 · phone ✓</span></div>
+              <div class="l2">Sevoke Road, Siliguri · WB (19) · +91 98321 37599 · last billed 34d ago</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="role supp">supp</span><span class="nm">Balaji Hardware</span><span class="badge">name 0.44</span></div>
+              <div class="l2">Sevoke More, Siliguri · WB (19) · never billed</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="role cust">cust</span><span class="nm">Rajdeep Stores</span><span class="badge">addr ✓</span></div>
+              <div class="l2"><b>Sevok</b>e Road, Siliguri · WB (19) · last billed 3d ago</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail">
+          <div class="dhead">
+            <div><div class="t">Balaji Traders</div><div class="sub">matched: name (0.71) + phone · on 12 invoices · <span style="color:var(--ok-fg);">✓ complete</span></div></div>
+          </div>
+          <div class="dbody" style="border-style:solid;">
+            <div style="font-size:11px; color:var(--ink-soft); line-height:1.7;">
+              <b>How the query resolved</b><br>
+              <span class="mono">q = "sevok 9832"</span><br>
+              → name trigram <span class="mono">similarity(legal_name, 'sevok 9832')</span> = 0.71 (over the 0.3 floor)<br>
+              → address <span class="mono">line1/city ILIKE '%sevok%'</span> → also hit Rajdeep Stores<br>
+              → phone <span class="mono">regexp_replace(phone,'\\D','','g') LIKE '%9832%'</span> → Balaji Traders<br>
+              rank = name-similarity desc, then <span class="mono">last_txn_at</span> desc
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Search — backend</b>
+      <ul>
+        <li>GIN trigram index on <code>party.legal_name</code> (needs <code>pg_trgm</code>, already enabled by <code>0002</code>).</li>
+        <li><code>GET /api/parties?q=</code> — split <code>q</code>; one <code>OR</code> of: <code>legal_name % :q</code> (trigram) OR <code>similarity() &gt; 0.3</code>, <code>address.line1/city ILIKE</code>, digits-only <code>phone LIKE</code>. Order by <code>similarity(legal_name,:q) DESC, last_txn_at DESC NULLS LAST</code>.</li>
+        <li>Join <code>party_address</code> (the one default address) for the address match.</li>
+        <li>Response is unchanged shape — just better ranked; the rail badge (<em>name 0.71 · phone ✓</em>) is debug-only, off in prod.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ LAST SEEN / DORMANT ============ -->
+  <section class="blk">
+    <h2>Last seen &amp; dormancy — data now, review UI later</h2>
+    <p class="sub">
+      Each rail row carries a <strong>last-billed</strong> line. <code>party.last_txn_at</code> is a real column,
+      stamped forward-only by invoice-finalize and inward-approve. A <code>?dormant=true</code> filter returns
+      parties with no transaction inside the tenant's window (<code>tenant.dormant_party_days</code>, default
+      <strong>180</strong>). No rail chip or dashboard tile in this slice — the endpoint is built so the
+      Dashboard can call it when it ships.
+    </p>
+    <div class="grid2">
+      <div>
+        <div class="scopebox">
+          <h3>In scope now</h3>
+          <div class="k"><span class="yn now">✓</span><span><code>party.last_txn_at</code> — nullable <span class="mono">timestamptz</span>, migration <code>0003</code>.</span></div>
+          <div class="k"><span class="yn now">✓</span><span>Read payload adds <code>last_txn_at</code> + derived <code>days_since</code>; rail shows “last billed 34d ago” / “never billed”.</span></div>
+          <div class="k"><span class="yn now">✓</span><span><code>tenant.dormant_party_days</code> — <span class="mono">int</span>, default 180, same migration.</span></div>
+          <div class="k"><span class="yn now">✓</span><span><code>GET /api/parties?dormant=true</code> → <code>last_txn_at &lt; now() - Nd</code> OR (null &amp; <code>created_at</code> older than the window); sorted oldest-first.</span></div>
+          <div class="k"><span class="yn now">✓</span><span>Write hooks (in <em>this</em> repo, dormant until called): finalize-invoice &amp; approve-inward do <code>SET last_txn_at = GREATEST(last_txn_at, :doc_date)</code>.</span></div>
+        </div>
+      </div>
+      <div>
+        <div class="scopebox">
+          <h3>Deferred</h3>
+          <div class="k"><span class="yn later">·</span><span>“Dormant” rail filter chip.<span class="later-tag">when there's real sales data</span></span></div>
+          <div class="k"><span class="yn later">·</span><span>Dashboard tile “Parties · dormant (n)”.<span class="later-tag">with Dashboard</span></span></div>
+          <div class="k"><span class="yn later">·</span><span>Stalest-first sort toggle in the rail.<span class="later-tag">optional, later</span></span></div>
+          <div class="k"><span class="yn later">·</span><span>Per-tenant settings screen to edit <code>dormant_party_days</code> (column exists; edited via API/DB for now).<span class="later-tag">with Settings</span></span></div>
+        </div>
+        <div style="font-size:11px; color:var(--muted); margin-top:10px; line-height:1.6;">
+          Until Sales/Inward ship, every <code>last_txn_at</code> is null and <code>?dormant=true</code> returns
+          parties created more than 6 months ago — harmless, and it exercises the path.
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ONE VIEW, ROLE-FILTERED ============ -->
+  <section class="blk">
+    <h2>Suppliers &amp; customers — one view, filtered</h2>
+    <p class="sub">
+      There is no separate Suppliers screen. <code>party.role</code> is <code>customer | supplier | both</code>; the
+      rail's filter chips scope the list. A supplier auto-created from an inward bill lands here as an ordinary row
+      with a <code>supp</code> tag and a <strong>provenance line</strong> — <code>from inward bill · INV2526-5667</code> —
+      so you can tell it from a hand-added party. Party pickers elsewhere are role-scoped: Sales → <code>customer|both</code>,
+      Inward supplier field → <code>supplier|both</code>.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/parties?role=supplier</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#" class="ext">◆ Inward</a><a href="#">Items</a><a href="#" class="active">Parties</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="pane">
+        <div class="rail">
+          <div class="railhead">
+            <div class="top"><span class="sc">Parties <span class="car">▾</span></span><button class="newbtn">+ New</button></div>
+            <input class="search" value="search name…" />
+            <div class="filters"><span class="f">All</span><span class="f">Customers</span><span class="f on">Suppliers</span><span class="f">Both</span><span class="f">Archived</span></div>
+          </div>
+          <div class="rows">
+            <div class="rrow sel">
+              <div class="l1"><span class="role supp">supp</span><span class="nm">Sugal Foods</span><span class="badge">1 bill</span></div>
+              <div class="l2"><span style="color:var(--new-fg);">◆ from inward bill · INV2526-5667</span> · GSTIN 19BHBPK… · WB (19)</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="role supp">supp</span><span class="nm">Metro Steel Corp</span><span class="badge">3 docs</span></div>
+              <div class="l2">added manually · GSTIN 19AAB… · WB (19)</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="role both">both</span><span class="nm">Jay Matadee Enterprises</span><span class="badge">6 docs</span></div>
+              <div class="l2">added manually · promoted customer → both · WB (19)</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail">
+          <div class="dhead">
+            <div>
+              <div class="t">Sugal Foods <span class="role supp" style="align-self:center;">supplier</span></div>
+              <div class="sub"><span style="color:var(--new-fg);">◆ Auto-created from inward bill INV2526-5667 · 25 Aug 2025</span> · on 1 bill</div>
+            </div>
+            <div class="acts">
+              <div class="menu">
+                <button class="dbtn kebab">⋯</button>
+                <div class="menucard">
+                  <div class="mi">Open source bill <span class="op">/inward/ib_…</span></div>
+                  <div class="mi disabled">Delete <span class="op">blocked · 1 bill</span></div>
+                  <div class="mi danger">Archive <span class="op">PATCH status</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="fgrid">
+            <div class="fl full"><label>Legal name *</label><div class="inp">SUGAL FOODS</div></div>
+            <div class="fl"><label>Role</label><div class="inp">Supplier ▾</div></div>
+            <div class="fl"><label>Phone</label><div class="inp">8513057060 <span style="color:var(--faint);">· from bill header</span></div></div>
+            <div class="fl"><label>Email</label><div class="inp" style="color:var(--faint);">—</div></div>
+            <div class="fl"><label>PAN</label><div class="inp mono">BHBPK1450P <span style="font-family:'IBM Plex Sans'; color:var(--faint);">· from GSTIN</span></div></div>
+            <div class="fl"><label>GSTIN</label><div class="inp mono">19BHBPK1450P1Z3</div></div>
+            <div class="fl"><label>Default state</label><div class="inp">West Bengal (19) <span style="color:var(--faint);">· GSTIN prefix</span></div></div>
+          </div>
+          <div class="sec">
+            <div class="st">Address <span style="color:var(--faint); text-transform:none; letter-spacing:0;">· from bill header block</span></div>
+            <div class="fgrid">
+              <div class="fl full"><label>Line 1</label><div class="inp">179/1/244 Agrasen Road</div></div>
+              <div class="fl"><label>City</label><div class="inp">Siliguri</div></div>
+              <div class="fl"><label>State</label><div class="inp">West Bengal (19) ▾</div></div>
+              <div class="fl"><label>PIN</label><div class="inp mono">734005</div></div>
+            </div>
+          </div>
+          <div class="savebar"><span class="dot ok"></span> Saved on approve of INV2526-5667 · edits autosave · <span class="mono">PATCH /api/parties/:id</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note">
+      <b>Provenance — what it is &amp; where it comes from</b>
+      <ul>
+        <li>New column <code>party.source</code> — <code>manual | inward_bill | tally_import</code>, default <code>manual</code>. Mirrors <code>item.source</code>.</li>
+        <li>Optional <code>party.source_ref</code> (the <code>inward_bill.id</code>) so the header can deep-link to the bill that created it.</li>
+        <li>Rail line: <code>◆ from inward bill · &lt;bill_no&gt;</code> for auto-created; <code>added manually</code> otherwise; <code>promoted customer → both</code> when a customer was matched by an inward GSTIN.</li>
+        <li>Provenance is display-only — it never gates editing or deletion; the <code>document_count</code> guard does that.</li>
+        <li>Role filter still defaults to <strong>All</strong>, so a freshly auto-created supplier is visible without touching the filter.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ READ + UPDATE ============ -->
+  <section class="blk">
+    <h2>Read &amp; Update — select a row, edit in the pane</h2>
+    <p class="sub">
+      Clicking a rail row loads the party into the detail pane and sets the URL to <code>/parties/:id</code>. Fields
+      are directly editable; edits autosave (<code>PATCH</code>) with a status line. No modal, no separate "edit" mode.
+    </p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/parties/p_8f21</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav><a href="#">Sales</a><a href="#" class="ext">◆ Inward</a><a href="#">Items</a><a href="#" class="active">Parties</a></nav>
+        <span class="who">HJ · owner</span>
+      </div>
+      <div class="pane">
+        <div class="rail">
+          <div class="railhead">
+            <div class="top"><span class="sc">Parties <span class="car">▾</span></span><button class="newbtn">+ New</button></div>
+            <input class="search" value="search name…" />
+            <div class="filters"><span class="f on">All</span><span class="f">Customers</span><span class="f">Suppliers</span><span class="f">Both</span><span class="f">Incomplete</span><span class="f">Archived</span></div>
+          </div>
+          <div class="rows">
+            <div class="rrow sel">
+              <div class="l1"><span class="role cust">cust</span><span class="nm">Balaji Traders</span><span class="badge">12 docs</span></div>
+              <div class="l2">Sevoke Road, Siliguri · WB (19) · 98xxxxxx01</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="role both">both</span><span class="nm">Jay Matadee Enterprises</span><span class="badge">6 docs</span></div>
+              <div class="l2">Millanpally, Darjeeling · WB (19)</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="role supp">supp</span><span class="nm">Metro Steel Corp</span><span class="badge">3 docs</span></div>
+              <div class="l2">GSTIN 19AAB… · WB (19)</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="role cust">cust</span><span class="nm">Nilkanth Hardware</span><span class="pendchip" style="margin-left:auto;">details pending</span></div>
+              <div class="l2 miss">added manually · missing: address</div>
+            </div>
+            <div class="rrow archived">
+              <div class="l1"><span class="role cust">cust</span><span class="nm">Old Ferro Agency</span><span class="badge">archived</span></div>
+              <div class="l2">hidden from pickers · kept for #0431, #0478</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail">
+          <div class="dhead">
+            <div>
+              <div class="t">Balaji Traders</div>
+              <div class="sub">on 12 invoices · last billed 28 Aug 2026 · created 4 Jun 2026 · <span style="color:var(--ok-fg);">✓ complete</span></div>
+            </div>
+            <div class="acts">
+              <div class="menu">
+                <button class="dbtn kebab">⋯</button>
+                <div class="menucard">
+                  <div class="mi">Copy address <span class="op">—</span></div>
+                  <div class="mi disabled">Delete <span class="op">blocked · 12 docs</span></div>
+                  <div class="mi danger">Archive <span class="op">PATCH status</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="fgrid">
+            <div class="fl full"><label>Legal name *</label><div class="inp focus">Balaji Traders</div></div>
+            <div class="fl"><label>Role</label><div class="inp">Customer ▾</div></div>
+            <div class="fl"><label>Phone</label><div class="inp">98xxxxxx01</div></div>
+            <div class="fl"><label>Email</label><div class="inp">balaji.traders@…</div></div>
+            <div class="fl"><label>PAN</label><div class="inp mono">AAJCB1234K</div><div class="hint">uppercased · format-checked</div></div>
+            <div class="fl"><label>GSTIN</label><div class="inp mono">19AAJCB1234K1Z2</div></div>
+            <div class="fl"><label>Default state</label><div class="inp">West Bengal (19) ▾</div></div>
+          </div>
+          <div class="sec">
+            <div class="st">Address <span style="color:var(--faint); text-transform:none; letter-spacing:0;">· one, type “both”</span></div>
+            <div class="fgrid">
+              <div class="fl full"><label>Line 1</label><div class="inp">Sevoke Road, Ward 42</div></div>
+              <div class="fl"><label>City</label><div class="inp">Siliguri</div></div>
+              <div class="fl"><label>State</label><div class="inp">West Bengal (19) ▾</div></div>
+              <div class="fl"><label>PIN</label><div class="inp mono">734001</div></div>
+            </div>
+          </div>
+          <div class="savebar"><span class="dot ok"></span> Saved · 15:04 · <span class="mono">PATCH /api/parties/p_8f21</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CREATE ============ -->
+  <section class="blk">
+    <h2>Create — in place</h2>
+    <p class="sub">
+      <code>+ New</code> prepends an unsaved row to the rail (marked, blue bar) and opens an empty form in the pane.
+      URL → <code>/parties/new</code>. The row persists (<code>POST</code>) on the first valid save; Cancel discards it.
+    </p>
+    <div class="grid2">
+      <div class="frame">
+        <div class="tabbar"><i></i><i></i><i></i><span class="url">…/parties/new</span></div>
+        <div class="pane" style="min-height:340px;">
+          <div class="rail">
+            <div class="railhead">
+              <div class="top"><span class="sc">Parties ▾</span><button class="newbtn">+ New</button></div>
+              <input class="search" value="search name…" />
+            </div>
+            <div class="rows">
+              <div class="rrow sel unsaved">
+                <div class="l1"><span class="role cust">cust</span><span class="nm new">New party — unsaved</span></div>
+                <div class="l2">fill name + role to save</div>
+              </div>
+              <div class="rrow"><div class="l1"><span class="role cust">cust</span><span class="nm">Balaji Traders</span></div><div class="l2">Siliguri · WB (19)</div></div>
+              <div class="rrow"><div class="l1"><span class="role both">both</span><span class="nm">Jay Matadee Enterprises</span></div><div class="l2">Darjeeling · WB (19)</div></div>
+            </div>
+          </div>
+          <div class="detail">
+            <div class="dhead">
+              <div class="t" style="color:var(--new-fg);">New party</div>
+              <div class="acts">
+                <button class="dbtn">Cancel</button>
+                <button class="dbtn primary">Create</button>
+              </div>
+            </div>
+            <div class="fgrid">
+              <div class="fl full"><label>Legal name *</label><div class="inp focus" style="color:var(--faint);">Type the party name…</div></div>
+              <div class="fl"><label>Role</label><div class="inp">Customer ▾</div></div>
+              <div class="fl"><label>Phone</label><div class="inp"></div></div>
+              <div class="fl"><label>PAN</label><div class="inp mono"></div></div>
+              <div class="fl"><label>GSTIN</label><div class="inp mono"></div></div>
+              <div class="fl"><label>Default state</label><div class="inp" style="color:var(--faint);">— select —</div></div>
+            </div>
+            <div class="savebar"><span class="dot pending"></span> Not saved · <span class="mono">POST /api/parties</span> on Create</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="note">
+          <b>Create rules — unchanged from today's API</b>
+          <ul>
+            <li>Legal name required; everything else optional.</li>
+            <li>Duplicate name (case-insensitive, trimmed) → <code>409</code> → inline error on the name field: <em>"A party named 'Balaji Traders' already exists"</em> with a link to open it.</li>
+            <li>PAN / GSTIN uppercased on blur, format-validated client + server (<code>422</code> on a bad pattern).</li>
+            <li>Address block is all-or-nothing — filled only if any of line1/city/state/pin is set; saved as one address, <code>type: "both"</code>, <code>is_default: true</code>.</li>
+            <li>Created party appears in Sales / Inward party pickers immediately.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ DELETE / ARCHIVE ============ -->
+  <section class="blk">
+    <h2>Delete vs Archive</h2>
+    <p class="sub">
+      The <code>⋯</code> menu offers whichever applies. A party with <strong>no documents</strong> → hard
+      <code>DELETE</code>. A party <strong>referenced by any invoice or inward bill</strong> → Delete is disabled;
+      <strong>Archive</strong> takes its place (hides it from pickers, keeps it for historical documents).
+    </p>
+    <div class="grid2">
+      <div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Unreferenced party — hard delete</div>
+        <div class="dlg-scrim">
+          <div class="dlg">
+            <h3>Delete “Test Vendor 2”?</h3>
+            <p>This party has <b>no invoices or bills</b>. It will be permanently removed. This can’t be undone.</p>
+            <div class="row"><button class="dbtn">Cancel</button><button class="dbtn primary" style="background:var(--danger-fg);">Delete</button></div>
+          </div>
+        </div>
+        <div style="font-size:10px; color:var(--muted); margin-top:6px;" class="mono">DELETE /api/parties/:id → 204 · writes audit_log</div>
+      </div>
+      <div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.05em;">Referenced party — archive instead</div>
+        <div class="dlg-scrim">
+          <div class="dlg block">
+            <h3>Can’t delete “Balaji Traders”</h3>
+            <p>It’s on <span class="count">12 invoices</span>. Deleting would break those records. <b>Archive</b> it instead — it’ll be hidden from pickers but kept for the existing documents.</p>
+            <div class="row"><button class="dbtn">Cancel</button><button class="dbtn primary">Archive</button></div>
+          </div>
+        </div>
+        <div style="font-size:10px; color:var(--muted); margin-top:6px;" class="mono">PATCH /api/parties/:id {status:"archived"} · reversible via the Archived filter</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COMPLETENESS ============ -->
+  <section class="blk">
+    <h2>“Details pending” — advisory only</h2>
+    <p class="sub">
+      A party is <strong>complete</strong> when it has what a document needs. For M1 (non-GST) that's just
+      <strong>legal name + one address (line 1 + city + state)</strong>. Phone, email, PAN, trade name never
+      trigger it. A name-only party — hand-typed, or later created from the invoice flow — shows
+      <span class="pendchip">details pending</span> until an address is added. It is a <strong>hint, never a
+      gate</strong> in M1: you can still bill an address-less customer.
+    </p>
+    <div class="grid2">
+      <div class="frame">
+        <div class="tabbar"><i></i><i></i><i></i><span class="url">…/parties?completeness=incomplete</span></div>
+        <div class="pane" style="min-height:300px;">
+          <div class="rail">
+            <div class="railhead">
+              <div class="top"><span class="sc">Parties ▾</span><button class="newbtn">+ New</button></div>
+              <input class="search" value="search name…" />
+              <div class="filters"><span class="f">All</span><span class="f">Customers</span><span class="f">Suppliers</span><span class="f">Both</span><span class="f on">Incomplete</span><span class="f">Archived</span></div>
+            </div>
+            <div class="rows">
+              <div class="rrow sel">
+                <div class="l1"><span class="role cust">cust</span><span class="nm">Nilkanth Hardware</span><span class="pendchip" style="margin-left:auto;">details pending</span></div>
+                <div class="l2 miss">added manually · missing: address</div>
+              </div>
+              <div class="rrow">
+                <div class="l1"><span class="role supp">supp</span><span class="nm">Quick Vendor</span><span class="pendchip" style="margin-left:auto;">details pending</span></div>
+                <div class="l2 miss">◆ from inward bill · missing: address</div>
+              </div>
+            </div>
+          </div>
+          <div class="detail">
+            <div class="dhead">
+              <div>
+                <div class="t">Nilkanth Hardware</div>
+                <div class="sub"><span class="miss">⚠ details pending · missing: address (line 1, city, state)</span></div>
+              </div>
+              <div class="acts"><div class="menu"><button class="dbtn kebab">⋯</button></div></div>
+            </div>
+            <div class="fgrid">
+              <div class="fl full"><label>Legal name *</label><div class="inp">Nilkanth Hardware</div></div>
+              <div class="fl"><label>Role</label><div class="inp">Customer ▾</div></div>
+              <div class="fl"><label>Phone</label><div class="inp">98xxxxxx44</div></div>
+            </div>
+            <div class="sec">
+              <div class="st">Address <span class="miss" style="text-transform:none; letter-spacing:0;">· needed to clear “details pending”</span></div>
+              <div class="fgrid">
+                <div class="fl full"><label>Line 1</label><div class="inp focus" style="color:var(--faint);">—</div></div>
+                <div class="fl"><label>City</label><div class="inp" style="color:var(--faint);">—</div></div>
+                <div class="fl"><label>State</label><div class="inp" style="color:var(--faint);">— select —</div></div>
+              </div>
+            </div>
+            <div class="savebar"><span class="dot dirty"></span> Autosaves as you type · chip clears when line 1 + city + state are set</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="scopebox">
+          <h3>In scope for the Parties CRUD slice</h3>
+          <div class="k"><span class="yn now">✓</span><span><code>completeness</code> computed on the party read payload — <span class="mono">{ complete, missing: [...] }</span>. Not stored, no migration; derived from the row.</span></div>
+          <div class="k"><span class="yn now">✓</span><span><span class="pendchip">details pending</span> chip on the rail row + the missing-list in the detail header.</span></div>
+          <div class="k"><span class="yn now">✓</span><span><code>Incomplete</code> filter chip → <span class="mono">GET /api/parties?completeness=incomplete</span>.</span></div>
+          <div class="k"><span class="yn now">✓</span><span>Rule for M1 = address only (line 1 + city + state). No GSTIN check while GST is off.</span></div>
+        </div>
+        <div class="scopebox" style="margin-top:12px;">
+          <h3>Deferred (future)</h3>
+          <div class="k"><span class="yn later">·</span><span>Dashboard / Work tile “Parties to complete (n)”.<span class="later-tag">with Dashboard</span></span></div>
+          <div class="k"><span class="yn later">·</span><span>Create-customer-from-invoice flow (combobox “+ Create”, quick-create toast, mini-form popover).<span class="later-tag">with Sales editor</span></span></div>
+          <div class="k"><span class="yn later">·</span><span>GST invoice blocks finalize when the customer has no GSTIN + state.<span class="later-tag">Phase 2</span></span></div>
+          <div class="k"><span class="yn later">·</span><span>Inline “no address on file · [add]” warning at the invoice/inward pick point.<span class="later-tag">with Sales / Inward</span></span></div>
+          <div class="k"><span class="yn later">·</span><span>Inward Approve blocks when the staged supplier has no GSTIN.<span class="later-tag">phase X5</span></span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CRUD TABLE ============ -->
+  <section class="blk">
+    <h2>The four verbs — spec</h2>
+    <div class="ctable">
+      <table>
+        <thead><tr><th>Verb</th><th>Trigger</th><th>Behaviour</th><th>API</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Create</td>
+            <td><code>+ New</code> in rail header</td>
+            <td>Unsaved row prepended; empty form in pane; URL <code>/parties/new</code>. Persists on first valid Create; Cancel discards.</td>
+            <td class="op">POST /api/parties</td>
+            <td class="st-change">API done · rewire to pane</td>
+          </tr>
+          <tr>
+            <td>Read</td>
+            <td>Click a rail row</td>
+            <td>Loads into detail pane; URL <code>/parties/:id</code> (linkable, back-safe). Header shows document count + last-billed.</td>
+            <td class="op">GET /api/parties?q=&amp;role= · GET /api/parties/:id</td>
+            <td class="st-change">API done · needs doc-count field</td>
+          </tr>
+          <tr>
+            <td>Update</td>
+            <td>Edit any field in the pane</td>
+            <td>Debounced autosave; status line (Saved / Saving / Unsaved). Dup-name &amp; validation errors inline. No Save button.</td>
+            <td class="op">PATCH /api/parties/:id</td>
+            <td class="st-change">API done · add autosave + status</td>
+          </tr>
+          <tr>
+            <td>Delete</td>
+            <td><code>⋯</code> → Delete <span style="color:var(--muted);">(only if 0 docs)</span></td>
+            <td>Confirm dialog → hard remove. If referenced: Delete disabled, dialog explains and offers Archive.</td>
+            <td class="op">DELETE /api/parties/:id</td>
+            <td class="st-change">API done · add referenced-count check</td>
+          </tr>
+          <tr>
+            <td>Archive</td>
+            <td><code>⋯</code> → Archive</td>
+            <td>Sets <code>party.status = archived</code>; drops out of pickers + default list; visible under the Archived filter; Unarchive restores.</td>
+            <td class="op">PATCH /api/parties/:id {status}</td>
+            <td class="st-new">new: column + filter + endpoint arg</td>
+          </tr>
+          <tr>
+            <td>Provenance</td>
+            <td>—</td>
+            <td>Read-only. <code>source</code> + <code>source_ref</code> set once at creation (manual / inward_bill / tally_import). Shown on the rail line and pane header; deep-links to the source bill.</td>
+            <td class="op">included in GET /api/parties · GET /api/parties/:id</td>
+            <td class="st-new">new: two columns, set by the inward Approve txn</td>
+          </tr>
+          <tr>
+            <td>Completeness</td>
+            <td>—</td>
+            <td>Computed, not stored. M1 rule = has an address (line 1 + city + state). Surfaces as a <span class="pendchip">details pending</span> chip + missing-list + an <code>Incomplete</code> filter. Advisory — never blocks in M1.</td>
+            <td class="op">completeness{} in read payload · GET /api/parties?completeness=incomplete</td>
+            <td class="st-new">new: derive + filter arg (no column)</td>
+          </tr>
+          <tr>
+            <td>Search</td>
+            <td>Rail search box</td>
+            <td>Name = trigram similarity (typo-tolerant); address (line 1 / city) + phone (digits-only) = substring. Ranked name-sim then recency.</td>
+            <td class="op">GET /api/parties?q= · GIN trgm index on legal_name</td>
+            <td class="st-new">new: index + multi-field query, replaces LIKE-on-name</td>
+          </tr>
+          <tr>
+            <td>Last seen</td>
+            <td>—</td>
+            <td>Rail row shows “last billed Nd ago” / “never”. <code>?dormant=true</code> lists parties past the tenant window (default 180d). No chip/tile this slice.</td>
+            <td class="op">party.last_txn_at · tenant.dormant_party_days · GET ?dormant=true</td>
+            <td class="st-new">new: 2 columns + filter + write hooks (dormant till Sales/Inward)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>Backend work this slice needs</b> (small):
+      <ul>
+        <li><b>Migration <code>0003</code></b> adds, in one revision: <code>party.status</code> (<code>active | archived</code>, default <code>active</code>); <code>party.source</code> (<code>manual | inward_bill | tally_import</code>, default <code>manual</code>) + nullable <code>party.source_ref</code>; <code>party.last_txn_at</code> (nullable <span class="mono">timestamptz</span>); <code>tenant.dormant_party_days</code> (<span class="mono">int</span>, default 180); GIN <code>gin_trgm_ops</code> index on <code>party.legal_name</code>.</li>
+        <li><code>party.source</code> mirrors <code>item.source</code>; set by the inward Approve transaction, defaults on manual create.</li>
+        <li><code>GET /api/parties</code> — exclude <code>archived</code> by default; add <code>?status=archived</code>, <code>?completeness=incomplete</code>, <code>?dormant=true</code>. Return <code>source</code> / <code>source_ref</code> / <code>last_txn_at</code> / <code>completeness{}</code> in list + detail. <code>q</code> becomes the multi-field fuzzy query (trigram name + substring address/phone), ordered by name-similarity then <code>last_txn_at</code>.</li>
+        <li>Party read payload — add <code>document_count</code> (count of invoices + inward_bill rows referencing this party) so the pane header and the delete guard have it. Until Sales/Inward ship, this is always 0.</li>
+        <li>Party read payload — add <code>completeness</code> = <code>{ complete: bool, missing: string[] }</code>, derived from the row (M1: address present?). No column. <code>GET /api/parties</code> takes <code>?completeness=incomplete</code> for the filter chip.</li>
+        <li><code>DELETE /api/parties/:id</code> — return <code>409</code> with the count when <code>document_count &gt; 0</code> instead of deleting.</li>
+        <li>Party picker queries elsewhere (Sales, Inward) — filter to <code>status = active</code>, role-scope per context.</li>
+        <li>Finalize-invoice &amp; approve-inward transactions (built in their own slices) set <code>party.last_txn_at = GREATEST(last_txn_at, doc_date)</code> — noted here so the write paths aren't forgotten.</li>
+      </ul>
+      <div style="margin-top:10px; font-size:11.5px;"><b>Not this slice:</b> dashboard tiles (parties-to-complete, dormant), “Dormant” rail chip, create-from-invoice flow, GST/inward finalize blocking, inline point-of-use warnings, a settings screen for <code>dormant_party_days</code> — all move with Sales / Inward / Dashboard / Phase 2.</div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Shell direction: <code>docs/visual-plan/ui-simplification-options.html</code> · <code>level1-crud.html</code></span>
+    <span>Current code: <code>web/src/pages/PartiesPage.tsx</code>, <code>web/src/components/PartyDrawer.tsx</code>, <code>api/app/routers/parties.py</code></span>
+    <span>Mid-fi · for sign-off before coding</span>
+  </footer>
+</div>

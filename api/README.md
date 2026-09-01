@@ -47,6 +47,10 @@ alembic check                                        # models vs migrations drif
 - `0002` — `pg_trgm` extension + GIN trigram indexes on
   `item.name_normalized` and `item_alias.alias_normalized` (Postgres
   only; the `metalerp` database is created with the extension).
+- `0003` — `party.status` (active/archived), `party.source` + `source_ref`
+  (provenance), `party.last_txn_at` (dormancy), `tenant.dormant_party_days`
+  (default 180), and a `pg_trgm` GIN index on `party.legal_name` (Postgres
+  only) for fuzzy party search.
 
 ## Layout
 

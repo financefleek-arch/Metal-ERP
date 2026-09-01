@@ -1,0 +1,388 @@
+<title>Level 1 CRUD — two-pane</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --create-fg:#2f6f89; --create-bg:#e3eef2;
+    --read-fg:#5a5344;   --read-bg:#efe9df;
+    --update-fg:#8a6a1f; --update-bg:#f1e7d6;
+    --delete-fg:#a23b2e; --delete-bg:#f4e3df;
+    --ok-fg:#3a5a48;     --ok-bg:#e6efe8;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --create-fg:#8fc3d7; --create-bg:#22333a;
+    --read-fg:#b3aa99;   --read-bg:#322e28;
+    --update-fg:#d8b878; --update-bg:#38301f;
+    --delete-fg:#dd9488; --delete-bg:#3a2723;
+    --ok-fg:#9cc9ad;     --ok-bg:#24322a;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --create-fg:#8fc3d7; --create-bg:#22333a;
+    --read-fg:#b3aa99;   --read-bg:#322e28;
+    --update-fg:#d8b878; --update-bg:#38301f;
+    --delete-fg:#dd9488; --delete-bg:#3a2723;
+    --ok-fg:#9cc9ad;     --ok-bg:#24322a;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; }
+  .wrap { max-width:1180px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:26px; margin-bottom:10px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(27px,4vw,38px);
+    line-height:1.12; margin:0 0 14px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:68ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .legend { display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:20px; font-size:11.5px; }
+  .lg { display:inline-flex; align-items:center; gap:6px; color:var(--muted); }
+  .sw { width:10px; height:10px; border-radius:3px; }
+  .sw.c { background:var(--create-fg); } .sw.r { background:var(--read-fg); }
+  .sw.u { background:var(--update-fg); } .sw.d { background:var(--delete-fg); }
+
+  section.blk { margin-top:50px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:80ch; }
+
+  /* device */
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .tabbar { display:flex; align-items:center; gap:7px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line); }
+  .tabbar i { width:10px; height:10px; border-radius:50%; background:var(--faint); }
+  .tabbar .url { margin-left:10px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted);
+    background:var(--card); border:1px solid var(--line); border-radius:5px; padding:3px 10px; }
+  .topnav { display:flex; align-items:center; justify-content:space-between; height:50px; padding:0 18px;
+    background:var(--shell); color:var(--shell-text); }
+  .topnav .brand { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:15px; }
+  .topnav nav { display:flex; gap:16px; font-size:12.5px; color:var(--shell-dim); }
+  .topnav nav a { color:var(--shell-dim); text-decoration:none; padding-bottom:15px; }
+  .topnav nav a.active { color:var(--shell-text); border-bottom:2px solid var(--accent); }
+  .topnav nav a.ext { color:var(--shell-text); background:color-mix(in srgb,var(--accent) 32%,transparent);
+    border-radius:5px; padding:2px 8px; align-self:center; }
+  .topnav .who { font-size:11px; color:var(--shell-dim); }
+
+  /* two-pane */
+  .pane { display:grid; grid-template-columns:270px 1fr; min-height:420px; }
+  .rail { border-right:1px solid var(--line); background:var(--paper); display:flex; flex-direction:column; }
+  .rail .railhead { padding:11px 13px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; gap:9px; }
+  .rail .scope { display:flex; align-items:center; justify-content:space-between; }
+  .rail .scope .sel { font-size:12px; font-weight:600; display:flex; align-items:center; gap:6px; }
+  .rail .scope .sel .car { color:var(--faint); font-size:10px; }
+  .rail .newbtn { font-size:11.5px; font-weight:600; background:var(--accent); color:#fff; border:none;
+    border-radius:6px; padding:5px 10px; cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+  .rail .newbtn.split { padding-right:6px; }
+  .rail .newbtn.split .div { border-left:1px solid rgba(255,255,255,0.35); padding-left:6px; margin-left:2px; }
+  .rail .search { font-size:11px; border:1px solid var(--line); border-radius:6px; background:var(--card);
+    padding:4px 8px; color:var(--muted); }
+  .rail .filters { display:flex; gap:5px; flex-wrap:wrap; }
+  .rail .filters .f { font-size:9.5px; border:1px solid var(--line); border-radius:999px; padding:2px 8px; color:var(--muted); background:var(--card); }
+  .rail .filters .f.on { background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  .rail .rows { flex:1; overflow:auto; }
+  .rrow { display:flex; flex-direction:column; gap:2px; padding:8px 13px; border-bottom:1px solid var(--line-soft); cursor:pointer; }
+  .rrow:hover { background:color-mix(in srgb,var(--accent) 5%,transparent); }
+  .rrow.sel { background:var(--card); box-shadow:inset 2px 0 0 var(--accent); }
+  .rrow .l1 { display:flex; align-items:center; gap:6px; font-size:11.5px; }
+  .rrow .l1 .name { font-weight:500; }
+  .rrow .l2 { font-size:9.5px; color:var(--muted); font-family:"IBM Plex Mono",monospace; }
+  .tag { font-size:7.5px; letter-spacing:0.04em; font-weight:700; padding:1px 4px; border-radius:3px; }
+  .tag.sale { background:var(--ok-bg); color:var(--ok-fg); }
+  .tag.buy { background:var(--create-bg); color:var(--create-fg); }
+  .pill { font-size:8.5px; padding:1px 6px; border-radius:999px; margin-left:auto; }
+  .pill.draft { background:var(--update-bg); color:var(--update-fg); }
+  .pill.final { background:var(--ok-bg); color:var(--ok-fg); }
+  .pill.review { background:var(--update-bg); color:var(--update-fg); }
+  .pill.cancel { background:var(--delete-bg); color:var(--delete-fg); text-decoration:line-through; }
+
+  .detail { padding:16px 18px; display:flex; flex-direction:column; gap:12px; }
+  .detail .dhead { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .detail .dhead .t { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:15px; display:flex; align-items:center; gap:8px; }
+  .detail .dhead .acts { display:flex; gap:6px; }
+  .dbtn { font-size:10.5px; border:1px solid var(--line); border-radius:6px; padding:4px 9px; background:var(--card);
+    color:var(--ink-soft); cursor:pointer; display:inline-flex; align-items:center; gap:4px; }
+  .dbtn.primary { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
+  .dbtn.danger { color:var(--delete-fg); border-color:color-mix(in srgb,var(--delete-fg) 40%,var(--line)); }
+  .dbtn.kebab { padding:4px 7px; }
+  .dbody { border:1px dashed var(--line); border-radius:8px; padding:14px; font-size:11.5px; color:var(--muted);
+    background:color-mix(in srgb,var(--band) 50%,transparent); line-height:1.6; }
+  .dbody .fakeform { display:flex; flex-direction:column; gap:7px; }
+  .fl { display:flex; gap:8px; align-items:center; }
+  .fl .k { width:52px; font-size:9px; color:var(--muted); }
+  .fl .v { flex:1; border:1px solid var(--line); border-radius:5px; background:var(--card); padding:3px 7px; font-size:9.5px; color:var(--ink-soft); }
+  .savehint { font-size:10px; color:var(--muted); display:flex; align-items:center; gap:5px; }
+  .savehint .dot { width:6px; height:6px; border-radius:50%; background:var(--ok-fg); }
+
+  .menu { position:relative; }
+  .menucard { position:absolute; right:0; top:26px; background:var(--card); border:1px solid var(--line);
+    border-radius:8px; box-shadow:0 10px 28px -12px rgba(35,32,27,0.3); min-width:150px; overflow:hidden; z-index:5; }
+  .menucard .mi { padding:7px 11px; font-size:10.5px; display:flex; align-items:center; gap:7px; border-top:1px solid var(--line-soft); }
+  .menucard .mi:first-child { border-top:none; }
+  .menucard .mi.danger { color:var(--delete-fg); }
+  .menucard .mi .op { font-family:"IBM Plex Mono",monospace; font-size:8px; color:var(--faint); margin-left:auto; }
+
+  /* CRUD table */
+  .ctable { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:22px; background:var(--card); }
+  .ctable table { width:100%; border-collapse:collapse; }
+  .ctable th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:10px 12px; background:var(--band); border-bottom:1px solid var(--line); }
+  .ctable td { padding:11px 12px; font-size:12px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .ctable td:first-child { font-weight:600; white-space:nowrap; }
+  .ctable .op { display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:10px; color:var(--muted);
+    background:var(--band); border-radius:4px; padding:1px 5px; margin-top:3px; }
+  .crud-c { color:var(--create-fg); } .crud-u { color:var(--update-fg); } .crud-d { color:var(--delete-fg); }
+  .na { color:var(--faint); }
+
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:22px; }
+  .note { border:1px solid var(--line); border-radius:10px; background:var(--card); padding:14px 16px; }
+  .note h3 { margin:0 0 8px; font-size:13px; }
+  .note ul { margin:0; padding-left:17px; font-size:12.5px; color:var(--ink-soft); }
+  .note li { margin:5px 0; }
+  .note li .mono { font-size:11px; background:var(--band); padding:0 4px; border-radius:3px; }
+
+  footer.page { margin-top:60px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    .pane { grid-template-columns:1fr; }
+    .rail { border-right:none; border-bottom:1px solid var(--line); }
+    .two { grid-template-columns:1fr; }
+    .topnav nav { display:none; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual plan · Level 1 = list + detail (1B), Level 2 = dense editor (2B)</p>
+    <h1 class="page">CRUD in the two-pane shell</h1>
+    <p class="lede">
+      One layout — a <strong>scope selector + list rail</strong> on the left, a <strong>detail/editor pane</strong> on
+      the right — reused for Sales, Inward, Items and Parties. Create / read / update / delete work the same way
+      structurally, but each record type has its own rules: an inward bill is <em>uploaded</em>, not drafted; a
+      finalized invoice is <em>cancelled</em>, never deleted.
+    </p>
+    <div class="legend">
+      <span class="lg"><span class="sw c"></span> Create</span>
+      <span class="lg"><span class="sw r"></span> Read</span>
+      <span class="lg"><span class="sw u"></span> Update</span>
+      <span class="lg"><span class="sw d"></span> Delete</span>
+    </div>
+  </header>
+
+  <!-- ============ THE SHELL, ANNOTATED ============ -->
+  <section class="blk">
+    <h2>The four verbs, on one screen</h2>
+    <p class="sub">Sales scope selected. Same anatomy for every scope — only the columns, the “New” action, and the delete rule change.</p>
+
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/sales/1218</span></div>
+      <div class="topnav">
+        <span class="brand">Sethia Metal Store</span>
+        <nav>
+          <a href="#" class="active">Sales</a>
+          <a href="#" class="ext">◆ Inward</a>
+          <a href="#">Items</a>
+          <a href="#">Parties</a>
+        </nav>
+        <span class="who">HJ · owner</span>
+      </div>
+
+      <div class="pane">
+        <!-- RAIL -->
+        <div class="rail">
+          <div class="railhead">
+            <div class="scope">
+              <span class="sel">Sales <span class="car">▾</span></span>
+              <!-- CREATE lives here -->
+              <button class="newbtn split" title="Create">+ New <span class="div">▾</span></button>
+            </div>
+            <input class="search" value="search #, party…" />
+            <div class="filters">
+              <span class="f on">All</span><span class="f">Draft</span><span class="f">Final</span><span class="f">This FY</span>
+            </div>
+          </div>
+          <div class="rows">
+            <div class="rrow sel">
+              <div class="l1"><span class="tag sale">SALE</span><span class="name">#1218 · Balaji Traders</span><span class="pill draft">draft</span></div>
+              <div class="l2">29 Aug 2026 · ₹2,37,600 · not numbered</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="tag sale">SALE</span><span class="name">#1217 · Jay Matadee Ent.</span><span class="pill final">final</span></div>
+              <div class="l2">28 Aug 2026 · ₹2,37,601</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="tag sale">SALE</span><span class="name">draft · Shyam Steel Udyog</span><span class="pill draft">draft</span></div>
+              <div class="l2">27 Aug 2026 · ₹1,12,000</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="tag sale">SALE</span><span class="name">#1206 · Nilkanth Hardware</span><span class="pill cancel">cancelled</span></div>
+              <div class="l2">14 Aug 2026 · ₹46,750 · number retired</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DETAIL -->
+        <div class="detail">
+          <div class="dhead">
+            <div class="t">Invoice #1218 <span class="pill draft" style="margin:0;">draft</span></div>
+            <div class="acts">
+              <!-- UPDATE = just edit inline; explicit actions are state transitions -->
+              <button class="dbtn">Save draft</button>
+              <button class="dbtn primary">Finalize &amp; PDF</button>
+              <div class="menu">
+                <button class="dbtn kebab">⋯</button>
+                <div class="menucard">
+                  <div class="mi">Duplicate <span class="op">POST /duplicate</span></div>
+                  <div class="mi">Print / download <span class="op">GET /pdf</span></div>
+                  <div class="mi danger">Delete draft <span class="op crud-d">DELETE</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="dbody">
+            <div class="fakeform">
+              <div class="fl"><span class="k">party</span><span class="v">Balaji Traders ▾</span></div>
+              <div class="fl"><span class="k">date</span><span class="v">29 Aug 2026 · number auto on finalize</span></div>
+              <div class="fl"><span class="k">line 1</span><span class="v">SS Utensil · 73239390 · 900 Kgs · ₹264 · ₹2,37,600</span></div>
+              <div class="fl"><span class="k">line 2</span><span class="v" style="color:var(--faint);">type an item…</span></div>
+            </div>
+          </div>
+          <div class="savehint"><span class="dot"></span> Edits autosave to the draft · last saved 15:04 · <span class="mono">PUT /api/invoices/1218</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two">
+      <div class="note">
+        <h3>Where each verb lives</h3>
+        <ul>
+          <li><span class="crud-c">Create</span> — the <span class="mono">+ New</span> button in the rail header. A split-button when a scope has more than one create path (Sales: <em>blank invoice</em> / <em>from a duplicate</em>). Inward's is <span class="mono">↑ Upload PDF</span> — a file picker, not a form.</li>
+          <li><span style="color:var(--read-fg);">Read</span> — click a rail row → it loads in the detail pane. URL updates (<span class="mono">/sales/1218</span>) so it's linkable and back-button-safe. No separate "view" mode.</li>
+          <li><span class="crud-u">Update</span> — you just type in the detail pane; edits autosave to the draft (<span class="mono">PUT</span>). The named buttons (Finalize, Approve, Cancel) are <em>state transitions</em>, not "save".</li>
+          <li><span class="crud-d">Delete</span> — in the <span class="mono">⋯</span> menu, and only offered when the record's state allows a hard delete. Otherwise the menu shows <em>Cancel</em> / <em>Reject</em> instead.</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>Rules baked into the shell</h3>
+        <ul>
+          <li>A <strong>finalized invoice</strong> has no Delete — only <em>Cancel</em> (status → cancelled, number retired, stays in the list struck through).</li>
+          <li>An <strong>approved inward bill</strong> has no Delete — only <em>Reject</em> before approve; after approve it's immutable (masters already created).</li>
+          <li><strong>Delete</strong> is a real row removal only for: a <em>draft</em> invoice, an <em>un-approved</em> inward bill, an <em>unused</em> item/party (no documents reference it).</li>
+          <li>Deleting a <strong>party/item that's referenced</strong> → blocked with a count ("on 12 invoices"); offer <em>Archive</em> instead (hidden from pickers, kept for history).</li>
+          <li>Every destructive action confirms, and writes <span class="mono">audit_log</span>.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ PER-SCOPE TABLE ============ -->
+  <section class="blk">
+    <h2>CRUD per scope</h2>
+    <p class="sub">What "New" does, whether the detail pane is an editor or a review, and what the delete rule is — for each thing the rail can list.</p>
+
+    <div class="ctable">
+      <table>
+        <thead>
+          <tr><th>Scope</th><th>Create</th><th>Read (detail pane)</th><th>Update</th><th>Delete / retire</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Sales<br><span class="tag sale">SALE</span></td>
+            <td><span class="crud-c">+ New invoice</span> → blank draft, opens editor.<br><span class="op">POST /api/invoices</span><br>Split option: <em>Duplicate</em> an existing one.</td>
+            <td>Draft → the <strong>2B dense editor</strong>.<br>Final/cancelled → <strong>read-only</strong> finalized view + Download PDF.</td>
+            <td>Draft: inline edit, autosave.<br><span class="op crud-u">PUT /api/invoices/:id</span><br>Transition: <em>Finalize</em> → freezes it.</td>
+            <td>Draft: <span class="crud-d">Delete</span> (hard).<br>Final: <span class="crud-d">Cancel</span> only — number retired, row kept struck-through.</td>
+          </tr>
+          <tr>
+            <td>Inward<br><span class="tag buy">BUY</span></td>
+            <td><span class="crud-c">↑ Upload PDF</span> (one or many) → a row per file, extraction runs.<br><span class="op">POST /api/inward-bills</span><br>No "blank bill" — you never hand-key one.</td>
+            <td>The <strong>split review screen</strong> (PDF │ fields).<br>Approved → read-only + Download Tally XML.</td>
+            <td>Reviewer corrections in the pane.<br><span class="op crud-u">PATCH /api/inward-bills/:id</span><br>Transition: <em>Approve</em> → creates masters, immutable.</td>
+            <td>Before approve: <span class="crud-d">Reject</span> (reason) — no masters touched.<br>After approve: nothing — <span class="na">immutable</span>. Re-import guarded by <span class="mono">UDF:METALERP_REF</span>.</td>
+          </tr>
+          <tr>
+            <td>Items</td>
+            <td><span class="crud-c">+ New item</span> → ItemDrawer in the pane.<br><span class="op">POST /api/items</span><br>(Most items arrive via accretion, not here.)</td>
+            <td>ItemDrawer: name, BULK/MRP, category, HSN, UOM, rates. Plus "on N documents" + times-billed.</td>
+            <td>Inline in the drawer.<br><span class="op crud-u">PATCH /api/items/:id</span><br>Transition: <em>Confirm</em> (unconfirmed → confirmed), <em>Merge into…</em>.</td>
+            <td>Unused: <span class="crud-d">Delete</span>.<br>Referenced: blocked → <span class="crud-d">Archive</span> (out of pickers, kept for old invoices).</td>
+          </tr>
+          <tr>
+            <td>Parties</td>
+            <td><span class="crud-c">+ New party</span> → PartyDrawer in the pane.<br><span class="op">POST /api/parties</span></td>
+            <td>PartyDrawer: name, role, phone, PAN, GSTIN, state, one address. Plus document count.</td>
+            <td>Inline in the drawer.<br><span class="op crud-u">PATCH /api/parties/:id</span><br>Auto: <em>customer → both</em> when an inward bill matches.</td>
+            <td>Unused: <span class="crud-d">Delete</span> (already built).<br>Referenced: blocked → <span class="crud-d">Archive</span>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ CREATE FLOW ============ -->
+  <section class="blk">
+    <h2>Create, in place</h2>
+    <p class="sub">"New" never leaves the two-pane shell — it prepends a row to the rail and opens it in the detail pane, unsaved until the first edit (or, for Inward, until the upload lands).</p>
+    <div class="frame">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal.fleekfinance.in/sales/new</span></div>
+      <div class="pane" style="min-height:300px;">
+        <div class="rail">
+          <div class="railhead">
+            <div class="scope"><span class="sel">Sales ▾</span><button class="newbtn split">+ New <span class="div">▾</span></button></div>
+            <input class="search" value="search #, party…" />
+          </div>
+          <div class="rows">
+            <div class="rrow sel" style="box-shadow:inset 2px 0 0 var(--create-fg);">
+              <div class="l1"><span class="tag sale">SALE</span><span class="name" style="color:var(--create-fg);">New draft — unsaved</span></div>
+              <div class="l2">just now · fill party + a line to save</div>
+            </div>
+            <div class="rrow">
+              <div class="l1"><span class="tag sale">SALE</span><span class="name">#1218 · Balaji Traders</span><span class="pill draft">draft</span></div>
+              <div class="l2">29 Aug 2026 · ₹2,37,600</div>
+            </div>
+          </div>
+        </div>
+        <div class="detail">
+          <div class="dhead">
+            <div class="t" style="color:var(--create-fg);">New invoice</div>
+            <div class="acts">
+              <button class="dbtn" disabled style="opacity:.5;">Save draft</button>
+              <button class="dbtn primary" disabled style="opacity:.5;">Finalize</button>
+            </div>
+          </div>
+          <div class="dbody">
+            <div class="fakeform">
+              <div class="fl"><span class="k">party</span><span class="v" style="border-color:var(--create-fg);">Select a party… ▾</span></div>
+              <div class="fl"><span class="k">date</span><span class="v">29 Aug 2026</span></div>
+              <div class="fl"><span class="k">line 1</span><span class="v" style="color:var(--faint);">type an item…</span></div>
+            </div>
+          </div>
+          <div class="savehint"><span class="dot" style="background:var(--faint);"></span> Nothing saved yet · a row is created on the first field you fill · <span class="mono">POST /api/invoices</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Level choices: <code>docs/visual-plan/ui-simplification-options.html</code></span>
+    <span>Inward screens: <code>docs/visual-plan/inward-bill-import-ui.html</code></span>
+    <span>Plans: <code>docs/EXECUTION-PLAN.md</code> · <code>docs/EXECUTION-PLAN-inward-bill-import.md</code></span>
+  </footer>
+</div>

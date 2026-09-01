@@ -46,6 +46,14 @@ export interface PartyAddress {
   is_default: boolean;
 }
 
+export type PartyStatus = "active" | "archived";
+export type PartySource = "manual" | "inward_bill" | "tally_import";
+
+export interface PartyCompleteness {
+  complete: boolean;
+  missing: string[];
+}
+
 export interface PartyListItem {
   id: string;
   legal_name: string;
@@ -53,10 +61,16 @@ export interface PartyListItem {
   phone: string | null;
   default_state_code: string | null;
   gstin: string | null;
+  status: PartyStatus;
+  source: PartySource;
+  source_ref: string | null;
+  last_txn_at: string | null;
+  completeness: PartyCompleteness;
 }
 
 export interface Party extends PartyListItem {
   email: string | null;
   pan: string | null;
   addresses: PartyAddress[];
+  document_count: number;
 }

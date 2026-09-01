@@ -21,6 +21,8 @@ export function App() {
         <Route path="/" element={<Navigate to="/parties" replace />} />
         <Route path="/firm" element={<FirmPage />} />
         <Route path="/parties" element={<PartiesPage />} />
+        <Route path="/parties/new" element={<PartiesPage />} />
+        <Route path="/parties/:id" element={<PartiesPage />} />
         <Route path="*" element={<Navigate to="/parties" replace />} />
       </Routes>
     </Shell>

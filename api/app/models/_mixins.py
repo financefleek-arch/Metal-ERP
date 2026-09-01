@@ -51,6 +51,17 @@ class PartyRole(enum.StrEnum):
     both = "both"
 
 
+class PartyStatus(enum.StrEnum):
+    active = "active"
+    archived = "archived"
+
+
+class PartySource(enum.StrEnum):
+    manual = "manual"
+    inward_bill = "inward_bill"
+    tally_import = "tally_import"
+
+
 class AddressType(enum.StrEnum):
     bill = "bill"
     ship = "ship"

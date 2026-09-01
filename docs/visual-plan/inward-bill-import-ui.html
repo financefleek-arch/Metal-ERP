@@ -1,0 +1,817 @@
+<title>Inward Bill Import UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper: #f4f1ec;
+    --card: #ffffff;
+    --ink: #23201b;
+    --ink-soft: #3a362e;
+    --muted: #8a8272;
+    --faint: #b8b1a2;
+    --line: #e6e0d6;
+    --line-soft: #f0ebe1;
+    --accent: #2f6f89;
+    --accent-dark: #245771;
+    --shell: #23201b;
+    --shell-text: #f4f1ec;
+
+    --ok-fg: #3a5a48;      --ok-bg: #e6efe8;
+    --info-fg: #2f6f89;    --info-bg: #e3eef2;
+    --warn-fg: #8a6a1f;    --warn-bg: #f1e7d6;
+    --err-fg: #a23b2e;     --err-bg: #f4e3df;
+    --new-fg: #7c766a;     --new-bg: #efe9df;
+
+    --band: #efe9df;
+    --pdf-bg: #d9d4ca;
+  }
+  :root:not([data-theme="light"]) {
+    @media (prefers-color-scheme: dark) {
+      --paper: #1c1a16;
+      --card: #262320;
+      --ink: #efe9df;
+      --ink-soft: #d8d2c5;
+      --muted: #9a9284;
+      --faint: #6f685b;
+      --line: #38342d;
+      --line-soft: #2f2c26;
+      --accent: #6aa7bf;
+      --accent-dark: #8bbfd3;
+      --shell: #100f0d;
+      --shell-text: #efe9df;
+      --ok-fg: #9cc9ad;   --ok-bg: #24322a;
+      --info-fg: #8fc3d7; --info-bg: #22333a;
+      --warn-fg: #d8b878; --warn-bg: #38301f;
+      --err-fg: #dd9488;  --err-bg: #3a2723;
+      --new-fg: #b3aa99;  --new-bg: #322e28;
+      --band: #2f2c26;
+      --pdf-bg: #201d19;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #1c1a16;
+    --card: #262320;
+    --ink: #efe9df;
+    --ink-soft: #d8d2c5;
+    --muted: #9a9284;
+    --faint: #6f685b;
+    --line: #38342d;
+    --line-soft: #2f2c26;
+    --accent: #6aa7bf;
+    --accent-dark: #8bbfd3;
+    --shell: #100f0d;
+    --shell-text: #efe9df;
+    --ok-fg: #9cc9ad;   --ok-bg: #24322a;
+    --info-fg: #8fc3d7; --info-bg: #22333a;
+    --warn-fg: #d8b878; --warn-bg: #38301f;
+    --err-fg: #dd9488;  --err-bg: #3a2723;
+    --new-fg: #b3aa99;  --new-bg: #322e28;
+    --band: #2f2c26;
+    --pdf-bg: #201d19;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .serif { font-family: "Fraunces", Georgia, serif; }
+  .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 48px 28px 96px; }
+
+  /* ---- page header ---- */
+  header.page {
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 28px;
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600; margin: 0 0 12px;
+  }
+  h1.page {
+    font-family: "Fraunces", Georgia, serif;
+    font-weight: 600; font-size: clamp(28px, 4vw, 40px);
+    line-height: 1.12; margin: 0 0 14px; text-wrap: balance;
+    letter-spacing: -0.01em;
+  }
+  p.lede {
+    margin: 0; max-width: 68ch; font-size: 15px; color: var(--ink-soft);
+  }
+  p.lede code { font-family: "IBM Plex Mono", monospace; font-size: 0.88em; background: var(--band); padding: 1px 5px; border-radius: 4px; }
+
+  /* ---- flow strip ---- */
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: 6px;
+    margin: 26px 0 0; font-size: 12px;
+  }
+  .flow .node {
+    background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 96px;
+  }
+  .flow .node b { font-size: 12px; font-weight: 600; }
+  .flow .node span { color: var(--muted); font-size: 10.5px; }
+  .flow .node.hl { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+  .flow .arr { align-self: center; color: var(--faint); font-size: 13px; }
+
+  /* ---- screen frame ---- */
+  .screen { margin-top: 56px; }
+  .screen > .cap {
+    display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .cap .num {
+    font-family: "Fraunces", Georgia, serif; font-weight: 600;
+    font-size: 13px; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 999px;
+    width: 26px; height: 26px; display: inline-grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .cap h2 {
+    font-family: "Fraunces", Georgia, serif; font-weight: 600;
+    font-size: 20px; margin: 0; letter-spacing: -0.01em;
+  }
+  .cap .route {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px;
+    color: var(--muted); background: var(--band);
+    padding: 2px 8px; border-radius: 5px;
+  }
+  .cap .phase {
+    font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; margin-left: auto;
+  }
+  .cap .note { flex-basis: 100%; font-size: 13px; color: var(--ink-soft); max-width: 76ch; margin-top: 2px; }
+
+  .device {
+    border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+    background: var(--card);
+    box-shadow: 0 1px 2px rgba(35,32,27,0.04), 0 12px 32px -12px rgba(35,32,27,0.12);
+  }
+
+  /* ---- app chrome inside a device ---- */
+  .chrome {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 48px; padding: 0 18px;
+    background: var(--shell); color: var(--shell-text);
+  }
+  .chrome .brand { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 15px; }
+  .chrome nav { display: flex; gap: 4px; font-size: 12.5px; }
+  .chrome nav a {
+    color: color-mix(in srgb, var(--shell-text) 62%, transparent);
+    padding: 6px 10px; border-radius: 6px; text-decoration: none;
+  }
+  .chrome nav a.active { color: var(--shell-text); background: rgba(255,255,255,0.1); }
+  .chrome nav a.flag {
+    color: var(--shell-text);
+    background: color-mix(in srgb, var(--accent) 34%, transparent);
+    position: relative;
+  }
+  .chrome .who { font-size: 11.5px; color: color-mix(in srgb, var(--shell-text) 55%, transparent); }
+
+  .flagnote {
+    font-size: 11.5px; color: var(--muted); padding: 10px 18px;
+    background: var(--band); border-bottom: 1px solid var(--line);
+    display: flex; gap: 8px; align-items: center;
+  }
+  .flagnote .mono { color: var(--ink-soft); }
+
+  .body { padding: 20px 22px; }
+
+  /* ---- generic bits ---- */
+  .lbl { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .field {
+    height: 32px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--card); padding: 0 9px; font-size: 12px;
+    display: flex; align-items: center; color: var(--ink-soft);
+  }
+  .field.wsel { justify-content: space-between; }
+  .field.wsel .car { color: var(--faint); }
+
+  .chip {
+    font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    font-weight: 500; display: inline-block; white-space: nowrap;
+  }
+  .chip.ok { background: var(--ok-bg); color: var(--ok-fg); }
+  .chip.info { background: var(--info-bg); color: var(--info-fg); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn-fg); }
+  .chip.err { background: var(--err-bg); color: var(--err-fg); }
+  .chip.new { background: var(--new-bg); color: var(--new-fg); }
+
+  .btn {
+    height: 32px; padding: 0 14px; border-radius: 7px; font-size: 12px;
+    font-family: inherit; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink-soft); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn.ghost-dark {
+    background: var(--ink-soft); color: var(--shell-text); border-color: transparent;
+  }
+  .btn.primary {
+    background: var(--accent); color: #fff; border-color: transparent; font-weight: 600;
+  }
+  .btn.primary[disabled] { opacity: 0.5; cursor: not-allowed; }
+  .btn.big { height: 36px; padding: 0 18px; }
+
+  table { width: 100%; border-collapse: collapse; }
+
+  /* ---- screen 2: list ---- */
+  .drop {
+    border: 1.5px dashed var(--accent); border-radius: 10px;
+    background: color-mix(in srgb, var(--accent) 6%, var(--card));
+    padding: 22px; text-align: center; color: var(--accent);
+    font-size: 13px; margin-bottom: 18px;
+  }
+  .drop small { display: block; color: var(--muted); margin-top: 4px; font-size: 11px; }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters .pill {
+    font-size: 11px; border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 11px; color: var(--muted); background: var(--card);
+  }
+  .filters .pill.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+  .list thead th {
+    text-align: left; font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding: 9px 10px; background: var(--band);
+  }
+  .list tbody td { padding: 11px 10px; font-size: 12px; border-top: 1px solid var(--line-soft); }
+  .list tbody tr:hover td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+  .list .file { font-weight: 500; }
+  .list .amt { font-family: "IBM Plex Mono", monospace; text-align: right; }
+  .list .conf { font-family: "IBM Plex Mono", monospace; color: var(--muted); }
+
+  /* ---- screen 3: review split ---- */
+  .split { display: grid; grid-template-columns: 420px 1fr; }
+  .pdf-pane { background: var(--pdf-bg); padding: 16px; border-right: 1px solid var(--line); }
+  .pdf-sheet {
+    background: #fff; color: #4a443a; border: 1px solid #b8b1a2; border-radius: 3px;
+    padding: 18px; font-size: 8.5px; line-height: 1.55; height: 540px; overflow: hidden;
+  }
+  .pdf-sheet .big { font-weight: 700; font-size: 12px; color: #2a2620; }
+  .pdf-sheet .ti { text-align: right; font-weight: 700; font-size: 12px; margin-top: -22px; color:#2a2620; }
+  .pdf-sheet table { margin-top: 8px; font-size: 7.5px; }
+  .pdf-sheet td { padding: 2px 3px; border-top: 1px solid #e6e0d6; }
+  .pdf-sheet thead td { border-top: none; border-bottom: 1px solid #cbc4b8; font-weight: 600; }
+  .pdf-cap { text-align: center; font-size: 11px; color: var(--muted); margin-top: 10px; }
+  .pdf-cap a { color: var(--accent); }
+
+  .rev { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .panel { border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; background: var(--card); }
+  .panel > .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .panel > .h b { font-size: 13px; font-weight: 600; }
+  .grid3 { display: grid; grid-template-columns: 2fr 1.4fr 1fr; gap: 11px; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+  .recon {
+    border-radius: 10px; padding: 11px 15px; font-size: 12px;
+    display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap;
+    background: var(--ok-bg); border: 1px solid color-mix(in srgb, var(--ok-fg) 30%, transparent);
+  }
+  .recon b { color: var(--ok-fg); }
+  .recon .eq { color: var(--ok-fg); font-family: "IBM Plex Mono", monospace; font-size: 11px; }
+  .recon .sub { color: var(--muted); }
+
+  .lines { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .lines .lh, .lines .lr {
+    display: grid;
+    grid-template-columns: 22px minmax(0,1fr) 74px 34px 62px 78px 250px;
+    gap: 8px; padding: 8px 12px; align-items: center;
+  }
+  .lines .lh {
+    background: var(--band); font-size: 9px; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--muted); font-weight: 600;
+  }
+  .lines .lr { border-top: 1px solid var(--line-soft); font-size: 11px; }
+  .lines .lr.flag { background: color-mix(in srgb, var(--warn-fg) 8%, transparent); }
+  .lines .lr .n { color: var(--faint); }
+  .lines .lr .r, .lines .lr .a { font-family: "IBM Plex Mono", monospace; }
+  .lines .lr .a { text-align: right; }
+  .lines .lr .hsncell { font-family: "IBM Plex Mono", monospace; color: var(--muted); font-size: 10px; }
+  .lines .match { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .lines .match .txt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lines .match a { color: var(--accent); text-decoration: none; flex-shrink: 0; }
+  .lines .more { padding: 8px 12px; border-top: 1px solid var(--line-soft); font-size: 11px; color: var(--muted); }
+
+  .combobox {
+    border: 1px solid var(--accent); border-radius: 6px; background: var(--card);
+    font-size: 11px; overflow: hidden; box-shadow: 0 8px 24px -10px rgba(35,32,27,0.25);
+  }
+  .combobox .q { padding: 6px 9px; border-bottom: 1px solid var(--line); color: var(--muted); }
+  .combobox .opt { padding: 6px 9px; display: flex; justify-content: space-between; }
+  .combobox .opt.sel { background: var(--info-bg); color: var(--info-fg); }
+  .combobox .opt .rt { font-family: "IBM Plex Mono", monospace; color: var(--muted); }
+
+  .ladder {
+    border: 1px dashed var(--accent); border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 5%, var(--card));
+    padding: 10px 13px; font-size: 11px; color: var(--accent-dark); line-height: 1.65;
+  }
+  .ladder b { color: var(--accent-dark); }
+
+  /* ---- screen 4: approve gate ---- */
+  .gate { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .gate .col h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 10px; }
+  .checkitem { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); }
+  .checkitem .mk { flex-shrink: 0; width: 16px; height: 16px; border-radius: 5px; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+  .checkitem .mk.pass { background: var(--ok-bg); color: var(--ok-fg); }
+  .checkitem .mk.block { background: var(--err-bg); color: var(--err-fg); }
+  .checkitem .mk.wait { background: var(--warn-bg); color: var(--warn-fg); }
+  .checkitem span.d { color: var(--ink-soft); }
+  .checkitem span.d em { color: var(--muted); font-style: normal; display: block; font-size: 11px; }
+
+  /* ---- screen 5: finalized ---- */
+  .done-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; background: var(--ok-bg);
+    border-bottom: 1px solid color-mix(in srgb, var(--ok-fg) 25%, transparent);
+  }
+  .done-bar .l { font-size: 13px; color: var(--ok-fg); font-weight: 600; }
+  .done-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; padding: 18px 22px; }
+  .created { border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; }
+  .created h4 { margin: 0 0 9px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .created .row { display: flex; gap: 8px; align-items: center; padding: 5px 0; font-size: 12px; border-top: 1px solid var(--line-soft); }
+  .created .row:first-of-type { border-top: none; }
+  .xmlbox {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; line-height: 1.7;
+    background: var(--band); border-radius: 8px; padding: 12px; color: var(--ink-soft);
+    overflow-x: auto; white-space: pre;
+  }
+  .prompt {
+    margin-top: 12px; border: 1px dashed var(--accent); border-radius: 8px;
+    background: color-mix(in srgb, var(--accent) 6%, var(--card));
+    padding: 10px 13px; font-size: 12px; color: var(--accent-dark);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+
+  /* ---- screen 6: settings ---- */
+  .setgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 18px; max-width: 620px; }
+  .setgrid .full { grid-column: 1 / -1; }
+  .toggle {
+    display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; font-size: 11px;
+  }
+  .toggle span { padding: 5px 12px; color: var(--muted); }
+  .toggle span.on { background: var(--ink); color: var(--paper); }
+
+  footer.page {
+    margin-top: 72px; padding-top: 24px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px;
+  }
+  footer.page code { font-family: "IBM Plex Mono", monospace; color: var(--ink-soft); }
+
+  @media (max-width: 900px) {
+    .split { grid-template-columns: 1fr; }
+    .pdf-pane { border-right: none; border-bottom: 1px solid var(--line); }
+    .lines .lh { display: none; }
+    .lines .lr { grid-template-columns: 1fr 1fr; }
+    .gate, .done-grid, .setgrid { grid-template-columns: 1fr; }
+    .chrome nav { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual plan · Extension</p>
+    <h1 class="page">Inward Bill Import — planned UI</h1>
+    <p class="lede">
+      A feature-flagged module (<code>tenant.ext_inward_import</code>). Upload a supplier's PDF invoice → the module
+      extracts it, matches or stages the supplier and every line against the tenant's masters, reconciles the totals,
+      and on <strong>Approve</strong> produces a downloadable <strong>Tally Purchase-voucher XML</strong> the accountant
+      hand-imports. Six mid-fi screens below; sample data is the Sugal Foods invoice <span class="mono">INV2526-5667</span>.
+    </p>
+
+    <div class="flow" aria-label="pipeline">
+      <div class="node"><b>Upload</b><span>drop a PDF</span></div>
+      <span class="arr">→</span>
+      <div class="node"><b>Extract</b><span>table + QR / vision</span></div>
+      <span class="arr">→</span>
+      <div class="node"><b>Resolve</b><span>supplier + lines</span></div>
+      <span class="arr">→</span>
+      <div class="node"><b>Reconcile</b><span>totals gate</span></div>
+      <span class="arr">→</span>
+      <div class="node hl"><b>Review</b><span>PDF + fields</span></div>
+      <span class="arr">→</span>
+      <div class="node"><b>Approve</b><span>create masters</span></div>
+      <span class="arr">→</span>
+      <div class="node"><b>Download XML</b><span>Tally Import</span></div>
+    </div>
+  </header>
+
+  <!-- ============ SCREEN 1 ============ -->
+  <section class="screen">
+    <div class="cap">
+      <span class="num">1</span>
+      <h2>Nav-gated shell</h2>
+      <span class="route">web · Shell.tsx</span>
+      <span class="phase">Phase X0</span>
+      <p class="note">
+        The "Inward" nav item and its three routes only exist for a tenant with the flag set. A tenant without it
+        gets 404s on <span class="mono">/api/inward-bills*</span> and a redirect off <span class="mono">/inward</span> —
+        the module is invisible, not just hidden.
+      </p>
+    </div>
+    <div class="device">
+      <div class="chrome">
+        <div class="brand">Metal ERP</div>
+        <nav>
+          <a href="#">Dashboard</a>
+          <a href="#">Sales</a>
+          <a href="#">Parties</a>
+          <a href="#">Items</a>
+          <a href="#" class="flag active">Inward</a>
+        </nav>
+        <div class="who">Rajdeep Stores · accountant</div>
+      </div>
+      <div class="flagnote">
+        <span class="chip info">flag on</span>
+        <span>Nav item rendered because <span class="mono">me.tenant.ext_inward_import === true</span>. Otherwise the whole branch is absent from the router.</span>
+      </div>
+      <div class="body" style="color:var(--muted); font-size:12.5px;">
+        Routes behind the guard: <span class="mono">/inward</span> (list) · <span class="mono">/inward/:id</span> (review) · <span class="mono">/inward/settings</span> (ledger config).
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 2 ============ -->
+  <section class="screen">
+    <div class="cap">
+      <span class="num">2</span>
+      <h2>Inward bills — list &amp; upload</h2>
+      <span class="route">/inward · InwardListPage</span>
+      <span class="phase">Phase X4</span>
+      <p class="note">
+        Drag one or several PDFs onto the drop-zone — each becomes a row, extraction runs immediately for a single
+        small file (batches queue as jobs). The table polls while anything is <em>extracting</em>. Confidence and
+        status read at a glance.
+      </p>
+    </div>
+    <div class="device">
+      <div class="chrome">
+        <div class="brand">Metal ERP</div>
+        <nav>
+          <a href="#">Dashboard</a><a href="#">Sales</a><a href="#">Parties</a><a href="#">Items</a>
+          <a href="#" class="flag active">Inward</a>
+        </nav>
+        <div class="who">Rajdeep Stores · accountant</div>
+      </div>
+      <div class="body">
+        <div class="drop">
+          Drop supplier PDFs here, or click to choose
+          <small>one file extracts now · a batch queues · PDF only, 20&nbsp;MB max</small>
+        </div>
+
+        <div class="filters">
+          <span class="pill on">All</span>
+          <span class="pill">Needs review</span>
+          <span class="pill">Approved</span>
+          <span class="pill">Rejected</span>
+          <span class="pill">Supplier ▾</span>
+          <span class="pill">Date range ▾</span>
+        </div>
+
+        <table class="list">
+          <thead>
+            <tr>
+              <th>File</th><th>Supplier</th><th>Bill no · date</th>
+              <th style="text-align:right;">Amount</th><th>Status</th><th>Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="file">sugal-foods-inv2526-5667.pdf</td>
+              <td>Sugal Foods</td>
+              <td class="mono">INV2526-5667 · 25 Aug 25</td>
+              <td class="amt">42,445.00</td>
+              <td><span class="chip warn">Needs review</span></td>
+              <td class="conf">0.86 · table</td>
+            </tr>
+            <tr>
+              <td class="file">metro-steel-8841.pdf</td>
+              <td>Metro Steel Corp</td>
+              <td class="mono">8841 · 22 Aug 25</td>
+              <td class="amt">1,18,900.00</td>
+              <td><span class="chip ok">Approved</span></td>
+              <td class="conf">0.99 · e-invoice QR</td>
+            </tr>
+            <tr>
+              <td class="file">scan_0912.pdf</td>
+              <td>—</td>
+              <td class="mono">extracting…</td>
+              <td class="amt">—</td>
+              <td><span class="chip info">Extracting</span></td>
+              <td class="conf">vision · queued</td>
+            </tr>
+            <tr>
+              <td class="file">annapurna-traders-4471.pdf</td>
+              <td>Annapurna Traders</td>
+              <td class="mono">4471 · 19 Aug 25</td>
+              <td class="amt">9,340.00</td>
+              <td><span class="chip err">Rejected</span></td>
+              <td class="conf">0.71 · table</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 3 ============ -->
+  <section class="screen">
+    <div class="cap">
+      <span class="num">3</span>
+      <h2>Review — the centrepiece</h2>
+      <span class="route">/inward/:id · InwardReviewPage</span>
+      <span class="phase">Phase X4</span>
+      <p class="note">
+        Source PDF on the left, the extracted record on the right: supplier block (matched or staged-new), a
+        totals-check panel that must be green, and a lines table where every row carries a match cell —
+        <em>exact</em> / <em>alias</em> / <em>fuzzy&nbsp;NN%</em> / <em>AI-matched</em> / <em>NEW</em> — each
+        overridable inline. Flagged rows are tinted.
+      </p>
+    </div>
+    <div class="device">
+      <div class="chrome">
+        <div class="brand serif" style="font-weight:600;">Inward bill · <span class="mono" style="font-family:'IBM Plex Mono',monospace; font-size:13px;">INV2526-5667</span> · <span style="color:#e0a94a;">Needs review</span></div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn ghost-dark">Re-extract</button>
+          <button class="btn ghost-dark">Reject</button>
+          <button class="btn primary" disabled>Approve — 2 lines need a match</button>
+        </div>
+      </div>
+
+      <div class="split">
+        <!-- PDF pane -->
+        <div class="pdf-pane">
+          <div class="pdf-sheet">
+            <div class="big">SUGAL FOODS</div>
+            <div>179/1/244 Agrasen Road, Siliguri</div>
+            <div>West Bengal 734005 &nbsp;·&nbsp; GSTIN 19BHBPK1450P1Z3</div>
+            <div class="ti">TAX INVOICE</div>
+            <div style="text-align:right;">Invoice# INV2526-5667 &nbsp; Dt. 25-Aug-2025</div>
+            <div style="margin-top:12px; border-top:1px solid #ddd5c8; padding-top:6px;">
+              Bill To: Rajdeep Stores (Sd) &nbsp;·&nbsp; GSTIN 19AALFR8182P1Z3
+            </div>
+            <div>Place of Supply: West Bengal (19)</div>
+            <table>
+              <thead><tr><td>#</td><td>Item</td><td>HSN</td><td>Qty</td><td>Rate</td><td>Amount</td></tr></thead>
+              <tbody>
+                <tr><td>1</td><td>Monin Mojito Mint Syrup 1000Ml</td><td>21069092</td><td>18</td><td>669.49</td><td>11,689.30</td></tr>
+                <tr><td>2</td><td>Monin Blue Curacao Lime Syrup 1000Mlx6</td><td>21069092</td><td>12</td><td>669.49</td><td>7,792.86</td></tr>
+                <tr><td>3</td><td>Monin Triple Sec Syrup 1000Mlx6</td><td>21069092</td><td>4</td><td>669.49</td><td>2,597.62</td></tr>
+                <tr><td>4</td><td>Monin Coconut Syrup 1000Mlx6</td><td>21069092</td><td>4</td><td>669.49</td><td>2,597.62</td></tr>
+                <tr><td>5</td><td>Monin Pina Colada Syrup 700Ml</td><td>21069092</td><td>3</td><td>587.74</td><td>1,710.32</td></tr>
+                <tr><td>…</td><td colspan="5">7 more lines</td></tr>
+              </tbody>
+            </table>
+            <div style="margin-top:10px; text-align:right;">
+              Sub Total 35,970.22 &nbsp; CGST&nbsp;9% 3,237.32 &nbsp; SGST&nbsp;9% 3,237.32 &nbsp; Round Off 0.14
+            </div>
+            <div style="text-align:right; font-weight:700; font-size:11px; color:#2a2620;">Total ₹42,445.00</div>
+          </div>
+          <div class="pdf-cap">source PDF · page 1 of 2 · <a href="#">open full</a></div>
+        </div>
+
+        <!-- review form -->
+        <div class="rev">
+          <div class="panel">
+            <div class="h">
+              <b>Supplier</b>
+              <span class="chip ok">✓ matched by GSTIN</span>
+            </div>
+            <div class="grid3">
+              <div>
+                <div class="lbl">Party</div>
+                <div class="field wsel">Sugal Foods <span class="car">existing ▾</span></div>
+              </div>
+              <div>
+                <div class="lbl">GSTIN</div>
+                <div class="field mono" style="font-size:11px;">19BHBPK1450P1Z3</div>
+              </div>
+              <div>
+                <div class="lbl">State</div>
+                <div class="field">West Bengal (19)</div>
+              </div>
+            </div>
+            <p class="hint">
+              No GSTIN match → a new supplier party is staged (name · GSTIN · PAN from GSTIN chars 3–12 ·
+              state from the prefix · one address) and created only on Approve.
+            </p>
+          </div>
+
+          <div class="recon">
+            <b>Totals reconcile ✓</b>
+            <span class="eq">35,970.22 + 3,237.32 + 3,237.32 + 0.14 = 42,445.00</span>
+            <span class="sub">supplier 19 = buyer 19 → intra-state, CGST + SGST</span>
+          </div>
+
+          <div class="lines">
+            <div class="lh">
+              <span>#</span><span>Description (from PDF)</span><span>HSN</span><span>Qty</span>
+              <span>Rate</span><span style="text-align:right;">Amount</span><span>Catalogue match</span>
+            </div>
+            <div class="lr">
+              <span class="n">1</span>
+              <span>Monin Mojito Mint Syrup 1000Ml</span>
+              <span class="hsncell">21069092</span><span>18</span>
+              <span class="r">669.49</span><span class="a">11,689.30</span>
+              <span class="match"><span class="chip ok">exact</span><span class="txt">Monin Mojito Mint Syrup 1000Ml</span></span>
+            </div>
+            <div class="lr">
+              <span class="n">2</span>
+              <span>Monin Blue Curacao Lime Syrup 1000Mlx6</span>
+              <span class="hsncell">21069092</span><span>12</span>
+              <span class="r">669.49</span><span class="a">7,792.86</span>
+              <span class="match"><span class="chip info">fuzzy 88%</span><span class="txt">Monin Blue Curacao Syrup 1L</span><a href="#">change</a></span>
+            </div>
+            <div class="lr flag">
+              <span class="n">3</span>
+              <span>Monin Triple Sec Syrup 1000Mlx6</span>
+              <span class="hsncell">21069092</span><span>4</span>
+              <span class="r">669.49</span><span class="a">2,597.62</span>
+              <span class="match"><span class="chip warn">AI-matched</span><span class="txt">Monin Triple Sec 1L</span><a href="#">confirm</a><a href="#">change</a></span>
+            </div>
+            <div class="lr flag">
+              <span class="n">4</span>
+              <span>Monin Coconut Syrup 1000Mlx6</span>
+              <span class="hsncell">21069092</span><span>4</span>
+              <span class="r">669.49</span><span class="a">2,597.62</span>
+              <span class="match" style="flex-wrap:wrap;">
+                <span class="chip new">NEW item</span>
+                <div class="combobox" style="width:100%; margin-top:4px;">
+                  <div class="q">search catalogue — “monin coconut”…</div>
+                  <div class="opt sel"><span>+ Create “Monin Coconut Syrup 1000Mlx6” (UNCONFIRMED)</span><span class="rt">new</span></div>
+                  <div class="opt"><span>Monin Coconut Puree 1L</span><span class="rt">₹612.00</span></div>
+                </div>
+              </span>
+            </div>
+            <div class="lr">
+              <span class="n">5</span>
+              <span>Monin Pina Colada Syrup 700Ml</span>
+              <span class="hsncell">21069092</span><span>3</span>
+              <span class="r">587.74</span><span class="a">1,710.32</span>
+              <span class="match"><span class="chip ok">alias</span><span class="txt">Monin Pina Colada 700</span></span>
+            </div>
+            <div class="more">… 7 more lines · 5 matched, 2 flagged for review</div>
+          </div>
+
+          <div class="ladder">
+            <b>Match ladder per line:</b> normalized-exact → alias → <b>pg_trgm fuzzy</b>
+            (HSN is a boost / tie-break, never a key — all 12 lines share <span class="mono">21069092</span>) →
+            <b>LLM disambiguation</b> (one batched call, this tenant's top-5 candidates, picks one or NONE) →
+            <b>new UNCONFIRMED item</b>. Every AI match is overridable here.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 4 ============ -->
+  <section class="screen">
+    <div class="cap">
+      <span class="num">4</span>
+      <h2>Approve gate</h2>
+      <span class="route">POST /api/inward-bills/:id/approve</span>
+      <span class="phase">Phase X5</span>
+      <p class="note">
+        Approve stays disabled until three things hold, and the button spells out what's missing. On click it runs
+        one transaction: create staged supplier + items, link every line, build the XML, flip to Approved.
+      </p>
+    </div>
+    <div class="device">
+      <div class="body">
+        <div class="gate">
+          <div class="col">
+            <h3>Blocking checks</h3>
+            <div class="checkitem">
+              <span class="mk pass">✓</span>
+              <span class="d">Totals reconcile<em>taxable + CGST + SGST + round-off = grand total, ±0.05</em></span>
+            </div>
+            <div class="checkitem">
+              <span class="mk pass">✓</span>
+              <span class="d">Supplier resolved<em>matched to Sugal Foods by GSTIN</em></span>
+            </div>
+            <div class="checkitem">
+              <span class="mk block">!</span>
+              <span class="d">Every line resolved<em>lines 3 &amp; 7 are AI-matched and not yet confirmed</em></span>
+            </div>
+            <div class="checkitem">
+              <span class="mk wait">·</span>
+              <span class="d">HSN check<em>line 4 HSN 21069092 present in reference list — ok</em></span>
+            </div>
+          </div>
+          <div class="col">
+            <h3>On Approve — one transaction</h3>
+            <div class="checkitem"><span class="mk pass">1</span><span class="d">Create the staged new supplier party + address <em>(none here — GSTIN matched)</em></span></div>
+            <div class="checkitem"><span class="mk pass">2</span><span class="d">Create staged new items <em>source = auto_from_purchase, status = unconfirmed</em></span></div>
+            <div class="checkitem"><span class="mk pass">3</span><span class="d">Link every line's <span class="mono">matched_item_id</span>; bump last_purchase_rate</span></div>
+            <div class="checkitem"><span class="mk pass">4</span><span class="d">Build the Tally Purchase-voucher XML → write to the volume</span></div>
+            <div class="checkitem"><span class="mk pass">5</span><span class="d">status → <span class="chip ok" style="vertical-align:middle;">Approved</span> · write audit_log</span></div>
+          </div>
+        </div>
+        <div style="margin-top:16px; display:flex; gap:10px; align-items:center;">
+          <button class="btn primary big" disabled>Approve — 2 lines need a match</button>
+          <span style="font-size:12px; color:var(--muted);">confirm the AI matches on lines 3 &amp; 7 to enable</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 5 ============ -->
+  <section class="screen">
+    <div class="cap">
+      <span class="num">5</span>
+      <h2>Approved — download &amp; template</h2>
+      <span class="route">/inward/:id (read-only)</span>
+      <span class="phase">Phase X5 · X6</span>
+      <p class="note">
+        After Approve the review page is frozen. The Tally XML is ready to download; on the first approved bill from
+        a supplier the module offers to remember its layout so the next one skips the ladder and the LLM.
+      </p>
+    </div>
+    <div class="device">
+      <div class="done-bar">
+        <div class="l">✓ Approved · 1 supplier matched · 2 items created (unconfirmed) · 12 lines linked</div>
+        <button class="btn primary">Download Tally XML</button>
+      </div>
+      <div class="done-grid">
+        <div>
+          <div class="created">
+            <h4>Masters touched</h4>
+            <div class="row"><span class="chip ok">linked</span> Sugal Foods <span style="color:var(--muted);">· Sundry Creditors</span></div>
+            <div class="row"><span class="chip new">created</span> Monin Coconut Syrup 1000Mlx6 <span style="color:var(--muted);">· unconfirmed · HSN 21069092</span></div>
+            <div class="row"><span class="chip new">created</span> Monin Triple Sec 1L <span style="color:var(--muted);">· unconfirmed · HSN 21069092</span></div>
+            <div class="row"><span style="color:var(--muted); font-size:11px;">→ both appear on the Items page filtered to Unconfirmed for merge / confirm</span></div>
+          </div>
+          <div class="prompt">
+            <span>First bill from <strong>Sugal Foods</strong> — save its column layout &amp; ledger map as a template?</span>
+            <button class="btn">Save template</button>
+          </div>
+        </div>
+        <div>
+          <div class="lbl">Generated — inward-INV2526-5667.xml</div>
+          <div class="xmlbox">&lt;ENVELOPE&gt;
+  &lt;HEADER&gt;&lt;TALLYREQUEST&gt;Import Data&lt;/…&gt;
+  &lt;BODY&gt;&lt;IMPORTDATA&gt;&lt;REQUESTDATA&gt;
+   &lt;TALLYMESSAGE&gt;&lt;STOCKITEM NAME="Monin
+     Coconut Syrup 1000Mlx6" ACTION="Create"&gt;…
+   &lt;TALLYMESSAGE&gt;&lt;VOUCHER VCHTYPE="Purchase"&gt;
+     &lt;DATE&gt;20250825&lt;/DATE&gt;
+     &lt;VOUCHERNUMBER&gt;INV2526-5667&lt;/…&gt;
+     &lt;PARTYLEDGERNAME&gt;Sugal Foods&lt;/…&gt;
+     &lt;UDF:METALERP_REF&gt;ib_9f3c…&lt;/…&gt;
+     &lt;ALLINVENTORYENTRIES.LIST&gt; … ×12
+     &lt;LEDGERENTRIES.LIST&gt; Purchase A/c,
+       CGST 9%, SGST 9%, Round Off, party
+  &lt;/…&gt;&lt;/ENVELOPE&gt;</div>
+          <p class="hint">Ledger names from <span class="mono">tally_ledger_config</span> · <span class="mono">UDF:METALERP_REF</span> makes a re-import detectable · encoding per settings.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SCREEN 6 ============ -->
+  <section class="screen">
+    <div class="cap">
+      <span class="num">6</span>
+      <h2>Ledger settings</h2>
+      <span class="route">/inward/settings · InwardSettingsPage</span>
+      <span class="phase">Phase X6</span>
+      <p class="note">
+        One row per tenant, GST-standard defaults pre-filled. These names must match the shop's Tally chart of
+        accounts or the import throws a <span class="mono">&lt;LINEERROR&gt;</span>.
+      </p>
+    </div>
+    <div class="device">
+      <div class="body">
+        <div class="setgrid">
+          <div><div class="lbl">Creditors group</div><div class="field">Sundry Creditors</div></div>
+          <div><div class="lbl">Purchase ledger</div><div class="field">Purchase Accounts</div></div>
+          <div><div class="lbl">CGST ledger</div><div class="field">CGST</div></div>
+          <div><div class="lbl">SGST ledger</div><div class="field">SGST</div></div>
+          <div><div class="lbl">IGST ledger</div><div class="field">IGST</div></div>
+          <div><div class="lbl">Round-off ledger</div><div class="field">Round Off</div></div>
+          <div class="full">
+            <div class="lbl">XML encoding</div>
+            <div class="toggle"><span class="on">UTF-16</span><span>UTF-8</span></div>
+            <span style="font-size:11px; color:var(--muted); margin-left:10px;">confirm against the shop's Tally version on the first real import</span>
+          </div>
+          <div class="full" style="margin-top:4px;">
+            <button class="btn primary">Save settings</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Plan: <code>docs/EXECUTION-PLAN-inward-bill-import.md</code></span>
+    <span>Architecture: <code>docs/EXTENSION-inward-bill-import.md</code></span>
+    <span>Mid-fi · warm-neutral + steel-blue · Fraunces / IBM Plex · sample data illustrative</span>
+  </footer>
+</div>

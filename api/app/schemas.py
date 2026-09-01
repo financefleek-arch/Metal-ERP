@@ -5,11 +5,18 @@ Kept in one module for M1 — split per-domain when it grows.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
-from app.models._mixins import AddressType, PartyRole, UserRole
+from app.models._mixins import (
+    AddressType,
+    PartyRole,
+    PartySource,
+    PartyStatus,
+    UserRole,
+)
 from app.reference import validate_gstin, validate_pan, validate_state_code
 
 # Reusable validated string aliases. Each accepts None / "" (-> None) and
@@ -148,14 +155,30 @@ class PartyUpdate(BaseModel):
     role: PartyRole | None = None
     default_state_code: StateCode = None
     gstin: Gstin = None
+    status: PartyStatus | None = None
     addresses: list[PartyAddressIn] | None = None
+
+
+class PartyCompleteness(BaseModel):
+    """Derived, never stored. M1 rule: a party is complete once it has an
+    address (line1 + city + state). Advisory only — never gates a document.
+    """
+
+    complete: bool
+    missing: list[str] = Field(default_factory=list)
 
 
 class PartyOut(PartyBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    status: PartyStatus
+    source: PartySource
+    source_ref: str | None
+    last_txn_at: datetime | None
     addresses: list[PartyAddressOut] = Field(default_factory=list)
+    completeness: PartyCompleteness
+    document_count: int
 
 
 class PartyListItem(BaseModel):
@@ -167,3 +190,8 @@ class PartyListItem(BaseModel):
     phone: str | None
     default_state_code: str | None
     gstin: str | None
+    status: PartyStatus
+    source: PartySource
+    source_ref: str | None
+    last_txn_at: datetime | None
+    completeness: PartyCompleteness
