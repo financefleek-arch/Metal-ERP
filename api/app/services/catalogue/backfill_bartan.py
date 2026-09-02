@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import Item, ItemAlias, ProductGroup, Tenant
+from app.models._mixins import ItemStatus
 from app.seed import seed_synonyms
 
 # (label, model, name-attr, normalized-attr) for the three normalized tables.
@@ -41,6 +42,18 @@ _TARGETS = [
     ("product_group", ProductGroup, "name", "name_normalized"),
     ("item_alias", ItemAlias, "alias_text", "alias_normalized"),
 ]
+
+
+def _live_rows(session: Session, model: type, tenant_id: str) -> list:
+    """Tenant rows the resolver would actually see — merged / archived items
+    are excluded (they still exist for history but must not trip the
+    UNIQUE(tenant, name_normalized) collision check)."""
+    stmt = select(model).where(model.tenant_id == tenant_id)
+    if model is Item:
+        stmt = stmt.where(
+            Item.merged_into_id.is_(None), Item.status != ItemStatus.archived
+        )
+    return list(session.scalars(stmt).all())
 
 
 @dataclass
@@ -92,9 +105,7 @@ def _plan_table(
     name)} map of the rows that would NOT change (used for collision
     detection and for showing the other side of a collision).
     """
-    rows = list(
-        session.scalars(select(model).where(model.tenant_id == tenant_id)).all()
-    )
+    rows = _live_rows(session, model, tenant_id)
     changes: list[RowChange] = []
     unchanged_keys: dict[str, tuple[str, str]] = {}
     for r in rows:

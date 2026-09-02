@@ -71,6 +71,23 @@ def test_collision_is_flagged_not_applied(session, tenant) -> None:  # type: ign
     assert b.name_normalized == "ss kadai 10"
 
 
+def test_merged_loser_is_ignored(session, tenant) -> None:  # type: ignore[no-untyped-def]
+    """A row already merged/archived (its name still resolves to a colliding
+    key) must not appear as a change or a collision — the resolver ignores
+    it, so the backfill must too."""
+    from app.models._mixins import ItemStatus
+
+    winner = _add_item(session, tenant.id, "SS Kadai 10", "ss kadai 10")
+    loser = _add_item(session, tenant.id, "SS Kadhai 10", "ss kadhai 10")
+    loser.merged_into_id = winner.id
+    loser.status = ItemStatus.archived
+    session.flush()
+
+    res = plan_tenant(session, tenant.id)
+    assert res.collisions == {}
+    assert all(c.row_id != loser.id for c in res.changes)
+
+
 def test_run_all_tenants_report_only(session, tenant) -> None:  # type: ignore[no-untyped-def]
     _add_item(session, tenant.id, "Karahi 10", "karahi 10")
     results = run(session, apply=False)
