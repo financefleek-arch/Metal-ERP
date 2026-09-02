@@ -14,6 +14,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import engine
 from app.routers import (
+    admin,
     auth,
     invoices,
     inward,
@@ -48,6 +49,7 @@ if not settings.is_production:
     )
 
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(reference.router)
 app.include_router(tenant.router)
 app.include_router(parties.router)

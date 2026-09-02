@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, getToken } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
+import { downloadFile } from "../../lib/download";
 import { inr } from "../../lib/previewTotal";
 import type { InvoiceListItem, InvoiceStatus } from "../../lib/types";
 
@@ -64,15 +65,11 @@ export function InvoiceListPage() {
   });
 
   function openPdf(id: string) {
-    const t = getToken();
-    // stream endpoint needs the bearer header — fetch as blob then open
-    fetch(`/api/invoices/${id}/pdf`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
-      .then((r) => {
-        if (!r.ok) throw new Error("PDF not ready");
-        return r.blob();
-      })
-      .then((b) => window.open(URL.createObjectURL(b), "_blank"))
-      .catch(() => setErr("PDF not ready — open the invoice and re-render."));
+    // stream endpoint needs the bearer header — fetch as blob then save with
+    // the server-provided "<Party> <date> <total>.pdf" filename
+    downloadFile(`/invoices/${id}/pdf`, `invoice-${id}.pdf`).catch(() =>
+      setErr("PDF not ready — open the invoice and re-render."),
+    );
   }
 
   return (

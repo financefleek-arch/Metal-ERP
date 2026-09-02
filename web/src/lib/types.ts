@@ -7,8 +7,45 @@ export interface Me {
   email: string;
   role: UserRole;
   tenant_id: string;
+  /** Platform operator — the SPA swaps the whole app for the admin console. */
+  is_platform_admin: boolean;
   /** ext_inward_import — gates the Inward nav item and its routes. */
   ext_inward_import: boolean;
+}
+
+// --- platform admin (/api/admin/*) ---
+
+/** Roles the operator may assign to a firm user. */
+export type AssignableRole = "owner" | "accountant" | "viewer";
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  role: UserRole;
+  is_active: boolean;
+  is_platform_admin: boolean;
+  created_at: string;
+}
+
+export interface FirmListItem {
+  id: string;
+  legal_name: string;
+  city: string | null;
+  gst_enabled: boolean;
+  ext_inward_import: boolean;
+  user_count: number;
+  active_user_count: number;
+  created_at: string;
+}
+
+export interface FirmDetail {
+  id: string;
+  legal_name: string;
+  city: string | null;
+  gst_enabled: boolean;
+  ext_inward_import: boolean;
+  created_at: string;
+  users: AdminUser[];
 }
 
 export interface Tenant {

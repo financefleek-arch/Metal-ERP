@@ -49,6 +49,23 @@ def get_current_user(
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
+
+def require_platform_admin(user: CurrentUser) -> User:
+    """Gate for `/api/admin/*` — firm & user provisioning for the operator.
+
+    A platform admin is the only principal allowed to act outside its own
+    `tenant_id`. Everything else keeps the strict per-tenant scoping.
+    """
+    if not user.is_platform_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform admin only",
+        )
+    return user
+
+
+PlatformAdmin = Annotated[User, Depends(require_platform_admin)]
+
 _WRITE_ROLES = {UserRole.owner, UserRole.accountant}
 
 

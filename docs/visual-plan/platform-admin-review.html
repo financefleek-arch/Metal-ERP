@@ -116,7 +116,11 @@
   <p class="lede">An operator-only area of the Metal&nbsp;ERP web app for setting up client firms and their
   login accounts. Separate dark chrome, gated on a <code>is_platform_admin</code> flag. Regular firm users
   never see any of it. Nothing here touches fleek-backend.</p>
-  <div class="banner">REVIEW — not built yet. Sign off on this layout &amp; behaviour before any code is written.</div>
+  <div class="banner" style="background:var(--ok-bg); color:var(--ok-fg); border-color:color-mix(in srgb,var(--ok-fg) 30%,transparent);">
+    BUILT 2026-09-02 (uncommitted). Migration 0012, <code>app/routers/admin.py</code>, <code>tools/make_platform_admin.py</code>,
+    14 new tests (301 pass). Frontend <code>src/pages/admin/</code> + App.tsx branch. Not yet deployed — run
+    <code>alembic upgrade head</code> then <code>python -m tools.make_platform_admin</code> once per environment.
+  </div>
 
   <h2>1 · Who gets in</h2>
   <div class="grid2">

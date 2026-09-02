@@ -12,6 +12,8 @@ import { InvoiceEditorPage } from "./pages/invoices/InvoiceEditorPage";
 import { InwardListPage } from "./pages/inward/InwardListPage";
 import { InwardSettingsPage } from "./pages/inward/InwardSettingsPage";
 import { InwardDebugPage } from "./pages/inward/InwardDebugPage";
+import { AdminShell } from "./pages/admin/AdminShell";
+import { FirmsPage } from "./pages/admin/FirmsPage";
 
 function Loading() {
   return <div className="grid h-full place-items-center text-sm text-muted">Loading…</div>;
@@ -22,6 +24,19 @@ export function App() {
 
   if (loading) return <Loading />;
   if (!me) return <AuthPage />;
+
+  // Platform operator: the whole app IS the admin console. A firm user who
+  // somehow reaches /admin/* falls through to the normal app below.
+  if (me.is_platform_admin) {
+    return (
+      <AdminShell>
+        <Routes>
+          <Route path="/admin" element={<FirmsPage />} />
+          <Route path="*" element={<Navigate to="/admin" replace />} />
+        </Routes>
+      </AdminShell>
+    );
+  }
 
   const inward = me.ext_inward_import;
 

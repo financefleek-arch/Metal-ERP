@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, getToken } from "../../lib/api";
+import { api, ApiError } from "../../lib/api";
+import { downloadFile } from "../../lib/download";
 import { computePreview, inr } from "../../lib/previewTotal";
 import { computeMeasure, kg } from "../../lib/weighment";
 import type {
@@ -442,14 +443,10 @@ export function InvoiceEditorPage() {
 
   function openPdf() {
     if (!id) return;
-    const t = getToken();
-    fetch(`/api/invoices/${id}/pdf`, { headers: t ? { Authorization: `Bearer ${t}` } : {} })
-      .then((r) => {
-        if (!r.ok) throw new Error();
-        return r.blob();
-      })
-      .then((b) => window.open(URL.createObjectURL(b), "_blank"))
-      .catch(() => setErr("PDF not ready."));
+    // saves as the server's "<Party> <date> <total>.pdf"
+    downloadFile(`/invoices/${id}/pdf`, `invoice-${id}.pdf`).catch(() =>
+      setErr("PDF not ready."),
+    );
   }
 
   const rerender = useMutation({

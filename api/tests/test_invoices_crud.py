@@ -165,3 +165,23 @@ def test_unknown_party_rejected(client: TestClient) -> None:
     h = _h(_register(client, "inv7@x.example.com"))
     r = client.post("/api/invoices", headers=h, json={"party_id": "nope"})
     assert r.status_code == 404
+
+
+def test_download_name_standard() -> None:
+    """PDF saves as "<Party> <YYYY-MM-DD> <total>.pdf"."""
+    from datetime import date as _date
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from app.routers.invoices import _download_name
+
+    inv = SimpleNamespace(
+        party=SimpleNamespace(legal_name="Sri Balaji Metals & Co."),
+        date=_date(2026, 9, 2),
+        grand_total=Decimal("125430.50"),
+    )
+    assert _download_name(inv) == "Sri-Balaji-Metals-Co 2026-09-02 125430.50.pdf"
+
+    # no party / no total -> safe fallbacks, still a valid name
+    bare = SimpleNamespace(party=None, date=None, grand_total=None)
+    assert _download_name(bare) == "Party nodate 0.00.pdf"

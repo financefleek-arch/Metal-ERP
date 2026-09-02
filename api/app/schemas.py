@@ -71,6 +71,8 @@ class UserOut(BaseModel):
     email: EmailStr
     role: UserRole
     tenant_id: str
+    # Platform operator — the SPA swaps the whole app for the admin console.
+    is_platform_admin: bool = False
     # Extension flags the SPA needs at bootstrap (nav gating / route guards).
     ext_inward_import: bool = False
 

@@ -68,7 +68,14 @@ def register(body: RegisterRequest, session: SessionDep) -> TokenResponse:
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, session: SessionDep) -> TokenResponse:
     email = body.email.lower().strip()
-    user = session.scalar(select(User).where(func.lower(User.email) == email))
+    # The schema allows the same email in two tenants; the register / admin
+    # provisioning paths enforce global uniqueness, but stay defensive here
+    # so a stray duplicate can't turn login into a 500.
+    user = session.scalars(
+        select(User)
+        .where(func.lower(User.email) == email)
+        .order_by(User.created_at)
+    ).first()
     if user is None or not verify_password(body.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -91,5 +98,6 @@ def me(user: CurrentUser, session: SessionDep) -> UserOut:
         email=user.email,
         role=user.role,
         tenant_id=user.tenant_id,
+        is_platform_admin=user.is_platform_admin,
         ext_inward_import=bool(tenant and tenant.ext_inward_import),
     )

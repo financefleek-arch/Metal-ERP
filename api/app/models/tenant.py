@@ -81,4 +81,9 @@ class User(PkUuidMixin, TimestampMixin, Base):
     totp_secret: Mapped[str | None] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # Platform operator: may cross tenant boundaries on /api/admin/* only.
+    # Set exclusively by tools.make_platform_admin; these users belong to the
+    # dedicated "Fleek Operations" tenant and have no real firm data.
+    is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     tenant: Mapped[Tenant] = relationship(back_populates="users")

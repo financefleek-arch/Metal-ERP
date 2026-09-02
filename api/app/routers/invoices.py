@@ -9,6 +9,7 @@ reusing the number.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -347,8 +348,25 @@ def get_pdf(invoice_id: str, user: CurrentUser, session: SessionDep) -> FileResp
 
     if not inv.pdf_path or not Path(inv.pdf_path).exists():
         raise HTTPException(status_code=404, detail="PDF not available — try re-render")
-    fname = f"invoice-{inv.number or inv.id}.pdf"
-    return FileResponse(inv.pdf_path, media_type="application/pdf", filename=fname)
+    return FileResponse(
+        inv.pdf_path, media_type="application/pdf", filename=_download_name(inv)
+    )
+
+
+def _download_name(inv: Invoice) -> str:
+    """User-facing PDF filename: "<Party name> <YYYY-MM-DD> <total>.pdf".
+
+    The on-disk file stays keyed by invoice id; this is only the name the
+    browser saves it as. Party name is slugified to a safe, readable token
+    and the amount is the frozen grand total with no separators.
+    """
+    party = inv.party.legal_name if inv.party else "Party"
+    slug = re.sub(r"[^\w]+", " ", party, flags=re.UNICODE).strip().replace(" ", "-")
+    slug = slug[:60] or "Party"
+    date_part = inv.date.isoformat() if inv.date else "nodate"
+    total = inv.grand_total if inv.grand_total is not None else Decimal("0")
+    amount_part = f"{total:.2f}"
+    return f"{slug} {date_part} {amount_part}.pdf"
 
 
 @router.post("/{invoice_id}/rerender", response_model=InvoiceOut)
