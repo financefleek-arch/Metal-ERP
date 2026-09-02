@@ -19,6 +19,7 @@ from app.domain.normalize import load_synonym_map, normalize_name
 from app.domain.product_parse import parse_product_line
 from app.models import HsnCode, Item, ItemCategory, ProductGroup, StagingTallyItem
 from app.models._mixins import ItemSource, ItemStatus, ItemType, RateMode
+from app.services.catalogue.classify_apply import Classifier
 from app.services.item_resolution import resolve_group
 from tools.tally_import.item_match import match_stock_items_bulk
 from tools.tally_import.parser import is_zero_history_dummy, parse_stock_items
@@ -432,6 +433,9 @@ def _resolve_or_create_group(
 def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     rows = _rows(session, user.tenant_id, batch_id)
     synonyms = load_synonym_map(session, user.tenant_id)
+    # Fallback classifier for rows whose Tally Stock Group is absent /
+    # uninformative (this whole "All Masters" export has no stock groups).
+    classifier = Classifier(session, user.tenant_id)
     created = updated = skipped = still_flagged = hsn_seeded = 0
     groups_created = [0]
 
@@ -544,6 +548,17 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 counter=groups_created,
             )
             grp = session.get(ProductGroup, group_id) if group_id else None
+            category_id = grp.category_id if grp else None
+            item_status = ItemStatus.unconfirmed
+
+            # No usable Tally Stock Group -> classify from the name (+HSN/UOM).
+            if group_id is None:
+                applied = classifier.apply(
+                    name, hsn=hsn, uom=row.proposed_uom
+                )
+                group_id = applied.group_id
+                category_id = applied.category_id
+                item_status = applied.status
 
             it = Item(
                 id=str(uuid.uuid4()),
@@ -552,7 +567,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 name_normalized=key,
                 item_type=_effective_type(row),
                 group_id=group_id,
-                category_id=grp.category_id if grp else None,
+                category_id=category_id,
                 uom=row.proposed_uom,
                 hsn_code=hsn,
                 rate_mode=row.proposed_rate_mode,
@@ -564,7 +579,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 default_rate=row.standard_rate,
                 gst_rate=float(row.gst_rate) if row.gst_rate is not None else 0.0,
                 source=ItemSource.import_,
-                status=ItemStatus.unconfirmed,
+                status=item_status,
                 tally_guid=row.tally_guid,
             )
             # id set explicitly above (column default only fires at flush),

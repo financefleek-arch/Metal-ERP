@@ -22,6 +22,7 @@ from app.schemas_item import (
     ItemOut,
     ItemUpdate,
 )
+from app.services.catalogue.learn_from_recategorize import learn_from_recategorize
 from app.services.items import (
     apply_search,
     document_count,
@@ -236,6 +237,16 @@ def create_item(body: ItemCreate, user: WriteUser, session: SessionDep) -> ItemO
         status=ItemStatus.unconfirmed,
         **data,
     )
+    # Suggest category + group when the caller left both unset — a hand-made
+    # item still lands unconfirmed (manual add always gets a review pass).
+    if it.group_id is None and it.category_id is None:
+        from app.services.catalogue.classify_apply import classify_one
+
+        applied = classify_one(
+            session, user.tenant_id, it.name, hsn=it.hsn_code, uom=it.uom
+        )
+        it.group_id = applied.group_id
+        it.category_id = applied.category_id
     _apply_group_inheritance(session, user.tenant_id, it, body.model_fields_set)
     # HSN -> GST rate (data is right the day GST turns on; not printed in M1).
     rate = hsn_gst_rate(session, it.hsn_code)
@@ -305,10 +316,17 @@ def update_item(
 
     hsn_changed = "hsn_code" in patch and patch["hsn_code"] != it.hsn_code
     group_changed = "group_id" in patch and patch["group_id"] != it.group_id
+    was_unconfirmed = it.status == ItemStatus.unconfirmed
     for field, value in patch.items():
         setattr(it, field, value)
     if group_changed:
         _apply_group_inheritance(session, user.tenant_id, it, set(patch.keys()))
+        # A recategorise on an unconfirmed item teaches a tenant classify rule.
+        if it.group_id:
+            learn_from_recategorize(
+                session, user.tenant_id, it, it.group_id,
+                was_unconfirmed=was_unconfirmed,
+            )
     if hsn_changed:
         rate = hsn_gst_rate(session, it.hsn_code)
         if rate is not None:

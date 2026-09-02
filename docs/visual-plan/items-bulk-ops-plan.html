@@ -1,0 +1,579 @@
+<title>Items Bulk Operations</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771; --shell:#23201b; --shell-text:#f4f1ec; --shell-dim:#b9b3a7;
+    --band:#efe9df;
+    --bulk-fg:#2f6f89;  --bulk-bg:#e3eef2;
+    --mrp-fg:#8a6a1f;   --mrp-bg:#f1e7d6;
+    --ok-fg:#3a5a48;    --ok-bg:#e6efe8;
+    --warn-fg:#8a6a1f;  --warn-bg:#f1e7d6;
+    --danger-fg:#a23b2e;--danger-bg:#f4e3df;
+    --new-fg:#2f6f89;   --new-bg:#e3eef2;
+    --sel-bg:#e3eef2;
+  }
+  :root:not([data-theme="light"]) { @media (prefers-color-scheme: dark) {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --bulk-fg:#8fc3d7;  --bulk-bg:#22333a;
+    --mrp-fg:#d8b878;   --mrp-bg:#38301f;
+    --ok-fg:#9cc9ad;    --ok-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --sel-bg:#22333a;
+  }}
+  :root[data-theme="dark"] {
+    --paper:#1c1a16; --card:#262320; --ink:#efe9df; --ink-soft:#d8d2c5;
+    --muted:#9a9284; --faint:#6f685b; --line:#38342d; --line-soft:#2f2c26;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3; --shell:#100f0d; --shell-text:#efe9df; --shell-dim:#8a8272;
+    --band:#2f2c26;
+    --bulk-fg:#8fc3d7;  --bulk-bg:#22333a;
+    --mrp-fg:#d8b878;   --mrp-bg:#38301f;
+    --ok-fg:#9cc9ad;    --ok-bg:#24322a;
+    --warn-fg:#d8b878;  --warn-bg:#38301f;
+    --danger-fg:#dd9488;--danger-bg:#3a2723;
+    --new-fg:#8fc3d7;   --new-bg:#22333a;
+    --sel-bg:#22333a;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--paper); color:var(--ink);
+    font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  .serif { font-family:"Fraunces",Georgia,serif; }
+  .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+  .wrap { max-width:1160px; margin:0 auto; padding:44px 26px 96px; }
+
+  header.page { border-bottom:1px solid var(--line); padding-bottom:24px; margin-bottom:8px; }
+  .eyebrow { font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--accent); font-weight:600; margin:0 0 12px; }
+  h1.page { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:clamp(26px,4vw,36px);
+    line-height:1.12; margin:0 0 12px; text-wrap:balance; letter-spacing:-0.01em; }
+  p.lede { margin:0; max-width:72ch; font-size:15px; color:var(--ink-soft); }
+  p.lede code, .lede code { font-family:"IBM Plex Mono",monospace; font-size:0.88em; background:var(--band); padding:1px 5px; border-radius:4px; }
+
+  .statusrow { display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; font-size:11px; }
+  .chip { padding:3px 9px; border-radius:999px; font-weight:500; }
+  .chip.have { background:var(--ok-bg); color:var(--ok-fg); }
+  .chip.change { background:var(--warn-bg); color:var(--warn-fg); }
+  .chip.new { background:var(--new-bg); color:var(--new-fg); }
+
+  section.blk { margin-top:46px; }
+  .blk > h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:20px; margin:0 0 4px; letter-spacing:-0.01em;
+    display:flex; align-items:baseline; gap:10px; }
+  .blk > h2 .n { font-family:"IBM Plex Mono",monospace; font-size:12px; color:var(--accent); font-weight:500; }
+  .blk > p.sub { margin:0 0 18px; font-size:13.5px; color:var(--muted); max-width:82ch; }
+
+  .frame { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+    box-shadow:0 1px 2px rgba(35,32,27,0.04), 0 14px 36px -16px rgba(35,32,27,0.14); }
+  .tabbar { display:flex; align-items:center; gap:7px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line); }
+  .tabbar i { width:10px; height:10px; border-radius:50%; background:var(--faint); }
+  .tabbar .url { margin-left:10px; font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--muted);
+    background:var(--card); border:1px solid var(--line); border-radius:5px; padding:3px 10px; }
+
+  /* ---- mock: list with selection ---- */
+  .lst { display:flex; flex-direction:column; }
+  .lsthead { display:flex; align-items:center; gap:10px; padding:9px 14px; background:var(--band); border-bottom:1px solid var(--line);
+    font-size:11px; color:var(--muted); }
+  .lsthead .ttl { font-weight:600; color:var(--ink-soft); font-size:12.5px; }
+  .lsthead .sp { margin-left:auto; }
+  .btn { font-size:11px; border:1px solid var(--line); border-radius:6px; padding:4px 10px; background:var(--card); color:var(--ink-soft); cursor:pointer; }
+  .btn.pri { background:var(--accent); color:#fff; border-color:transparent; font-weight:600; }
+  .btn.ghost { background:transparent; }
+  .btn.sm { font-size:10px; padding:3px 8px; }
+
+  .lrow { display:flex; align-items:center; gap:10px; padding:9px 14px; border-bottom:1px solid var(--line-soft); font-size:12px; }
+  .lrow.sel { background:var(--sel-bg); }
+  .lrow .ck { width:15px; height:15px; border:1.5px solid var(--faint); border-radius:4px; flex:none; display:grid; place-items:center;
+    font-size:10px; color:#fff; }
+  .lrow.sel .ck { background:var(--accent); border-color:var(--accent); }
+  .lrow .nm { font-weight:500; }
+  .lrow .meta { color:var(--muted); font-size:10px; margin-left:auto; font-family:"IBM Plex Mono",monospace; }
+  .badge { font-size:7.5px; letter-spacing:0.03em; font-weight:700; padding:1px 5px; border-radius:3px; text-transform:uppercase; }
+  .badge.bulk { background:var(--bulk-bg); color:var(--bulk-fg); }
+  .badge.mrp { background:var(--mrp-bg); color:var(--mrp-fg); }
+
+  /* selection bar */
+  .selbar { display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--accent); color:#fff; font-size:12px; }
+  .selbar .cnt { font-weight:600; }
+  .selbar .cnt .mono { color:#fff; }
+  .selbar .sp { margin-left:auto; }
+  .selbar .sbtn { font-size:11px; border:1px solid rgba(255,255,255,0.4); border-radius:6px; padding:4px 10px; background:rgba(255,255,255,0.12); color:#fff; cursor:pointer; }
+  .selbar .sbtn.solid { background:#fff; color:var(--accent-dark); border-color:transparent; font-weight:600; }
+  .selbar .link { color:#fff; text-decoration:underline; font-size:11px; opacity:0.9; cursor:pointer; }
+
+  /* ---- mock: bulk edit sheet ---- */
+  .sheet { padding:0; }
+  .sheethead { padding:14px 18px; border-bottom:1px solid var(--line); }
+  .sheethead .t { font-family:"Fraunces",Georgia,serif; font-size:16px; font-weight:600; }
+  .sheethead .s { font-size:11px; color:var(--muted); margin-top:3px; }
+  .sheetbody { padding:16px 18px; display:flex; flex-direction:column; gap:12px; }
+  .frow { display:grid; grid-template-columns:22px 150px 1fr; align-items:center; gap:12px; }
+  .frow .en { width:16px; height:16px; border:1.5px solid var(--faint); border-radius:4px; display:grid; place-items:center; font-size:10px; color:#fff; }
+  .frow.on .en { background:var(--accent); border-color:var(--accent); }
+  .frow label { font-size:11px; color:var(--ink-soft); font-weight:500; }
+  .frow .ctl { border:1px solid var(--line); border-radius:6px; background:var(--card); padding:6px 9px; font-size:11px; color:var(--ink-soft);
+    display:flex; align-items:center; gap:8px; min-height:30px; }
+  .frow.off .ctl { opacity:0.4; }
+  .frow .ctl.mono { font-family:"IBM Plex Mono",monospace; }
+  .frow .ctl .cur { color:var(--faint); font-size:10px; margin-left:auto; }
+  .frow .hint { grid-column:2/-1; font-size:10px; color:var(--muted); margin-top:-4px; }
+  .sheetfoot { padding:12px 18px; border-top:1px solid var(--line); display:flex; align-items:center; gap:10px; font-size:11px; color:var(--muted); }
+  .sheetfoot .sp { margin-left:auto; }
+
+  /* preview panel */
+  .prev { border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line)); border-radius:8px;
+    background:color-mix(in srgb,var(--accent) 5%,var(--card)); padding:12px 14px; font-size:11.5px; color:var(--ink-soft); }
+  .prev .h { font-size:9px; letter-spacing:0.05em; text-transform:uppercase; color:var(--accent-dark); font-weight:600; margin-bottom:8px; }
+  .prev table { width:100%; border-collapse:collapse; font-size:11px; }
+  .prev td { padding:4px 6px; border-top:1px solid var(--line-soft); }
+  .prev td:first-child { color:var(--muted); }
+  .prev .was { color:var(--faint); text-decoration:line-through; font-family:"IBM Plex Mono",monospace; font-size:10px; }
+  .prev .now { color:var(--ok-fg); font-weight:600; font-family:"IBM Plex Mono",monospace; }
+  .prev .skip { color:var(--warn-fg); }
+
+  /* generic tables */
+  .gt { width:100%; border-collapse:collapse; font-size:12px; margin-top:6px; }
+  .gt th { text-align:left; font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--muted);
+    font-weight:600; padding:9px 11px; background:var(--band); border-bottom:1px solid var(--line); }
+  .gt td { padding:9px 11px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  .gt td.f, .gt td .f { font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--ink-soft); white-space:nowrap; }
+  .gt .st-have { color:var(--ok-fg); font-weight:600; }
+  .gt .st-change { color:var(--warn-fg); font-weight:600; }
+  .gt .st-new { color:var(--new-fg); font-weight:600; }
+  .gtwrap { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card); margin-top:14px; overflow-x:auto; }
+
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  .cols.tri { grid-template-columns:1fr 1fr 1fr; }
+
+  .card2 { border:1px solid var(--line); border-radius:10px; background:var(--card); padding:14px 16px; }
+  .card2 h3 { margin:0 0 6px; font-size:13px; font-family:"Fraunces",Georgia,serif; font-weight:600; }
+  .card2 p { margin:0 0 6px; font-size:11.5px; color:var(--ink-soft); }
+  .card2 ul { margin:6px 0 0; padding-left:16px; font-size:11.5px; color:var(--ink-soft); }
+  .card2 li { margin:3px 0; }
+  .card2 .f { font-family:"IBM Plex Mono",monospace; font-size:10px; background:var(--band); padding:1px 4px; border-radius:3px; }
+
+  .note { border:1px dashed var(--accent); border-radius:10px; background:color-mix(in srgb,var(--accent) 5%,var(--card));
+    padding:14px 16px; margin-top:18px; font-size:12.5px; color:var(--accent-dark); line-height:1.6; }
+  .note b { color:var(--accent-dark); }
+  .note ul { margin:8px 0 0; padding-left:18px; }
+  .note li { margin:4px 0; }
+  .note code { font-family:"IBM Plex Mono",monospace; font-size:0.9em; background:color-mix(in srgb,var(--accent) 12%,transparent); padding:0 4px; border-radius:3px; }
+
+  .warnnote { border-color:var(--danger-fg); background:color-mix(in srgb,var(--danger-fg) 6%,var(--card)); color:var(--danger-fg); }
+  .warnnote b { color:var(--danger-fg); }
+
+  ol.steps { counter-reset:s; list-style:none; padding:0; margin:10px 0 0; }
+  ol.steps li { position:relative; padding:8px 0 8px 34px; border-top:1px solid var(--line-soft); font-size:12.5px; color:var(--ink-soft); }
+  ol.steps li:first-child { border-top:none; }
+  ol.steps li::before { counter-increment:s; content:counter(s); position:absolute; left:0; top:8px;
+    width:22px; height:22px; border-radius:50%; background:var(--band); color:var(--accent-dark);
+    font-family:"IBM Plex Mono",monospace; font-size:11px; font-weight:500; display:grid; place-items:center; }
+
+  footer.page { margin-top:56px; padding-top:22px; border-top:1px solid var(--line);
+    font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:6px 18px; }
+  footer.page code { font-family:"IBM Plex Mono",monospace; color:var(--ink-soft); }
+
+  kbd { font-family:"IBM Plex Mono",monospace; font-size:10px; background:var(--band); border:1px solid var(--line);
+    border-bottom-width:2px; border-radius:4px; padding:1px 5px; color:var(--ink-soft); }
+
+  @media (max-width:900px) {
+    .cols, .cols.tri { grid-template-columns:1fr; }
+    .frow { grid-template-columns:22px 1fr; }
+    .frow .ctl { grid-column:2; }
+    .frow label { grid-column:2; }
+  }
+  @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <p class="eyebrow">Metal ERP · Visual review · Items · Bulk operations</p>
+    <h1 class="page">Fix a hundred items in one move</h1>
+    <p class="lede">
+      A shop owner just imported 2,094 items from Tally. Half have no unit, a
+      whole brand needs a 5% discount, a mis-spelled category needs merging away.
+      Doing that one item at a time is the current reality. This plan adds
+      <b>select&nbsp;→ change one thing → preview → apply</b> to the existing
+      Items screen — no new page, no jargon, nothing a counter-hand can't run.
+    </p>
+    <div class="statusrow">
+      <span class="chip have">Reuses two-pane Items shell</span>
+      <span class="chip change">List rows gain a checkbox</span>
+      <span class="chip new">Bulk-edit sheet</span>
+      <span class="chip new">Preview-before-apply</span>
+      <span class="chip new"><code style="font-size:0.9em">PATCH /api/items/bulk</code></span>
+      <span class="chip new"><code style="font-size:0.9em">POST /api/items/bulk-delete</code></span>
+    </div>
+  </header>
+
+  <section class="blk">
+    <h2><span class="n">00</span> Where this sits today</h2>
+    <p class="sub">
+      Items is a two-pane screen (<code class="mono" style="font-size:11px">web/src/pages/ItemsPage.tsx</code>):
+      a left rail with a <b>Tree</b> view and a <b>Flat</b> list + search + filter chips
+      (All / BULK / MRP / Unconfirmed / No HSN / Price review / Archived), and a right
+      pane that edits <b>one</b> item with autosave. Every edit is a single
+      <code class="mono" style="font-size:11px">PATCH /api/items/&lt;id&gt;</code>. Delete is per-item and
+      blocked when the item is on any document. There is no multi-select anywhere.
+    </p>
+    <div class="note">
+      <b>Design constraint carried from <code>ui-plan-guardrails</code>:</b> this is Level&nbsp;1 —
+      the 1B two-pane pattern. Bulk ops must live <i>inside</i> that shell (the Flat list),
+      not spawn a spreadsheet. A layman drives it: no formula bar, no column config,
+      no "apply to filtered set" surprises. You touch only the rows you can see ticked.
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">01</span> The core interaction</h2>
+    <p class="sub">Four states on the Flat list. The Tree view stays selection-free (it's for browsing hierarchy); bulk work happens in Flat where rows are uniform.</p>
+
+    <ol class="steps">
+      <li><b>Select.</b> A checkbox appears on hover / is always visible on touch. Tick rows, or tick the header box to select every row currently loaded by the search+filter. <kbd>Shift</kbd>+click ticks a range.</li>
+      <li><b>Act.</b> The moment one row is ticked, a teal <b>selection bar</b> replaces the list header: “<b>12 selected</b> · Edit fields · Change category · Delete · Clear”.</li>
+      <li><b>Preview.</b> Whatever you choose opens a sheet in the right pane. You set <i>one or a few</i> fields; a live table shows exactly which of the 12 items change and which are skipped, and why.</li>
+      <li><b>Apply.</b> One button. One request. A toast: “<b>Updated 9 items · 3 unchanged</b>”. Selection clears. The list refetches.</li>
+    </ol>
+
+    <div class="frame" style="margin-top:22px">
+      <div class="tabbar"><i></i><i></i><i></i><span class="url">metal-erp.app/items</span></div>
+      <div class="lst">
+        <div class="selbar">
+          <span class="cnt"><span class="mono">12</span>&nbsp;selected</span>
+          <button class="sbtn solid">Edit fields</button>
+          <button class="sbtn">Change category / group</button>
+          <button class="sbtn">Delete…</button>
+          <span class="sp"></span>
+          <span class="link">Select all 47</span>
+          <span class="link">Clear</span>
+        </div>
+        <div class="lrow sel"><span class="ck">✓</span><span class="badge bulk">bulk</span><span class="nm">Kadai 240MM</span><span class="meta">no uom · ₹—</span></div>
+        <div class="lrow sel"><span class="ck">✓</span><span class="badge bulk">bulk</span><span class="nm">Kadai 260MM</span><span class="meta">no uom · ₹—</span></div>
+        <div class="lrow sel"><span class="ck">✓</span><span class="badge mrp">mrp</span><span class="nm">Hawkins Contura 3L</span><span class="meta">PCS · ₹2,450</span></div>
+        <div class="lrow"><span class="ck"></span><span class="badge bulk">bulk</span><span class="nm">Patila 5L</span><span class="meta">KG · ₹—</span></div>
+        <div class="lrow sel"><span class="ck">✓</span><span class="badge mrp">mrp</span><span class="nm">Hawkins Classic 2L</span><span class="meta">PCS · ₹1,890</span></div>
+        <div class="lrow"><span class="ck"></span><span class="badge bulk">bulk</span><span class="nm">Tawa 280MM</span><span class="meta">PCS · ₹420</span></div>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:10px">
+      <b>“Select all 47”</b> vs the 12 ticked: the header checkbox ticks the loaded page;
+      the bar then offers to extend the selection to the full result set of the current
+      search+filter. The count is always explicit — the user never acts on an invisible set.
+    </p>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">02</span> Bulk edit fields — the sheet</h2>
+    <p class="sub">
+      Opens in the right pane (replaces the single-item form while a selection is live).
+      Each field has an <b>enable toggle</b>: off means “leave every item's value alone”.
+      Only enabled fields are sent. This is the whole trick that makes it layman-safe —
+      you can't accidentally blank 12 fields because you only see one form.
+    </p>
+
+    <div class="cols">
+      <div class="frame">
+        <div class="tabbar"><i></i><i></i><i></i><span class="url">right pane · bulk edit</span></div>
+        <div class="sheet">
+          <div class="sheethead">
+            <div class="t">Edit 12 items</div>
+            <div class="s">Turn on a field to set it for all 12. Everything off is left untouched.</div>
+          </div>
+          <div class="sheetbody">
+            <div class="frow on">
+              <span class="en">✓</span><label>Unit (UOM)</label>
+              <span class="ctl">PCS <span class="cur">mixed / empty</span></span>
+            </div>
+            <div class="frow on">
+              <span class="en">✓</span><label>Discount %</label>
+              <span class="ctl mono">5 <span class="cur">mixed</span></span>
+            </div>
+            <div class="frow off">
+              <span class="en"></span><label>Default rate</label>
+              <span class="ctl mono">— <span class="cur">untouched</span></span>
+            </div>
+            <div class="frow off">
+              <span class="en"></span><label>Item type</label>
+              <span class="ctl">— <span class="cur">untouched</span></span>
+            </div>
+            <div class="frow off">
+              <span class="en"></span><label>HSN code</label>
+              <span class="ctl mono">— <span class="cur">untouched</span></span>
+            </div>
+            <div class="frow off">
+              <span class="en"></span><label>Purchase UOM</label>
+              <span class="ctl">— <span class="cur">untouched</span></span>
+            </div>
+          </div>
+          <div class="sheetfoot">
+            <span>2 fields will change</span>
+            <span class="sp"></span>
+            <button class="btn ghost sm">Cancel</button>
+            <button class="btn pri sm">Preview change</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="frame">
+        <div class="tabbar"><i></i><i></i><i></i><span class="url">preview step</span></div>
+        <div class="sheet">
+          <div class="sheethead">
+            <div class="t">Review — then apply</div>
+            <div class="s">9 of 12 items change. 3 already have these values.</div>
+          </div>
+          <div class="sheetbody">
+            <div class="prev">
+              <div class="h">Unit (UOM) → PCS</div>
+              <table>
+                <tr><td>Kadai 240MM</td><td><span class="was">(empty)</span> → <span class="now">PCS</span></td></tr>
+                <tr><td>Kadai 260MM</td><td><span class="was">(empty)</span> → <span class="now">PCS</span></td></tr>
+                <tr><td>Hawkins Contura 3L</td><td class="skip">already PCS — skip</td></tr>
+              </table>
+            </div>
+            <div class="prev" style="margin-top:10px">
+              <div class="h">Discount % → 5</div>
+              <table>
+                <tr><td>Hawkins Contura 3L</td><td><span class="was">0</span> → <span class="now">5</span></td></tr>
+                <tr><td>Hawkins Classic 2L</td><td><span class="was">2.5</span> → <span class="now">5</span></td></tr>
+                <tr><td>Kadai 240MM</td><td class="skip">BULK item — discount % not applicable — skip</td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="sheetfoot">
+            <span class="mono">9 change · 3 unchanged</span>
+            <span class="sp"></span>
+            <button class="btn ghost sm">Back</button>
+            <button class="btn pri sm">Apply to 9 items</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3 class="serif" style="font-size:14px; margin:26px 0 4px">Fields offered for bulk edit</h3>
+    <p class="sub">A deliberately short list — the fields a shop actually sets in bulk. Identity/dimension fields (name, size, thickness) are per-item and stay out.</p>
+    <div class="gtwrap">
+      <table class="gt">
+        <thead><tr><th>Field</th><th>Control</th><th>Skip rule (shown in preview)</th><th class="f">API key</th></tr></thead>
+        <tbody>
+          <tr><td>Unit (UOM)</td><td>select from <code class="f">/reference/uoms</code> + free text</td><td>skip if already equal</td><td class="f">uom</td></tr>
+          <tr><td>Purchase UOM</td><td>same</td><td>skip if already equal</td><td class="f">purchase_uom</td></tr>
+          <tr><td>Discount %</td><td>number 0–100</td><td>skip BULK items (MRP-only field); skip if equal</td><td class="f">default_discount_pct</td></tr>
+          <tr><td>Default rate</td><td>number, or “+/- %” adjust</td><td>skip if equal; warn if it lands outside price band</td><td class="f">default_rate</td></tr>
+          <tr><td>Item type</td><td>BULK / MRP</td><td>skip if equal; note if it hides the discount field</td><td class="f">item_type</td></tr>
+          <tr><td>HSN code</td><td>HSN picker (existing)</td><td>skip if equal; auto-fills <code class="f">gst_rate</code> like the single form</td><td class="f">hsn_code</td></tr>
+          <tr><td>Metal / Shape / Finish</td><td>select from vocab</td><td>skip if equal</td><td class="f">metal, shape, finish</td></tr>
+          <tr><td>Notes</td><td>append or replace (radio)</td><td>append adds a line; replace overwrites</td><td class="f">notes</td></tr>
+          <tr><td>Status</td><td>Confirm selected / Mark unconfirmed</td><td>Confirm = the existing per-item confirm, batched</td><td class="f">status</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">03</span> Bulk category / group — a guided move</h2>
+    <p class="sub">
+      Category and group deserve their own flow because they're a <i>hierarchy</i>, not a value,
+      and because the other session's classifier (<code>item-categorization-plan</code>) makes
+      moves here <b>teach a rule</b>. Same select → preview → apply spine, different picker.
+    </p>
+    <div class="cols">
+      <div class="card2">
+        <h3>What the user picks</h3>
+        <ul>
+          <li><b>Category</b> — dropdown of the tenant's <code class="f">item_category</code> list, or “＋ new category”.</li>
+          <li><b>Group</b> — dropdown filtered to that category's groups, or “leave as-is” / “remove from group”.</li>
+          <li>A checkbox: <b>“Also apply this group's HSN &amp; unit where the item has none”</b> — reuses <code class="f">_apply_group_inheritance</code>, off by default so nothing silently changes.</li>
+        </ul>
+      </div>
+      <div class="card2">
+        <h3>What happens under the hood</h3>
+        <ul>
+          <li>Each item: <code class="f">PATCH</code> with <code class="f">group_id</code> / <code class="f">category_id</code> — the <i>same</i> path as the single form.</li>
+          <li>For every item that was <code class="f">unconfirmed</code>, the existing <code class="f">learn_from_recategorize</code> hook fires → a tenant classify rule is written. Bulk recategorizing 40 kadais teaches the classifier “kadai → Cookware / Kadai” in one move.</li>
+          <li>Preview shows: N items move · M rules will be learned · K get inherited HSN/UOM.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="note">
+      <b>Coordination with the categorization session:</b> that session already plans a
+      “recategorize control … mostly there” in the Items UI and a
+      <code>tools/reclassify_items.py</code> CLI for the 2,094-item first pass. This plan does
+      <b>not</b> duplicate the CLI — it gives the owner an <i>in-app</i> way to fix the
+      residue the classifier leaves in <code>Other / Uncategorised</code>, item by item or
+      forty at a time, and each fix feeds the same learning loop. Build order:
+      categorization lands first (it seeds the taxonomy + rules table), then this slice
+      wires bulk into it.
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">04</span> Bulk delete — the careful one</h2>
+    <p class="sub">Delete is destructive and the current per-item rule already blocks items that are on documents. Bulk delete keeps that rule and makes the split visible <i>before</i> anything happens.</p>
+    <div class="cols">
+      <div class="frame">
+        <div class="tabbar"><i></i><i></i><i></i><span class="url">delete confirm</span></div>
+        <div class="sheet">
+          <div class="sheethead">
+            <div class="t">Delete 12 items?</div>
+            <div class="s">Items on invoices or inward bills can't be deleted — archive those instead.</div>
+          </div>
+          <div class="sheetbody">
+            <div class="prev">
+              <div class="h">8 will be deleted</div>
+              <table>
+                <tr><td>Kadai 240MM</td><td class="now">never billed — delete</td></tr>
+                <tr><td>Test item xyz</td><td class="now">never billed — delete</td></tr>
+              </table>
+            </div>
+            <div class="prev" style="margin-top:10px">
+              <div class="h">4 can't be deleted</div>
+              <table>
+                <tr><td>Hawkins Contura 3L</td><td class="skip">on 6 invoices → <b>Archive</b> instead</td></tr>
+                <tr><td>Patila 5L</td><td class="skip">on 1 inward bill → <b>Archive</b> instead</td></tr>
+              </table>
+            </div>
+          </div>
+          <div class="sheetfoot">
+            <span class="mono">8 delete · 4 archive</span>
+            <span class="sp"></span>
+            <button class="btn ghost sm">Cancel</button>
+            <button class="btn sm" style="border-color:var(--warn-fg);color:var(--warn-fg)">Archive the 4</button>
+            <button class="btn pri sm" style="background:var(--danger-fg)">Delete the 8</button>
+          </div>
+        </div>
+      </div>
+      <div class="card2">
+        <h3>Rules</h3>
+        <ul>
+          <li>Server re-checks <code class="f">times_billed</code> + <code class="f">document_count</code> for every id — the preview is advisory, the API is the guard (same 409 logic as <code class="f">delete_item</code>).</li>
+          <li>Two explicit buttons: <b>Delete the deletable</b>, <b>Archive the rest</b>. Never one button that does both silently.</li>
+          <li>No “type DELETE to confirm” — the count-in-the-button + the deletable/blocked split is the friction. A layman reads “Delete the 8”, not a ritual.</li>
+          <li>Merged/archived items are filtered out of selection already (list query excludes them).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">05</span> API — two endpoints, both preview-capable</h2>
+    <p class="sub">Both accept <code class="mono" style="font-size:11px">?dry_run=true</code> and return the same per-item outcome list the UI renders as the preview. No new service layer — they loop the existing single-item logic inside one transaction.</p>
+    <div class="gtwrap">
+      <table class="gt">
+        <thead><tr><th>Endpoint</th><th>Body</th><th>Returns</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="f">PATCH /api/items/bulk</td>
+            <td class="f">{ ids: [...], fields: { uom?, default_discount_pct?, group_id?, ... } }</td>
+            <td>per id: <code class="f">changed</code> | <code class="f">skipped(reason)</code> | <code class="f">error(msg)</code>; plus <code class="f">learned_rule_ids</code></td>
+            <td><span class="st-new">new</span></td>
+          </tr>
+          <tr>
+            <td class="f">POST /api/items/bulk-delete</td>
+            <td class="f">{ ids: [...], on_blocked: "skip" | "archive" }</td>
+            <td>per id: <code class="f">deleted</code> | <code class="f">archived</code> | <code class="f">blocked(n_docs)</code></td>
+            <td><span class="st-new">new</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="cols" style="margin-top:16px">
+      <div class="card2">
+        <h3>Reused as-is</h3>
+        <ul>
+          <li><code class="f">update_item</code>'s body loop, name-clash guard, <code class="f">_apply_group_inheritance</code>, <code class="f">hsn_gst_rate</code> fill, <code class="f">learn_from_recategorize</code>.</li>
+          <li><code class="f">delete_item</code>'s <code class="f">document_count</code> + <code class="f">times_billed</code> 409 rule.</li>
+          <li><code class="f">confirm_item</code> for the batched status change.</li>
+          <li>Tenant scoping via <code class="f">_owned</code> per id — an id from another tenant → that id reports <code class="f">error</code>, the rest proceed.</li>
+        </ul>
+      </div>
+      <div class="card2">
+        <h3>New, small</h3>
+        <ul>
+          <li>Pydantic <code class="f">ItemBulkUpdate</code> / <code class="f">ItemBulkDelete</code> in <code class="f">schemas_item.py</code>.</li>
+          <li>A <code class="f">BulkOutcome</code> row model (id, name, result, detail).</li>
+          <li>Guard: max 500 ids/request (the SETHIA import is 2,094 — the UI pages, or the CLI handles the whole-catalogue pass).</li>
+          <li>One transaction; partial success is normal and reported, not rolled back. A true error (constraint) rolls back only that item.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">06</span> Frontend build</h2>
+    <div class="gtwrap">
+      <table class="gt">
+        <thead><tr><th>File</th><th>Change</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td class="f">web/src/pages/ItemsPage.tsx</td><td>selection state (<code class="f">Set&lt;id&gt;</code>) on the Flat list; checkbox column; header select-all; render <code class="f">&lt;SelectionBar&gt;</code> when non-empty; right pane shows <code class="f">&lt;BulkEditSheet&gt;</code> instead of <code class="f">&lt;ItemForm&gt;</code> while a selection is live</td><td><span class="st-change">edit</span></td></tr>
+          <tr><td class="f">web/src/components/SelectionBar.tsx</td><td>the teal bar: count, action buttons, select-all-N, clear</td><td><span class="st-new">new</span></td></tr>
+          <tr><td class="f">web/src/components/BulkEditSheet.tsx</td><td>per-field enable toggles, controls from <code class="f">useVocab</code>, Cancel / Preview / Apply, the preview table</td><td><span class="st-new">new</span></td></tr>
+          <tr><td class="f">web/src/components/BulkCategoryMove.tsx</td><td>category → group cascade picker + inheritance checkbox + preview</td><td><span class="st-new">new</span></td></tr>
+          <tr><td class="f">web/src/components/BulkDeleteDialog.tsx</td><td>deletable / blocked split, two buttons</td><td><span class="st-new">new</span></td></tr>
+          <tr><td class="f">web/src/lib/api.ts + types.ts</td><td><code class="f">bulkUpdateItems</code>, <code class="f">bulkDeleteItems</code>; <code class="f">BulkOutcome</code> type</td><td><span class="st-change">edit</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>Mobile (<code>mobile-first-migration</code>):</b> on a phone the list is the whole screen.
+      Checkboxes are always visible; the selection bar sticks to the bottom; the sheet is a
+      full-screen route (<code>/items/bulk</code>) with a back arrow, same as the single-item
+      detail collapse. Preview table scrolls in its own container.
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">07</span> What we are NOT building</h2>
+    <div class="cols tri">
+      <div class="card2"><h3>Inline grid editing</h3><p>No click-a-cell-and-type on the list. That's the 2B dense editor and it's a different, later slice. Bulk = one value to many rows, not a spreadsheet.</p></div>
+      <div class="card2"><h3>Saved selections / segments</h3><p>Selection is ephemeral — it clears on apply and on navigation. Filters already do the “find this set” job.</p></div>
+      <div class="card2"><h3>Undo</h3><p>No transactional undo. Mitigations: preview before apply, delete is archive-first for referenced items, and every field change is re-editable. Notes “replace” is the only lossy op — it warns.</p></div>
+      <div class="card2"><h3>Bulk create</h3><p>Out of scope. Creation comes from imports (Tally / inward) and the single New form.</p></div>
+      <div class="card2"><h3>New taxonomy / classifier</h3><p>Owned by <code>item-categorization-plan</code>. This slice consumes it.</p></div>
+      <div class="card2"><h3>Cross-tenant / admin bulk</h3><p>Everything is tenant-scoped through <code>_owned</code>. No superuser path.</p></div>
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">08</span> Tests</h2>
+    <div class="gtwrap">
+      <table class="gt">
+        <tbody>
+          <tr><td class="f">test_items_bulk.py</td><td>dry-run outcome list matches real run; skip-if-equal; BULK-skips-discount; HSN fill; name-clash on one id doesn't block others; 500-id cap; cross-tenant id → error row</td></tr>
+          <tr><td class="f">test_items_bulk_delete.py</td><td>never-billed → deleted; on-document → blocked; <code class="f">on_blocked=archive</code> archives them; merged items excluded</td></tr>
+          <tr><td class="f">test_classify_learning.py</td><td>extend: bulk recategorize of N unconfirmed items writes N (deduped) learned rules</td></tr>
+          <tr><td class="f">web · BulkEditSheet.test.tsx</td><td>disabled field never appears in request body; preview count math; apply clears selection</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="blk">
+    <h2><span class="n">09</span> Deliverables for the one push</h2>
+    <ol class="steps">
+      <li><code class="mono" style="font-size:11px">PATCH /api/items/bulk</code> + <code class="mono" style="font-size:11px">POST /api/items/bulk-delete</code> with <code class="mono" style="font-size:11px">dry_run</code>, looping existing single-item logic in one transaction.</li>
+      <li>Pydantic schemas + <code class="f">BulkOutcome</code> row model; 500-id guard.</li>
+      <li><code class="f">SelectionBar</code>, <code class="f">BulkEditSheet</code>, <code class="f">BulkCategoryMove</code>, <code class="f">BulkDeleteDialog</code>; selection state + checkbox column in <code class="f">ItemsPage</code> Flat list.</li>
+      <li>Mobile: <code class="f">/items/bulk</code> full-screen route, sticky bottom selection bar.</li>
+      <li>Preview-before-apply on every operation; toast summarising changed / unchanged / blocked.</li>
+      <li>Tests above, all green.</li>
+      <li>Sequenced <b>after</b> <code>item-categorization-plan</code> lands (needs its taxonomy + <code>item_classify_rule</code> + <code>learn_from_recategorize</code>).</li>
+    </ol>
+    <div class="note warnnote">
+      <b>Not committed, not pushed</b> — user does check-ins (<code>ui-plan-guardrails</code>).
+      This doc is for visual sign-off before any code.
+    </div>
+  </section>
+
+  <footer class="page">
+    <span>Metal ERP</span>
+    <code>docs/visual-plan/items-bulk-ops-plan.html</code>
+    <span>Proposal · 2026-09-02 · awaiting sign-off</span>
+    <span>Pairs with <code>item-categorization-plan.md</code></span>
+  </footer>
+</div>

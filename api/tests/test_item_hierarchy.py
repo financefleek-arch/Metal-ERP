@@ -50,17 +50,20 @@ def test_categories_seeded_on_register(client: TestClient) -> None:
     h = _h(_token(client, "cat-1@x.example.com"))
     cats = client.get("/api/item-categories", headers=h).json()
     names = {c["name"] for c in cats}
-    assert {"Steel", "Aluminium", "Utensils"} <= names
-    assert all(c["group_count"] == 0 and c["item_count"] == 0 for c in cats)
+    # the fixed taxonomy: departments + starter brands
+    assert {"Cookware", "Pressure Cookers", "Pooja & Wooden Goods"} <= names
+    assert {"Hawkins", "Prestige", "Milton"} <= names
+    # every taxonomy product_group is seeded too (empty until items land)
+    assert all(c["item_count"] == 0 for c in cats)
 
 
 def test_category_crud(client: TestClient) -> None:
     h = _h(_token(client, "cat-2@x.example.com"))
-    made = client.post("/api/item-categories", headers=h, json={"name": "Hawkins"})
+    made = client.post("/api/item-categories", headers=h, json={"name": "Kanchan"})
     assert made.status_code == 201
     cid = made.json()["id"]
 
-    dupe = client.post("/api/item-categories", headers=h, json={"name": "hawkins"})
+    dupe = client.post("/api/item-categories", headers=h, json={"name": "kanchan"})
     assert dupe.status_code == 409
 
     ren = client.patch(f"/api/item-categories/{cid}", headers=h, json={"name": "Hawkins Ltd"})
@@ -226,9 +229,10 @@ def test_delete_group_detaches_leaves(client: TestClient) -> None:
 
 def test_tree_shape(client: TestClient) -> None:
     h = _h(_token(client, "tree-1@x.example.com"))
-    steel = next(
-        c for c in client.get("/api/item-categories", headers=h).json() if c["name"] == "Steel"
-    )["id"]
+    # a fresh category so the group list is exactly what this test creates
+    steel = client.post(
+        "/api/item-categories", headers=h, json={"name": "MS Bar Stock"}
+    ).json()["id"]
     g = client.post(
         "/api/item-groups", headers=h, json={"name": "MS Angle", "category_id": steel}
     ).json()
@@ -237,7 +241,8 @@ def test_tree_shape(client: TestClient) -> None:
         headers=h,
         json={"name": "MS Angle 40x40x5", "group_id": g["id"], "size_label": "40x40x5"},
     )
-    # a loose leaf in Steel with no group
+    # a loose leaf in the category with no group (category_id set -> the
+    # create-time classifier is skipped, so it stays loose)
     client.post(
         "/api/items",
         headers=h,
@@ -245,7 +250,7 @@ def test_tree_shape(client: TestClient) -> None:
     )
 
     tree = client.get("/api/items/tree", headers=h).json()
-    steel_node = next(c for c in tree if c["name"] == "Steel")
+    steel_node = next(c for c in tree if c["name"] == "MS Bar Stock")
     assert [g["name"] for g in steel_node["groups"]] == ["MS Angle"]
     assert steel_node["groups"][0]["leaves"][0]["name"] == "MS Angle 40x40x5"
     assert [x["name"] for x in steel_node["loose"]] == ["MS Scrap Mixed"]

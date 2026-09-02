@@ -36,9 +36,9 @@ from app.models import (
 from app.models._mixins import (
     InvoiceStatus,
     ItemSource,
-    ItemStatus,
     PdfStatus,
 )
+from app.services.catalogue.classify_apply import Classifier
 from app.services.catalogue.learn_from_invoice import learn_from_invoice
 from app.services.invoices.common import finalize_blockers
 from app.services.item_resolution import resolve_item
@@ -129,6 +129,7 @@ def finalize_invoice(
         invoice.declaration_snapshot = tenant.declaration_text
 
     # --- 4. resolve / create items, freeze line totals ---
+    classifier = Classifier(session, invoice.tenant_id)
     created_item_ids: list[str] = []
     for line, cl in zip(real_lines, computed.lines, strict=True):
         line.line_total = cl.line_total
@@ -155,6 +156,9 @@ def finalize_invoice(
                 if existing is not None:
                     line.item_id = existing.id
                 else:
+                    applied = classifier.apply(
+                        line.description, hsn=line.hsn_code, uom=line.uom
+                    )
                     item = Item(
                         tenant_id=invoice.tenant_id,
                         name=line.description.strip()[:300],
@@ -162,8 +166,10 @@ def finalize_invoice(
                         uom=line.uom,
                         hsn_code=line.hsn_code,
                         rate_mode="piece",
+                        group_id=applied.group_id,
+                        category_id=applied.category_id,
                         source=ItemSource.auto_from_invoice,
-                        status=ItemStatus.unconfirmed,
+                        status=applied.status,
                     )
                     session.add(item)
                     session.flush()

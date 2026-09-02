@@ -173,9 +173,9 @@ def test_commit_builds_groups_from_stock_groups(client: TestClient) -> None:
     )
     full = client.get(f"/api/items/{patta['id']}", headers=h).json()
     assert full["group_id"] is not None
-    # "Stainless Steel" stock group → matched the seeded "Stainless" category
+    # the Tally stock group name became the product_group name verbatim
     grp = client.get(f"/api/item-groups/{full['group_id']}", headers=h).json()
-    assert grp["category_name"] == "Stainless"
+    assert grp["name"] == "Stainless Steel"
 
 
 def test_flagged_hsn_row_can_seed_and_commit(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]

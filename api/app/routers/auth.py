@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select
 
 from app.deps import CurrentUser, SessionDep
-from app.models import ItemCategory, Tenant, User
+from app.models import Tenant, User
 from app.models._mixins import UserRole
 from app.schemas import (
     LoginRequest,
@@ -16,21 +16,9 @@ from app.schemas import (
 )
 from app.security import create_access_token, hash_password, verify_password
 from app.seed import seed_synonyms
+from app.services.catalogue.seed_taxonomy import seed_taxonomy
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
-
-# A starter set of item categories seeded for every new firm. The shop
-# renames / replaces these — a bartan shop turns them into brands.
-_SEED_CATEGORIES = [
-    "Steel",
-    "Stainless",
-    "Aluminium",
-    "Iron",
-    "Brass / Copper",
-    "Utensils",
-    "Hardware & Fittings",
-    "Scrap",
-]
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -60,15 +48,18 @@ def register(body: RegisterRequest, session: SessionDep) -> TokenResponse:
         role=UserRole.owner,
     )
     session.add(user)
-
-    for i, name in enumerate(_SEED_CATEGORIES):
-        session.add(ItemCategory(tenant_id=tenant.id, name=name, sort=i))
     session.flush()
 
-    # Seed the name-normalization dictionary so the very first item created
-    # for this firm gets a consistent `name_normalized` (bartan/Hindi words
-    # collapse to their English trade term).
+    # Seed the name-normalization dictionary FIRST so seed_taxonomy's group
+    # name_normalized keys (and every later item) collapse consistently
+    # (bartan/Hindi words -> English trade term). Flush so seed_taxonomy's
+    # synonym-map query sees them (the session runs autoflush=False).
     seed_synonyms(session, tenant.id)
+    session.flush()
+
+    # Seed the fixed item taxonomy: 12 departments + starter brands as
+    # item_category rows, ~85 product_group rows. The shop edits from here.
+    seed_taxonomy(session, tenant.id)
 
     token = create_access_token(user_id=user.id, tenant_id=tenant.id, role=str(user.role))
     return TokenResponse(access_token=token)

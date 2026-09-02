@@ -37,7 +37,6 @@ from app.models._mixins import (
     AddressType,
     InwardStatus,
     ItemSource,
-    ItemStatus,
     ItemType,
     MatchMethod,
     PartyRole,
@@ -72,6 +71,8 @@ class ApproveError(Exception):
     def __init__(self, reasons: list[str]):
         self.reasons = reasons
         super().__init__("; ".join(reasons))
+
+
 
 
 @dataclass
@@ -174,6 +175,9 @@ def approve_bill(
             party.last_txn_at = bill_dt
 
     # --- 3 + 4. items + line links ---
+    from app.services.catalogue.classify_apply import Classifier
+
+    classifier = Classifier(session, bill.tenant_id)
     created_item_ids: list[str] = []
     linked = 0
     for line in bill.lines:
@@ -190,15 +194,23 @@ def approve_bill(
             if existing is not None:
                 item_id = existing.id
             else:
+                item_name = staged.get("name") or line.description
+                applied = classifier.apply(
+                    item_name,
+                    hsn=staged.get("hsn_code"),
+                    uom=staged.get("uom"),
+                )
                 item = Item(
                     tenant_id=bill.tenant_id,
-                    name=staged.get("name") or line.description,
+                    name=item_name,
                     name_normalized=norm,
                     item_type=ItemType(staged.get("item_type") or ItemType.bulk.value),
                     uom=staged.get("uom"),
                     hsn_code=staged.get("hsn_code"),
+                    group_id=applied.group_id,
+                    category_id=applied.category_id,
                     source=ItemSource.auto_from_purchase,
-                    status=ItemStatus.unconfirmed,
+                    status=applied.status,
                 )
                 session.add(item)
                 session.flush()

@@ -22,6 +22,7 @@ from app.models.inward import (
 )
 from app.models.item import Item, ItemAlias, ProductGroup
 from app.models.item_category import ItemCategory
+from app.models.item_classify_rule import ItemClassifyRule
 from app.models.party import Party, PartyAddress
 from app.models.tally_import import StagingTallyParty
 from app.models.tally_stock_import import StagingTallyItem
@@ -43,6 +44,7 @@ __all__ = [
     "Item",
     "ItemAlias",
     "ItemCategory",
+    "ItemClassifyRule",
     "ProductGroup",
     "Party",
     "PartyAddress",
