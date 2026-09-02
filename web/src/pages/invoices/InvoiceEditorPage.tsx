@@ -420,6 +420,14 @@ export function InvoiceEditorPage() {
     setClosingSeg(null);
     setDirty(true);
   }
+  /** overwrite a closed segment's recorded scale weight from its slip divider */
+  function editSlip(seg: number, v: string) {
+    setSlips((ss) => [
+      ...ss.filter((s) => s.seg !== seg),
+      { seg, recorded_kg: v || "0" },
+    ]);
+    setDirty(true);
+  }
   /** re-open the last-closed segment: drop its slip, fold its lines back down */
   function reopenLastSegment() {
     if (openSeg <= 1) return;
@@ -620,12 +628,7 @@ export function InvoiceEditorPage() {
                       count={seg.count}
                       readOnly={readOnly}
                       isLastClosed={seg.seg === openSeg - 1}
-                      onEdit={(v) =>
-                        setSlips((ss) => [
-                          ...ss.filter((s) => s.seg !== seg.seg),
-                          { seg: seg.seg, recorded_kg: v || "0" },
-                        ]) || setDirty(true)
-                      }
+                      onEdit={(v) => editSlip(seg.seg, v)}
                       onReopen={reopenLastSegment}
                     />
                   )}

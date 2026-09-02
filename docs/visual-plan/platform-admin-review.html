@@ -1,0 +1,306 @@
+<title>Platform Admin — Firms &amp; Users</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --paper:#f4f1ec; --card:#ffffff; --ink:#23201b; --ink-soft:#3a362e;
+    --muted:#8a8272; --faint:#b8b1a2; --line:#e6e0d6; --line-soft:#f0ebe1;
+    --accent:#2f6f89; --accent-dark:#245771;
+    --shell:#1a2b33; --shell-text:#eef4f6; --shell-dim:#8fa9b2; --shell-line:#2c4650;
+    --ok-fg:#3a5a48; --ok-bg:#e6efe8;
+    --warn-fg:#8a6a1f; --warn-bg:#f1e7d6;
+    --danger-fg:#a23b2e; --danger-bg:#f4e3df;
+    --off-fg:#8a8272; --off-bg:#ece7dd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#161d20; --card:#1e282c; --ink:#eef4f6; --ink-soft:#d3dee1;
+      --muted:#93a3a8; --faint:#5f6d71; --line:#31404500; --line:#314045; --line-soft:#26333700; --line-soft:#263337;
+      --accent:#6aa7bf; --accent-dark:#8bbfd3;
+      --shell:#0e181c; --shell-text:#eef4f6; --shell-dim:#7e969e; --shell-line:#243a42;
+      --ok-fg:#9cc9ad; --ok-bg:#24322a;
+      --warn-fg:#d8b878; --warn-bg:#38301f;
+      --danger-fg:#dd9488; --danger-bg:#3a2723;
+      --off-fg:#93a3a8; --off-bg:#28322f00; --off-bg:#282f31;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#161d20; --card:#1e282c; --ink:#eef4f6; --ink-soft:#d3dee1;
+    --muted:#93a3a8; --faint:#5f6d71; --line:#314045; --line-soft:#263337;
+    --accent:#6aa7bf; --accent-dark:#8bbfd3;
+    --shell:#0e181c; --shell-text:#eef4f6; --shell-dim:#7e969e; --shell-line:#243a42;
+    --ok-fg:#9cc9ad; --ok-bg:#24322a;
+    --warn-fg:#d8b878; --warn-bg:#38301f;
+    --danger-fg:#dd9488; --danger-bg:#3a2723;
+    --off-fg:#93a3a8; --off-bg:#282f31;
+  }
+
+  * { box-sizing:border-box; }
+  body { background:var(--paper); color:var(--ink); font-family:"IBM Plex Sans",system-ui,sans-serif; line-height:1.5; }
+  .wrap { max-width:1060px; margin:0 auto; padding:32px 20px 80px; }
+  h1 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:26px; margin:0 0 4px; }
+  h2 { font-family:"Fraunces",Georgia,serif; font-weight:600; font-size:19px; margin:38px 0 12px; padding-top:20px; border-top:1px solid var(--line); }
+  h3 { font-size:13px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); margin:22px 0 10px; }
+  p { margin:8px 0; }
+  .lede { color:var(--ink-soft); font-size:15px; max-width:70ch; }
+  .banner { background:var(--warn-bg); color:var(--warn-fg); border:1px solid color-mix(in srgb, var(--warn-fg) 30%, transparent);
+            border-radius:8px; padding:10px 14px; font-size:13px; font-weight:500; margin:16px 0 0; }
+  code, .mono { font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.92em; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  @media (max-width:720px){ .grid2 { grid-template-columns:1fr; } }
+  ul { margin:8px 0; padding-left:20px; }
+  li { margin:4px 0; }
+  .muted { color:var(--muted); }
+
+  /* ---- mock chrome ---- */
+  .mock { border:1px solid var(--line); border-radius:12px; overflow:hidden; background:var(--card);
+          box-shadow:0 1px 2px rgba(0,0,0,.04), 0 8px 28px rgba(0,0,0,.06); margin:14px 0 6px; }
+  .mock-top { background:var(--shell); color:var(--shell-text); display:flex; align-items:center; gap:22px;
+              padding:0 18px; height:50px; font-size:13px; }
+  .mock-top .brand { font-family:"Fraunces",serif; font-weight:600; font-size:15px; }
+  .mock-top .brand .ops { color:var(--accent); font-weight:600; }
+  .mock-top .spacer { flex:1; }
+  .mock-top .who { color:var(--shell-dim); }
+  .mock-top .link { color:var(--shell-dim); text-decoration:none; }
+  .mock-body { padding:20px; }
+  .mock-body.split { display:grid; grid-template-columns:260px 1fr; gap:0; padding:0; }
+  .side { border-right:1px solid var(--line); padding:16px; background:color-mix(in srgb,var(--paper) 55%, var(--card)); }
+  .side .srch { width:100%; border:1px solid var(--line); border-radius:7px; padding:7px 9px; font:inherit; font-size:13px; background:var(--card); color:var(--ink); }
+  .firmrow { padding:9px 10px; border-radius:7px; font-size:13px; cursor:default; display:flex; justify-content:space-between; align-items:center; }
+  .firmrow.sel { background:var(--accent); color:#fff; }
+  .firmrow .n { color:inherit; }
+  .firmrow .c { font-size:11px; opacity:.7; }
+  .pane { padding:20px; }
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; font-weight:600; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:.05em;
+       padding:8px 10px; border-bottom:1px solid var(--line); }
+  td { padding:9px 10px; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  .pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px; border-radius:999px; }
+  .pill.active { background:var(--ok-bg); color:var(--ok-fg); }
+  .pill.off { background:var(--off-bg); color:var(--off-fg); }
+  .pill.owner { background:var(--warn-bg); color:var(--warn-fg); }
+  .pill.acct { background:#e3eef2; color:#2f6f89; }
+  .rowbtn { font:inherit; font-size:12px; border:1px solid var(--line); background:var(--card); color:var(--ink-soft);
+            border-radius:6px; padding:3px 9px; cursor:default; }
+  .rowbtn.danger { color:var(--danger-fg); border-color:color-mix(in srgb,var(--danger-fg) 35%, transparent); }
+  .btn { font:inherit; font-size:13px; font-weight:500; border-radius:7px; padding:7px 14px; cursor:default; border:1px solid transparent; }
+  .btn.primary { background:var(--accent); color:#fff; }
+  .btn.ghost { background:var(--card); border-color:var(--line); color:var(--ink-soft); }
+  .fieldrow { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; margin-top:6px; }
+  .fld { display:flex; flex-direction:column; gap:3px; }
+  .fld label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .fld input, .fld select { border:1px solid var(--line); border-radius:7px; padding:7px 9px; font:inherit; font-size:13px;
+            background:var(--card); color:var(--ink); min-width:200px; }
+  .card-inset { border:1px solid var(--line); border-radius:9px; padding:14px; margin-top:12px; background:color-mix(in srgb,var(--paper) 40%,var(--card)); }
+  .toggle { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .switch { width:34px; height:20px; border-radius:999px; background:var(--accent); position:relative; flex:none; }
+  .switch.off { background:var(--faint); }
+  .switch::after { content:""; position:absolute; top:2px; left:16px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; }
+  .switch.off::after { left:2px; }
+  .flow { counter-reset:step; margin:10px 0; padding:0; list-style:none; }
+  .flow li { position:relative; padding:8px 0 8px 34px; border-bottom:1px solid var(--line-soft); }
+  .flow li::before { counter-increment:step; content:counter(step); position:absolute; left:0; top:7px;
+     width:22px; height:22px; border-radius:50%; background:var(--accent); color:#fff; font-size:12px; font-weight:600;
+     display:grid; place-items:center; }
+  .api { font-family:"IBM Plex Mono",monospace; font-size:12px; margin:2px 0; }
+  .api .m { display:inline-block; width:52px; font-weight:600; color:var(--accent-dark); }
+  .note { font-size:12.5px; color:var(--muted); }
+  .kbd { border:1px solid var(--line); border-bottom-width:2px; border-radius:5px; padding:1px 6px; font-size:12px; font-family:"IBM Plex Mono",monospace; }
+</style>
+
+<div class="wrap">
+  <h1>Platform Admin — Firms &amp; Users</h1>
+  <p class="lede">An operator-only area of the Metal&nbsp;ERP web app for setting up client firms and their
+  login accounts. Separate dark chrome, gated on a <code>is_platform_admin</code> flag. Regular firm users
+  never see any of it. Nothing here touches fleek-backend.</p>
+  <div class="banner">REVIEW — not built yet. Sign off on this layout &amp; behaviour before any code is written.</div>
+
+  <h2>1 · Who gets in</h2>
+  <div class="grid2">
+    <div>
+      <ul>
+        <li>New column <code>app_user.is_platform_admin</code> (bool, default <code>false</code>) — migration <code>0012</code>.</li>
+        <li>Admin accounts live in one hidden <strong>“Fleek Operations”</strong> tenant — no real firm data attached to them.</li>
+        <li>You bootstrap yourself once per environment with a CLI:
+          <div class="api mono">python -m tools.make_platform_admin --email you@fleek.com --password ••••••</div>
+        </li>
+        <li>Every <code>/api/admin/*</code> route sits behind <code>require_platform_admin</code> → <span class="mono">403</span> for anyone else.</li>
+        <li><code>/auth/me</code> gains <code>is_platform_admin</code> so the SPA can route.</li>
+      </ul>
+    </div>
+    <div class="card-inset">
+      <h3 style="margin-top:0">Routing</h3>
+      <ul>
+        <li><code>me.is_platform_admin === true</code> → the whole app is the admin console (<code>/admin/*</code>).</li>
+        <li>A normal user who somehow hits <code>/admin/*</code> → redirect to <code>/invoices</code>.</li>
+        <li>No “toggle between modes” — an operator account is <em>only</em> an operator account.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>2 · Screen — Firms list + firm detail (one two-pane view)</h2>
+  <div class="mock">
+    <div class="mock-top">
+      <span class="brand">Metal&nbsp;ERP <span class="ops">· Operations</span></span>
+      <span class="spacer"></span>
+      <span class="who">you@fleek.com</span>
+      <a class="link" href="#">Sign out</a>
+    </div>
+    <div class="mock-body split">
+      <div class="side">
+        <input class="srch" placeholder="Search firms…" value="">
+        <div style="margin-top:12px; display:flex; flex-direction:column; gap:2px;">
+          <div class="firmrow sel"><span class="n">Sugal Foods &amp; Metals</span><span class="c">Jaipur · 3</span></div>
+          <div class="firmrow"><span class="n">Ambika Traders</span><span class="c">Kishangarh · 1</span></div>
+          <div class="firmrow"><span class="n">Shri Balaji Bartan</span><span class="c">Jaipur · 2</span></div>
+          <div class="firmrow"><span class="n">Maruti Steel Co</span><span class="c">Delhi · 0</span></div>
+        </div>
+        <button class="btn primary" style="margin-top:14px; width:100%;">+ New firm</button>
+      </div>
+
+      <div class="pane">
+        <div style="display:flex; justify-content:space-between; align-items:baseline;">
+          <h3 style="margin:0; color:var(--ink); font-size:16px; text-transform:none; letter-spacing:0; font-family:'Fraunces',serif;">Sugal Foods &amp; Metals</h3>
+          <span class="note mono">tenant cbb2c87e · created 2026-08-11</span>
+        </div>
+
+        <div class="fieldrow" style="margin-top:14px;">
+          <div class="fld"><label>Legal name</label><input value="Sugal Foods &amp; Metals"></div>
+          <div class="fld"><label>City</label><input value="Jaipur"></div>
+        </div>
+        <div class="fieldrow" style="margin-top:12px; gap:22px;">
+          <div class="toggle"><span class="switch off"></span> GST enabled</div>
+          <div class="toggle"><span class="switch"></span> Inward Bill Import</div>
+          <button class="btn ghost" style="margin-left:auto;">Save firm</button>
+        </div>
+
+        <h3>Users</h3>
+        <table>
+          <thead><tr><th>Email</th><th>Role</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">ramesh@sugalfoods.in</td>
+              <td><span class="pill owner">owner</span></td>
+              <td><span class="pill active">active</span></td>
+              <td style="text-align:right; white-space:nowrap;">
+                <button class="rowbtn">Reset password</button>
+                <button class="rowbtn danger">Disable</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="mono">accounts@sugalfoods.in</td>
+              <td><span class="pill acct">accountant</span></td>
+              <td><span class="pill active">active</span></td>
+              <td style="text-align:right; white-space:nowrap;">
+                <button class="rowbtn">Reset password</button>
+                <button class="rowbtn danger">Disable</button>
+              </td>
+            </tr>
+            <tr>
+              <td class="mono">counter@sugalfoods.in</td>
+              <td><span class="pill acct">accountant</span></td>
+              <td><span class="pill off">disabled</span></td>
+              <td style="text-align:right; white-space:nowrap;">
+                <button class="rowbtn">Reset password</button>
+                <button class="rowbtn">Enable</button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="card-inset">
+          <div style="font-weight:600; font-size:13px; margin-bottom:2px;">Add user</div>
+          <div class="fieldrow">
+            <div class="fld"><label>Email</label><input placeholder="name@firm.com"></div>
+            <div class="fld"><label>Role</label>
+              <select><option>accountant</option><option>owner</option><option>viewer</option></select>
+            </div>
+            <div class="fld"><label>Password</label><input type="text" placeholder="you type it — min 8 chars"></div>
+            <button class="btn primary">Add user</button>
+          </div>
+          <p class="note" style="margin-top:8px;">You choose the password and pass it to the client. No email is sent.
+          Same field appears for <em>Reset password</em>.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>3 · The task you described, step by step</h2>
+  <p class="muted">“A client asks me to set up 3 users. I do that, then give him 2–3 usernames and passwords.”</p>
+  <ol class="flow">
+    <li>Open <strong>Operations</strong> → the firm already exists (you made it when onboarding), or click <strong>+ New firm</strong> (legal name + city).</li>
+    <li>In the firm’s <strong>Add user</strong> box: type <code>ramesh@…</code>, role <em>owner</em>, a password → <strong>Add user</strong>.</li>
+    <li>Repeat for <code>accounts@…</code> and <code>counter@…</code> as <em>accountant</em>.</li>
+    <li>Copy the three email/password pairs from your own notes (you typed them) and send to the client.</li>
+    <li>Each user goes to the normal Metal&nbsp;ERP login, signs in, lands in <em>their</em> firm. Nothing else changes.</li>
+    <li>Later: client forgets a password → you open the firm, <strong>Reset password</strong> on that row, type a new one, relay it.</li>
+  </ol>
+
+  <h2>4 · API surface (all behind <span class="mono">require_platform_admin</span>)</h2>
+  <div class="api"><span class="m">GET</span> /api/admin/firms?q=&nbsp;&nbsp;<span class="note">→ list: name, city, flags, user_count, active_user_count</span></div>
+  <div class="api"><span class="m">POST</span> /api/admin/firms&nbsp;&nbsp;<span class="note">{legal_name, city?} → new tenant + seed_synonyms + seed_taxonomy, NO owner</span></div>
+  <div class="api"><span class="m">GET</span> /api/admin/firms/{id}&nbsp;&nbsp;<span class="note">→ firm fields + users[]</span></div>
+  <div class="api"><span class="m">PATCH</span> /api/admin/firms/{id}&nbsp;&nbsp;<span class="note">{legal_name?, city?, gst_enabled?, ext_inward_import?}</span></div>
+  <div class="api"><span class="m">POST</span> /api/admin/firms/{id}/users&nbsp;&nbsp;<span class="note">{email, role, password} → global email-uniqueness check (like /register)</span></div>
+  <div class="api"><span class="m">PATCH</span> /api/admin/users/{id}&nbsp;&nbsp;<span class="note">{role?, is_active?, password?}</span></div>
+  <div class="api"><span class="m">DELETE</span> /api/admin/users/{id}&nbsp;&nbsp;<span class="note">soft — is_active=false</span></div>
+  <p class="note" style="margin-top:10px;">No endpoint ever returns a plaintext password — you already have it because you typed it.
+  Argon2 hashing, exactly as <code>/register</code> does today.</p>
+
+  <h2>5 · Guardrails</h2>
+  <div class="grid2">
+    <div><ul>
+      <li><strong>Last active owner</strong> of a firm can’t be disabled / demoted (409) — via PATCH or DELETE.</li>
+      <li>A platform-admin row can’t be edited through <code>/api/admin/users/*</code> (only the CLI touches those).</li>
+      <li>Email must be unique across <em>all</em> firms (keeps login unambiguous — same rule <code>/register</code> already enforces).</li>
+      <li><code>auth.login</code> hardened: <code>.first()</code> + <code>order_by(created_at)</code> so a stray duplicate can’t 500 the login.</li>
+    </ul></div>
+    <div><ul>
+      <li>Disabled user: token stops working immediately (<code>get_current_user</code> already checks <code>is_active</code>).</li>
+      <li>New firm gets the same catalogue/​synonym seed a self-registered firm gets — no half-set-up tenants.</li>
+      <li>Roles offered: <code>owner</code>, <code>accountant</code>, <code>viewer</code>. Default <strong>accountant</strong> (full read/write today).</li>
+      <li>Desktop-first layout — this is an operator tool, not a shop-floor screen.</li>
+    </ul></div>
+  </div>
+
+  <h2>6 · Out of scope for this slice</h2>
+  <ul>
+    <li>Self-service “change my password” for firm users — you hold all credentials for now.</li>
+    <li>Any fleek-backend / fleek admin-UI integration — explicitly deferred.</li>
+    <li>Audit log of admin actions, last-login timestamps, MFA on admin accounts — later.</li>
+    <li>Per-firm user-management by the firm’s own owner — later, separate slice.</li>
+    <li>Email delivery of credentials.</li>
+  </ul>
+
+  <h2>7 · Files</h2>
+  <div class="grid2">
+    <div>
+      <h3>Backend</h3>
+      <ul class="mono" style="font-size:12px;">
+        <li>alembic/versions/0012_user_platform_admin.py <span class="note">— new</span></li>
+        <li>app/routers/admin.py <span class="note">— new</span></li>
+        <li>app/schemas_admin.py <span class="note">— new</span></li>
+        <li>app/deps.py <span class="note">— +require_platform_admin</span></li>
+        <li>app/routers/auth.py <span class="note">— login .first(); me +flag</span></li>
+        <li>app/schemas.py <span class="note">— UserOut +is_platform_admin</span></li>
+        <li>app/main.py <span class="note">— include admin.router</span></li>
+        <li>tools/make_platform_admin.py <span class="note">— new CLI</span></li>
+        <li>tests/test_admin.py <span class="note">— new</span></li>
+      </ul>
+    </div>
+    <div>
+      <h3>Frontend</h3>
+      <ul class="mono" style="font-size:12px;">
+        <li>src/pages/admin/AdminShell.tsx <span class="note">— new</span></li>
+        <li>src/pages/admin/FirmsPage.tsx <span class="note">— new (two-pane)</span></li>
+        <li>src/pages/admin/api.ts <span class="note">— admin fetch helpers</span></li>
+        <li>src/App.tsx <span class="note">— branch on is_platform_admin</span></li>
+        <li>src/lib/types.ts <span class="note">— Me flag + admin types</span></li>
+      </ul>
+      <p class="note">~1 migration, ~1 router (~200 lines), a small two-pane React screen. Backend tests in the same push. No commit/push — you do check-ins.</p>
+    </div>
+  </div>
+</div>
