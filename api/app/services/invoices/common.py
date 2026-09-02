@@ -6,9 +6,14 @@ from datetime import date
 from decimal import Decimal
 
 from app.domain.tax import InvoiceInput, LineInput, compute_invoice
+from app.domain.weighment import LineMeasure, compute_measure
 from app.models import Invoice
 from app.models._mixins import InvoiceStatus
-from app.schemas_invoice import InvoiceTotals
+from app.schemas_invoice import (
+    InvoiceMeasureOut,
+    InvoiceTotals,
+    SegmentMeasureOut,
+)
 
 _ZERO = Decimal("0.00")
 
@@ -43,6 +48,41 @@ def totals_for(inv: Invoice) -> InvoiceTotals:
         round_off=computed.round_off,
         grand_total=computed.grand_total,
         amount_in_words=computed.amount_in_words,
+    )
+
+
+def measure_for(inv: Invoice) -> InvoiceMeasureOut:
+    """Derived total weight / piece count / weighment segments. Always live
+    off the current lines (qty + uom) — never stored, on a draft or a
+    finalized invoice alike.
+    """
+    ordered = sorted(inv.lines, key=lambda x: x.sl_no)
+    m = compute_measure(
+        [
+            LineMeasure(
+                quantity=Decimal(str(ln.quantity or 0)),
+                uom=ln.uom,
+                segment_no=ln.segment_no or 1,
+            )
+            for ln in ordered
+        ],
+        slips=inv.weighment_slips or [],
+    )
+    return InvoiceMeasureOut(
+        total_weight_kg=m.total_weight_kg,
+        total_count=m.total_count,
+        segment_count=m.segment_count,
+        segments=[
+            SegmentMeasureOut(
+                seg=s.seg,
+                line_from=s.line_from,
+                line_to=s.line_to,
+                weight_kg=s.weight_kg,
+                count=s.count,
+                recorded_kg=s.recorded_kg,
+            )
+            for s in m.segments
+        ],
     )
 
 

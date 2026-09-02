@@ -181,6 +181,34 @@ print(create_engine(get_settings().database_url).connect().execute(text('SELECT 
 
 **Seed reference data:** `docker compose exec -T metalerp-api python -m app.seed`
 
+**Seed the item taxonomy for a tenant** (register does this for new firms;
+run once for a tenant that predates the item-categorization slice, `7958bde`):
+```bash
+docker compose exec -T metalerp-api python -m app.services.catalogue.seed_taxonomy \
+  --tenant <tenant-id> --dry-run          # reports "+N categories, +M groups", rolls back
+docker compose exec -T metalerp-api python -m app.services.catalogue.seed_taxonomy \
+  --tenant <tenant-id>                    # apply  (or --all for every tenant)
+```
+Idempotent; adds only missing rows. Leaves any pre-existing custom categories
+(incl. the legacy 8 seed names) untouched.
+
+**Backfill / re-run item classification for a tenant**
+(assigns `category_id` + `group_id`; confidence ≥ 0.70 → `status=confirmed`):
+```bash
+# dry run -> CSV inside the container, writes nothing
+docker compose exec -T metalerp-api python -m tools.reclassify_items \
+  --tenant <tenant-id> --out /tmp/reclassify.csv
+docker compose cp metalerp-api:/tmp/reclassify.csv ./reclassify.csv   # open in a spreadsheet
+# apply
+docker compose exec -T metalerp-api python -m tools.reclassify_items \
+  --tenant <tenant-id> --apply
+```
+`--keep-status` = assign only, never touch status. `--all-unconfirmed` = force a
+full review pass. Same classifier code path as live item creation, so re-running
+it later (e.g. after users have taught rules by recategorising) refiles more
+items with no code change.
+SETHIA prod tenant: `cbb2c87e-14d0-45bc-8f86-627728ec7d8a`.
+
 **Deploy log:** `/opt/fleek-stack/logs/metalerp-api/deploy.log` (last run only,
 START/SUCCESS or START/FAILED wrapped).
 

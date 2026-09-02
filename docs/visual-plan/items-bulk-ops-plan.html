@@ -193,7 +193,7 @@
 
 <div class="wrap">
   <header class="page">
-    <p class="eyebrow">Metal ERP · Items · Bulk operations · <b>BUILT 2026-09-02</b> (uncommitted)</p>
+    <p class="eyebrow">Metal ERP · Items · Bulk operations · <b>COMMITTED 2026-09-02 <code style="font-size:0.85em">d54c75f</code></b> · not yet deployed</p>
     <h1 class="page">Fix a hundred items in one move</h1>
     <p class="lede">
       A shop owner just imported 2,094 items from Tally. Half have no unit, a
@@ -213,7 +213,9 @@
       <span class="chip have">✓ 13 backend tests</span>
     </div>
     <div class="note" style="margin-top:14px">
-      <b>Shipped 2026-09-02, uncommitted.</b> Backend: <code>schemas_item.py</code> (ItemBulkUpdate /
+      <b>Committed 2026-09-02 as <code>d54c75f</code> "bulk operations on items"</b> (10 files, +1635/-75;
+      279 API tests pass, 13 new; <code>tsc</code>+<code>build</code> clean). Not yet run against prod.
+      Backend: <code>schemas_item.py</code> (ItemBulkUpdate /
       ItemBulkDelete / BulkOutcome, 500-id cap), <code>routers/items.py</code>
       (<code>bulk_update</code> + <code>bulk_delete</code>, both <code>?dry_run=</code>, declared
       before <code>/{item_id}</code>, per-row savepoint isolation, reuses
@@ -579,9 +581,15 @@
       <li>Tests above, all green.</li>
       <li>Sequenced <b>after</b> <code>item-categorization-plan</code> lands (needs its taxonomy + <code>item_classify_rule</code> + <code>learn_from_recategorize</code>).</li>
     </ol>
-    <div class="note warnnote">
-      <b>Not committed, not pushed</b> — user does check-ins (<code>ui-plan-guardrails</code>).
-      This doc is for visual sign-off before any code.
+    <div class="note">
+      <b>Delivered.</b> Committed <code>d54c75f</code> on <code>main</code> (2026-09-02), one commit after the
+      classifier (<code>7958bde</code>). What actually shipped vs this plan:
+      <ul>
+        <li>Edit sheet fields = <b>10</b> (uom, purchase_uom, discount %, default_rate, item_type, metal, shape, finish, status, notes). The plan's <code>secondary_uom</code> and <code>default_rate</code> "+/- % adjust" were <b>dropped</b> — plain value only.</li>
+        <li>No toast system exists in the web app → success shows an inline <b>✓ flash banner</b> in the list header instead.</li>
+        <li>The three flows live in one <code>BulkPanel.tsx</code> (not four separate components) sharing a <code>useTwoStep</code> preview→apply footer.</li>
+        <li>Frontend <code>BulkEditSheet.test.tsx</code> <b>not written</b> — the web app still has no test runner (project-wide gap).</li>
+      </ul>
     </div>
   </section>
 

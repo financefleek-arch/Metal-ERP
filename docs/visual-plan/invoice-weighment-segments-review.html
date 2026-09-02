@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoice weighment segments</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" />
+<style>
+  :root {
+    --ground:#f4f1ec; --ink:#23201b; --card:#ffffff; --line:#e6e0d6; --muted:#7c766a;
+    --accent:#2f6f89; --accent-dark:#245771; --accent-soft:#eef4f7;
+    --warn:#b5892f; --warn-soft:#fbf3e2; --ok:#4f8a5b; --danger:#c0392b;
+    --slip:#eef3ee; --slip-line:#c9ddc9;
+  }
+  :root:not([data-theme="light"]) {}
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:#1c1a16; --ink:#ece7dd; --card:#252119; --line:#3a352c; --muted:#9c9482;
+      --accent:#5aa6c4; --accent-dark:#7cbcd6; --accent-soft:#22303a;
+      --warn:#d0a24e; --warn-soft:#332a18; --ok:#78b184; --danger:#e0715f;
+      --slip:#232a22; --slip-line:#3c4a3c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:#1c1a16; --ink:#ece7dd; --card:#252119; --line:#3a352c; --muted:#9c9482;
+    --accent:#5aa6c4; --accent-dark:#7cbcd6; --accent-soft:#22303a;
+    --warn:#d0a24e; --warn-soft:#332a18; --ok:#78b184; --danger:#e0715f;
+    --slip:#232a22; --slip-line:#3c4a3c;
+  }
+
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+    font:15px/1.55 "IBM Plex Sans", system-ui, sans-serif; }
+  .wrap { max-width:1240px; margin:0 auto; padding:28px 20px 96px; }
+
+  h1 { font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:24px;
+    letter-spacing:-.01em; text-wrap:balance; margin:0 0 6px; }
+  h2 { font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:17px;
+    margin:44px 0 4px; text-wrap:balance; }
+  .eyebrow { font-size:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 20px; }
+  .lede { color:var(--muted); max-width:72ch; margin:0 0 4px; }
+  .sub { color:var(--muted); max-width:74ch; margin:6px 0 16px; font-size:13.5px; }
+  code { font-family:"IBM Plex Mono", ui-monospace, monospace; font-size:.86em;
+    background:var(--accent-soft); padding:.08em .34em; border-radius:4px; }
+
+  .divider { border:0; border-top:1px solid var(--line); margin:40px 0 0; }
+
+  .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+    gap:26px; align-items:start; }
+  .cap { font-size:12px; color:var(--muted); margin:10px 2px 0; line-height:1.5; }
+  .cap b { color:var(--ink); font-weight:600; }
+
+  /* phone frame */
+  .phone { width:330px; margin:0 auto; border:10px solid var(--line); border-radius:28px;
+    background:var(--ground); padding:14px 10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+
+  /* editor line row (compact static render) */
+  .lrow { padding:10px 12px; border-bottom:1px solid var(--line); }
+  .lrow:last-child { border-bottom:0; }
+  .lrow .top { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-bottom:5px; }
+  .lname { font-weight:600; font-size:14px; }
+  .lmeta { display:flex; justify-content:space-between; align-items:baseline; margin-top:3px; }
+  .lmeta .work { font-size:11px; color:var(--muted); font-family:"IBM Plex Mono", monospace; }
+  .lmeta .amt { font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:15px;
+    font-variant-numeric:tabular-nums; }
+
+  /* weighment slip divider inside the line list */
+  .slip { background:var(--slip); border-top:1px solid var(--slip-line);
+    border-bottom:1px solid var(--slip-line); padding:7px 12px;
+    display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .slip .lbl { font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--ok); display:flex; align-items:center; gap:6px; }
+  .slip .kg { font-family:"IBM Plex Mono", monospace; font-size:12px; font-weight:600;
+    color:var(--ink); font-variant-numeric:tabular-nums; }
+  .slip .range { font-size:11px; color:var(--muted); }
+  .scaleicon { width:13px; height:13px; display:inline-block; }
+
+  /* running-total footer bar under the line table */
+  .runbar { display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:9px 12px; background:var(--accent-soft); border-top:1px solid var(--line); }
+  .runbar .figs { display:flex; gap:16px; font-size:12px; }
+  .runbar .figs b { font-family:"IBM Plex Mono", monospace; font-weight:600; color:var(--ink);
+    font-variant-numeric:tabular-nums; }
+  .runbar .figs span { color:var(--muted); }
+  .nextbtn { border:1px solid var(--ok); color:var(--ok); background:transparent;
+    font:600 12px "IBM Plex Sans", sans-serif; padding:5px 12px; border-radius:7px; cursor:pointer;
+    white-space:nowrap; }
+  .addline { padding:9px 12px; font-size:13px; color:var(--accent); }
+
+  /* totals rail */
+  .rail { width:300px; margin:0 auto; }
+  .rail h3 { font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:14px; margin:0 0 10px; }
+  .rline { display:flex; justify-content:space-between; font-size:13px; padding:3px 0; }
+  .rline .v { font-variant-numeric:tabular-nums; }
+  .rline.muted { color:var(--muted); }
+  .rline.grand { font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:16px;
+    border-top:1px solid var(--line); margin-top:6px; padding-top:8px; }
+  .measure { background:var(--slip); border:1px solid var(--slip-line); border-radius:8px;
+    padding:8px 10px; margin:10px 0; }
+  .measure .mrow { display:flex; justify-content:space-between; font-size:12px; padding:2px 0; }
+  .measure .mrow b { font-family:"IBM Plex Mono", monospace; font-weight:600;
+    font-variant-numeric:tabular-nums; }
+  .measure .mhead { font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ok); margin-bottom:4px; }
+  .seg-in-rail { font-size:11px; color:var(--muted); display:flex; justify-content:space-between; padding:1px 0; }
+
+  /* discount toggle */
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:5px; overflow:hidden;
+    vertical-align:middle; }
+  .seg span { font-size:10px; font-weight:700; padding:2px 7px; color:var(--muted); background:var(--card); }
+  .seg span.on { background:var(--accent); color:#fff; }
+  .fl { font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); display:flex; align-items:center; gap:6px; margin:0 0 4px; }
+  .inp { height:40px; width:100%; border:1px solid var(--line); border-radius:8px;
+    background:var(--card); padding:0 10px; font-size:14px; color:var(--ink); }
+  .inp.r { text-align:right; font-variant-numeric:tabular-nums; }
+  select.inp { appearance:none; }
+  .minigrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px; }
+
+  /* A4 print excerpt */
+  .a4 { background:#fff; color:#111; border:1px solid var(--line); border-radius:6px;
+    padding:20px 22px; max-width:640px; font:12px/1.45 "DejaVu Sans", Arial, sans-serif; }
+  .a4 table { border-collapse:collapse; width:100%; }
+  .a4 td, .a4 th { border:.5pt solid #333; padding:3px 6px; }
+  .a4 th { background:#eee; font-size:10px; text-transform:uppercase; letter-spacing:.02em; }
+  .a4 .r { text-align:right; font-variant-numeric:tabular-nums; }
+  .a4 .c { text-align:center; }
+  .a4 .noborder td { border:0; padding:2px 6px; }
+  .a4 .b { font-weight:700; }
+  .a4 .wblock td { background:#f6f8f6; }
+  .a4 .grand td { font-weight:700; font-size:13px; border:0; }
+  .a4-note { font-size:11px; color:var(--muted); margin:6px 2px 0; }
+
+  ul.notes { font-size:13.5px; color:var(--muted); line-height:1.75; padding-left:20px; max-width:82ch; }
+  ul.notes b { color:var(--ink); font-weight:600; }
+  ul.notes li { margin:5px 0; }
+
+  .qbox { border:1px solid var(--accent); background:var(--accent-soft); border-radius:10px;
+    padding:14px 16px; margin:18px 0 0; max-width:82ch; }
+  .qbox h3 { font-family:"Fraunces", Georgia, serif; font-weight:600; font-size:14px; margin:0 0 6px; }
+  .qbox ol { margin:0; padding-left:20px; font-size:13.5px; line-height:1.7; }
+
+  .pill { display:inline-block; font-size:10px; font-weight:600; letter-spacing:.04em;
+    text-transform:uppercase; padding:2px 8px; border-radius:999px; }
+  .pill.new { background:var(--slip); color:var(--ok); border:1px solid var(--slip-line); }
+  .pill.change { background:var(--warn-soft); color:var(--warn); border:1px solid var(--warn); }
+
+  @media (prefers-reduced-motion:no-preference) {
+    .nextbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Metal ERP · visual review · invoice editor</p>
+  <h1>Weighment segments on the sales invoice</h1>
+  <p class="lede">Four changes to the invoice editor + printed bill. The big one — a running
+  weight/count readout plus operator-drawn <b>weighment segments</b> that map onto the shop's
+  platform-scale tickets — is sketched first. Three smaller fixes follow.</p>
+  <div style="border:1px solid var(--ok);background:var(--slip);border-radius:10px;
+    padding:12px 14px;margin:12px 0 4px;max-width:82ch;font-size:13px;">
+    <b style="color:var(--ok);">BUILT 2026-09-02 (uncommitted).</b>
+    Backend: migration <code>0011</code> (<code>invoice_line.segment_no</code>,
+    <code>invoice.weighment_slips</code> JSON), <code>domain/weighment.py</code>,
+    <code>measure_for()</code> on every read, finalize auto-closes open segments, PDF template
+    gains the weighment rows + the weight/count box. Frontend: <code>lib/weighment.ts</code>
+    mirror, running bar + <b>Next segment</b> + record-weight dialog + slip dividers,
+    weighment block in the totals rail, discount toggles default to <code>%</code>,
+    per-kg new item lands <code>kg</code> in the Unit field. 286 backend tests pass
+    (+7 new); tsc + eslint + vite build clean. Decisions taken on the four open questions
+    are noted inline below.
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ============================================================ -->
+  <h2>1 · Running weight &amp; count, and weighment segments <span class="pill new">new</span></h2>
+  <p class="sub">The operator loads goods onto the big platform scale as they add lines. A live
+  bar under the line table shows accumulated <b>weight</b> and <b>piece count</b>. When the
+  batch on the scale nears its ceiling, the operator reads the scale, taps <b>Next segment</b>,
+  clears the scale, and keeps going. Each segment = a contiguous run of lines = one physical
+  weighment slip. The bill prints them back as <b>“Weighment 1: lines&nbsp;1–6, 487.50&nbsp;kg”</b>.</p>
+
+  <div class="cols">
+
+    <!-- phone: mid-entry, one segment closed -->
+    <div>
+      <div class="phone">
+        <div class="card">
+          <div class="lrow">
+            <div class="top"><span>1</span><span style="color:var(--ok);font-weight:600">✓ ready</span></div>
+            <div class="lname">MS Angle 50×50×6</div>
+            <div class="lmeta"><span class="work">128 kg × ₹62</span><span class="amt">₹ 7,936</span></div>
+          </div>
+          <div class="lrow">
+            <div class="top"><span>2</span><span style="color:var(--ok);font-weight:600">✓ ready</span></div>
+            <div class="lname">MS Flat 40×6</div>
+            <div class="lmeta"><span class="work">96.5 kg × ₹61</span><span class="amt">₹ 5,886</span></div>
+          </div>
+          <div class="lrow">
+            <div class="top"><span>3</span><span style="color:var(--ok);font-weight:600">✓ ready</span></div>
+            <div class="lname">MS Round 16 mm</div>
+            <div class="lmeta"><span class="work">263 kg × ₹59</span><span class="amt">₹ 15,517</span></div>
+          </div>
+
+          <!-- closed weighment slip -->
+          <div class="slip">
+            <span class="lbl">
+              <svg class="scaleicon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 21h14M6 7h12l3 7a4 4 0 01-8 0zM6 7L3 14a4 4 0 008 0"/></svg>
+              Weighment 1
+            </span>
+            <span class="kg">487.50 kg</span>
+            <span class="range">lines 1–3</span>
+          </div>
+
+          <div class="lrow">
+            <div class="top"><span>4</span><span style="color:var(--ok);font-weight:600">✓ ready</span></div>
+            <div class="lname">MS Angle 65×65×6</div>
+            <div class="lmeta"><span class="work">180 kg × ₹62</span><span class="amt">₹ 11,160</span></div>
+          </div>
+          <div class="lrow">
+            <div class="top"><span>5</span><span style="color:var(--muted)">typing…</span></div>
+            <div class="lname" style="color:var(--muted)">MS Channel 100…</div>
+            <div class="lmeta"><span class="work">— </span><span class="amt" style="color:var(--muted)">—</span></div>
+          </div>
+
+          <!-- running bar: current open segment -->
+          <div class="runbar">
+            <div class="figs">
+              <span>Seg&nbsp;2 <b>180.00 kg</b></span>
+              <span>Bill <b>667.50 kg</b> · <b>0 pcs</b></span>
+            </div>
+            <button class="nextbtn">Next segment ›</button>
+          </div>
+          <div class="addline">+ Add line</div>
+        </div>
+      </div>
+      <p class="cap"><b>Weighment 1 is closed</b> — a green slip divider sits between line 3 and 4,
+      showing the recorded weight and the line range. The <b>running bar</b> shows the open
+      segment's weight, the bill-wide weight, and the piece count (0 here — all lines are kg).
+      <b>Next segment ›</b> closes Seg&nbsp;2 and opens Seg&nbsp;3.</p>
+    </div>
+
+    <!-- phone: the "record weight" confirm on tapping Next segment -->
+    <div>
+      <div class="phone">
+        <div class="card">
+          <div style="padding:14px 14px 6px;">
+            <div style="font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:15px;margin-bottom:2px;">Close weighment 2</div>
+            <div style="font-size:12px;color:var(--muted);line-height:1.5;">
+              Lines 4–5 · sum of line weights <b style="color:var(--ink)">263.00&nbsp;kg</b>
+            </div>
+          </div>
+          <div class="minigrid" style="grid-template-columns:1fr;">
+            <div>
+              <label class="fl">Weight shown on the platform scale</label>
+              <input class="inp r" value="264.5" />
+              <div style="font-size:10px;color:var(--warn);margin-top:4px;">
+                +1.50 kg vs line sum — recorded as-is on the slip
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;padding:0 12px 14px;">
+            <button class="nextbtn" style="border-color:var(--line);color:var(--muted);">Cancel</button>
+            <button class="nextbtn" style="background:var(--ok);color:#fff;border-color:var(--ok);flex:1;">Close &amp; start seg 3</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Tapping <b>Next segment</b> opens this sheet. The line-weight sum is
+      pre-filled but <b>editable</b> — the operator types what the big scale actually read
+      (tare, packing, rounding all differ). The slip stores that recorded figure; a small
+      delta note shows if it drifts from the line sum. <b>Is this confirm step wanted, or
+      should Next segment just cut the boundary silently?</b></p>
+    </div>
+
+    <!-- totals rail with the measurement block -->
+    <div>
+      <div class="rail">
+        <div class="card" style="padding:14px;">
+          <h3>Totals</h3>
+          <div class="rline"><span class="muted">Subtotal</span><span class="v">₹ 58,102.00</span></div>
+          <div class="rline"><span class="muted">Invoice discount</span><span class="v">2.0 %</span></div>
+          <div class="rline muted"><span>Total discount</span><span class="v">− ₹ 1,162.04</span></div>
+          <div class="rline muted"><span>Round off</span><span class="v">+ ₹ 0.04</span></div>
+          <div class="rline grand"><span>Grand total</span><span class="v">₹ 56,940</span></div>
+
+          <div class="measure">
+            <div class="mhead">Weighment</div>
+            <div class="mrow"><span>Total weight</span><b>930.50 kg</b></div>
+            <div class="mrow"><span>Piece count</span><b>0 pcs</b></div>
+            <div style="border-top:1px dashed var(--slip-line);margin:5px 0 3px;"></div>
+            <div class="seg-in-rail"><span>Weighment 1 · lines 1–3</span><span>487.50 kg</span></div>
+            <div class="seg-in-rail"><span>Weighment 2 · lines 4–5</span><span>264.50 kg</span></div>
+            <div class="seg-in-rail"><span>Weighment 3 · lines 6–8</span><span>178.50 kg</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">The totals rail gains a <b>Weighment</b> block: grand weight + count always,
+      then one line per closed segment. This block is <b>always present</b> (feature&nbsp;2) —
+      if the operator never draws a segment it just shows the single total and “1 weighment”.</p>
+    </div>
+
+  </div>
+
+  <h3 style="font-family:'Fraunces',Georgia,serif;font-weight:600;font-size:14px;margin:34px 0 8px;">On the printed bill</h3>
+  <div class="a4">
+    <table style="margin-bottom:8px;">
+      <thead>
+        <tr><th style="width:24pt;">Sl</th><th>Description of Goods</th><th style="width:46pt;">HSN</th>
+          <th class="r" style="width:52pt;">Qty</th><th style="width:34pt;">Unit</th>
+          <th class="r" style="width:50pt;">Rate</th><th class="r" style="width:62pt;">Amount</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="c">1</td><td>MS Angle 50×50×6</td><td class="c">7216</td><td class="r">128.000</td><td>kg</td><td class="r">62.00</td><td class="r">7,936.00</td></tr>
+        <tr><td class="c">2</td><td>MS Flat 40×6</td><td class="c">7216</td><td class="r">96.500</td><td>kg</td><td class="r">61.00</td><td class="r">5,886.50</td></tr>
+        <tr><td class="c">3</td><td>MS Round 16 mm</td><td class="c">7214</td><td class="r">263.000</td><td>kg</td><td class="r">59.00</td><td class="r">15,517.00</td></tr>
+        <tr class="wblock"><td></td><td colspan="6" style="font-size:11px;"><span class="b">Weighment 1</span> &nbsp;— lines 1–3 &nbsp;·&nbsp; <span class="b">487.50 kg</span></td></tr>
+        <tr><td class="c">4</td><td>MS Angle 65×65×6</td><td class="c">7216</td><td class="r">180.000</td><td>kg</td><td class="r">62.00</td><td class="r">11,160.00</td></tr>
+        <tr><td class="c">5</td><td>MS Channel 100×50</td><td class="c">7216</td><td class="r">84.500</td><td>kg</td><td class="r">63.00</td><td class="r">5,323.50</td></tr>
+        <tr class="wblock"><td></td><td colspan="6" style="font-size:11px;"><span class="b">Weighment 2</span> &nbsp;— lines 4–5 &nbsp;·&nbsp; <span class="b">264.50 kg</span></td></tr>
+      </tbody>
+    </table>
+    <table>
+      <tr>
+        <td style="width:60%;border:0;vertical-align:top;">
+          <div class="b">Amount Chargeable (in words)</div>
+          <div>INR Fifty Six Thousand Nine Hundred Forty Only</div>
+          <div style="margin-top:8px;border:.5pt solid #333;padding:4px 6px;display:inline-block;">
+            <span class="b">Total weight</span> 752.00 kg &nbsp;·&nbsp;
+            <span class="b">Count</span> 0 pcs &nbsp;·&nbsp;
+            <span class="b">2</span> weighments
+          </div>
+        </td>
+        <td style="border:0;padding:0;vertical-align:top;">
+          <table class="noborder" style="width:100%;">
+            <tr><td>Subtotal</td><td class="r">51,823.00</td></tr>
+            <tr><td>Discount</td><td class="r">− 1,036.46</td></tr>
+            <tr><td>Round Off</td><td class="r">+ 0.46</td></tr>
+            <tr class="grand"><td>Grand Total</td><td class="r">50,787.00</td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>
+  <p class="a4-note">Weighment rows are inserted into the existing line table as full-width
+  banded rows (same mechanism as a section sub-header). The <b>Total weight · Count ·
+  N weighments</b> box sits under amount-in-words and prints on every bill — even a
+  single-weighment one, where it reads “1 weighment”.</p>
+
+  <div class="qbox">
+    <h3>Open questions for feature 1</h3>
+    <ol>
+      <li><b>Confirm sheet on “Next segment”</b> — keep the editable “weight shown on the
+        scale” prompt (2nd mockup), or make the button cut the boundary silently and let the
+        recorded weight just equal the line-weight sum?</li>
+      <li><b>Editing after a segment is closed</b> — if the operator inserts / deletes a line
+        above a boundary, do the segment ranges auto-reflow, or does the segment lock its
+        line set at close time?</li>
+      <li><b>Non-weight lines inside a weight bill</b> — a “nos” line (e.g. 2 gates) between
+        weight lines: does it sit inside whatever segment it falls in (contributing to count,
+        not kg), or are segments weight-only and piece lines float outside them?</li>
+      <li><b>Storage</b> — reuse the dormant <code>invoice_line.weighment_id</code> column +
+        a new <code>invoice_weighment</code> table (seg no, recorded_kg, line range), or keep
+        it lighter as a <code>segment_no</code> int on the line + recorded weights on the
+        invoice header JSON?</li>
+    </ol>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ============================================================ -->
+  <h2>2 · Weight &amp; count always on the bill <span class="pill new">new</span></h2>
+  <p class="sub">Independent of segments: every invoice — weight goods or not — shows a total
+  weight and a piece count, on screen (totals rail, shown above) and on the PDF (the boxed
+  line under amount-in-words, above). <b>Count = sum of quantity on piece/nos lines</b>
+  (6 kadai + 12 tasla → 18 pcs); kg lines feed weight only. A pure-piece bill shows
+  <code>0.00 kg</code> weight; a pure-weight bill shows <code>0 pcs</code>.</p>
+  <div class="cols">
+    <div>
+      <div class="rail" style="width:280px;">
+        <div class="card" style="padding:12px 14px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Pure-piece bill — utensils</div>
+          <div class="measure" style="margin:0;">
+            <div class="mhead">Weighment</div>
+            <div class="mrow"><span>Total weight</span><b>0.00 kg</b></div>
+            <div class="mrow"><span>Piece count</span><b>18 pcs</b></div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">6 iron kadai + 12 SS tasla. Weight shows zero, count is the piece sum.
+      No segments — a pure-piece shop never touches the platform scale.</p>
+    </div>
+    <div>
+      <div class="rail" style="width:280px;">
+        <div class="card" style="padding:12px 14px;">
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Mixed bill</div>
+          <div class="measure" style="margin:0;">
+            <div class="mhead">Weighment</div>
+            <div class="mrow"><span>Total weight</span><b>512.00 kg</b></div>
+            <div class="mrow"><span>Piece count</span><b>4 pcs</b></div>
+            <div style="border-top:1px dashed var(--slip-line);margin:5px 0 3px;"></div>
+            <div class="seg-in-rail"><span>1 weighment</span><span>512.00 kg</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Angles + 4 fabricated brackets. Both figures non-zero. Operator didn't
+      split → “1 weighment”, weight equals the single slip.</p>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ============================================================ -->
+  <h2>3 · Discount defaults to % <span class="pill change">change</span></h2>
+  <p class="sub">Today a new line's discount toggle starts on <code>₹</code> (absolute). Flip
+  the default to <code>%</code> for <b>new</b> rows and for the <b>invoice-level</b> discount
+  (which today is a bare ₹ field on the rail — it gains the same ₹/% toggle). A reloaded
+  saved line still shows <code>₹</code>: the backend only ever stores an absolute amount, so
+  a reloaded line can't know it was typed as a percent — the stored ₹ is exact and shown as-is.</p>
+  <div class="cols">
+    <div>
+      <div class="phone" style="width:300px;">
+        <div class="card">
+          <div class="minigrid">
+            <div>
+              <label class="fl">Qty</label>
+              <input class="inp r" value="128" />
+            </div>
+            <div>
+              <label class="fl">Unit</label>
+              <select class="inp"><option>kg</option></select>
+            </div>
+            <div>
+              <label class="fl">Rate ₹/kg</label>
+              <input class="inp r" value="62" />
+            </div>
+            <div>
+              <label class="fl">Discount
+                <span class="seg"><span>₹</span><span class="on">%</span></span>
+              </label>
+              <input class="inp r" value="2" />
+            </div>
+          </div>
+          <div class="runbar" style="background:var(--card);border-top:1px solid var(--line);">
+            <span class="work" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);">128 kg × ₹62 − ₹158.72</span>
+            <span class="amt" style="font-family:'Fraunces',Georgia,serif;font-weight:600;">₹ 7,777</span>
+          </div>
+        </div>
+      </div>
+      <p class="cap"><b>New line</b> — toggle starts on <code>%</code>. “2” means 2 %, resolved
+      to −₹158.72 in the working line and the totals preview. Backend still stores the ₹.</p>
+    </div>
+    <div>
+      <div class="rail" style="width:280px;">
+        <div class="card" style="padding:14px;">
+          <h3>Totals</h3>
+          <div class="rline"><span class="muted">Subtotal</span><span class="v">₹ 58,102.00</span></div>
+          <div class="rline">
+            <span class="muted">Invoice discount</span>
+            <span style="display:flex;gap:6px;align-items:center;">
+              <span class="seg"><span>₹</span><span class="on">%</span></span>
+              <input class="inp r" style="height:30px;width:70px;font-size:12px;" value="2" />
+            </span>
+          </div>
+          <div class="rline muted"><span>Total discount</span><span class="v">− ₹ 1,162.04</span></div>
+          <div class="rline grand"><span>Grand total</span><span class="v">₹ 56,940</span></div>
+        </div>
+      </div>
+      <p class="cap">Invoice-level discount gains the ₹/% toggle, also defaulting to
+      <code>%</code>. Same resolve-to-₹-before-send as the per-line field.</p>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  <!-- ============================================================ -->
+  <h2>4 · “Per kg” new item → Unit shows kg <span class="pill change">fix</span></h2>
+  <p class="sub">When a free-typed item isn't in the catalogue, a strip offers <b>per piece</b> /
+  <b>per kg</b>. Choosing <b>per kg</b> already sets <code>uom:"kg"</code> in code — this is a
+  visible-behaviour check that the Unit dropdown actually <b>lands on “kg”</b> (not stays blank
+  or snaps back to “nos”), and that the Rate label follows to <code>₹/kg</code>.</p>
+  <div class="cols">
+    <div>
+      <div class="phone" style="width:300px;">
+        <div class="card">
+          <div class="lrow" style="border-bottom:0;padding-bottom:0;">
+            <div class="lname" style="color:var(--warn);">chequered plate 5mm</div>
+          </div>
+          <div style="margin:8px 12px 0;background:var(--warn-soft);border:1px solid var(--warn);
+            border-radius:8px;padding:8px 10px;font-size:11px;color:var(--warn);">
+            Not in the catalogue — finalising creates it as a new item.
+            <span class="seg" style="margin-left:4px;border-color:var(--warn);">
+              <span>per piece</span><span class="on" style="background:var(--warn);">per kg</span>
+            </span>
+          </div>
+          <div class="minigrid">
+            <div>
+              <label class="fl">Qty</label>
+              <input class="inp r" value="310" />
+            </div>
+            <div>
+              <label class="fl">Unit</label>
+              <select class="inp"><option selected>kg</option><option>nos</option></select>
+            </div>
+            <div>
+              <label class="fl">Rate ₹/kg</label>
+              <input class="inp r" value="72" />
+            </div>
+            <div>
+              <label class="fl">Discount <span class="seg"><span>₹</span><span class="on">%</span></span></label>
+              <input class="inp r" value="0" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="cap"><b>per kg</b> selected → Unit dropdown shows <b>kg</b>, Rate label reads
+      <code>₹/kg</code>, and the line's weight counts toward the total-weight figure from
+      feature&nbsp;2. Picking <b>per piece</b> flips Unit to <code>nos</code> and the label to
+      <code>₹/nos</code>.</p>
+    </div>
+  </div>
+
+  <hr class="divider" />
+
+  <h2>Behaviour notes / scope</h2>
+  <ul class="notes">
+    <li><b>tax.py untouched.</b> Weight and count are display aggregates over the existing
+      <code>quantity</code> / <code>uom</code> columns — no change to line-total or grand-total
+      arithmetic, no change to <code>tax_vectors.json</code>.</li>
+    <li><b>What is a “weight unit”</b> for the total-weight sum: <code>uom</code> in
+      {<code>kg</code>, <code>kgs</code>, <code>g</code>→÷1000, <code>quintal</code>→×100,
+      <code>ton</code>/<code>mt</code>→×1000}. Everything else is a piece unit and feeds count.
+      Final list to confirm.</li>
+    <li><b>Count</b> = Σ <code>quantity</code> over piece-unit lines, shown as an integer
+      (rounded if someone typed 2.5 nos). Line count is <i>not</i> what's shown.</li>
+    <li><b>Segments are entry-time only</b> for totals purposes — the grand weight is the sum
+      of all weight lines regardless of how they're split. Segment recorded-weights are a
+      parallel record printed on the slip lines; they don't feed the money or the
+      total-weight figure (which stays line-derived) unless we decide otherwise (open Q1/Q3).</li>
+    <li><b>Draft with open segment.</b> A draft can be saved mid-weighment; the last segment
+      stays open (no recorded weight) until closed or until finalize auto-closes it at the
+      line sum.</li>
+    <li><b>PDF template.</b> <code>invoice_v1_nongst.html</code> gains: full-width banded
+      weighment rows in the line loop, and the weight/count/N-weighments box under
+      amount-in-words. The React live preview mirrors both.</li>
+    <li><b>Migration.</b> Depends on Q4 — either a new <code>invoice_weighment</code> table
+      (0011) or a single <code>segment_no</code> column on <code>invoice_line</code> plus a
+      JSON on the header. No other schema change.</li>
+  </ul>
+</div>
+</body>
+</html>

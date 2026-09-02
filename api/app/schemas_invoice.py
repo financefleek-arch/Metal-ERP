@@ -43,6 +43,7 @@ class InvoiceLineIn(BaseModel):
     unit_rate: Money = Decimal("0")
     discount: Money = Decimal("0")  # absolute amount off this line
     size_pos: int | None = None
+    segment_no: int = Field(default=1, ge=1)  # weighment segment this line is in
 
 
 class InvoiceLineOut(BaseModel):
@@ -58,11 +59,19 @@ class InvoiceLineOut(BaseModel):
     unit_rate: Money
     discount: Money
     line_total: Money | None
+    segment_no: int = 1
 
 
 # --------------------------------------------------------------------------
 # header / create / update
 # --------------------------------------------------------------------------
+
+
+class WeighmentSlipIn(BaseModel):
+    """One operator-recorded platform-scale weight for a closed segment."""
+
+    seg: int = Field(ge=1)
+    recorded_kg: Decimal = Field(max_digits=15, decimal_places=3, ge=0)
 
 
 class InvoiceCreate(BaseModel):
@@ -73,6 +82,7 @@ class InvoiceCreate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
     invoice_discount: Money = Decimal("0")
     lines: list[InvoiceLineIn] = Field(default_factory=list)
+    weighment_slips: list[WeighmentSlipIn] | None = None
 
 
 class InvoiceUpdate(BaseModel):
@@ -87,6 +97,7 @@ class InvoiceUpdate(BaseModel):
     notes: str | None = Field(default=None, max_length=2000)
     invoice_discount: Money | None = None
     lines: list[InvoiceLineIn] | None = None
+    weighment_slips: list[WeighmentSlipIn] | None = None
 
 
 # --------------------------------------------------------------------------
@@ -101,6 +112,24 @@ class InvoiceTotals(BaseModel):
     round_off: Money
     grand_total: Money
     amount_in_words: str
+
+
+class SegmentMeasureOut(BaseModel):
+    seg: int
+    line_from: int
+    line_to: int
+    weight_kg: Decimal = Field(max_digits=15, decimal_places=3)
+    count: int
+    recorded_kg: Decimal | None = None
+
+
+class InvoiceMeasureOut(BaseModel):
+    """Derived physical measures — never stored, recomputed on every read."""
+
+    total_weight_kg: Decimal = Field(max_digits=15, decimal_places=3)
+    total_count: int
+    segment_count: int
+    segments: list[SegmentMeasureOut] = Field(default_factory=list)
 
 
 class PartyBrief(BaseModel):
@@ -137,6 +166,8 @@ class InvoiceOut(BaseModel):
     invoice_discount: Money
     # computed-on-read for a draft; frozen columns for a finalized invoice
     totals: InvoiceTotals
+    # always recomputed from the lines (qty + uom) + weighment_slips
+    measure: InvoiceMeasureOut
 
     pdf_status: PdfStatus
     has_pdf: bool = False
@@ -168,6 +199,7 @@ class FinalizeOut(BaseModel):
     fy: str
     status: InvoiceStatus
     totals: InvoiceTotals
+    measure: InvoiceMeasureOut
     pdf_status: PdfStatus
     created_item_ids: list[str] = Field(default_factory=list)
     learned_group_ids: list[str] = Field(default_factory=list)

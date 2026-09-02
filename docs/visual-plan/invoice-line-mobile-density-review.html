@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoice line — mobile density + progressive disclosure</title>
+<style>
+  :root {
+    --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a;
+    --accent:#2f6f89; --accent-dark:#245771; --accent-soft:#eef4f7;
+    --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+    font:15px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+  h1 { font-family:"Fraunces", Georgia, serif; font-size:21px; margin:0 0 6px; }
+  h2 { font-family:"Fraunces", Georgia, serif; font-size:16px; margin:34px 0 10px; }
+  h3 { font-family:"Fraunces", Georgia, serif; font-size:14px; margin:22px 0 8px; color:var(--ink); }
+  .wrap { max-width:1180px; margin:0 auto; padding:26px 20px 100px; }
+  .lede { color:var(--muted); max-width:76ch; margin:0 0 8px; }
+  code { background:#eee7db; padding:1px 5px; border-radius:4px; font-size:.86em; }
+
+  .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:26px; align-items:start; }
+  .phone { width:320px; margin:0 auto; border:10px solid #d9d2c6; border-radius:26px;
+    background:var(--ground); padding:12px 9px; }
+  .cap { font-size:12px; color:var(--muted); margin:9px auto 0; max-width:320px; }
+  .cap b { color:var(--ink); }
+
+  /* ---------- the line card ---------- */
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .stack > * + * { border-top:1px solid var(--line); }
+
+  /* COLLAPSED row — one line = one glance */
+  .lc { display:flex; align-items:center; gap:10px; padding:11px 12px; cursor:pointer; }
+  .lc .no { font-size:12px; color:var(--muted); flex:none; width:12px; }
+  .lc .mid { min-width:0; flex:1; }
+  .lc .nm { font-size:15px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .lc .sub { font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .lc .amt { font-family:"Fraunces",Georgia,serif; font-size:16px; font-weight:600; flex:none; }
+  .lc .chev { flex:none; color:var(--muted); font-size:13px; }
+  .lc.err .nm { color:var(--danger); }
+  .lc .flag { font-size:11px; font-weight:600; color:var(--danger); }
+
+  /* EXPANDED editor */
+  .le { padding:10px 12px 12px; }
+  .le .top { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:6px; }
+  .trash { border:1px solid var(--line); background:var(--card); color:var(--danger);
+    width:30px; height:30px; border-radius:7px; font-size:14px; line-height:1; }
+
+  .fl { display:block; font-size:10px; font-weight:600; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--muted); margin:0 0 3px; }
+  .unitbadge { font-weight:700; font-size:10px; background:var(--accent-soft);
+    color:var(--accent); border-radius:4px; padding:1px 5px; letter-spacing:0; }
+  .inp { height:38px; width:100%; border:1px solid var(--line); border-radius:8px;
+    background:var(--card); padding:0 10px; font-size:15px; color:var(--ink); }
+  .inp.r { text-align:right; font-variant-numeric:tabular-nums; }
+  .inp.big { height:44px; font-size:16px; padding-right:82px; }
+  .inp.focused { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,111,137,.18); }
+  .inp.err { border-color:var(--danger); }
+  .inp.warn { border-color:var(--warn); }
+  select.inp { appearance:none; background:
+    linear-gradient(45deg,transparent 50%,var(--muted) 50%) calc(100% - 15px) 16px/5px 5px no-repeat,
+    linear-gradient(135deg,var(--muted) 50%,transparent 50%) calc(100% - 10px) 16px/5px 5px no-repeat; }
+
+  .itemwrap { position:relative; }
+  .matched { position:absolute; right:10px; top:14px; font-size:11px; font-weight:600; color:var(--ok); }
+
+  .qr { display:grid; grid-template-columns:96px 1fr; gap:10px; margin-top:8px; align-items:end; }
+  .qr .x { align-self:center; text-align:center; color:var(--muted); font-size:16px; padding-bottom:2px; }
+  .qr2 { grid-template-columns:96px 18px 1fr; }
+  .ghost { font-size:10px; color:var(--muted); margin:3px 2px 0; }
+  .hint.err { font-size:10px; color:var(--danger); margin:3px 2px 0; }
+
+  .live { margin-top:10px; font-family:"Fraunces",Georgia,serif; font-size:19px; font-weight:600; }
+  .live small { display:block; font-family:"IBM Plex Sans",sans-serif; font-weight:400;
+    font-size:11px; color:var(--muted); }
+  .live.bad { color:var(--danger); }
+
+  .more { display:flex; flex-wrap:wrap; gap:14px; margin-top:11px; padding-top:10px;
+    border-top:1px dashed var(--line); }
+  .more button { border:0; background:none; color:var(--accent); font-size:13px;
+    font-weight:600; padding:0; cursor:pointer; }
+  .more button .pl { font-size:15px; vertical-align:-1px; }
+
+  .revealed { margin-top:10px; padding:10px; background:#faf7f2; border-radius:8px; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:5px; overflow:hidden; vertical-align:middle; }
+  .seg button { border:0; background:var(--card); color:var(--muted); font-size:10px;
+    font-weight:700; padding:2px 8px; cursor:pointer; }
+  .seg button.on { background:var(--accent); color:#fff; }
+
+  /* ADD button — loud */
+  .addbtn { display:flex; align-items:center; justify-content:center; gap:8px;
+    width:100%; height:46px; border:1.5px dashed var(--accent); border-radius:10px;
+    background:var(--accent-soft); color:var(--accent-dark); font-size:15px; font-weight:600;
+    margin-top:12px; cursor:pointer; }
+  .addbtn .pl { font-size:20px; line-height:1; }
+
+  /* dropdown */
+  .dd { position:absolute; left:0; right:0; z-index:5; margin-top:4px;
+    background:var(--card); border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.12); overflow:hidden; }
+  .dd button { display:flex; width:100%; justify-content:space-between; gap:8px; align-items:center;
+    border:0; border-bottom:1px solid #f3eee4; background:none; padding:9px 11px; text-align:left; font-size:14px; cursor:pointer; }
+  .dd .size { color:var(--muted); font-size:12px; }
+  .dd .new { background:#f0f6f8; color:var(--accent); }
+  .rt { font-size:11px; color:var(--muted); white-space:nowrap; }
+  .pill { font-size:9px; border-radius:4px; padding:1px 5px; margin-left:3px; }
+  .pill.exact { background:#dff0e3; color:var(--ok); }
+  .pill.fuzzy { background:#f6e2c8; color:var(--warn); }
+  .newstrip { margin-top:8px; background:#fbf3e2; border:1px solid #ecdcb8; color:var(--warn);
+    font-size:11px; border-radius:6px; padding:6px 9px; }
+
+  table.g { border-collapse:collapse; width:100%; font-size:13px; margin-top:8px; }
+  table.g th, table.g td { border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top; }
+  table.g th { background:#faf7f2; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .before-after { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .before-after > div { padding:12px 14px; font-size:13px; }
+  .before-after .b { background:#fbf1ee; border-right:1px solid var(--line); }
+  .before-after .a { background:#f0f7f2; }
+  .before-after h4 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  .before-after .b h4 { color:var(--danger); } .before-after .a h4 { color:var(--ok); }
+  .before-after ul { margin:0; padding-left:18px; } .before-after li { margin:3px 0; }
+  .note { background:#fff; border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:6px; padding:10px 12px; font-size:13px; color:#4a4740; margin:14px 0 0; }
+  .note b { color:var(--ink); }
+  .tag { font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; }
+  .tag.keep { background:#dff0e3; color:var(--ok); } .tag.new { background:#e6eef2; color:var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Invoice line — mobile density &amp; progressive disclosure</h1>
+  <div style="background:#e7f2e9;border:1px solid #b9d9be;border-radius:8px;padding:10px 14px;margin:0 0 14px;font-size:13px;color:#2f5c39">
+    <b>BUILT 2026-09-02</b> — implemented in <code>LineRow</code> (mobile branch of
+    <code>InvoiceEditorPage.tsx</code>), uncommitted. Collapse/expand with one line open at a
+    time (<code>openKey</code> lifted to the page), Qty×Rate default, discount/HSN/unit behind
+    "+" links, touched-gated field captions replace the red box, dashed
+    "＋ Add another item" button. No backend change (<code>secondary_uom</code> already on the
+    <code>/items</code> payload). Typecheck + lint + prod build all clean. Desktop table row untouched.
+  </div>
+  <p class="lede">Feedback on the current build: <i>"too spread out on mobile, Add is too silent."</i>
+  This pass makes a filled line <b>collapse to one row</b>, shows only <b>Qty + Rate</b> while editing,
+  hides <b>discount / HSN / unit-change</b> behind quiet "+" links, drops the always-on red error box,
+  and turns <b>+ Add line</b> into a real button. No backend change. Review before I touch
+  <code>LineRow</code> in <code>InvoiceEditorPage.tsx</code>.</p>
+
+  <div class="before-after">
+    <div class="b">
+      <h4>Now — one line ≈ 1.5 screens</h4>
+      <ul>
+        <li>6 fields, all <code>h-10</code>, <code>gap-3</code>, always visible</li>
+        <li>HSN full-width &amp; visible though GST is off + optional</li>
+        <li>Discount ₹/% toggle + field always shown</li>
+        <li>Red "needs a quantity / needs a rate" box on an untouched new line</li>
+        <li>"+ Add line" = a small text link under a stray <code>×</code> / <code>—</code> row</li>
+        <li>Unit is a dropdown even when the item fixes it</li>
+      </ul>
+    </div>
+    <div class="a">
+      <h4>Proposed — one line = one row until you tap it</h4>
+      <ul>
+        <li>Filled lines collapse: <code>name · 5 nos × ₹180 · ₹900</code></li>
+        <li>Editing shows <b>Qty + Rate only</b>; unit rides the Rate label (<code>₹/nos</code>)</li>
+        <li><b>+ discount</b> · <b>+ HSN</b> · <b>change unit</b> — quiet links, appear on demand, stay once filled</li>
+        <li>No error box at rest — calm caption under a field only after you leave it empty or hit Finalize</li>
+        <li>Full-width dashed <b>+ Add another item</b> button, 46 px, icon + label</li>
+        <li>Trash icon lives inside the expanded card only</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>States at phone width</h2>
+  <div class="cols">
+
+    <!-- STATE A: a bill mid-entry -->
+    <div>
+      <div class="phone"><div class="card stack">
+        <div class="lc">
+          <span class="no">1</span>
+          <span class="mid"><span class="nm">Bucket 12" steel</span><br><span class="sub">5 nos × ₹180</span></span>
+          <span class="amt">₹900</span><span class="chev">▸</span>
+        </div>
+        <div class="lc">
+          <span class="no">2</span>
+          <span class="mid"><span class="nm">Iron Kadai</span><br><span class="sub">5.2 kg × ₹455 − ₹10</span></span>
+          <span class="amt">₹2,356</span><span class="chev">▸</span>
+        </div>
+        <div class="lc err">
+          <span class="no">3</span>
+          <span class="mid"><span class="nm">SS Thali 10"</span><br><span class="flag">tap to add a rate</span></span>
+          <span class="amt">—</span><span class="chev">▸</span>
+        </div>
+      </div>
+      <button class="addbtn"><span class="pl">＋</span> Add another item</button>
+      </div>
+      <p class="cap"><b>Three lines fit above the fold.</b> Collapsed rows show the working
+      (<code>qty unit × rate − disc</code>) so a layman can eyeball the bill without opening anything.
+      Line 3 has a problem → name turns red, sub-text says what to do.</p>
+    </div>
+
+    <!-- STATE B: expanded, clean, single-unit item -->
+    <div>
+      <div class="phone"><div class="card stack">
+        <div class="lc">
+          <span class="no">1</span>
+          <span class="mid"><span class="nm">Bucket 12" steel</span><br><span class="sub">5 nos × ₹180</span></span>
+          <span class="amt">₹900</span><span class="chev">▸</span>
+        </div>
+        <div class="le">
+          <div class="top"><span>Line 2</span><button class="trash">🗑</button></div>
+          <div class="itemwrap">
+            <input class="inp big" value="Iron Kadai" />
+            <span class="matched">✓ matched</span>
+          </div>
+          <div class="qr qr2">
+            <div><span class="fl">Qty <span class="unitbadge">kg</span></span><input class="inp r" value="5.2" /></div>
+            <div class="x">×</div>
+            <div><span class="fl">Rate ₹/kg</span><input class="inp r" value="455" />
+              <div class="ghost">last ₹455 · 12 Aug · band ₹420–480</div></div>
+          </div>
+          <div class="live">= ₹2,275.00<small>5.2 kg × ₹455</small></div>
+          <div class="more">
+            <button><span class="pl">＋</span> discount</button>
+            <button><span class="pl">＋</span> HSN</button>
+          </div>
+        </div>
+      </div>
+      <button class="addbtn"><span class="pl">＋</span> Add another item</button>
+      </div>
+      <p class="cap"><b>Expanded = essentials only.</b> Single-unit item (uom = kg, no secondary):
+      no unit dropdown — <code>kg</code> is a badge on Qty, Rate reads <code>₹/kg</code>.
+      Discount &amp; HSN are one tap away, not in your face.</p>
+    </div>
+
+    <!-- STATE C: reveals opened -->
+    <div>
+      <div class="phone"><div class="card stack">
+        <div class="le">
+          <div class="top"><span>Line 2</span><button class="trash">🗑</button></div>
+          <div class="itemwrap">
+            <input class="inp big" value="SS Kadai 12&quot;" />
+            <span class="matched">✓ matched</span>
+          </div>
+          <div class="qr">
+            <div><span class="fl">Qty</span><input class="inp r" value="6" /></div>
+            <div class="x">×</div>
+            <div><span class="fl">Rate ₹/nos</span><input class="inp r" value="690" /></div>
+          </div>
+          <div class="live">= ₹3,726.00<small>6 nos × ₹690 − ₹414</small></div>
+
+          <div class="revealed">
+            <span class="fl">Discount &nbsp;
+              <span class="seg"><button>₹</button><button class="on">%</button></span></span>
+            <input class="inp r" value="10" style="margin-top:4px" />
+            <div class="ghost">10% of ₹4,140 = ₹414 — stored as ₹414</div>
+          </div>
+          <div class="revealed">
+            <span class="fl">Unit</span>
+            <select class="inp" style="margin-top:4px"><option>nos</option><option>kg</option></select>
+            <div class="ghost">this item is sold by piece or weight</div>
+          </div>
+          <div class="revealed">
+            <span class="fl">HSN <span style="font-weight:400;text-transform:none">optional</span></span>
+            <input class="inp" value="7323" style="margin-top:4px" />
+          </div>
+
+          <div class="more">
+            <button style="color:var(--muted)">− hide extras</button>
+          </div>
+        </div>
+      </div>
+      <button class="addbtn"><span class="pl">＋</span> Add another item</button>
+      </div>
+      <p class="cap"><b>After tapping the links.</b> Two-unit item → the dropdown shows
+      <i>exactly</i> its two units. Each revealed block is a soft panel with a one-line
+      explanation. Once a value is in, the block stays open on reopen; "− hide extras"
+      collapses the empty ones again.</p>
+    </div>
+
+    <!-- STATE D: item search -->
+    <div>
+      <div class="phone"><div class="card stack">
+        <div class="le">
+          <div class="top"><span>Line 1</span><button class="trash">🗑</button></div>
+          <div class="itemwrap">
+            <input class="inp big focused" value="karahi" />
+            <div class="dd">
+              <button><span>Iron Kadai <span class="pill exact">exact</span></span><span class="rt">₹455 · 12×</span></button>
+              <button><span>SS Kadai <span class="size">10"</span> <span class="pill fuzzy">≈ close</span></span><span class="rt">₹690 · 4×</span></button>
+              <button class="new">＋ Use "karahi" as a new item</button>
+            </div>
+          </div>
+          <div style="opacity:.35;pointer-events:none">
+            <div class="qr qr2">
+              <div><span class="fl">Qty</span><input class="inp r" placeholder="0" /></div>
+              <div class="x">×</div>
+              <div><span class="fl">Rate ₹</span><input class="inp r" placeholder="0.00" /></div>
+            </div>
+            <div class="live" style="color:var(--muted)">= —</div>
+          </div>
+        </div>
+      </div>
+      <button class="addbtn"><span class="pl">＋</span> Add another item</button>
+      </div>
+      <p class="cap"><b>Search unchanged</b> (synonym-aware list, size shown distinctly,
+      match badge). Qty/Rate are dimmed until an item is chosen so there's nothing to fiddle
+      with out of order.</p>
+    </div>
+
+    <!-- STATE E: errors, calm -->
+    <div>
+      <div class="phone"><div class="card stack">
+        <div class="le">
+          <div class="top"><span>Line 3</span><button class="trash">🗑</button></div>
+          <div class="itemwrap">
+            <input class="inp big warn" value="karahi steel" />
+          </div>
+          <div class="newstrip">Not in the catalogue — finalising creates "karahi steel" as a new item.
+            &nbsp;Sold <span class="seg"><button class="on">per piece</button><button>per kg</button></span></div>
+          <div class="qr qr2">
+            <div><span class="fl">Qty <span class="unitbadge">nos</span></span><input class="inp r" placeholder="0" />
+              <div class="hint err">enter how many</div></div>
+            <div class="x">×</div>
+            <div><span class="fl">Rate ₹/nos</span><input class="inp r warn" value="4550" />
+              <div class="ghost" style="color:var(--warn)">higher than usual ₹420–480 — ok?</div></div>
+          </div>
+          <div class="live bad">= —<small>needs a quantity</small></div>
+          <div class="more">
+            <button><span class="pl">＋</span> discount</button>
+            <button><span class="pl">＋</span> HSN</button>
+          </div>
+        </div>
+      </div>
+      <button class="addbtn"><span class="pl">＋</span> Add another item</button>
+      </div>
+      <p class="cap"><b>Errors are quiet and specific.</b> Empty required field → one grey-red
+      caption <i>under that field</i> (<code>enter how many</code>), not a red block listing
+      everything. Amber = "ok?" warning, never blocks. Red border + the totals-rail gate still
+      stop finalize.</p>
+    </div>
+
+  </div>
+
+  <h2>What changes in <code>LineRow</code> (mobile branch only)</h2>
+  <table class="g">
+    <tr><th>Piece</th><th>Now</th><th>Proposed</th><th>Notes</th></tr>
+    <tr><td>Filled line</td><td>Always the full 6-field card</td>
+      <td>Collapsed row: <code>#</code> · name · working · amount · chevron. Tap to expand.</td>
+      <td><span class="tag new">new</span> local <code>expanded</code> state; the line being edited / any line with a blocking problem starts expanded.</td></tr>
+    <tr><td>Unit</td><td><code>&lt;select&gt;</code> always rendered</td>
+      <td>0 secondary uom → badge on Qty label, no control. 1 secondary → "change unit" link reveals the 2-option select.</td>
+      <td>Needs <code>secondary_uom</code> in the <code>/items</code> + <code>/items/resolve</code> payload (no migration — column exists).</td></tr>
+    <tr><td>Discount</td><td>₹/% toggle + field always shown</td>
+      <td>"+ discount" link → soft panel with toggle + field + "10% of ₹X = ₹Y" line. Stays open once non-zero.</td>
+      <td>Storage unchanged — absolute ₹ still the only thing sent. <span class="tag keep">keep</span></td></tr>
+    <tr><td>HSN</td><td>Full-width input, always shown</td>
+      <td>"+ HSN" link → field. Auto-open if the line already has an HSN.</td>
+      <td>Still <code>optional</code>; same 4/6/8-digit soft check.</td></tr>
+    <tr><td>Errors</td><td><code>problems[]</code> in a red/amber box below the grid</td>
+      <td>Blocking-empty → short caption under the specific field. Warnings → amber ghost text under the field. Box removed.</td>
+      <td>Same <code>problems</code> computation; only the render + trigger (touched/blur/finalize, not at rest) changes.</td></tr>
+    <tr><td>Add line</td><td><code>&lt;button&gt;</code> text link "+ Add line"</td>
+      <td>Full-width dashed 46px button, "＋ Add another item", below the card list.</td>
+      <td>Same <code>addRow()</code>. Also: don't render a trailing all-empty line — the button <i>is</i> the next line.</td></tr>
+    <tr><td>Remove</td><td>Floating <code>×</code> on a divider in every card</td>
+      <td>Trash icon top-right inside the <b>expanded</b> card only.</td>
+      <td>Collapsed row has no delete affordance (expand → trash). Optional later: swipe-to-delete.</td></tr>
+    <tr><td>Status chip</td><td>"✓ ready" / "fix highlighted fields" in the card header</td>
+      <td>Collapsed: red sub-text ("tap to add a rate"). Expanded: keep the header chip.</td>
+      <td>—</td></tr>
+  </table>
+
+  <div class="note">
+    <b>Desktop is untouched.</b> At <code>md:</code> the current dense table row stays exactly
+    as-is. Everything above is inside the <code>md:hidden</code> mobile branch.
+  </div>
+  <div class="note">
+    <b>Not in this pass:</b> search wiring, <code>tax.py</code>, totals rail, PDF, the desktop
+    table, swipe-to-delete, undo. Just the mobile <code>LineRow</code> markup + the
+    collapse/reveal state + the add button.
+  </div>
+  <div class="note">
+    <b>Decided — one line open at a time.</b> Expanding a line (tap its collapsed row, or
+    <b>+ Add another item</b>) collapses whichever line was open. A line with a blocking
+    problem still forces itself open on a finalize attempt, and if two lines are broken the
+    first one wins focus. Least scrolling, one thing to look at — right for a layman.
+  </div>
+</div>
+</body>
+</html>

@@ -1,8 +1,8 @@
 # Item Categorization — Taxonomy & Build Plan
 
-**Status:** BUILT 2026-09-02 (staged, uncommitted — user does check-ins). 266 tests pass.
+**Status:** COMMITTED `7958bde` + DEPLOYED & BACKFILLED on prod 2026-09-02. 266 tests pass. Slice fully live.
 **Date:** 2026-09-02
-**Tenant that prompted this:** SETHIA METAL STORE (Tally "All Masters" export, `c:\tmp\Items list.xml`)
+**Tenant that prompted this:** SETHIA METAL STORE (Tally "All Masters" export, `c:\tmp\Items list.xml`) — prod tenant id `cbb2c87e-14d0-45bc-8f86-627728ec7d8a`
 
 ## What shipped
 
@@ -21,13 +21,24 @@
 
 **Measured on the real 2,094:** 64% keyword rule, 34% HSN fallback, 2% none → **97% in a real department, 64% auto-confirm, 3% (63) in Other.**
 
-**Still to run (needs Postgres up — Docker was down):**
-1. `alembic upgrade head` (applies 0010)
-2. `python -m app.services.catalogue.seed_taxonomy --tenant <SETHIA id>` (top-up: existing tenant predates the seed)
-3. `python -m tools.reclassify_items --tenant <SETHIA id> --out sethia.csv` → review
-4. `python -m tools.reclassify_items --tenant <SETHIA id> --apply`
+**Prod rollout — DONE** (`docker compose exec -T metalerp-api …` from `/opt/fleek-stack`; SETHIA = `cbb2c87e-14d0-45bc-8f86-627728ec7d8a`):
+1. ✅ `alembic upgrade head` — 0010 applied on deploy.
+2. ✅ `seed_taxonomy --tenant cbb2c87e...` (`+25 categories, +112 groups`).
+3. ✅ `reclassify_items --tenant cbb2c87e... --out …` — reviewed.
+4. ✅ `reclassify_items --tenant cbb2c87e... --apply` — ~2,000 existing items categorised, high-confidence → `confirmed`.
 
-**Known classifier misfires to tune later** (visible in the golden CSV, not blocking): a stray strainer → Pooja; a dough *scraper* → "Scrap (folded)". Fix by reordering/tightening phrases in `item_taxonomy.RULES`, then regenerate the golden CSV.
+New items auto-classify on all 4 create paths. To re-run the backfill later (e.g.
+after users teach rules by recategorising), repeat step 3–4 — same command, it
+refiles more items with no code change. See `docs/DEPLOY-AND-OPS.md` runbook.
+
+**Reading the reclassify CSV** — 16 columns: `item_id,name,hsn,uom,old_category_id,old_group_id,old_status,new_department,new_group,new_brand,new_category_id,new_group_id,new_status,confidence,source,rule_hit`. `"Flasks, Bottles & Thermoware"` has a comma, so `column -s, -t` misaligns every later column — use a spreadsheet or a real CSV parser. `new_brand` = e.g. `Milton` (correct — the brand); the real `new_category_id` is the column after it (a UUID).
+
+**Decisions carried forward:**
+- **Legacy categories left in place** — the old 8 `_SEED_CATEGORIES` ("Steel"/"Stainless"/…) still exist on tenants that registered before this slice; the classifier assigns nothing to them. No `--prune-legacy` flag was built. Delete via `DELETE /api/item-categories` (reassigns/detaches, never blocks) if wanted, after the backfill.
+- **Two minor departments folded into "Other"** (Water & Filtration ~24, Metal/Trade-raw ~11) — their keyword phrases stay in `RULES` pointed at `OTHER_DEPARTMENT`; a re-split is a one-line re-point.
+- **Golden CSV is the regression guard** — `test_golden_matches_current_classifier` fails on any unintended classification shift. Regenerate deliberately after a `RULES` edit (snippet in the test docstring).
+
+**Known classifier misfires to tune later** (visible in the golden CSV, not blocking): a stray tea-strainer → Pooja; a dough *scraper* → "Scrap (folded)"; `SR-WA18H` rice cooker matched the text rule not the Panasonic brand (`normalize` strips the hyphen → `sr wa18h`, brand phrase `sr wa` misses). Fix by reordering/tightening phrases in `item_taxonomy.RULES`, then regenerate the golden CSV.
 
 ---
 

@@ -21,6 +21,9 @@
     .grand { font-weight: bold; font-size: 10.5pt; }
     .foot { margin-top: 8pt; font-size: 8pt; }
     .sub-hdr td { font-weight: bold; background: #f6f6f6; }
+    .wrow td { background: #f2f5f2; font-size: 8pt; }
+    .measure-box { border: 0.5pt solid #000; padding: 3pt 6pt; margin-top: 6pt;
+      display: inline-block; font-size: 8.5pt; }
     .cgi { text-align: center; margin-top: 10pt; font-size: 8pt; color: #333; }
   </style>
 </head>
@@ -92,6 +95,17 @@
         <td class="r">{{ (ln.discount|money) if (ln.discount and ln.discount|float) else "" }}</td>
         <td class="r">{{ ln.line_total|money }}</td>
       </tr>
+      {% if measure and measure.segment_count > 1 and ln.sl_no in seg_break_after %}
+      {% set seg = seg_break_after[ln.sl_no] %}
+      <tr class="wrow">
+        <td></td>
+        <td colspan="7">
+          <span class="b">Weighment {{ seg.seg }}</span> — lines {{ seg.line_from }}&ndash;{{ seg.line_to }}
+          &nbsp;·&nbsp; <span class="b">{{ (seg.recorded_kg if seg.recorded_kg is not none else seg.weight_kg)|kg }} kg</span>
+          {% if seg.count %}&nbsp;·&nbsp; {{ seg.count }} pcs{% endif %}
+        </td>
+      </tr>
+      {% endif %}
       {% endfor %}
     </tbody>
   </table>
@@ -101,6 +115,14 @@
       <td style="width: 62%; border: none;">
         <div class="b">Amount Chargeable (in words)</div>
         <div>{{ invoice.amount_in_words }}</div>
+        {% if measure %}
+        <div class="measure-box">
+          <span class="b">Total weight</span> {{ measure.total_weight_kg|kg }} kg
+          &nbsp;·&nbsp; <span class="b">Count</span> {{ measure.total_count }} pcs
+          &nbsp;·&nbsp; <span class="b">{{ measure.segment_count }}</span>
+          weighment{{ "" if measure.segment_count == 1 else "s" }}
+        </div>
+        {% endif %}
         {% if invoice.notes %}<div class="foot"><span class="b">Note:</span> {{ invoice.notes }}</div>{% endif %}
       </td>
       <td style="border: none; padding: 0;">

@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
 import { computePreview, inr } from "../../lib/previewTotal";
+import { computeMeasure, kg } from "../../lib/weighment";
 import type {
   Invoice,
   InvoiceLineIn,
@@ -10,6 +11,7 @@ import type {
   PartyListItem,
   RateMode,
   ResolveResult,
+  WeighmentSlipIn,
 } from "../../lib/types";
 
 type DiscMode = "amt" | "pct";
@@ -32,6 +34,8 @@ interface Row {
   unit_rate: string;
   discount: string;
   discMode: DiscMode;
+  /** 1-based weighment segment this line belongs to */
+  segmentNo: number;
   /** for a line with no item match yet: sold per piece or per kg */
   newMode: NewMode;
   /** snapshots from the picked item — for guards + ghost text, not sent */
@@ -42,7 +46,7 @@ interface Row {
 }
 
 let _rk = 0;
-function blankRow(): Row {
+function blankRow(segmentNo = 1): Row {
   return {
     key: `r${++_rk}`,
     item_id: null,
@@ -55,7 +59,9 @@ function blankRow(): Row {
     rateMode: null,
     unit_rate: "",
     discount: "",
-    discMode: "amt",
+    // % is the default discount mode for a fresh line
+    discMode: "pct",
+    segmentNo,
     newMode: "",
     _priceMin: null,
     _priceMax: null,
@@ -77,9 +83,10 @@ function rowsFromInvoice(inv: Invoice): Row[] {
     secondaryUom: "",
     rateMode: null,
     unit_rate: String(l.unit_rate ?? ""),
-    // stored lines always carry an absolute discount
+    // stored lines always carry an absolute discount — reloads as ₹
     discount: l.discount && Number(l.discount) ? String(l.discount) : "",
     discMode: "amt" as DiscMode,
+    segmentNo: l.segment_no ?? 1,
     newMode: "" as NewMode,
     _priceMin: null,
     _priceMax: null,
@@ -178,7 +185,22 @@ function toLineIn(r: Row): InvoiceLineIn {
     // % is resolved to an absolute amount here — the backend line stores ₹ only
     discount: String(rowDiscountAmount(r) || 0),
     size_pos: null,
+    segment_no: r.segmentNo || 1,
   };
+}
+
+/** the absolute ₹ for the invoice-level discount, resolving a % into an amount */
+function invoiceDiscountAmount(
+  raw: string,
+  mode: DiscMode,
+  subtotal: string,
+): number {
+  const d = parseFloat(raw.replace(/,/g, ""));
+  if (!isFinite(d) || d <= 0) return 0;
+  if (mode === "amt") return round2(d);
+  const sub = parseFloat(String(subtotal).replace(/,/g, ""));
+  if (!isFinite(sub)) return 0;
+  return round2((sub * Math.min(d, 100)) / 100);
 }
 
 export function InvoiceEditorPage() {
@@ -198,7 +220,16 @@ export function InvoiceEditorPage() {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [invoiceDiscount, setInvoiceDiscount] = useState("");
+  // % is the default for a fresh invoice; a reloaded ₹ value shows as ₹
+  const [invDiscMode, setInvDiscMode] = useState<DiscMode>("pct");
   const [rows, setRows] = useState<Row[]>([blankRow()]);
+  /** key of the one mobile line whose editor is expanded (one at a time) */
+  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [slips, setSlips] = useState<WeighmentSlipIn[]>([]);
+  /** segment number a newly added line gets — bumped by "Next segment" */
+  const [curSeg, setCurSeg] = useState(1);
+  /** the segment whose scale weight the operator is being asked to record */
+  const [closingSeg, setClosingSeg] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
@@ -215,10 +246,40 @@ export function InvoiceEditorPage() {
     setDate(inv.date);
     setNotes(inv.notes ?? "");
     setInvoiceDiscount(inv.invoice_discount && Number(inv.invoice_discount) ? inv.invoice_discount : "");
-    setRows(rowsFromInvoice(inv));
+    // reloaded invoice discount is a stored ₹ amount
+    setInvDiscMode("amt");
+    const loaded = rowsFromInvoice(inv);
+    setRows(loaded);
+    setOpenKey(null);
+    setSlips(
+      (inv.measure?.segments ?? [])
+        .filter((s) => s.recorded_kg != null)
+        .map((s) => ({ seg: s.seg, recorded_kg: String(s.recorded_kg) })),
+    );
+    setCurSeg(loaded.reduce((m, r) => Math.max(m, r.segmentNo || 1), 1));
     setDirty(false);
   }, [inv]);
 
+
+  // subtotal-only pass so a % invoice discount has a base to resolve against
+  const subtotalOnly = useMemo(
+    () =>
+      computePreview({
+        lines: rows
+          .filter((r) => r.description.trim())
+          .map((r) => ({
+            quantity: r.quantity,
+            unitRate: r.unit_rate,
+            discount: rowDiscountAmount(r),
+          })),
+      }).subtotal,
+    [rows],
+  );
+
+  const invDiscAmt = useMemo(
+    () => invoiceDiscountAmount(invoiceDiscount, invDiscMode, subtotalOnly),
+    [invoiceDiscount, invDiscMode, subtotalOnly],
+  );
 
   const preview = useMemo(
     () =>
@@ -230,12 +291,29 @@ export function InvoiceEditorPage() {
             unitRate: r.unit_rate,
             discount: rowDiscountAmount(r),
           })),
-        invoiceDiscount,
+        invoiceDiscount: invDiscAmt,
       }),
-    [rows, invoiceDiscount],
+    [rows, invDiscAmt],
   );
 
   const filledRows = rows.filter((r) => r.description.trim());
+
+  // derived weight / count / segments — mirrors the backend measure
+  const measure = useMemo(
+    () =>
+      computeMeasure(
+        filledRows.map((r) => ({
+          quantity: r.quantity,
+          uom: r.uom,
+          segmentNo: r.segmentNo || 1,
+        })),
+        slips,
+      ),
+    [filledRows, slips],
+  );
+  // the open segment = the highest segment number carried by a filled line
+  const openSeg = filledRows.reduce((m, r) => Math.max(m, r.segmentNo || 1), 1);
+  const openSegWeight = measure.segments.find((s) => s.seg === openSeg)?.weightKg ?? 0;
   const localBlockers: string[] = [];
   if (!partyId) localBlockers.push("select a party");
   if (!filledRows.length) localBlockers.push("add at least one line with an item");
@@ -247,12 +325,27 @@ export function InvoiceEditorPage() {
 
   const save = useMutation({
     mutationFn: async (): Promise<Invoice> => {
+      // renumber segments to a gap-free 1..N over the filled lines, and keep
+      // only the slips whose segment still exists
+      const filled = rows.filter((r) => r.description.trim());
+      const segSeen: number[] = [];
+      filled.forEach((r) => {
+        if (!segSeen.includes(r.segmentNo || 1)) segSeen.push(r.segmentNo || 1);
+      });
+      segSeen.sort((a, b) => a - b);
+      const remap = new Map(segSeen.map((s, i) => [s, i + 1]));
       const body = {
         party_id: partyId,
         date,
         notes: notes.trim() || null,
-        invoice_discount: invoiceDiscount.trim() || "0",
-        lines: rows.filter((r) => r.description.trim()).map(toLineIn),
+        invoice_discount: String(invDiscAmt || 0),
+        lines: filled.map((r) => ({
+          ...toLineIn(r),
+          segment_no: remap.get(r.segmentNo || 1) ?? 1,
+        })),
+        weighment_slips: slips
+          .filter((s) => remap.has(s.seg))
+          .map((s) => ({ seg: remap.get(s.seg)!, recorded_kg: s.recorded_kg })),
       };
       if (isNew) return api<Invoice>("/invoices", { method: "POST", body });
       return api<Invoice>(`/invoices/${id}`, { method: "PUT", body });
@@ -291,7 +384,9 @@ export function InvoiceEditorPage() {
     setDirty(true);
   }
   function addRow() {
-    setRows((rs) => [...rs, blankRow()]);
+    const r = blankRow(curSeg);
+    setRows((rs) => [...rs, r]);
+    setOpenKey(r.key); // the fresh line is the one you're filling
     setDirty(true);
   }
   function removeRow(key: string) {
@@ -299,6 +394,41 @@ export function InvoiceEditorPage() {
       const next = rs.filter((r) => r.key !== key);
       return next.length ? next : [blankRow()];
     });
+    setOpenKey((k) => (k === key ? null : k));
+    setDirty(true);
+  }
+
+  /** open the "record scale weight" sheet for the current open segment */
+  function startNextSegment() {
+    if (!filledRows.length) return;
+    setClosingSeg(openSeg);
+  }
+  /** commit the recorded weight; new lines from here on join segment seg+1 */
+  function confirmSegment(recordedKg: string) {
+    const seg = closingSeg;
+    if (seg == null) return;
+    setSlips((ss) => [
+      ...ss.filter((s) => s.seg !== seg),
+      { seg, recorded_kg: recordedKg || "0" },
+    ]);
+    // trailing empty rows follow into the new segment
+    setRows((rs) => {
+      const lastFilledIdx = rs.map((r) => !!r.description.trim()).lastIndexOf(true);
+      return rs.map((r, i) => (i > lastFilledIdx ? { ...r, segmentNo: seg + 1 } : r));
+    });
+    setCurSeg(seg + 1);
+    setClosingSeg(null);
+    setDirty(true);
+  }
+  /** re-open the last-closed segment: drop its slip, fold its lines back down */
+  function reopenLastSegment() {
+    if (openSeg <= 1) return;
+    const target = openSeg - 1;
+    setSlips((ss) => ss.filter((s) => s.seg !== target));
+    setRows((rs) =>
+      rs.map((r) => ((r.segmentNo || 1) >= openSeg ? { ...r, segmentNo: target } : r)),
+    );
+    setCurSeg(target);
     setDirty(true);
   }
 
@@ -451,26 +581,98 @@ export function InvoiceEditorPage() {
               <span />
             </div>
 
-            {rows.map((r, i) => (
-              <LineRow
-                key={r.key}
-                n={i + 1}
-                row={r}
-                readOnly={readOnly}
-                amount={preview.lines[filledRows.indexOf(r)]?.lineTotal}
-                otherItemLine={
-                  r.item_id
-                    ? rows.findIndex((x) => x !== r && x.item_id === r.item_id)
-                    : -1
-                }
-                onPatch={(p) => patchRow(r.key, p)}
-                onRemove={() => removeRow(r.key)}
-              />
-            ))}
+            {rows.map((r, i) => {
+              const fi = filledRows.indexOf(r);
+              // a closed segment ends on this line's filled-row position?
+              const seg =
+                fi >= 0
+                  ? measure.segments.find(
+                      (s) => s.lineTo === fi + 1 && s.seg < openSeg,
+                    )
+                  : undefined;
+              return (
+                <div key={r.key}>
+                  <LineRow
+                    n={i + 1}
+                    row={r}
+                    readOnly={readOnly}
+                    amount={preview.lines[fi]?.lineTotal}
+                    expanded={openKey === r.key || (!r.description.trim() && openKey == null)}
+                    onToggle={(want) => setOpenKey(want ? r.key : null)}
+                    otherItemLine={
+                      r.item_id
+                        ? rows.findIndex((x) => x !== r && x.item_id === r.item_id)
+                        : -1
+                    }
+                    onPatch={(p) => patchRow(r.key, p)}
+                    onRemove={() => removeRow(r.key)}
+                  />
+                  {seg && (
+                    <SlipDivider
+                      seg={seg.seg}
+                      lineFrom={seg.lineFrom}
+                      lineTo={seg.lineTo}
+                      recordedKg={
+                        slips.find((s) => s.seg === seg.seg)?.recorded_kg ??
+                        String(seg.weightKg)
+                      }
+                      lineSumKg={seg.weightKg}
+                      count={seg.count}
+                      readOnly={readOnly}
+                      isLastClosed={seg.seg === openSeg - 1}
+                      onEdit={(v) =>
+                        setSlips((ss) => [
+                          ...ss.filter((s) => s.seg !== seg.seg),
+                          { seg: seg.seg, recorded_kg: v || "0" },
+                        ]) || setDirty(true)
+                      }
+                      onReopen={reopenLastSegment}
+                    />
+                  )}
+                </div>
+              );
+            })}
+
+            {/* running weight / count bar + Next segment */}
+            {!readOnly && filledRows.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-accent-soft px-3 py-2 text-xs">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {openSeg > 1 && (
+                    <span className="text-muted">
+                      Seg&nbsp;{openSeg}{" "}
+                      <b className="font-mono text-ink">{kg(openSegWeight)}</b>
+                    </span>
+                  )}
+                  <span className="text-muted">
+                    Bill{" "}
+                    <b className="font-mono text-ink">{kg(measure.totalWeightKg)}</b>
+                    {" · "}
+                    <b className="font-mono text-ink">{measure.totalCount} pcs</b>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="rounded-md border border-ok px-3 py-1 text-xs font-semibold text-ok hover:bg-[#eef3ee]"
+                  onClick={startNextSegment}
+                >
+                  Next segment ›
+                </button>
+              </div>
+            )}
 
             {!readOnly && (
-              <div className="px-3 py-2">
-                <button className="text-sm text-accent hover:underline" onClick={addRow}>
+              <div className="p-3">
+                {/* mobile: a real button, not a whisper */}
+                <button
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border-[1.5px] border-dashed border-accent bg-accent-soft py-3 text-[15px] font-semibold text-accent-dark md:hidden"
+                  onClick={addRow}
+                >
+                  <span className="text-xl leading-none">＋</span> Add another item
+                </button>
+                <button
+                  className="hidden text-sm text-accent hover:underline md:inline"
+                  onClick={addRow}
+                >
                   + Add line
                 </button>
               </div>
@@ -499,18 +701,43 @@ export function InvoiceEditorPage() {
             <Row2 label="Subtotal" value={inr(preview.subtotal)} />
             <div className="flex items-center justify-between gap-2">
               <span className="text-muted">Invoice discount</span>
-              <input
-                className="field h-8 w-28 text-right font-mono text-xs"
-                inputMode="decimal"
-                placeholder="0.00"
-                value={invoiceDiscount}
-                disabled={readOnly}
-                onChange={(e) => {
-                  setInvoiceDiscount(e.target.value);
-                  setDirty(true);
-                }}
-              />
+              <span className="flex items-center gap-1.5">
+                <span className="inline-flex overflow-hidden rounded border border-line">
+                  {(["amt", "pct"] as DiscMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      disabled={readOnly}
+                      className={`px-1.5 text-[9px] font-bold ${
+                        invDiscMode === m ? "bg-accent text-white" : "bg-card text-muted"
+                      }`}
+                      onClick={() => {
+                        setInvDiscMode(m);
+                        setDirty(true);
+                      }}
+                    >
+                      {m === "amt" ? "₹" : "%"}
+                    </button>
+                  ))}
+                </span>
+                <input
+                  className="field h-8 w-20 text-right font-mono text-xs"
+                  inputMode="decimal"
+                  placeholder={invDiscMode === "pct" ? "0" : "0.00"}
+                  value={invoiceDiscount}
+                  disabled={readOnly}
+                  onChange={(e) => {
+                    setInvoiceDiscount(e.target.value);
+                    setDirty(true);
+                  }}
+                />
+              </span>
             </div>
+            {invDiscMode === "pct" && invDiscAmt > 0 && (
+              <div className="flex justify-end text-[10px] text-muted">
+                = − {inr(invDiscAmt)}
+              </div>
+            )}
             {Number(preview.discountTotal) > 0 && (
               <Row2 label="Total discount" value={`− ${inr(preview.discountTotal)}`} muted />
             )}
@@ -524,6 +751,42 @@ export function InvoiceEditorPage() {
               {Number(preview.grandTotal) > 0 ? preview.amountInWords : ""}
             </p>
           </div>
+
+          {/* weighment — always shown once there's a line */}
+          {filledRows.length > 0 && (
+            <div className="mt-4 rounded-md border border-[#c9ddc9] bg-[#eef3ee] p-3 text-xs">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ok">
+                Weighment
+              </div>
+              <div className="flex justify-between py-0.5">
+                <span className="text-muted">Total weight</span>
+                <b className="font-mono">{kg(measure.totalWeightKg)}</b>
+              </div>
+              <div className="flex justify-between py-0.5">
+                <span className="text-muted">Piece count</span>
+                <b className="font-mono">{measure.totalCount} pcs</b>
+              </div>
+              {measure.segments.length > 1 && (
+                <div className="mt-1.5 border-t border-dashed border-[#c9ddc9] pt-1.5">
+                  {measure.segments.map((s) => (
+                    <div key={s.seg} className="flex justify-between py-0.5 text-[11px] text-muted">
+                      <span>
+                        Weighment {s.seg} · lines {s.lineFrom}–{s.lineTo}
+                      </span>
+                      <span className="font-mono">
+                        {kg(
+                          s.recordedKg != null ? s.recordedKg : s.weightKg,
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {measure.segments.length <= 1 && (
+                <div className="mt-1 text-[10px] text-muted">1 weighment</div>
+              )}
+            </div>
+          )}
 
           {!readOnly && (
             <div className="mt-4 rounded-md border border-line bg-ground p-3 text-xs">
@@ -545,6 +808,151 @@ export function InvoiceEditorPage() {
           <p className="mt-3 text-[11px] leading-snug text-muted">
             GST off · template v1-nongst. No CGST/SGST, IRN or HSN summary.
           </p>
+        </div>
+      </div>
+
+      {closingSeg != null && (
+        <CloseSegmentDialog
+          seg={closingSeg}
+          lineSumKg={openSegWeight}
+          onCancel={() => setClosingSeg(null)}
+          onConfirm={confirmSegment}
+        />
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// weighment — slip divider + "record scale weight" dialog
+// --------------------------------------------------------------------------
+
+function SlipDivider({
+  seg,
+  lineFrom,
+  lineTo,
+  recordedKg,
+  lineSumKg,
+  count,
+  readOnly,
+  isLastClosed,
+  onEdit,
+  onReopen,
+}: {
+  seg: number;
+  lineFrom: number;
+  lineTo: number;
+  recordedKg: string;
+  lineSumKg: number;
+  count: number;
+  readOnly: boolean;
+  isLastClosed: boolean;
+  onEdit: (v: string) => void;
+  onReopen: () => void;
+}) {
+  const drift = Number(recordedKg) - lineSumKg;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-[#c9ddc9] bg-[#eef3ee] px-3 py-1.5">
+      <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ok">
+        <svg className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v18M5 21h14M6 7h12l3 7a4 4 0 01-8 0zM6 7L3 14a4 4 0 008 0" />
+        </svg>
+        Weighment {seg}
+      </span>
+      {readOnly ? (
+        <span className="font-mono text-xs font-semibold text-ink">{kg(recordedKg)}</span>
+      ) : (
+        <span className="flex items-center gap-1">
+          <input
+            className="field h-7 w-24 text-right font-mono text-xs"
+            inputMode="decimal"
+            value={recordedKg}
+            onChange={(e) => onEdit(e.target.value)}
+          />
+          <span className="text-[10px] text-muted">kg</span>
+        </span>
+      )}
+      <span className="text-[11px] text-muted">
+        lines {lineFrom}–{lineTo}
+        {count > 0 && ` · ${count} pcs`}
+      </span>
+      {Math.abs(drift) >= 0.005 && (
+        <span className="text-[10px] text-warn">
+          {drift > 0 ? "+" : "−"}
+          {Math.abs(drift).toFixed(2)} kg vs line sum
+        </span>
+      )}
+      {!readOnly && isLastClosed && (
+        <button
+          type="button"
+          className="ml-auto text-[10px] text-accent hover:underline"
+          onClick={onReopen}
+        >
+          re-open
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CloseSegmentDialog({
+  seg,
+  lineSumKg,
+  onCancel,
+  onConfirm,
+}: {
+  seg: number;
+  lineSumKg: number;
+  onCancel: () => void;
+  onConfirm: (recordedKg: string) => void;
+}) {
+  const [val, setVal] = useState(lineSumKg ? String(lineSumKg) : "");
+  const drift = (parseFloat(val) || 0) - lineSumKg;
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm rounded-lg border border-line bg-card p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-serif text-sm font-semibold">Close weighment {seg}</h3>
+        <p className="mt-1 text-xs text-muted">
+          Sum of line weights in this segment:{" "}
+          <b className="text-ink">{kg(lineSumKg)}</b>
+        </p>
+        <label className="label mt-3 block">Weight shown on the platform scale</label>
+        <input
+          className="field text-right font-mono"
+          inputMode="decimal"
+          autoFocus
+          value={val}
+          placeholder="0.000"
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onConfirm(val);
+          }}
+        />
+        {Math.abs(drift) >= 0.005 && (
+          <p className="mt-1 text-[11px] text-warn">
+            {drift > 0 ? "+" : "−"}
+            {Math.abs(drift).toFixed(2)} kg vs line sum — recorded as-is on the slip
+          </p>
+        )}
+        <div className="mt-4 flex gap-2">
+          <button
+            className="btn-ghost h-9 flex-1 px-4 text-sm"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+          <button
+            className="h-9 flex-1 rounded-md bg-ok px-4 text-sm font-semibold text-white"
+            onClick={() => onConfirm(val)}
+          >
+            Close &amp; start seg {seg + 1}
+          </button>
         </div>
       </div>
     </div>
@@ -648,6 +1056,8 @@ function LineRow({
   row,
   readOnly,
   amount,
+  expanded,
+  onToggle,
   otherItemLine,
   onPatch,
   onRemove,
@@ -656,6 +1066,10 @@ function LineRow({
   row: Row;
   readOnly: boolean;
   amount: string | undefined;
+  /** mobile: is this line's editor open? (one line open at a time) */
+  expanded: boolean;
+  /** mobile: request open (true) / collapse (false) */
+  onToggle: (want: boolean) => void;
   /** 0-based index of another line already using this item, or -1 */
   otherItemLine: number;
   onPatch: (p: Partial<Row>) => void;
@@ -663,6 +1077,14 @@ function LineRow({
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState(row.description);
+  /** fields the user has left — an empty-required caption only shows after this */
+  const [touched, setTouched] = useState<Set<LineProblem["field"]>>(new Set());
+  const touch = (f: LineProblem["field"]) =>
+    setTouched((s) => (s.has(f) ? s : new Set(s).add(f)));
+  /** mobile: which "+" panels the user has opened (discount / hsn / unit) */
+  const [reveal, setReveal] = useState<Set<"disc" | "hsn" | "unit">>(new Set());
+  const show = (k: "disc" | "hsn" | "unit") => setReveal((s) => new Set(s).add(k));
+  const hideExtras = () => setReveal(new Set());
 
   useEffect(() => setTyped(row.description), [row.description]);
 
@@ -878,23 +1300,85 @@ function LineRow({
     </span>
   );
 
-  // ---- MOBILE card ----
-  const mobile = (
-    <div className="md:hidden">
-      <div className="flex items-center justify-between px-3 pt-2 text-xs text-muted">
-        <span>{n}</span>
-        {filled &&
-          (blocked ? (
-            <span className="font-semibold text-danger">fix highlighted fields</span>
-          ) : (
-            <span className="font-semibold text-[#3f7a4f]">✓ ready</span>
-          ))}
+  // ---- MOBILE ----
+  // per-field caption, shown only after the user has left an empty required field
+  const fieldMsg = (f: LineProblem["field"]) => {
+    const ps = byField(f);
+    const blk = ps.find((p) => p.block);
+    if (blk) return touched.has(f) ? { text: blk.msg, cls: "text-danger" } : null;
+    const warn = ps.find((p) => !p.block);
+    return warn ? { text: warn.msg, cls: "text-warn" } : null;
+  };
+  const qtyMsg = fieldMsg("qty");
+  const rateMsg = fieldMsg("rate");
+  const discMsg = fieldMsg("disc");
+  const hsnMsg = fieldMsg("hsn");
+
+  // is this a two-unit item? then offer a "change unit" reveal; else unit is fixed
+  const twoUnit = unitChoices.length > 1;
+  const showDisc = reveal.has("disc") || (row.discount.trim() && discAmt > 0);
+  const showHsn = reveal.has("hsn") || row.hsn_code.trim().length > 0;
+  const showUnit = reveal.has("unit");
+  const anyExtra = showDisc || showHsn || showUnit;
+
+  // % → ₹ explainer under the discount field
+  const discExplain =
+    row.discMode === "pct" && discAmt > 0
+      ? `${row.discount.trim()}% = ₹${discAmt} — stored as ₹${discAmt}`
+      : "";
+
+  const collapsedRow = (
+    <button
+      type="button"
+      className="flex w-full items-center gap-2.5 px-3 py-3 text-left"
+      onClick={() => onToggle(true)}
+    >
+      <span className="w-3 flex-none text-xs text-muted">{n}</span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={`block truncate text-[15px] font-semibold ${
+            blocked ? "text-danger" : "text-ink"
+          }`}
+        >
+          {row.description.trim() || "New item"}
+        </span>
+        {blocked ? (
+          <span className="text-[12px] font-semibold text-danger">
+            tap to fix &mdash; {problems.find((p) => p.block)?.msg}
+          </span>
+        ) : (
+          working && (
+            <span className="block text-[12px] tabular-nums text-muted">{working}</span>
+          )
+        )}
+      </span>
+      <span className="flex-none font-serif text-base font-semibold">
+        {amount ? inr(amount) : "—"}
+      </span>
+      <span className="flex-none text-xs text-muted">▸</span>
+    </button>
+  );
+
+  const editor = (
+    <div className="px-3 pb-3 pt-2">
+      <div className="mb-1.5 flex items-center justify-between text-xs text-muted">
+        <span>Line {n}</span>
+        {!readOnly && (
+          <button
+            type="button"
+            className="h-7 w-7 rounded-md border border-line text-danger"
+            title="Remove line"
+            onClick={onRemove}
+          >
+            🗑
+          </button>
+        )}
       </div>
 
-      <div className="px-3 pt-1">{itemInput}</div>
+      {itemInput}
 
       {row.description.trim() && !row.item_id && (
-        <div className="mx-3 mt-2 rounded-md border border-[#ecdcb8] bg-[#fbf3e2] px-2.5 py-1.5 text-[11px] text-warn">
+        <div className="mt-2 rounded-md border border-[#ecdcb8] bg-[#fbf3e2] px-2.5 py-1.5 text-[11px] text-warn">
           Not in the catalogue — finalising creates “{row.description.trim()}” as a new item.{" "}
           <span className="ml-1 inline-flex overflow-hidden rounded border border-[#e2cfa0] align-middle">
             {(["piece", "kg"] as const).map((m) => (
@@ -904,7 +1388,13 @@ function LineRow({
                 className={`px-1.5 py-0.5 text-[10px] font-bold ${
                   row.newMode === m ? "bg-warn text-white" : "bg-transparent"
                 }`}
-                onClick={() => onPatch({ newMode: m, uom: row.uom || (m === "kg" ? "kg" : "nos") })}
+                onClick={() =>
+                  onPatch({
+                    newMode: m,
+                    uom: m === "kg" ? "kg" : "nos",
+                    rateMode: m,
+                  })
+                }
               >
                 per {m}
               </button>
@@ -913,9 +1403,13 @@ function LineRow({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 p-3">
+      {/* Qty × Rate — the two you always need */}
+      <div className="mt-2.5 grid grid-cols-[92px_16px_1fr] items-end gap-2">
         <div>
-          <label className="fl-m">Qty</label>
+          <label className="fl-m">
+            Qty
+            {!twoUnit && <span className="unit-badge">{unitLabel}</span>}
+          </label>
           <input
             className={`field h-10 text-right ${fieldClass("qty")}`}
             inputMode="decimal"
@@ -923,23 +1417,10 @@ function LineRow({
             value={row.quantity}
             disabled={readOnly}
             onChange={(e) => onPatch({ quantity: e.target.value })}
+            onBlur={() => touch("qty")}
           />
         </div>
-
-        <div>
-          <label className="fl-m">Unit</label>
-          <select
-            className={`field h-10 px-1 text-sm ${fieldClass("unit")}`}
-            value={row.uom.trim().toLowerCase() || unitLabel}
-            disabled={readOnly}
-            onChange={(e) => onPatch({ uom: e.target.value })}
-          >
-            {unitChoices.map((u) => (
-              <option key={u}>{u}</option>
-            ))}
-          </select>
-        </div>
-
+        <div className="pb-2.5 text-center text-base text-muted">×</div>
         <div>
           <label className="fl-m">Rate ₹/{unitLabel}</label>
           <input
@@ -949,11 +1430,34 @@ function LineRow({
             value={row.unit_rate}
             disabled={readOnly}
             onChange={(e) => onPatch({ unit_rate: e.target.value })}
+            onBlur={() => touch("rate")}
           />
-          {rateGhost && <p className="mt-0.5 text-[10px] text-muted">{rateGhost}</p>}
         </div>
+      </div>
+      {qtyMsg && <p className={`mt-1 text-[11px] ${qtyMsg.cls}`}>{qtyMsg.text}</p>}
+      {(rateMsg || rateGhost) && (
+        <p className={`mt-1 text-[11px] ${rateMsg ? rateMsg.cls : "text-muted"}`}>
+          {rateMsg ? rateMsg.text : rateGhost}
+        </p>
+      )}
 
-        <div>
+      {/* live line total */}
+      <div
+        className={`mt-2.5 font-serif text-lg font-semibold ${
+          blocked && touched.size ? "text-danger" : ""
+        }`}
+      >
+        = {amount ? inr(amount) : "—"}
+        {working && (
+          <span className="block font-sans text-[11px] font-normal text-muted">
+            {working}
+          </span>
+        )}
+      </div>
+
+      {/* revealed panels */}
+      {showDisc && (
+        <div className="mt-2.5 rounded-md bg-ground p-2.5">
           <label className="fl-m">Discount {discSeg}</label>
           <input
             className={`field h-10 text-right ${fieldClass("disc")}`}
@@ -962,48 +1466,93 @@ function LineRow({
             value={row.discount}
             disabled={readOnly}
             onChange={(e) => onPatch({ discount: e.target.value })}
+            onBlur={() => touch("disc")}
           />
+          {discMsg ? (
+            <p className={`mt-1 text-[11px] ${discMsg.cls}`}>{discMsg.text}</p>
+          ) : (
+            discExplain && <p className="mt-1 text-[11px] text-muted">{discExplain}</p>
+          )}
         </div>
-
-        <div className="col-span-2">
-          <label className="fl-m">HSN <span className="font-normal normal-case tracking-normal">optional</span></label>
+      )}
+      {showUnit && twoUnit && (
+        <div className="mt-2.5 rounded-md bg-ground p-2.5">
+          <label className="fl-m">Unit</label>
+          <select
+            className={`field h-10 px-2 text-sm ${fieldClass("unit")}`}
+            value={row.uom.trim().toLowerCase() || unitLabel}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ uom: e.target.value })}
+          >
+            {unitChoices.map((u) => (
+              <option key={u}>{u}</option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-muted">this item is sold more than one way</p>
+        </div>
+      )}
+      {showHsn && (
+        <div className="mt-2.5 rounded-md bg-ground p-2.5">
+          <label className="fl-m">
+            HSN{" "}
+            <span className="font-normal normal-case tracking-normal">optional</span>
+          </label>
           <input
             className={`field h-10 ${fieldClass("hsn")}`}
             placeholder="4 / 6 / 8 digits"
             value={row.hsn_code}
             disabled={readOnly}
             onChange={(e) => onPatch({ hsn_code: e.target.value })}
+            onBlur={() => touch("hsn")}
           />
-        </div>
-      </div>
-
-      {!readOnly && problems.length > 0 && (
-        <div className="mx-3 mb-2 rounded-md bg-[#fbf6ee] px-2.5 py-1.5 text-[11px]">
-          {problems.map((p, i) => (
-            <div key={i} className={p.block ? "text-danger" : "text-warn"}>
-              {p.block ? "•" : "⚠"} {p.msg}
-            </div>
-          ))}
+          {hsnMsg && <p className={`mt-1 text-[11px] ${hsnMsg.cls}`}>{hsnMsg.text}</p>}
         </div>
       )}
 
-      <div className="flex items-center justify-between border-t border-line px-3 py-2">
-        <span className="font-serif text-base font-semibold">
-          {amount ? inr(amount) : "—"}
-          {working && (
-            <span className="block font-sans text-[11px] font-normal text-muted">{working}</span>
+      {/* quiet "+" links */}
+      {!readOnly && (
+        <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 border-t border-dashed border-line pt-2.5 text-[13px] font-semibold text-accent">
+          {!showDisc && (
+            <button type="button" onClick={() => show("disc")}>
+              <span className="text-[15px]">＋</span> discount
+            </button>
           )}
-        </span>
-        {!readOnly && (
+          {!showHsn && (
+            <button type="button" onClick={() => show("hsn")}>
+              <span className="text-[15px]">＋</span> HSN
+            </button>
+          )}
+          {twoUnit && !showUnit && (
+            <button type="button" onClick={() => show("unit")}>
+              change unit
+            </button>
+          )}
+          {anyExtra && (
+            <button type="button" className="text-muted" onClick={hideExtras}>
+              − hide extras
+            </button>
+          )}
+        </div>
+      )}
+
+      {filled && !readOnly && (
+        <div className="mt-2.5 text-right">
           <button
-            className="h-9 w-9 rounded-md border border-line text-danger"
-            title="Remove line"
-            onClick={onRemove}
+            type="button"
+            className="text-[13px] font-semibold text-accent"
+            onClick={() => onToggle(false)}
           >
-            ×
+            Done
           </button>
-        )}
-      </div>
+        </div>
+      )}
+    </div>
+  );
+
+  // on mobile, a collapsed empty line renders nothing — "+ Add another item" is it
+  const mobile = (
+    <div className="md:hidden">
+      {expanded ? editor : filled ? collapsedRow : null}
     </div>
   );
 
@@ -1084,8 +1633,10 @@ function LineRow({
     </div>
   );
 
+  // a collapsed empty mobile line contributes nothing — don't draw its divider
+  const mobileBlank = !expanded && !filled;
   return (
-    <div className="border-b border-[#f3eee4]">
+    <div className={mobileBlank ? "md:border-b md:border-[#f3eee4]" : "border-b border-[#f3eee4]"}>
       {mobile}
       {desktop}
       {otherItemLine >= 0 && (

@@ -37,6 +37,10 @@
   .fl-m {
     @apply mb-1 flex items-baseline gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted;
   }
+  /* the fixed sell-unit shown next to a mobile Qty label */
+  .unit-badge {
+    @apply rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-bold normal-case tracking-normal text-accent;
+  }
   .card {
     @apply rounded-xl border border-line bg-card;
   }

@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Invoice, Party, PartyAddress, Tenant
 from app.models._mixins import PdfStatus
+from app.services.invoices.common import measure_for
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
 _env = Environment(
@@ -62,7 +63,18 @@ def _indian_group(n: int) -> str:
     return ",".join(parts) + "," + tail
 
 
+def _fmt_kg(value: object) -> str:
+    if value is None:
+        return "0.000"
+    from decimal import Decimal
+
+    d = Decimal(str(value))
+    whole, frac = divmod(int((abs(d) * 1000).to_integral_value()), 1000)
+    return f"{_indian_group(whole)}.{frac:03d}"
+
+
 _env.filters["money"] = _fmt_money
+_env.filters["kg"] = _fmt_kg
 
 
 def _addr_lines(addr: PartyAddress | None) -> list[str]:
@@ -93,6 +105,7 @@ def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
         else bill_to
     )
 
+    measure = measure_for(invoice)
     html = _env.get_template("invoice_v1_nongst.html").render(
         doc_label=(tenant.document_label if tenant else "Invoice"),
         tenant=tenant,
@@ -101,6 +114,9 @@ def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
         bill_to_lines=_addr_lines(bill_to),
         ship_to_lines=_addr_lines(ship_to),
         lines=sorted(invoice.lines, key=lambda x: x.sl_no),
+        measure=measure,
+        # segment_no of the last line in each segment -> the slip to print after it
+        seg_break_after={s.line_to: s for s in measure.segments},
     )
 
     out_dir = Path(settings.pdf_dir)

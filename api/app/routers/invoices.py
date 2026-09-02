@@ -33,6 +33,7 @@ from app.schemas_invoice import (
 from app.services.invoices.common import (
     finalize_blockers,
     financial_year,
+    measure_for,
     totals_for,
 )
 from app.services.invoices.finalize import FinalizeError, finalize_invoice
@@ -76,8 +77,17 @@ def _apply_lines(inv: Invoice, lines: list) -> None:
                 unit_rate=ln.unit_rate,
                 discount=ln.discount or Decimal("0"),
                 size_pos=ln.size_pos,
+                segment_no=getattr(ln, "segment_no", 1) or 1,
             )
         )
+
+
+def _slips_payload(slips: list | None) -> list | None:
+    """Normalise WeighmentSlipIn models to the JSON shape stored on the row,
+    dropping any that don't map to a real segment on save-time renumber."""
+    if not slips:
+        return None
+    return [{"seg": int(s.seg), "recorded_kg": str(s.recorded_kg)} for s in slips]
 
 
 def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
@@ -100,6 +110,7 @@ def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
         declaration_snapshot=inv.declaration_snapshot,
         invoice_discount=inv.invoice_discount or Decimal("0"),
         totals=totals_for(inv),
+        measure=measure_for(inv),
         pdf_status=inv.pdf_status,
         has_pdf=bool(inv.pdf_path),
         lines=[InvoiceLineOut.model_validate(ln) for ln in inv.lines],
@@ -182,6 +193,7 @@ def create_invoice(body: InvoiceCreate, user: WriteUser, session: SessionDep) ->
         ship_to_addr_id=body.ship_to_addr_id,
         notes=body.notes,
         invoice_discount=body.invoice_discount or Decimal("0"),
+        weighment_slips=_slips_payload(body.weighment_slips),
         status=InvoiceStatus.draft,
         pdf_status=PdfStatus.none,
     )
@@ -223,6 +235,8 @@ def update_invoice(
         inv.invoice_discount = body.invoice_discount
     if body.lines is not None:
         _apply_lines(inv, body.lines)
+    if body.weighment_slips is not None:
+        inv.weighment_slips = _slips_payload(body.weighment_slips)
 
     session.flush()
     return _out(session, inv)
@@ -260,6 +274,7 @@ def finalize(invoice_id: str, user: WriteUser, session: SessionDep) -> FinalizeO
         fy=result.fy,
         status=inv.status,
         totals=totals_for(inv),
+        measure=measure_for(inv),
         pdf_status=result.pdf_status,
         created_item_ids=result.created_item_ids,
         learned_group_ids=result.learned_group_ids,
@@ -296,6 +311,7 @@ def duplicate_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> 
         ship_to_addr_id=src.ship_to_addr_id,
         notes=src.notes,
         invoice_discount=src.invoice_discount or Decimal("0"),
+        weighment_slips=list(src.weighment_slips) if src.weighment_slips else None,
         status=InvoiceStatus.draft,
         pdf_status=PdfStatus.none,
     )
@@ -311,6 +327,7 @@ def duplicate_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> 
                 unit_rate=ln.unit_rate,
                 discount=ln.discount,
                 size_pos=ln.size_pos,
+                segment_no=ln.segment_no or 1,
             )
         )
     session.add(clone)

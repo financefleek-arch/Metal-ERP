@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.domain.tax import InvoiceInput, LineInput, compute_invoice
+from app.domain.weighment import LineMeasure, compute_measure
 from app.models import (
     AuditLog,
     Invoice,
@@ -57,6 +58,40 @@ class FinalizeResult:
     created_item_ids: list[str] = field(default_factory=list)
     learned_group_ids: list[str] = field(default_factory=list)
     pdf_status: PdfStatus = PdfStatus.none
+
+
+def _close_open_segments(invoice: Invoice) -> None:
+    """Fill in `weighment_slips` for every segment present on the lines that
+    the operator didn't record a scale weight for, using the line-derived
+    kg. Result: one slip per segment, ordered.
+    """
+    ordered = sorted(invoice.lines, key=lambda x: x.sl_no)
+    if not ordered:
+        invoice.weighment_slips = None
+        return
+    measure = compute_measure(
+        [
+            LineMeasure(
+                quantity=Decimal(str(ln.quantity or 0)),
+                uom=ln.uom,
+                segment_no=ln.segment_no or 1,
+            )
+            for ln in ordered
+        ],
+        slips=invoice.weighment_slips or [],
+    )
+    recorded = {
+        int(s["seg"]): s["recorded_kg"]
+        for s in (invoice.weighment_slips or [])
+        if "seg" in s
+    }
+    invoice.weighment_slips = [
+        {
+            "seg": seg.seg,
+            "recorded_kg": str(recorded.get(seg.seg, seg.weight_kg)),
+        }
+        for seg in measure.segments
+    ]
 
 
 def _claim_number(session: Session, tenant_id: str, series: str, fy: str) -> int:
@@ -122,6 +157,11 @@ def finalize_invoice(
     invoice.grand_total = computed.grand_total
     invoice.amount_in_words = computed.amount_in_words
     invoice.template_version = "v1-nongst"
+
+    # weighment: any segment the operator left open (no recorded slip) is
+    # closed here at its line-derived weight, so a finalized bill always
+    # has one recorded figure per segment.
+    _close_open_segments(invoice)
 
     tenant = session.get(Tenant, invoice.tenant_id)
     if tenant is not None:

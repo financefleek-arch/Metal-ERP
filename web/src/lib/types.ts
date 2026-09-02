@@ -389,6 +389,7 @@ export interface InvoiceLineIn {
   unit_rate: string;
   discount: string;
   size_pos: number | null;
+  segment_no: number;
 }
 
 export interface InvoiceLineOut {
@@ -402,6 +403,7 @@ export interface InvoiceLineOut {
   unit_rate: string;
   discount: string;
   line_total: string | null;
+  segment_no: number;
 }
 
 export interface InvoiceTotals {
@@ -411,6 +413,27 @@ export interface InvoiceTotals {
   round_off: string;
   grand_total: string;
   amount_in_words: string;
+}
+
+export interface WeighmentSlipIn {
+  seg: number;
+  recorded_kg: string;
+}
+
+export interface SegmentMeasure {
+  seg: number;
+  line_from: number;
+  line_to: number;
+  weight_kg: string;
+  count: number;
+  recorded_kg: string | null;
+}
+
+export interface InvoiceMeasure {
+  total_weight_kg: string;
+  total_count: number;
+  segment_count: number;
+  segments: SegmentMeasure[];
 }
 
 export interface PartyBrief {
@@ -439,6 +462,7 @@ export interface Invoice {
   declaration_snapshot: string | null;
   invoice_discount: string;
   totals: InvoiceTotals;
+  measure: InvoiceMeasure;
   pdf_status: PdfStatus;
   has_pdf: boolean;
   lines: InvoiceLineOut[];
@@ -465,6 +489,7 @@ export interface FinalizeResult {
   fy: string;
   status: InvoiceStatus;
   totals: InvoiceTotals;
+  measure: InvoiceMeasure;
   pdf_status: PdfStatus;
   created_item_ids: string[];
   learned_group_ids: string[];

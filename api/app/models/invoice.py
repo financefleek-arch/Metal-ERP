@@ -13,6 +13,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
@@ -69,6 +70,11 @@ class Invoice(PkUuidMixin, TimestampMixin, Base):
     # applies it after subtotal, before round-off; `discount_total` (below)
     # is the frozen line+invoice sum written at finalize.
     invoice_discount: Mapped[Decimal] = mapped_column(_MONEY, default=0, nullable=False)
+
+    # Operator-recorded platform-scale weights, one entry per closed weighment
+    # segment: [{"seg": 1, "recorded_kg": "487.50"}, ...]. The derived total
+    # weight / piece count come from the line qty+uom, not from here.
+    weighment_slips: Mapped[list | None] = mapped_column(JSON)
 
     status: Mapped[InvoiceStatus] = mapped_column(
         String(10), default=InvoiceStatus.draft, nullable=False, index=True
@@ -137,6 +143,9 @@ class InvoiceLine(PkUuidMixin, TimestampMixin, Base):
     hsn_code: Mapped[str | None] = mapped_column(ForeignKey("hsn_code.code"))
     quantity: Mapped[Decimal] = mapped_column(Numeric(15, 3), nullable=False)
     uom: Mapped[str | None] = mapped_column(String(20))
+    # 1-based weighment segment this line belongs to (operator draws the
+    # boundaries with "Next segment" while entering lines).
+    segment_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     unit_rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     discount: Mapped[Decimal] = mapped_column(_MONEY, default=0, nullable=False)
     line_total: Mapped[Decimal | None] = mapped_column(_MONEY)
