@@ -81,7 +81,7 @@ def list_items(
         stmt = stmt.where(Item.price_review_pending.is_(True))
 
     if q:
-        stmt = apply_search(stmt, session, q)
+        stmt = apply_search(stmt, session, q, tenant_id=user.tenant_id)
     else:
         stmt = stmt.order_by(
             (Item.status == ItemStatus.confirmed).desc(), func.lower(Item.name)

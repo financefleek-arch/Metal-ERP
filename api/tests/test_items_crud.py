@@ -165,6 +165,24 @@ def test_search_by_name_grade_size(client: TestClient) -> None:
     ]
 
 
+def test_search_is_synonym_aware(client: TestClient) -> None:
+    """Typing a synonym / spelling variant finds an item stored under the
+    canonical token — register seeds the bartan dictionary, so 'karahi',
+    'kadhai' and 'kadai' all resolve to the same normalized key. SQLite here:
+    this is the normalized-substring rung, not trigram."""
+    h = _h(_token(client, "it-syn@x.example.com"))
+    _mk(client, h, "SS Kadai 10")
+    _mk(client, h, "07 Fancy Mor Jhula")
+
+    for term in ("kadai", "kadhai", "karahi", "karai"):
+        names = [i["name"] for i in client.get(f"/api/items?q={term}", headers=h).json()]
+        assert names == ["SS Kadai 10"], f"{term!r} -> {names}"
+
+    for term in ("jhula", "jhoola", "zhula"):
+        names = [i["name"] for i in client.get(f"/api/items?q={term}", headers=h).json()]
+        assert names == ["07 Fancy Mor Jhula"], f"{term!r} -> {names}"
+
+
 # --------------------------------------------------------------------------
 # confirm / merge / delete
 # --------------------------------------------------------------------------
