@@ -64,6 +64,8 @@ export function InvoiceListPage() {
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Delete failed"),
   });
 
+  const canDelete = (s: InvoiceStatus) => s === "draft" || s === "cancelled";
+
   function openPdf(id: string) {
     // stream endpoint needs the bearer header — fetch as blob then save with
     // the server-provided "<Party> <date> <total>.pdf" filename
@@ -110,7 +112,7 @@ export function InvoiceListPage() {
       {err && <p className="err">{err}</p>}
 
       <div className="card overflow-hidden">
-        <div className="hidden grid-cols-[70px_100px_1fr_130px_90px_180px] gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted md:grid">
+        <div className="hidden grid-cols-[64px_92px_1fr_120px_88px_232px] gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted md:grid">
           <span>No.</span>
           <span>Date</span>
           <span>Party</span>
@@ -129,7 +131,7 @@ export function InvoiceListPage() {
         {list.data?.map((iv) => (
           <div
             key={iv.id}
-            className="grid grid-cols-2 gap-2 border-b border-[#f3eee4] px-3 py-3 text-sm md:grid-cols-[70px_100px_1fr_130px_90px_180px] md:items-center md:py-2"
+            className="grid grid-cols-2 gap-2 border-b border-[#f3eee4] px-3 py-3 text-sm md:grid-cols-[64px_92px_1fr_120px_88px_232px] md:items-center md:py-2"
           >
             <button
               className="text-left font-mono font-semibold text-accent hover:underline"
@@ -145,7 +147,9 @@ export function InvoiceListPage() {
               })}
             </span>
             <button
-              className="col-span-2 truncate text-left hover:underline md:col-span-1"
+              className={`col-span-2 truncate text-left hover:underline md:col-span-1 ${
+                iv.party_id ? "" : "italic text-muted"
+              }`}
               onClick={() => nav(`/invoices/${iv.id}`)}
             >
               {iv.party_name}
@@ -155,6 +159,12 @@ export function InvoiceListPage() {
             </span>
             <span>{statusBadge(iv.status)}</span>
             <div className="col-span-2 flex flex-wrap justify-end gap-1.5 md:col-span-1">
+              <button
+                className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
+                onClick={() => nav(`/invoices/${iv.id}`)}
+              >
+                {iv.status === "draft" ? "Edit" : "View"}
+              </button>
               {iv.status === "final" && (
                 <button
                   className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
@@ -169,16 +179,6 @@ export function InvoiceListPage() {
               >
                 Duplicate
               </button>
-              {iv.status === "draft" && (
-                <button
-                  className="rounded-md border border-line px-2 py-1 text-[11px] text-danger hover:bg-ground"
-                  onClick={() => {
-                    if (confirm("Delete this draft?")) del.mutate(iv.id);
-                  }}
-                >
-                  Delete
-                </button>
-              )}
               {iv.status === "final" && (
                 <button
                   className="rounded-md border border-line px-2 py-1 text-[11px] text-danger hover:bg-ground"
@@ -188,6 +188,20 @@ export function InvoiceListPage() {
                   }}
                 >
                   Cancel
+                </button>
+              )}
+              {canDelete(iv.status) && (
+                <button
+                  className="rounded-md border border-line px-2 py-1 text-[11px] text-danger hover:bg-ground"
+                  onClick={() => {
+                    const msg =
+                      iv.status === "draft"
+                        ? "Delete this draft?"
+                        : `Delete cancelled invoice #${iv.number} permanently?`;
+                    if (confirm(msg)) del.mutate(iv.id);
+                  }}
+                >
+                  Delete
                 </button>
               )}
             </div>

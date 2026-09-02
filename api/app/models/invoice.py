@@ -58,7 +58,9 @@ class Invoice(PkUuidMixin, TimestampMixin, Base):
     fy: Mapped[str] = mapped_column(String(9), nullable=False)
     date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), nullable=False, index=True)
+    # nullable so a draft can be saved before the party is picked; the
+    # finalize gate still requires it, so a numbered invoice always has one
+    party_id: Mapped[str | None] = mapped_column(ForeignKey("party.id"), index=True)
     bill_to_addr_id: Mapped[str | None] = mapped_column(ForeignKey("party_address.id"))
     ship_to_addr_id: Mapped[str | None] = mapped_column(ForeignKey("party_address.id"))
 

@@ -19,8 +19,8 @@ from app.models import Party, PartyAddress, StagingTallyParty
 from app.models._mixins import PartyRole, PartySource, PartyStatus
 from app.reference import state_code_from_name, validate_gstin, validate_pan
 from tools.tally_import.groups import GroupTree
-from tools.tally_import.match import match_ledger
-from tools.tally_import.parser import parse_masters
+from tools.tally_import.match import match_ledgers_bulk
+from tools.tally_import.parser import TallyLedger, parse_masters
 
 router = APIRouter(prefix="/api/parties/import", tags=["parties-import"])
 
@@ -150,6 +150,16 @@ async def upload(
     if not masters.ledgers:
         raise HTTPException(status_code=422, detail="No ledgers found in the file")
 
+    # One in-flight import per tenant: clear any earlier batch that was never
+    # committed (an abandoned upload, or one that failed mid-commit). Committed
+    # rows are kept as an audit trail.
+    session.execute(
+        delete(StagingTallyParty).where(
+            StagingTallyParty.tenant_id == user.tenant_id,
+            StagingTallyParty.committed_as.is_(None),
+        )
+    )
+
     tree = GroupTree(masters.groups)
     batch_id = str(uuid.uuid4())
 
@@ -174,21 +184,26 @@ async def upload(
             except ValueError:
                 pass
 
-    staged = 0
+    # Resolve role + dual-lineage per ledger, then match the whole file in one
+    # pass (a single party prefetch instead of up to three queries per ledger).
+    to_stage: list[tuple[TallyLedger, PartyRole, bool]] = []
     for led in masters.ledgers:
         role = tree.role_for(led.parent)
         if role is None:
             continue
         anc = tree.roots_of(led.parent)
         dual = bool(anc & {"sundry debtors"}) and bool(anc & {"sundry creditors"})
-        mr = match_ledger(
-            session,
-            user.tenant_id,
-            led,
-            role,
-            gstins_in_file=gstins_in_file,
-            dual_lineage=dual,
-        )
+        to_stage.append((led, role, dual))
+
+    matches = match_ledgers_bulk(
+        session,
+        user.tenant_id,
+        to_stage,
+        gstins_in_file=gstins_in_file,
+    )
+
+    staged = 0
+    for (led, _role, _dual), mr in zip(to_stage, matches, strict=True):
         session.add(
             StagingTallyParty(
                 tenant_id=user.tenant_id,
@@ -345,10 +360,69 @@ def patch_row(
     )
 
 
+def _norm_name(s: str) -> str:
+    return " ".join((s or "").lower().split())
+
+
 @router.post("/{batch_id}/commit", response_model=CommitOut)
 def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     rows = _rows(session, user.tenant_id, batch_id)
     created = updated = skipped = still_flagged = 0
+
+    # --- identity pre-pass: one query for the tenant's existing parties, so a
+    # created row that clashes with one already in the DB (or with an earlier
+    # row in the same file) links + fills blanks instead of inserting a dup.
+    # Mirrors the item-import commit batching. ---
+    by_gstin: dict[str, str] = {}
+    by_pan: dict[str, str] = {}
+    by_name: dict[str, str] = {}
+    for pid, g, p, ln, st in session.execute(
+        select(Party.id, Party.gstin, Party.pan, Party.legal_name, Party.status).where(
+            Party.tenant_id == user.tenant_id
+        )
+    ).all():
+        if st == PartyStatus.archived:
+            continue
+        if g:
+            by_gstin.setdefault(g.strip().upper(), pid)
+        if p:
+            by_pan.setdefault(p.strip().upper(), pid)
+        if ln:
+            by_name.setdefault(_norm_name(ln), pid)
+
+    new_parties: list[Party] = []
+    # New parties created in this same commit are not yet flushed, so they have
+    # no persistent identity and `session.get` won't find them — keep our own
+    # id -> object map so a later same-name/GSTIN row can link + fill.
+    pending_by_id: dict[str, Party] = {}
+
+    def _resolve(pid: str) -> Party | None:
+        obj = pending_by_id.get(pid)
+        if obj is not None:
+            return obj
+        obj = session.get(Party, pid)
+        return obj if obj is not None and obj.tenant_id == user.tenant_id else None
+
+    def _fill_from_row(
+        party: Party,
+        row: StagingTallyParty,
+        role: PartyRole,
+        state_code: str | None,
+        gstin: str | None,
+        pan: str | None,
+    ) -> None:
+        _fill_blank(party, "gstin", gstin)
+        _fill_blank(party, "pan", pan)
+        _fill_blank(party, "phone", (row.phone or "").strip() or None)
+        _fill_blank(party, "email", (row.email or "").strip() or None)
+        _fill_blank(party, "default_state_code", state_code)
+        if not party.tally_guid:
+            party.tally_guid = row.tally_guid
+        # Widen role, never narrow: any mismatch resolves to 'both'.
+        if party.role != role:
+            party.role = PartyRole.both
+        if not party.addresses and row.address_lines_json:
+            party.addresses.append(_address_from_row(row, state_code))
 
     for row in rows:
         if row.committed_as:
@@ -387,41 +461,60 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             if party is None or party.tenant_id != user.tenant_id:
                 still_flagged += 1
                 continue
-            _fill_blank(party, "gstin", gstin)
-            _fill_blank(party, "pan", pan)
-            _fill_blank(party, "phone", (row.phone or "").strip() or None)
-            _fill_blank(party, "email", (row.email or "").strip() or None)
-            _fill_blank(party, "default_state_code", state_code)
-            if not party.tally_guid:
-                party.tally_guid = row.tally_guid
-            # Widen role, never narrow: any mismatch resolves to 'both'.
-            if party.role != role:
-                party.role = PartyRole.both
-            if not party.addresses and row.address_lines_json:
-                party.addresses.append(_address_from_row(row, state_code))
+            _fill_from_row(party, row, role, state_code, gstin, pan)
             row.committed_as = party.id
             updated += 1
-        else:
-            party = Party(
-                tenant_id=user.tenant_id,
-                legal_name=_effective_name(row),
-                role=role,
-                gstin=gstin,
-                pan=pan,
-                phone=(row.phone or "").strip() or None,
-                email=(row.email or "").strip() or None,
-                default_state_code=state_code,
-                status=PartyStatus.active,
-                source=PartySource.tally_import,
-                source_ref=row.tally_guid,
-                tally_guid=row.tally_guid,
-            )
-            if row.address_lines_json:
-                party.addresses.append(_address_from_row(row, state_code))
-            session.add(party)
-            session.flush()
-            row.committed_as = party.id
-            created += 1
+            continue
+
+        # A "new" row — but a party with this GSTIN / PAN / name may already
+        # exist (in the DB or created earlier in this same file). Link to it.
+        name_key = _norm_name(_effective_name(row))
+        clash_id = (
+            (gstin and by_gstin.get(gstin.strip().upper()))
+            or (not gstin and pan and by_pan.get(pan.strip().upper()))
+            or (name_key and by_name.get(name_key))
+        )
+        if clash_id:
+            party = _resolve(clash_id)
+            if party is not None:
+                _fill_from_row(party, row, role, state_code, gstin, pan)
+                row.committed_as = party.id
+                updated += 1
+                continue
+
+        party = Party(
+            id=str(uuid.uuid4()),
+            tenant_id=user.tenant_id,
+            legal_name=_effective_name(row),
+            role=role,
+            gstin=gstin,
+            pan=pan,
+            phone=(row.phone or "").strip() or None,
+            email=(row.email or "").strip() or None,
+            default_state_code=state_code,
+            status=PartyStatus.active,
+            source=PartySource.tally_import,
+            source_ref=row.tally_guid,
+            tally_guid=row.tally_guid,
+        )
+        if row.address_lines_json:
+            party.addresses.append(_address_from_row(row, state_code))
+        # id set explicitly (column default only fires at flush), so committed_as
+        # and the dedup maps can use it before the single add_all below.
+        new_parties.append(party)
+        pending_by_id[party.id] = party
+        row.committed_as = party.id
+        if gstin:
+            by_gstin.setdefault(gstin.strip().upper(), party.id)
+        if not gstin and pan:
+            by_pan.setdefault(pan.strip().upper(), party.id)
+        if name_key:
+            by_name.setdefault(name_key, party.id)
+        created += 1
+
+    if new_parties:
+        session.add_all(new_parties)
+        session.flush()
 
     return CommitOut(
         created=created, updated=updated, skipped=skipped, still_flagged=still_flagged

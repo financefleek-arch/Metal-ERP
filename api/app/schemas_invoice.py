@@ -75,7 +75,9 @@ class WeighmentSlipIn(BaseModel):
 
 
 class InvoiceCreate(BaseModel):
-    party_id: str
+    # optional so a draft can be started before a party is chosen; finalize
+    # still requires it
+    party_id: str | None = None
     date: date_t | None = None  # defaults to today
     bill_to_addr_id: str | None = None
     ship_to_addr_id: str | None = None
@@ -154,7 +156,7 @@ class InvoiceOut(BaseModel):
     status: InvoiceStatus
     template_version: str
 
-    party_id: str
+    party_id: str | None
     party: PartyBrief | None = None
     bill_to_addr_id: str | None
     ship_to_addr_id: str | None
@@ -187,7 +189,7 @@ class InvoiceListItem(BaseModel):
     fy: str
     date: date_t
     status: InvoiceStatus
-    party_id: str
+    party_id: str | None
     party_name: str
     grand_total: Money | None
     pdf_status: PdfStatus

@@ -46,6 +46,12 @@ interface Row {
   _lastSoldAt: string | null;
 }
 
+/** desktop line-table column track — shared by the header and every row so
+ *  they never drift. Item gets a wide, flexible column; the rest are tight
+ *  fixed widths. */
+const LINE_GRID =
+  "grid-cols-[22px_minmax(180px,1.7fr)_76px_60px_58px_80px_86px_84px_24px]";
+
 let _rk = 0;
 function blankRow(segmentNo = 1): Row {
   return {
@@ -232,6 +238,7 @@ export function InvoiceEditorPage() {
   /** the segment whose scale weight the operator is being asked to record */
   const [closingSeg, setClosingSeg] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
   const inv = detail.data;
@@ -242,7 +249,7 @@ export function InvoiceEditorPage() {
   // hydrate from a loaded draft/invoice
   useEffect(() => {
     if (!inv) return;
-    setPartyId(inv.party_id);
+    setPartyId(inv.party_id ?? "");
     setPartyLabel(inv.party?.legal_name ?? "");
     setDate(inv.date);
     setNotes(inv.notes ?? "");
@@ -354,6 +361,11 @@ export function InvoiceEditorPage() {
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       setDirty(false);
+      setSavedNote(
+        saved.party_id
+          ? "Draft saved."
+          : "Draft saved — add a party before you can finalize.",
+      );
       if (isNew) nav(`/invoices/${saved.id}`, { replace: true });
       else qc.setQueryData(["invoice", id], saved);
     },
@@ -379,6 +391,11 @@ export function InvoiceEditorPage() {
       } else setErr("Finalize failed");
     },
   });
+
+  // any fresh edit dismisses the last save confirmation
+  useEffect(() => {
+    if (dirty) setSavedNote(null);
+  }, [dirty]);
 
   function patchRow(key: string, patch: Partial<Row>) {
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -486,6 +503,7 @@ export function InvoiceEditorPage() {
               <button
                 className="btn-ghost h-9 px-4 text-sm"
                 disabled={!dirty || save.isPending}
+                title="Saves everything entered so far — a party can be added later"
                 onClick={() => {
                   setErr(null);
                   save.mutate();
@@ -525,6 +543,9 @@ export function InvoiceEditorPage() {
       </div>
 
       {err && <p className="err whitespace-pre-wrap">{err}</p>}
+      {savedNote && !err && (
+        <p className="rounded-md bg-[#eef3ee] px-3 py-2 text-xs text-ok">{savedNote}</p>
+      )}
       {finalized && inv?.pdf_status === "failed" && (
         <p className="rounded-md bg-[#f1e0e0] px-3 py-2 text-xs text-danger">
           PDF render failed on the server. Use “Re-render PDF”.
@@ -574,7 +595,7 @@ export function InvoiceEditorPage() {
 
           {/* line table */}
           <div className="card overflow-visible">
-            <div className="hidden grid-cols-[24px_1fr_84px_66px_54px_84px_92px_92px_28px] gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase text-muted md:grid">
+            <div className={`hidden ${LINE_GRID} gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase text-muted md:grid`}>
               <span>#</span>
               <span>Item</span>
               <span>HSN</span>
@@ -1559,7 +1580,7 @@ function LineRow({
   // ---- DESKTOP row ----
   const desktop = (
     <div className="hidden md:block">
-      <div className="grid grid-cols-[24px_1fr_84px_66px_54px_84px_92px_92px_28px] items-center gap-2 px-3 py-2 text-sm">
+      <div className={`grid ${LINE_GRID} items-center gap-2 px-3 py-2 text-sm`}>
         <span className={`text-center text-xs ${blocked ? "text-danger" : "text-muted"}`}>{n}</span>
         {itemInput}
         <input

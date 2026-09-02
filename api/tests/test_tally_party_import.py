@@ -207,6 +207,53 @@ def test_flagged_row_excluded_until_resolved(client: TestClient) -> None:
     }
 
 
+def test_reupload_discards_prior_uncommitted_batch(client: TestClient) -> None:
+    h = _h(_token(client, "imp-reup@x.example.com"))
+    b1 = _upload(client, h).json()["batch_id"]
+    # do NOT commit b1
+    b2 = _upload(client, h).json()["batch_id"]
+    assert b2 != b1
+    assert client.get(f"/api/parties/import/{b1}", headers=h).status_code == 404
+    assert client.get(f"/api/parties/import/{b2}", headers=h).status_code == 200
+
+
+def test_reupload_keeps_committed_batch(client: TestClient) -> None:
+    h = _h(_token(client, "imp-keep@x.example.com"))
+    b1 = _upload(client, h).json()["batch_id"]
+    out = client.post(f"/api/parties/import/{b1}/commit", headers=h).json()
+    assert out["created"] == 3
+    # a later upload must NOT wipe the committed audit rows
+    _upload(client, h)
+    rev = client.get(f"/api/parties/import/{b1}", headers=h)
+    assert rev.status_code == 200
+    assert len(rev.json()["rows"]) == 3
+
+
+def test_commit_dedupes_same_name_within_file(client: TestClient) -> None:
+    """Two ledgers with the same legal name -> one created, one linked to it."""
+    h = _h(_token(client, "imp-dedup@x.example.com"))
+    # Rename Metro Steel Corp to "Balaji Traders" and drop its GSTIN so the
+    # only thing tying the two rows together is the name.
+    raw = (
+        FIXTURE.read_bytes()
+        .replace(b"Metro Steel Corp", b"Balaji Traders")
+        .replace(b"<PARTYGSTIN>19AABCM4521Q1Z3</PARTYGSTIN>", b"")
+    )
+    r = client.post(
+        "/api/parties/import",
+        headers=h,
+        files={"file": ("masters.xml", raw, "text/xml")},
+    )
+    assert r.status_code == 201, r.text
+    batch = r.json()["batch_id"]
+    out = client.post(f"/api/parties/import/{batch}/commit", headers=h).json()
+    # Balaji Traders (once) + the renamed row links to it + Nilkanth
+    assert out["created"] == 2
+    assert out["updated"] == 1
+    names = [p["legal_name"] for p in client.get("/api/parties", headers=h).json()]
+    assert names.count("Balaji Traders") == 1
+
+
 def test_discard_batch(client: TestClient) -> None:
     h = _h(_token(client, "imp-7@x.example.com"))
     batch = _upload(client, h).json()["batch_id"]

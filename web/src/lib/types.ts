@@ -490,7 +490,7 @@ export interface Invoice {
   date: string;
   status: InvoiceStatus;
   template_version: string;
-  party_id: string;
+  party_id: string | null;
   party: PartyBrief | null;
   bill_to_addr_id: string | null;
   ship_to_addr_id: string | null;
@@ -514,7 +514,7 @@ export interface InvoiceListItem {
   fy: string;
   date: string;
   status: InvoiceStatus;
-  party_id: string;
+  party_id: string | null;
   party_name: string;
   grand_total: string | null;
   pdf_status: PdfStatus;

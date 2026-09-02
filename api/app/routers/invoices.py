@@ -138,7 +138,7 @@ def list_invoices(
 ) -> list[InvoiceListItem]:
     stmt = (
         select(Invoice, Party.legal_name)
-        .join(Party, Party.id == Invoice.party_id)
+        .outerjoin(Party, Party.id == Invoice.party_id)
         .where(Invoice.tenant_id == user.tenant_id)
     )
     if status_ is not None:
@@ -166,7 +166,7 @@ def list_invoices(
             date=inv.date,
             status=inv.status,
             party_id=inv.party_id,
-            party_name=name,
+            party_name=name or "(no party)",
             grand_total=inv.grand_total,
             pdf_status=inv.pdf_status,
         )
@@ -181,7 +181,8 @@ def list_invoices(
 
 @router.post("", response_model=InvoiceOut, status_code=status.HTTP_201_CREATED)
 def create_invoice(body: InvoiceCreate, user: WriteUser, session: SessionDep) -> InvoiceOut:
-    _owned_party(session, user.tenant_id, body.party_id)
+    if body.party_id:
+        _owned_party(session, user.tenant_id, body.party_id)
     d = body.date or date.today()
     inv = Invoice(
         tenant_id=user.tenant_id,
@@ -220,9 +221,12 @@ def update_invoice(
             detail=f"invoice is {inv.status} and cannot be edited",
         )
 
-    if body.party_id is not None and body.party_id != inv.party_id:
-        _owned_party(session, user.tenant_id, body.party_id)
-        inv.party_id = body.party_id
+    if body.party_id is not None and body.party_id != (inv.party_id or ""):
+        if body.party_id:
+            _owned_party(session, user.tenant_id, body.party_id)
+            inv.party_id = body.party_id
+        else:
+            inv.party_id = None
     if body.date is not None:
         inv.date = body.date
         inv.fy = financial_year(body.date)
@@ -246,11 +250,13 @@ def update_invoice(
 @router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> None:
     inv = _load(session, user.tenant_id, invoice_id)
-    if inv.status != InvoiceStatus.draft:
+    if inv.status == InvoiceStatus.final:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="only a draft can be deleted; cancel a finalized invoice instead",
+            detail="a finalized invoice cannot be deleted — cancel it instead",
         )
+    # a draft (never numbered) or a cancelled invoice (number already burned,
+    # not reused) can be removed outright
     session.delete(inv)
 
 
