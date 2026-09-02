@@ -43,7 +43,7 @@ def test_register_seeds_synonym_dictionary(client: TestClient) -> None:
         ).all()
         assert len(rows) == len(SYNONYMS)
         m = {r.from_token: r.to_token for r in rows}
-        assert m["balti"] == "bucket"
+        assert m["jhoola"] == "jhula"  # bartan spelling synonym seeded
 
 
 def test_register_login_me_flow(client: TestClient) -> None:

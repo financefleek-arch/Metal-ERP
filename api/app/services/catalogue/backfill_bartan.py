@@ -53,18 +53,29 @@ class RowChange:
 
 
 @dataclass
+class Collision:
+    table: str
+    new_key: str
+    moving: list[RowChange]  # rows that would move onto new_key
+    # an existing row that already holds new_key and is NOT moving, if any
+    incumbent: tuple[str, str] | None = None  # (row_id, name)
+
+
+@dataclass
 class TenantResult:
     tenant_id: str
     synonyms_added: int
     changes: list[RowChange] = field(default_factory=list)
-    # new_key -> the RowChanges that want it, when >1 row would land on it
-    # OR a single row lands on a key a *different* untouched row already holds
-    collisions: dict[str, list[RowChange]] = field(default_factory=dict)
+    # keyed "<table>:<new_key>"; a clash is >1 row moving onto new_key, OR a
+    # row moving onto a key an untouched row already holds (the incumbent).
+    collisions: dict[str, Collision] = field(default_factory=dict)
     applied: int = 0
 
     @property
     def safe_changes(self) -> list[RowChange]:
-        colliding_ids = {c.row_id for rows in self.collisions.values() for c in rows}
+        colliding_ids = {
+            c.row_id for col in self.collisions.values() for c in col.moving
+        }
         return [c for c in self.changes if c.row_id not in colliding_ids]
 
 
@@ -76,24 +87,24 @@ def _plan_table(
     name_attr: str,
     norm_attr: str,
     syn_map: dict[str, str],
-) -> tuple[list[RowChange], dict[str, str]]:
-    """Return the changes for one table plus a {normalized_key -> row_id} map
-    of the rows that would NOT change (used for collision detection).
+) -> tuple[list[RowChange], dict[str, tuple[str, str]]]:
+    """Return the changes for one table plus a {normalized_key -> (row_id,
+    name)} map of the rows that would NOT change (used for collision
+    detection and for showing the other side of a collision).
     """
     rows = list(
         session.scalars(select(model).where(model.tenant_id == tenant_id)).all()
     )
     changes: list[RowChange] = []
-    unchanged_keys: dict[str, str] = {}
+    unchanged_keys: dict[str, tuple[str, str]] = {}
     for r in rows:
         name = getattr(r, name_attr) or ""
         old_key = getattr(r, norm_attr) or ""
         new_key = normalize_name(name, syn_map)
         if new_key and new_key != old_key:
             changes.append(RowChange(label, r.id, name, old_key, new_key))
-        else:
-            if old_key:
-                unchanged_keys[old_key] = r.id
+        elif old_key:
+            unchanged_keys[old_key] = (r.id, name)
     return changes, unchanged_keys
 
 
@@ -110,7 +121,7 @@ def plan_tenant(session: Session, tenant_id: str, *, seed: bool = True) -> Tenan
     # per-table changes + the keys still held by rows that stay put (for
     # collision detection — each table has its own UNIQUE(tenant, key)).
     all_changes: list[RowChange] = []
-    per_table_held: dict[str, dict[str, str]] = {}
+    per_table_held: dict[str, dict[str, tuple[str, str]]] = {}
     for label, model, name_attr, norm_attr in _TARGETS:
         changes, unchanged = _plan_table(
             session, tenant_id, label, model, name_attr, norm_attr, syn_map
@@ -126,10 +137,11 @@ def plan_tenant(session: Session, tenant_id: str, *, seed: bool = True) -> Tenan
         by_table_newkey.setdefault((c.table, c.new_key), []).append(c)
 
     for (table, new_key), rows in by_table_newkey.items():
-        held_by = per_table_held.get(table, {}).get(new_key)
-        if len(rows) > 1 or held_by is not None:
-            # key namespaced so item/group/alias collisions don't merge in the dict
-            result.collisions[f"{table}:{new_key}"] = rows
+        incumbent = per_table_held.get(table, {}).get(new_key)
+        if len(rows) > 1 or incumbent is not None:
+            result.collisions[f"{table}:{new_key}"] = Collision(
+                table=table, new_key=new_key, moving=rows, incumbent=incumbent
+            )
 
     return result
 
@@ -172,11 +184,13 @@ def _print_report(results: list[TenantResult], *, applied: bool) -> None:
         print(f"  rows that re-normalize: {len(res.changes)}")
         if res.collisions:
             print(f"  ** {len(res.collisions)} COLLISION(S) — MERGE FIRST, then re-run:")
-            for key, rows in res.collisions.items():
-                table, new_key = key.split(":", 1)
-                print(f"    [{table}] new key {new_key!r} claimed by:")
-                for c in rows:
-                    print(f"        {c.row_id}  {c.label!r}  (was {c.old_key!r})")
+            for col in res.collisions.values():
+                print(f"    [{col.table}] key {col.new_key!r} would be shared by:")
+                if col.incumbent:
+                    rid, name = col.incumbent
+                    print(f"        {rid}  {name!r}  (already normalized — keep or merge into)")
+                for c in col.moving:
+                    print(f"        {c.row_id}  {c.label!r}  (was {c.old_key!r} — would move here)")
         safe = res.safe_changes
         if safe and not applied:
             print(f"  {len(safe)} row(s) would update (run with --apply):")

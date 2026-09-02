@@ -99,73 +99,46 @@ SYNONYMS: list[tuple[str, str]] = [
 ]
 
 # --- bartan (utensil) trade vocabulary ---
-# English-canonical: every Hindi word / spelling variant collapses to the
-# English trade term, so `item.name_normalized` stays consistent with the
-# English-leaning catalogue (Tally masters, HSN descriptions) and a shop-
-# keeper can type either the Hindi or English word and land on the same item.
+# HINDI-canonical: the shop names things in Hindi ("MOR JHULA", "AL BALTI"),
+# so a Hindi word is the canonical token and only *spelling variants*
+# collapse onto it. We deliberately do NOT rewrite a Hindi word to an
+# English one (that mangles the shop's own catalogue), and NEVER rewrite a
+# brand token ("prestige", "hawkins") to a product type.
+#
+# Cross-language recall (an English-speaking customer types "bucket") is a
+# job for the `item_alias` learning loop, not this table.
+#
 # All rows are many-to-one by design (`normalize_name` supports it).
 BARTAN_SYNONYMS: list[tuple[str, str]] = [
-    # Hindi noun -> English trade term
-    ("balti", "bucket"),
-    ("dolchi", "bucket"),
-    ("thali", "plate"),
-    ("rakabi", "plate"),
-    ("chamcha", "spoon"),
-    ("chammach", "spoon"),
-    ("chimta", "tong"),
-    ("katori", "bowl"),
-    ("gilas", "glass"),
-    ("gilaas", "glass"),
-    ("lota", "tumbler"),
-    ("dabba", "container"),
-    ("dibba", "container"),
-    ("tasla", "pan"),
-    ("tasala", "pan"),
-    ("sancha", "mould"),
-    ("saancha", "mould"),
-    ("jhara", "skimmer"),
-    ("zara", "skimmer"),
-    ("pauni", "ladle"),
-    ("chalni", "strainer"),
-    ("channi", "strainer"),
-    ("chhalni", "strainer"),
-    ("dhakkan", "lid"),
-    ("dhakni", "lid"),
-    ("parat", "tray"),
-    ("paraat", "tray"),
-    ("thal", "tray"),
-    ("patila", "pot"),
-    ("pateela", "pot"),
-    ("bhagona", "pot"),
-    ("bhagauna", "pot"),
-    ("topia", "pot"),
-    ("degchi", "pot"),
-    ("degacha", "pot"),
-    ("handi", "pot"),
-    # swing / cradle
-    ("jhula", "swing"),
-    ("jhoola", "swing"),
-    ("zhula", "swing"),
-    ("zula", "swing"),
-    # wok / frying vessel
-    ("kadai", "wok"),
-    ("kadhai", "wok"),
-    ("kadahi", "wok"),
-    ("karahi", "wok"),
-    ("karai", "wok"),
-    # pressure cooker
-    ("cooker", "cooker"),
-    ("prestige", "cooker"),
-    ("hawkins", "cooker"),
-    # metal shorthand seen on utensil bills
-    ("pital", "brass"),
-    ("peetal", "brass"),
-    ("tamba", "copper"),
-    ("tanba", "copper"),
-    ("loha", "iron"),
-    ("kansa", "bronze"),
-    ("kaansa", "bronze"),
-    # unit / pack noise
+    # --- spelling variants -> canonical Hindi spelling ---
+    ("jhoola", "jhula"),
+    ("zhula", "jhula"),
+    ("zula", "jhula"),
+    ("kadhai", "kadai"),
+    ("kadahi", "kadai"),
+    ("karahi", "kadai"),
+    ("karai", "kadai"),
+    ("kadhaai", "kadai"),
+    ("pateela", "patila"),
+    ("bhagauna", "bhagona"),
+    ("gilaas", "gilas"),
+    ("gilass", "gilas"),
+    ("chammach", "chamcha"),
+    ("chhalni", "chalni"),
+    ("channi", "chalni"),
+    ("saancha", "sancha"),
+    ("paraat", "parat"),
+    ("dhakni", "dhakkan"),
+    ("peetal", "pital"),
+    ("pittal", "pital"),
+    ("tanba", "tamba"),
+    ("taamba", "tamba"),
+    ("kaansa", "kansa"),
+    ("degcha", "degchi"),
+    ("degacha", "degchi"),
+    # (metal shorthand — "stainless"->"ss", "aluminum"->"aluminium" etc. —
+    #  is already covered by the metal-bar SYNONYMS block above.)
+    # --- unit / pack noise on utensil bills ---
     ("nag", "nos"),
     ("nug", "nos"),
     ("jodi", "pair"),

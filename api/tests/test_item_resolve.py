@@ -1,9 +1,10 @@
 """POST /api/items/resolve — the invoice-line type-ahead helper.
 
-Register seeds the bartan synonym dictionary, so an item created as
-"Pital Balti No 3" normalizes to "brass bucket no 3" and a query for
-"balti no 3" resolves to it via the exact rung (synonyms applied to both
-sides). SQLite here: the fuzzy rung is skipped, exact/alias still work.
+Register seeds the bartan synonym dictionary (Hindi-canonical, spelling
+variants only), so an item created as "SS Kadhai 10" normalizes to
+"ss kadai 10" and a query for "ss karahi 10" resolves to it via the exact
+rung (synonyms applied to both sides). SQLite here: the fuzzy rung is
+skipped, exact/alias still work.
 """
 
 from __future__ import annotations
@@ -41,18 +42,18 @@ def _resolve(client: TestClient, h: dict, desc: str, hsn: str | None = None) -> 
     return r.json()
 
 
-def test_exact_via_synonym(client: TestClient) -> None:
+def test_exact_via_spelling_synonym(client: TestClient) -> None:
     h, _ = _reg(client)
     made = client.post(
         "/api/items",
         headers=h,
-        json={"name": "Brass Bucket No 3", "default_rate": "480"},
+        json={"name": "SS Kadhai 10", "default_rate": "480"},
     )
     assert made.status_code == 201, made.text
     item_id = made.json()["id"]
 
-    # shopkeeper types the Hindi words; both sides normalize to "brass bucket no 3"
-    res = _resolve(client, h, "pital balti no 3")
+    # a different spelling of the same word — both normalize to "ss kadai 10"
+    res = _resolve(client, h, "ss karahi 10")
     assert res["method"] == "exact"
     assert res["confidence"] == 1.0
     assert len(res["candidates"]) == 1

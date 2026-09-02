@@ -25,13 +25,19 @@ def test_synonyms_have_no_conflicting_targets() -> None:
         seen[frm] = to
 
 
-def test_bartan_synonyms_present_and_english_canonical() -> None:
+def test_bartan_synonyms_are_hindi_canonical_spelling_only() -> None:
     m = dict(SYNONYMS)
-    # a few key Hindi -> English trade-term rewrites the type-ahead relies on
-    assert m["balti"] == "bucket"
-    assert m["pital"] == "brass"
-    assert m["kadhai"] == "wok"
-    assert m["jhoola"] == "swing"
+    # spelling variants collapse onto the canonical Hindi spelling
+    assert m["jhoola"] == "jhula"
+    assert m["kadhai"] == "kadai"
+    assert m["peetal"] == "pital"
+    # Hindi nouns are NOT rewritten to English trade terms
+    assert "balti" not in m
+    assert "kadai" not in m  # canonical, not itself a key
+    assert "jhula" not in m
+    # brand tokens are never mapped to a product type
+    assert "prestige" not in m
+    assert "hawkins" not in m
     # the bartan block is actually folded into SYNONYMS
     assert set(BARTAN_SYNONYMS).issubset(set(SYNONYMS))
     # targets are never themselves rewritten to something else (no chains)

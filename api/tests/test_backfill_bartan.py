@@ -28,52 +28,55 @@ def _add_item(session, tenant_id: str, name: str, norm: str) -> Item:  # type: i
 
 
 def test_seeds_and_renormalizes_non_colliding(session, tenant) -> None:  # type: ignore[no-untyped-def]
-    # stored under the OLD dictionary (no bartan synonyms)
-    it = _add_item(session, tenant.id, "Pital Balti No 3", "pital balti no 3")
+    # stored under the OLD dictionary (spelling variant not yet collapsed)
+    it = _add_item(session, tenant.id, "07 Fancy Mor Jhoola", "07 fancy mor jhoola")
 
     res = plan_tenant(session, tenant.id)
     assert res.synonyms_added > 0
     assert not res.collisions
     assert len(res.safe_changes) == 1
-    assert res.safe_changes[0].new_key == "brass bucket no 3"
+    assert res.safe_changes[0].new_key == "07 fancy mor jhula"
 
     n = apply_tenant(session, res)
     session.flush()
     assert n == 1
     session.refresh(it)
-    assert it.name_normalized == "brass bucket no 3"
+    assert it.name_normalized == "07 fancy mor jhula"
     # synonym rows really landed
     assert session.scalar(
         select(Synonym).where(
-            Synonym.tenant_id == tenant.id, Synonym.from_token == "balti"
+            Synonym.tenant_id == tenant.id, Synonym.from_token == "jhoola"
         )
     )
 
 
 def test_collision_is_flagged_not_applied(session, tenant) -> None:  # type: ignore[no-untyped-def]
-    # two items that converge on "brass bucket no 3" once bartan syns apply
-    a = _add_item(session, tenant.id, "Pital Balti No 3", "pital balti no 3")
-    b = _add_item(session, tenant.id, "Brass Bucket No 3", "brass bucket no 3")
+    # two items that converge on "ss kadai 10" once the spelling syns apply
+    a = _add_item(session, tenant.id, "SS Kadhai 10", "ss kadhai 10")
+    b = _add_item(session, tenant.id, "SS Kadai 10", "ss kadai 10")
 
     res = plan_tenant(session, tenant.id)
     # 'a' would move onto a key 'b' already holds -> collision, no safe change
     assert res.collisions
     assert res.safe_changes == []
+    col = res.collisions["item:ss kadai 10"]
+    assert col.incumbent is not None and col.incumbent[0] == b.id
+    assert [c.row_id for c in col.moving] == [a.id]
 
     apply_tenant(session, res)
     session.flush()
     session.refresh(a)
     session.refresh(b)
-    assert a.name_normalized == "pital balti no 3"  # untouched
-    assert b.name_normalized == "brass bucket no 3"
+    assert a.name_normalized == "ss kadhai 10"  # untouched
+    assert b.name_normalized == "ss kadai 10"
 
 
 def test_run_all_tenants_report_only(session, tenant) -> None:  # type: ignore[no-untyped-def]
-    _add_item(session, tenant.id, "Kadhai 10", "kadhai 10")
+    _add_item(session, tenant.id, "Karahi 10", "karahi 10")
     results = run(session, apply=False)
     mine = [r for r in results if r.tenant_id == tenant.id][0]
     assert mine.applied == 0
-    assert any(c.new_key == "wok 10" for c in mine.changes)
+    assert any(c.new_key == "kadai 10" for c in mine.changes)
     # nothing written in report mode
     it = session.scalar(select(Item).where(Item.tenant_id == tenant.id))
-    assert it.name_normalized == "kadhai 10"
+    assert it.name_normalized == "karahi 10"
