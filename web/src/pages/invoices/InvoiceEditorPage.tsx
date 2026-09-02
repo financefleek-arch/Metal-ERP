@@ -9,7 +9,6 @@ import type {
   InvoiceLineIn,
   ItemListItem,
   PartyListItem,
-  ResolveCandidate,
   ResolveResult,
 } from "../../lib/types";
 
@@ -503,12 +502,13 @@ function PartyPicker({
 }
 
 // --------------------------------------------------------------------------
-// line row — item type-ahead through POST /api/items/resolve
-//   Runs the typed text through the tenant synonym map + alias table + the
-//   confidence ladder, so "balti" finds the "Bucket" item. `exact` hits
-//   auto-adopt on Enter/blur; `alias`/`fuzzy` need a click. On SQLite (no
-//   pg_trgm) a non-exact/alias query returns no candidates — the "use as
-//   new item" row still lets the line through (created at finalize).
+// line row — item type-ahead
+//   The visible list is /api/items?q= (substring on name / alias / grade /
+//   size / HSN) — what you actually want while typing "buck". Alongside it
+//   POST /api/items/resolve runs the tenant synonym map + alias table + the
+//   confidence ladder purely to (a) silently adopt an unambiguous `exact`
+//   hit on Enter/blur and (b) tag the matching row with a badge. resolve is
+//   a precision matcher, never the browse list.
 // --------------------------------------------------------------------------
 
 const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
@@ -549,19 +549,34 @@ function LineRow({
   useEffect(() => setTyped(row.description), [row.description]);
 
   const debounced = useDebounced(typed.trim(), 200);
+  const active = open && debounced.length >= 1 && !row.item_id;
 
+  // the visible candidate list — substring browse search
   const search = useQuery({
+    queryKey: ["item-typeahead", debounced],
+    queryFn: () => api<ItemListItem[]>(`/items?q=${encodeURIComponent(debounced)}`),
+    enabled: active,
+  });
+  const results = search.data ?? [];
+
+  // parallel: what does the ladder say this text resolves to? (for auto-pick
+  // + the badge only — NOT the list)
+  const resolve = useQuery({
     queryKey: ["item-resolve", debounced, row.hsn_code.trim()],
     queryFn: () => {
       const p = new URLSearchParams({ description: debounced });
       if (row.hsn_code.trim()) p.set("hsn", row.hsn_code.trim());
       return api<ResolveResult>(`/items/resolve?${p.toString()}`, { method: "POST" });
     },
-    enabled: open && debounced.length >= 1 && !row.item_id,
+    enabled: active,
   });
-
-  const method = search.data?.method ?? null;
-  const candidates = search.data?.candidates ?? [];
+  const method = resolve.data?.method ?? null;
+  const resolvedId = resolve.data?.candidates?.[0]?.id ?? null;
+  // an exact hit we can silently adopt — only if it's also in the visible list
+  const autoPick =
+    method === "exact" && resolvedId
+      ? results.find((r) => r.id === resolvedId) ?? null
+      : null;
 
   function pick(it: ItemListItem) {
     onPatch({
@@ -599,18 +614,16 @@ function LineRow({
           }}
           onFocus={() => setOpen(true)}
           onBlur={() => {
-            // silent auto-adopt on an unambiguous exact match; anything
+            // silent auto-adopt only on an unambiguous exact match; anything
             // weaker waits for a click.
-            if (method === "exact" && candidates[0] && !row.item_id) pick(candidates[0]);
+            if (autoPick && !row.item_id) pick(autoPick);
             setTimeout(() => setOpen(false), 160);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              // Enter adopts the top candidate only when it's an exact hit.
-              if (method === "exact" && candidates[0]) {
-                e.preventDefault();
-                pick(candidates[0]);
-              }
+              e.preventDefault();
+              if (autoPick) pick(autoPick);
+              else if (results[0]) pick(results[0]);
             } else if (e.key === "Escape") {
               setOpen(false);
             }
@@ -618,40 +631,40 @@ function LineRow({
         />
         {open && !row.item_id && typed.trim() && (
           <div className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg">
-            {candidates.map((c: ResolveCandidate) => {
-              const badge = method ? METHOD_BADGE[method] : undefined;
+            {results.map((it) => {
+              const badge =
+                it.id === resolvedId && method ? METHOD_BADGE[method] : undefined;
               return (
                 <button
-                  key={c.id}
+                  key={it.id}
                   className="flex w-full items-center justify-between border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
-                  onMouseDown={() => pick(c)}
+                  onMouseDown={() => pick(it)}
                 >
                   <span>
-                    {c.name}{" "}
+                    {it.name}{" "}
                     <span
                       className={`ml-1 rounded px-1 py-0.5 text-[9px] ${
-                        c.item_type === "bulk"
+                        it.item_type === "bulk"
                           ? "bg-[#e3eef2] text-accent"
                           : "bg-[#f1e7d6] text-warn"
                       }`}
                     >
-                      {c.item_type === "bulk" ? "⚖ BULK" : "📦 MRP"}
+                      {it.item_type === "bulk" ? "⚖ BULK" : "📦 MRP"}
                     </span>
                     {badge && (
                       <span className={`ml-1 rounded px-1 py-0.5 text-[9px] ${badge.cls}`}>
                         {badge.label}
-                        {method === "fuzzy" ? ` ${c.score.toFixed(2)}` : ""}
                       </span>
                     )}
                   </span>
                   <span className="text-[11px] text-muted">
-                    {c.last_rate ? `₹${c.last_rate}` : ""} · {c.times_billed}×
+                    {it.last_rate ? `₹${it.last_rate}` : ""} · {it.times_billed}×
                   </span>
                 </button>
               );
             })}
-            {search.data?.weak && !candidates.length && (
-              <div className="px-3 py-2 text-[11px] text-muted">No strong match.</div>
+            {!results.length && !search.isFetching && (
+              <div className="px-3 py-2 text-[11px] text-muted">No matching item.</div>
             )}
             <button
               className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
