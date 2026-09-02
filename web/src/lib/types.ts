@@ -200,6 +200,59 @@ export interface ResolveResult {
   candidates: ResolveCandidate[];
 }
 
+// --- bulk operations: PATCH /api/items/bulk, POST /api/items/bulk-delete ---
+
+/** Fields the bulk-edit sheet may set. Keep in lockstep with
+ *  BULK_EDITABLE_FIELDS in api/app/schemas_item.py. */
+export type BulkField =
+  | "uom"
+  | "purchase_uom"
+  | "secondary_uom"
+  | "default_discount_pct"
+  | "default_rate"
+  | "item_type"
+  | "hsn_code"
+  | "metal"
+  | "shape"
+  | "finish"
+  | "category_id"
+  | "group_id"
+  | "status"
+  | "notes";
+
+export type BulkResult =
+  | "changed"
+  | "skipped"
+  | "deleted"
+  | "archived"
+  | "blocked"
+  | "error";
+
+export interface BulkOutcome {
+  id: string;
+  name: string;
+  result: BulkResult;
+  detail: string | null;
+}
+
+export interface BulkUpdateResult {
+  dry_run: boolean;
+  changed: number;
+  unchanged: number;
+  errors: number;
+  learned_rule_ids: string[];
+  rows: BulkOutcome[];
+}
+
+export interface BulkDeleteResult {
+  dry_run: boolean;
+  deleted: number;
+  archived: number;
+  blocked: number;
+  errors: number;
+  rows: BulkOutcome[];
+}
+
 // --- catalogue hierarchy ---
 
 export type RateMode = "piece" | "kg";

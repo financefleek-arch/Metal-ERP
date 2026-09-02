@@ -125,6 +125,94 @@ class ItemMergeIn(BaseModel):
     target_id: str
 
 
+# --------------------------------------------------------------------------
+# bulk operations — select N items, change one/few fields, preview, apply
+# --------------------------------------------------------------------------
+
+# Fields a shop actually sets in bulk. Identity / dimension fields
+# (name, size, thickness, …) stay per-item and are deliberately excluded.
+BULK_EDITABLE_FIELDS = frozenset(
+    {
+        "uom",
+        "purchase_uom",
+        "secondary_uom",
+        "default_discount_pct",
+        "default_rate",
+        "item_type",
+        "hsn_code",
+        "metal",
+        "shape",
+        "finish",
+        "category_id",
+        "group_id",
+        "status",
+        "notes",
+    }
+)
+
+MAX_BULK_IDS = 500
+
+
+class ItemBulkUpdate(BaseModel):
+    """`ids` + a partial `ItemUpdate`. Only keys the caller sends are touched;
+    everything else on every item is left alone. `notes_mode` picks whether a
+    supplied `notes` value replaces or is appended as a new line.
+    """
+
+    ids: list[str] = Field(min_length=1, max_length=MAX_BULK_IDS)
+    fields: ItemUpdate
+    fields_set: list[str] = Field(
+        min_length=1,
+        description="the field names to apply — the sheet's enabled toggles",
+    )
+    notes_mode: str = Field(default="replace", pattern="^(replace|append)$")
+
+    @model_validator(mode="after")
+    def _check_fields(self) -> ItemBulkUpdate:
+        chosen = set(self.fields_set)
+        bad = chosen - BULK_EDITABLE_FIELDS
+        if bad:
+            raise ValueError(f"not bulk-editable: {', '.join(sorted(bad))}")
+        supplied = set(self.fields.model_dump(exclude_unset=True))
+        missing = chosen - supplied
+        if missing:
+            raise ValueError(f"enabled but no value given: {', '.join(sorted(missing))}")
+        return self
+
+
+class ItemBulkDelete(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=MAX_BULK_IDS)
+    # what to do with items that are on documents (can't be deleted)
+    on_blocked: str = Field(default="skip", pattern="^(skip|archive)$")
+
+
+class BulkOutcome(BaseModel):
+    """One row of a bulk result / preview — same shape for dry-run and real."""
+
+    id: str
+    name: str
+    result: str  # changed | skipped | deleted | archived | blocked | error
+    detail: str | None = None
+
+
+class ItemBulkUpdateResult(BaseModel):
+    dry_run: bool
+    changed: int
+    unchanged: int
+    errors: int
+    learned_rule_ids: list[str] = Field(default_factory=list)
+    rows: list[BulkOutcome]
+
+
+class ItemBulkDeleteResult(BaseModel):
+    dry_run: bool
+    deleted: int
+    archived: int
+    blocked: int
+    errors: int
+    rows: list[BulkOutcome]
+
+
 class ItemListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -193,7 +193,7 @@
 
 <div class="wrap">
   <header class="page">
-    <p class="eyebrow">Metal ERP · Visual review · Items · Bulk operations</p>
+    <p class="eyebrow">Metal ERP · Items · Bulk operations · <b>BUILT 2026-09-02</b> (uncommitted)</p>
     <h1 class="page">Fix a hundred items in one move</h1>
     <p class="lede">
       A shop owner just imported 2,094 items from Tally. Half have no unit, a
@@ -203,12 +203,27 @@
       Items screen — no new page, no jargon, nothing a counter-hand can't run.
     </p>
     <div class="statusrow">
-      <span class="chip have">Reuses two-pane Items shell</span>
-      <span class="chip change">List rows gain a checkbox</span>
-      <span class="chip new">Bulk-edit sheet</span>
-      <span class="chip new">Preview-before-apply</span>
-      <span class="chip new"><code style="font-size:0.9em">PATCH /api/items/bulk</code></span>
-      <span class="chip new"><code style="font-size:0.9em">POST /api/items/bulk-delete</code></span>
+      <span class="chip have">✓ Two-pane Items shell reused</span>
+      <span class="chip have">✓ Flat rows have a checkbox + shift-range</span>
+      <span class="chip have">✓ Bulk-edit sheet (10 fields, enable toggles)</span>
+      <span class="chip have">✓ Preview-before-apply (server dry-run)</span>
+      <span class="chip have">✓ <code style="font-size:0.9em">PATCH /api/items/bulk</code></span>
+      <span class="chip have">✓ <code style="font-size:0.9em">POST /api/items/bulk-delete</code></span>
+      <span class="chip have">✓ Mobile <code style="font-size:0.9em">/items/bulk</code> route</span>
+      <span class="chip have">✓ 13 backend tests</span>
+    </div>
+    <div class="note" style="margin-top:14px">
+      <b>Shipped 2026-09-02, uncommitted.</b> Backend: <code>schemas_item.py</code> (ItemBulkUpdate /
+      ItemBulkDelete / BulkOutcome, 500-id cap), <code>routers/items.py</code>
+      (<code>bulk_update</code> + <code>bulk_delete</code>, both <code>?dry_run=</code>, declared
+      before <code>/{item_id}</code>, per-row savepoint isolation, reuses
+      <code>_apply_group_inheritance</code> / <code>hsn_gst_rate</code> / <code>learn_from_recategorize</code>),
+      <code>tests/test_items_bulk.py</code>. Frontend: <code>components/bulk/</code>
+      (<code>SelectionBar</code>, <code>BulkPanel</code> with the three flows, <code>PreviewTable</code>),
+      <code>ItemsPage.tsx</code> selection state + checkbox column, <code>/items/bulk</code> route,
+      <code>lib/types.ts</code> bulk types. Depends on the categorization session's
+      <code>ItemClassifyRule</code> + <code>learn_from_recategorize</code> (present in the tree).
+      <b>Not run:</b> a frontend test runner — the web app has none yet (project-wide gap).
     </div>
   </header>
 

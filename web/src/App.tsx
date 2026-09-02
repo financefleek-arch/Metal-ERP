@@ -40,6 +40,7 @@ export function App() {
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/items/import" element={<ItemsImportPage />} />
         <Route path="/items/new" element={<ItemsPage />} />
+        <Route path="/items/bulk" element={<ItemsPage />} />
         <Route path="/items/categories" element={<ItemsPage />} />
         <Route path="/items/g/:groupId" element={<ItemsPage />} />
         <Route path="/items/:id" element={<ItemsPage />} />

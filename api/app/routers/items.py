@@ -16,6 +16,11 @@ from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import Item, ItemAlias, ItemCategory, ProductGroup
 from app.models._mixins import ItemSource, ItemStatus, ItemType
 from app.schemas_item import (
+    BulkOutcome,
+    ItemBulkDelete,
+    ItemBulkDeleteResult,
+    ItemBulkUpdate,
+    ItemBulkUpdateResult,
     ItemCreate,
     ItemListItem,
     ItemMergeIn,
@@ -55,6 +60,23 @@ def _out(session: SessionDep, it: Item) -> ItemOut:
 
 def _normalized(session: SessionDep, tenant_id: str, name: str) -> str:
     return normalize_name(name, load_synonym_map(session, tenant_id))
+
+
+def _same(current: object, incoming: object) -> bool:
+    """Would setting `incoming` be a no-op? Compares Decimals / enums by value
+    so "5" vs Decimal('5.00') and ItemType.mrp vs "mrp" both count as equal.
+    """
+    if current is None or incoming is None:
+        return current is None and incoming is None
+    from decimal import Decimal, InvalidOperation
+
+    for a, b in ((current, incoming), (incoming, current)):
+        if isinstance(a, Decimal):
+            try:
+                return a == Decimal(str(b))
+            except (InvalidOperation, TypeError):
+                return False
+    return str(getattr(current, "value", current)) == str(getattr(incoming, "value", incoming))
 
 
 @router.get("", response_model=list[ItemListItem])
@@ -282,6 +304,212 @@ def _apply_group_inheritance(
         it.uom = grp.uom
     if "item_type" not in set_fields:
         it.item_type = grp.item_type
+
+
+# --------------------------------------------------------------------------
+# bulk operations — declared BEFORE /{item_id} so "bulk" isn't read as an id
+# --------------------------------------------------------------------------
+
+
+def _bulk_items(session: SessionDep, tenant_id: str, ids: list[str]) -> tuple[list[Item], list[str]]:
+    """Load the given ids for this tenant, preserving request order. Returns
+    (found_items, missing_ids). Merged / archived rows still load — the caller
+    decides what to do with them.
+    """
+    seen: dict[str, Item] = {
+        it.id: it
+        for it in session.scalars(
+            select(Item).where(Item.id.in_(ids), Item.tenant_id == tenant_id)
+        ).all()
+    }
+    found = [seen[i] for i in ids if i in seen]
+    missing = [i for i in ids if i not in seen]
+    return found, missing
+
+
+@router.patch("/bulk", response_model=ItemBulkUpdateResult)
+def bulk_update(
+    body: ItemBulkUpdate,
+    user: WriteUser,
+    session: SessionDep,
+    dry_run: bool = Query(default=False),
+) -> ItemBulkUpdateResult:
+    """Apply one or a few fields to many items in a single transaction.
+
+    Each item runs the *same* single-item logic (`_apply_group_inheritance`,
+    HSN→GST fill, `learn_from_recategorize`). An item whose value already
+    equals the target is reported `skipped`, not rewritten. A per-item failure
+    (name clash, unknown group) is reported `error` and rolled back for that
+    row only; the rest proceed. `dry_run=true` computes the same outcome rows
+    without persisting.
+    """
+    patch = body.fields.model_dump(exclude_unset=True)
+    chosen = set(body.fields_set) if body.fields_set else set(patch.keys())
+    patch = {k: v for k, v in patch.items() if k in chosen}
+    if not patch:
+        raise HTTPException(status_code=422, detail="no fields to change")
+
+    found, missing = _bulk_items(session, user.tenant_id, body.ids)
+    rows: list[BulkOutcome] = [
+        BulkOutcome(id=mid, name="—", result="error", detail="not found") for mid in missing
+    ]
+    learned: list[str] = []
+    changed = unchanged = 0
+
+    # name is not bulk-editable, so a normalized-key check is unnecessary here.
+    for it in found:
+        if it.merged_into_id is not None:
+            rows.append(BulkOutcome(id=it.id, name=it.name, result="skipped", detail="merged away"))
+            unchanged += 1
+            continue
+
+        diff: dict[str, object] = {}
+        skip_reason: str | None = None
+        for field_, value in patch.items():
+            # MRP-only field on a BULK item (unless this same patch flips it to mrp)
+            if field_ == "default_discount_pct":
+                target_type = patch.get("item_type", it.item_type)
+                if str(target_type) != str(ItemType.mrp) and target_type != ItemType.mrp:
+                    skip_reason = "BULK item — discount % not applicable"
+                    continue
+            current = getattr(it, field_)
+            if _same(current, value):
+                continue
+            diff[field_] = value
+
+        if skip_reason and not diff:
+            rows.append(BulkOutcome(id=it.id, name=it.name, result="skipped", detail=skip_reason))
+            unchanged += 1
+            continue
+        if not diff:
+            rows.append(
+                BulkOutcome(id=it.id, name=it.name, result="skipped", detail="already up to date")
+            )
+            unchanged += 1
+            continue
+
+        detail_bits = [f"{k} → {diff[k]}" for k in diff]
+        if skip_reason:
+            detail_bits.append(skip_reason)
+
+        if dry_run:
+            rows.append(
+                BulkOutcome(id=it.id, name=it.name, result="changed", detail="; ".join(detail_bits))
+            )
+            changed += 1
+            continue
+
+        sp = session.begin_nested()
+        try:
+            group_changed = "group_id" in diff and diff["group_id"] != it.group_id
+            hsn_changed = "hsn_code" in diff and diff["hsn_code"] != it.hsn_code
+            was_unconfirmed = it.status == ItemStatus.unconfirmed
+            if "notes" in diff and body.notes_mode == "append" and it.notes:
+                diff["notes"] = f"{it.notes}\n{diff['notes']}"
+            for field_, value in diff.items():
+                setattr(it, field_, value)
+            if group_changed:
+                _apply_group_inheritance(session, user.tenant_id, it, set(diff.keys()))
+                if it.group_id:
+                    rule = learn_from_recategorize(
+                        session, user.tenant_id, it, it.group_id,
+                        was_unconfirmed=was_unconfirmed,
+                    )
+                    if rule is not None:
+                        learned.append(rule.id)
+            if hsn_changed:
+                rate = hsn_gst_rate(session, it.hsn_code)
+                if rate is not None:
+                    it.gst_rate = float(rate)
+            session.flush()
+            sp.commit()
+        except Exception as exc:  # noqa: BLE001 — report, don't abort the batch
+            sp.rollback()
+            rows.append(
+                BulkOutcome(id=it.id, name=it.name, result="error", detail=str(exc)[:200])
+            )
+            continue
+        rows.append(
+            BulkOutcome(id=it.id, name=it.name, result="changed", detail="; ".join(detail_bits))
+        )
+        changed += 1
+
+    if dry_run:
+        session.rollback()
+
+    order = {i: n for n, i in enumerate(body.ids)}
+    rows.sort(key=lambda r: order.get(r.id, 1_000_000))
+    return ItemBulkUpdateResult(
+        dry_run=dry_run,
+        changed=changed,
+        unchanged=unchanged,
+        errors=sum(1 for r in rows if r.result == "error"),
+        learned_rule_ids=sorted(set(learned)),
+        rows=rows,
+    )
+
+
+@router.post("/bulk-delete", response_model=ItemBulkDeleteResult)
+def bulk_delete(
+    body: ItemBulkDelete,
+    user: WriteUser,
+    session: SessionDep,
+    dry_run: bool = Query(default=False),
+) -> ItemBulkDeleteResult:
+    """Delete many items. An item on any document keeps the single-item 409
+    rule: it is `blocked`, or `archived` when `on_blocked=archive`. `dry_run`
+    reports the deletable / blocked split without touching anything.
+    """
+    found, missing = _bulk_items(session, user.tenant_id, body.ids)
+    rows: list[BulkOutcome] = [
+        BulkOutcome(id=mid, name="—", result="error", detail="not found") for mid in missing
+    ]
+    deleted = archived = blocked = 0
+
+    for it in found:
+        if it.merged_into_id is not None:
+            rows.append(BulkOutcome(id=it.id, name=it.name, result="error", detail="already merged"))
+            continue
+        refs = document_count(session, it.id)
+        n = max(refs, it.times_billed)
+        if n > 0:
+            if body.on_blocked == "archive":
+                if not dry_run:
+                    it.status = ItemStatus.archived
+                rows.append(
+                    BulkOutcome(
+                        id=it.id, name=it.name, result="archived",
+                        detail=f"on {n} document{'s' if n != 1 else ''}",
+                    )
+                )
+                archived += 1
+            else:
+                rows.append(
+                    BulkOutcome(
+                        id=it.id, name=it.name, result="blocked",
+                        detail=f"on {n} document{'s' if n != 1 else ''} — archive instead",
+                    )
+                )
+                blocked += 1
+            continue
+        if not dry_run:
+            session.delete(it)
+        rows.append(BulkOutcome(id=it.id, name=it.name, result="deleted", detail="never billed"))
+        deleted += 1
+
+    if not dry_run:
+        session.flush()
+
+    order = {i: n for n, i in enumerate(body.ids)}
+    rows.sort(key=lambda r: order.get(r.id, 1_000_000))
+    return ItemBulkDeleteResult(
+        dry_run=dry_run,
+        deleted=deleted,
+        archived=archived,
+        blocked=blocked,
+        errors=sum(1 for r in rows if r.result == "error"),
+        rows=rows,
+    )
 
 
 @router.get("/{item_id}", response_model=ItemOut)
