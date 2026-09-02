@@ -4,13 +4,20 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import HsnCode, Item, ItemAlias
 
-_NAME_SIMILARITY_FLOOR = 0.3
+# word_similarity() scores the query against the best-matching *word* in the
+# name, so it runs higher than the old whole-string similarity() and needs a
+# stricter floor. 0.60 rejects unrelated bridges ("topia"->"toaster" ~0.33)
+# while keeping close typos ("kdai"->"kadai", "katri"->"katori"). A rare
+# near-miss ("lota"->"lotion" ~0.6) can still show up — it's one extra
+# dropdown row, and the real narrowing tool is a second search word (the
+# AND-token rung below), not a tighter fuzzy floor.
+_WORD_SIMILARITY_FLOOR = 0.60
 
 
 def rate_in_band(item: Item) -> bool | None:
@@ -86,15 +93,26 @@ def apply_search(
 
     syn = load_synonym_map(session, tenant_id) if tenant_id else {}
     nkey = normalize_name(q, syn)
-    nlike = f"%{nkey}%" if nkey else None
+    ntokens = [t for t in nkey.split(" ") if t] if nkey else []
+    multi = len(ntokens) > 1
 
-    alias_hit = (
+    # --- the normalized rung: AND across query tokens so more words NARROW ---
+    # Each normalized token must appear in name_normalized (or an alias). A
+    # single-token query is the common "type a name" case; a two-token query
+    # ("topia steel") should only match items carrying *both*.
+    def _tokens_all_in(col):  # type: ignore[no-untyped-def]
+        return and_(*[col.like(f"%{t}%") for t in ntokens]) if ntokens else None
+
+    name_norm_hit = _tokens_all_in(Item.name_normalized)
+    alias_norm_hit = _tokens_all_in(ItemAlias.alias_normalized)
+
+    alias_exists = (
         select(ItemAlias.item_id)
         .where(
             ItemAlias.item_id == Item.id,
             or_(
                 func.lower(ItemAlias.alias_text).like(like),
-                *([ItemAlias.alias_normalized.like(nlike)] if nlike else []),
+                *([alias_norm_hit] if alias_norm_hit is not None else []),
             ),
         )
         .exists()
@@ -104,20 +122,26 @@ def apply_search(
         func.lower(func.coalesce(Item.grade, "")).like(like),
         func.lower(func.coalesce(Item.size_text, "")).like(like),
         func.coalesce(Item.hsn_code, "").like(f"{q}%"),
-        alias_hit,
+        alias_exists,
     ]
-    if nlike:
-        conds.append(Item.name_normalized.like(nlike))
+    if name_norm_hit is not None:
+        conds.append(name_norm_hit)
 
     if is_pg:
-        sim_arg = nkey or q.lower()
-        # word_similarity(query, text): best-matching word in `text`, so a
-        # short typed token still scores against a long item name.
-        wsim = func.word_similarity(sim_arg, Item.name_normalized)
-        conds.append(wsim > _NAME_SIMILARITY_FLOOR)
+        # Fuzzy catch-all for a *single* mistyped token only. On a multi-token
+        # query the AND-substring rung above already handles narrowing, and
+        # word_similarity against one word would re-widen it — so skip it.
+        if not multi:
+            sim_arg = nkey or q.lower()
+            wsim = func.word_similarity(sim_arg, Item.name_normalized)
+            conds.append(wsim > _WORD_SIMILARITY_FLOOR)
+            order_sim = wsim
+        else:
+            # rank by how well the whole phrase matches the whole name
+            order_sim = func.similarity(nkey, Item.name_normalized)
         stmt = stmt.where(or_(*conds)).order_by(
             (Item.status == "confirmed").desc(),
-            wsim.desc(),
+            order_sim.desc(),
             Item.times_billed.desc(),
         )
     else:

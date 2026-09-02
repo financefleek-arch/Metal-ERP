@@ -183,6 +183,25 @@ def test_search_is_synonym_aware(client: TestClient) -> None:
         assert names == ["07 Fancy Mor Jhula"], f"{term!r} -> {names}"
 
 
+def test_search_multi_word_narrows(client: TestClient) -> None:
+    """A second word AND-filters the normalized rung — more text narrows,
+    not widens. (Regression: every clause was OR'd, so extra words did
+    nothing / re-widened via word_similarity.)"""
+    h = _h(_token(client, "it-narrow@x.example.com"))
+    _mk(client, h, "SS Topia 10")
+    _mk(client, h, "Steel Topia Large")
+    _mk(client, h, "Aluminium Toaster")
+
+    one = [i["name"] for i in client.get("/api/items?q=topia", headers=h).json()]
+    assert set(one) == {"SS Topia 10", "Steel Topia Large"}  # not the toaster
+
+    two = [i["name"] for i in client.get("/api/items?q=topia+steel", headers=h).json()]
+    assert two == ["Steel Topia Large"]  # both words required
+
+    none = client.get("/api/items?q=topia+brass", headers=h).json()
+    assert none == []  # no item has both tokens
+
+
 # --------------------------------------------------------------------------
 # confirm / merge / delete
 # --------------------------------------------------------------------------

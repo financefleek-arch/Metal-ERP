@@ -739,10 +739,23 @@ function LineRow({
   const filled = row.description.trim().length > 0;
 
   // the unit the line is priced in — for the "Rate ₹/<unit>" label
-  const unitLabel = row.uom.trim() || (row.rateMode === "kg" ? "kg" : "");
-  // two-unit item → a narrowed dropdown; else a plain badge
-  const unitChoices = [row.uom, row.secondaryUom].filter(Boolean) as string[];
-  const twoUnits = unitChoices.length >= 2;
+  const unitLabel = row.uom.trim() || (row.rateMode === "kg" ? "kg" : "nos");
+  // Always a dropdown, defaulted to the item's unit but overridable: the
+  // item's own unit(s) first, then the two rate-mode defaults, deduped.
+  const unitChoices = Array.from(
+    new Set(
+      [row.uom, row.secondaryUom, "nos", "kg"]
+        .map((u) => u.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  );
+
+  // Materialise the effective unit onto the row once a line has content, so
+  // the <select>'s shown value is the stored value (no phantom "needs a unit").
+  useEffect(() => {
+    if (filled && !row.uom.trim() && unitLabel) onPatch({ uom: unitLabel });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filled, row.uom, unitLabel]);
 
   const discAmt = rowDiscountAmount(row);
   const workingBits: string[] = [];
@@ -902,14 +915,7 @@ function LineRow({
 
       <div className="grid grid-cols-2 gap-3 p-3">
         <div>
-          <label className="fl-m">
-            Qty
-            {!twoUnits && unitLabel && (
-              <span className="ml-1 rounded bg-accent-soft px-1 py-0.5 text-[10px] font-bold normal-case tracking-normal text-accent">
-                {unitLabel}
-              </span>
-            )}
-          </label>
+          <label className="fl-m">Qty</label>
           <input
             className={`field h-10 text-right ${fieldClass("qty")}`}
             inputMode="decimal"
@@ -920,49 +926,32 @@ function LineRow({
           />
         </div>
 
-        {twoUnits ? (
-          <div>
-            <label className="fl-m">Unit</label>
-            <select
-              className={`field h-10 px-1 text-sm ${fieldClass("unit")}`}
-              value={row.uom}
-              disabled={readOnly}
-              onChange={(e) => onPatch({ uom: e.target.value })}
-            >
-              {unitChoices.map((u) => (
-                <option key={u}>{u}</option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div>
-            <label className="fl-m">Rate {unitLabel ? `₹/${unitLabel}` : "₹"}</label>
-            <input
-              className={`field h-10 text-right ${fieldClass("rate")}`}
-              inputMode="decimal"
-              placeholder="0.00"
-              value={row.unit_rate}
-              disabled={readOnly}
-              onChange={(e) => onPatch({ unit_rate: e.target.value })}
-            />
-            {rateGhost && <p className="mt-0.5 text-[10px] text-muted">{rateGhost}</p>}
-          </div>
-        )}
+        <div>
+          <label className="fl-m">Unit</label>
+          <select
+            className={`field h-10 px-1 text-sm ${fieldClass("unit")}`}
+            value={row.uom.trim().toLowerCase() || unitLabel}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ uom: e.target.value })}
+          >
+            {unitChoices.map((u) => (
+              <option key={u}>{u}</option>
+            ))}
+          </select>
+        </div>
 
-        {twoUnits && (
-          <div>
-            <label className="fl-m">Rate {unitLabel ? `₹/${unitLabel}` : "₹"}</label>
-            <input
-              className={`field h-10 text-right ${fieldClass("rate")}`}
-              inputMode="decimal"
-              placeholder="0.00"
-              value={row.unit_rate}
-              disabled={readOnly}
-              onChange={(e) => onPatch({ unit_rate: e.target.value })}
-            />
-            {rateGhost && <p className="mt-0.5 text-[10px] text-muted">{rateGhost}</p>}
-          </div>
-        )}
+        <div>
+          <label className="fl-m">Rate ₹/{unitLabel}</label>
+          <input
+            className={`field h-10 text-right ${fieldClass("rate")}`}
+            inputMode="decimal"
+            placeholder="0.00"
+            value={row.unit_rate}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ unit_rate: e.target.value })}
+          />
+          {rateGhost && <p className="mt-0.5 text-[10px] text-muted">{rateGhost}</p>}
+        </div>
 
         <div>
           <label className="fl-m">Discount {discSeg}</label>
@@ -1039,25 +1028,17 @@ function LineRow({
           disabled={readOnly}
           onChange={(e) => onPatch({ quantity: e.target.value })}
         />
-        {twoUnits ? (
-          <select
-            className={`field h-9 px-1 text-xs ${fieldClass("unit")}`}
-            value={row.uom}
-            disabled={readOnly}
-            onChange={(e) => onPatch({ uom: e.target.value })}
-          >
-            {unitChoices.map((u) => (
-              <option key={u}>{u}</option>
-            ))}
-          </select>
-        ) : (
-          <span
-            className="truncate text-xs text-muted"
-            title={row.rateMode === "kg" ? "weight item" : "piece item"}
-          >
-            {unitLabel || "—"}
-          </span>
-        )}
+        <select
+          className={`field h-9 px-1 text-xs ${fieldClass("unit")}`}
+          value={row.uom.trim().toLowerCase() || unitLabel}
+          disabled={readOnly}
+          title={row.rateMode === "kg" ? "weight item" : "piece item"}
+          onChange={(e) => onPatch({ uom: e.target.value })}
+        >
+          {unitChoices.map((u) => (
+            <option key={u}>{u}</option>
+          ))}
+        </select>
         <input
           className={`field h-9 text-right text-sm ${fieldClass("rate")}`}
           inputMode="decimal"

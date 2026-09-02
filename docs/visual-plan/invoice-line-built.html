@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoice line — as built</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    ground:"#f4f1ec", ink:"#23201b", card:"#ffffff", line:"#e6e0d6", muted:"#7c766a",
+    accent:{DEFAULT:"#2f6f89", dark:"#245771", soft:"#eef4f7"},
+    warn:"#b5892f", ok:"#4f8a5b", danger:"#c0392b",
+  }, fontFamily:{ serif:['Fraunces','Georgia','serif'], sans:['"IBM Plex Sans"','system-ui','sans-serif'] } } } };
+</script>
+<style>
+  body { background:#f4f1ec; font-family:"IBM Plex Sans",system-ui,sans-serif; color:#23201b; margin:0; }
+  .field { height:2.25rem; width:100%; border:1px solid #e6e0d6; border-radius:.375rem;
+    background:#fff; padding:0 .75rem; font-size:.875rem; color:#23201b; outline:none; }
+  .field:focus { border-color:#2f6f89; box-shadow:0 0 0 3px rgba(47,111,137,.25); }
+  .border-danger { border-color:#c0392b !important; }
+  .border-warn { border-color:#b5892f !important; }
+  .fl-m { margin-bottom:.25rem; display:flex; align-items:baseline; gap:.25rem;
+    font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:#7c766a; }
+  h1{font-family:Fraunces,Georgia,serif;font-size:20px;margin:0 0 4px}
+  h2{font-family:Fraunces,Georgia,serif;font-size:15px;margin:30px 0 10px}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px 20px 90px}
+  .lede{color:#7c766a;max-width:74ch}
+  .phone{width:340px;border:10px solid #d9d2c6;border-radius:26px;background:#f4f1ec;padding:12px 8px}
+  .cap{font-size:12px;color:#7c766a;text-align:center;margin:8px auto 0;max-width:340px}
+  .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(330px,1fr));gap:24px;align-items:start}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Invoice line — as built</h1>
+  <p class="lede">Static render of exactly what the rewritten <code>LineRow</code> emits (same
+  Tailwind classes, mock rows). Mobile card + desktop table row with the error sub-row.
+  <b>tsc + eslint + vite build + 238 backend tests all pass.</b></p>
+
+  <h2>Mobile</h2>
+  <div class="cols">
+
+    <!-- single-unit, clean -->
+    <div>
+      <div class="phone">
+        <div class="rounded-xl border border-line bg-card border-b">
+          <div class="flex items-center justify-between px-3 pt-2 text-xs text-muted">
+            <span>1</span><span class="font-semibold text-[#3f7a4f]">✓ ready</span>
+          </div>
+          <div class="px-3 pt-1">
+            <div class="relative">
+              <input class="field h-9 text-sm" value="Iron Kadai" />
+              <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#3f7a4f]">✓ matched</span>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 p-3">
+            <div>
+              <label class="fl-m">Qty</label>
+              <input class="field h-10 text-right" value="5.2" />
+            </div>
+            <div>
+              <label class="fl-m">Unit</label>
+              <select class="field h-10 px-1 text-sm"><option>kg</option><option>nos</option></select>
+            </div>
+            <div>
+              <label class="fl-m">Rate ₹/kg</label>
+              <input class="field h-10 text-right" value="455" />
+              <p class="mt-0.5 text-[10px] text-muted">last ₹455 · 12/08/2026 · band ₹420–480</p>
+            </div>
+            <div>
+              <label class="fl-m">Discount
+                <span class="inline-flex overflow-hidden rounded border border-line">
+                  <span class="px-1.5 text-[9px] font-bold bg-accent text-white">₹</span>
+                  <span class="px-1.5 text-[9px] font-bold bg-card text-muted">%</span>
+                </span>
+              </label>
+              <input class="field h-10 text-right" value="10" />
+            </div>
+            <div class="col-span-2">
+              <label class="fl-m">HSN <span class="font-normal normal-case tracking-normal">optional</span></label>
+              <input class="field h-10" value="732394" />
+            </div>
+          </div>
+          <div class="flex items-center justify-between border-t border-line px-3 py-2">
+            <span class="font-serif text-base font-semibold">₹ 2,356.00
+              <span class="block font-sans text-[11px] font-normal text-muted">5.2 kg × ₹455 − ₹10</span>
+            </span>
+            <button class="h-9 w-9 rounded-md border border-line text-danger">×</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap"><b>Unit is always a dropdown</b>, preselected to the item's unit (kg here),
+      options = item's unit(s) + nos + kg. Rate label follows the selection. Ghost text
+      shows last-sold + band.</p>
+    </div>
+
+    <!-- two-unit -->
+    <div>
+      <div class="phone">
+        <div class="rounded-xl border border-line bg-card">
+          <div class="flex items-center justify-between px-3 pt-2 text-xs text-muted">
+            <span>2</span><span class="font-semibold text-[#3f7a4f]">✓ ready</span>
+          </div>
+          <div class="px-3 pt-1"><div class="relative">
+            <input class="field h-9 text-sm" value='SS Kadai 12"' />
+            <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#3f7a4f]">✓ matched</span>
+          </div></div>
+          <div class="grid grid-cols-2 gap-3 p-3">
+            <div>
+              <label class="fl-m">Qty</label>
+              <input class="field h-10 text-right" value="6" />
+            </div>
+            <div>
+              <label class="fl-m">Unit</label>
+              <select class="field h-10 px-1 text-sm"><option>nos</option><option>set</option><option>kg</option></select>
+            </div>
+            <div>
+              <label class="fl-m">Rate ₹/nos</label>
+              <input class="field h-10 text-right" value="690" />
+            </div>
+            <div>
+              <label class="fl-m">Discount
+                <span class="inline-flex overflow-hidden rounded border border-line">
+                  <span class="px-1.5 text-[9px] font-bold bg-accent text-white">₹</span>
+                  <span class="px-1.5 text-[9px] font-bold bg-card text-muted">%</span></span>
+              </label>
+              <input class="field h-10 text-right" value="0" />
+            </div>
+            <div class="col-span-2">
+              <label class="fl-m">HSN <span class="font-normal normal-case tracking-normal">optional</span></label>
+              <input class="field h-10" value="7323" />
+            </div>
+          </div>
+          <div class="flex items-center justify-between border-t border-line px-3 py-2">
+            <span class="font-serif text-base font-semibold">₹ 4,140.00
+              <span class="block font-sans text-[11px] font-normal text-muted">6 nos × ₹690</span></span>
+            <button class="h-9 w-9 rounded-md border border-line text-danger">×</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Item with a <code>secondary_uom</code> (set) → its own units come first in the
+      list, then nos + kg. Preselected to the primary. User can pick any of them.</p>
+    </div>
+
+    <!-- errors + new item -->
+    <div>
+      <div class="phone">
+        <div class="rounded-xl border border-line bg-card">
+          <div class="flex items-center justify-between px-3 pt-2 text-xs text-muted">
+            <span>3</span><span class="font-semibold text-danger">fix highlighted fields</span>
+          </div>
+          <div class="px-3 pt-1"><div class="relative">
+            <input class="field h-9 text-sm border-warn" value="karahi steel" />
+          </div></div>
+          <div class="mx-3 mt-2 rounded-md border border-[#ecdcb8] bg-[#fbf3e2] px-2.5 py-1.5 text-[11px] text-warn">
+            Not in the catalogue — finalising creates “karahi steel” as a new item.
+            <span class="ml-1 inline-flex overflow-hidden rounded border border-[#e2cfa0] align-middle">
+              <span class="px-1.5 py-0.5 text-[10px] font-bold bg-warn text-white">per piece</span>
+              <span class="px-1.5 py-0.5 text-[10px] font-bold">per kg</span></span>
+          </div>
+          <div class="grid grid-cols-2 gap-3 p-3">
+            <div>
+              <label class="fl-m">Qty</label>
+              <input class="field h-10 text-right border-warn" value="520" />
+            </div>
+            <div>
+              <label class="fl-m">Unit</label>
+              <select class="field h-10 px-1 text-sm"><option>nos</option><option>kg</option></select>
+            </div>
+            <div>
+              <label class="fl-m">Rate ₹/nos</label>
+              <input class="field h-10 text-right border-warn" value="4550" />
+              <p class="mt-0.5 text-[10px] text-muted">band ₹420–480</p>
+            </div>
+            <div>
+              <label class="fl-m">Discount
+                <span class="inline-flex overflow-hidden rounded border border-line">
+                  <span class="px-1.5 text-[9px] font-bold bg-card text-muted">₹</span>
+                  <span class="px-1.5 text-[9px] font-bold bg-accent text-white">%</span></span>
+              </label>
+              <input class="field h-10 text-right border-danger" value="120" />
+            </div>
+            <div class="col-span-2">
+              <label class="fl-m">HSN <span class="font-normal normal-case tracking-normal">optional</span></label>
+              <input class="field h-10 border-warn" value="73239" />
+            </div>
+          </div>
+          <div class="mx-3 mb-2 rounded-md bg-[#fbf6ee] px-2.5 py-1.5 text-[11px]">
+            <div class="text-warn">⚠ not in catalogue — a new item will be created</div>
+            <div class="text-warn">⚠ choose per piece / per kg for the new item</div>
+            <div class="text-warn">⚠ rate outside usual ₹420–480</div>
+            <div class="text-danger">• discount % can't exceed 100</div>
+            <div class="text-warn">⚠ HSN should be 4, 6 or 8 digits</div>
+          </div>
+          <div class="flex items-center justify-between border-t border-line px-3 py-2">
+            <span class="font-serif text-base font-semibold">₹ 0.00</span>
+            <button class="h-9 w-9 rounded-md border border-line text-danger">×</button>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Guards firing. Amber borders = warn (never blocks). Red = blocks finalize.
+      New-item strip carries the piece/kg choice. Sub-list collects every message.</p>
+    </div>
+
+  </div>
+
+  <h2>Desktop / web</h2>
+  <div class="rounded-xl border border-line bg-card overflow-hidden" style="max-width:900px">
+    <div class="hidden md:grid grid-cols-[24px_1fr_84px_66px_54px_84px_92px_92px_28px] gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase text-muted" style="display:grid">
+      <span>#</span><span>Item</span><span>HSN</span><span class="text-right">Qty</span><span>Unit</span>
+      <span class="text-right">Rate</span><span class="text-right">Disc.</span><span class="text-right">Amount</span><span></span>
+    </div>
+
+    <!-- clean row -->
+    <div class="border-b border-[#f3eee4]">
+      <div class="grid grid-cols-[24px_1fr_84px_66px_54px_84px_92px_92px_28px] items-center gap-2 px-3 py-2 text-sm">
+        <span class="text-center text-xs text-muted">1</span>
+        <div class="relative"><input class="field h-9 text-sm" value="Iron Kadai" />
+          <span class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#3f7a4f]">✓</span></div>
+        <input class="field h-9 text-xs" value="732394" />
+        <input class="field h-9 text-right text-sm" value="5.2" />
+        <select class="field h-9 px-1 text-xs" title="weight item"><option>kg</option><option>nos</option></select>
+        <input class="field h-9 text-right text-sm" value="455" title="last ₹455 · 12/08/2026 · band ₹420–480" />
+        <span class="flex items-center justify-end gap-1">
+          <span class="inline-flex overflow-hidden rounded border border-line">
+            <span class="px-1.5 text-[9px] font-bold bg-accent text-white">₹</span>
+            <span class="px-1.5 text-[9px] font-bold bg-card text-muted">%</span></span>
+          <input class="field h-9 w-14 text-right text-xs" value="10" /></span>
+        <span class="text-right font-mono text-sm" title="5.2 kg × ₹455 − ₹10">₹ 2,356.00</span>
+        <button class="text-danger text-center">×</button>
+      </div>
+    </div>
+
+    <!-- warn row + sub-row -->
+    <div class="border-b border-[#f3eee4]">
+      <div class="grid grid-cols-[24px_1fr_84px_66px_54px_84px_92px_92px_28px] items-center gap-2 px-3 py-2 text-sm">
+        <span class="text-center text-xs text-danger">2</span>
+        <div class="relative"><input class="field h-9 text-sm border-warn" value="karahi steel" /></div>
+        <input class="field h-9 text-xs border-warn" value="73239" />
+        <input class="field h-9 text-right text-sm border-warn" value="520" />
+        <select class="field h-9 px-1 text-xs" title="piece item"><option>nos</option><option>kg</option></select>
+        <input class="field h-9 text-right text-sm border-warn" value="4550" title="band ₹420–480" />
+        <span class="flex items-center justify-end gap-1">
+          <span class="inline-flex overflow-hidden rounded border border-line">
+            <span class="px-1.5 text-[9px] font-bold bg-card text-muted">₹</span>
+            <span class="px-1.5 text-[9px] font-bold bg-accent text-white">%</span></span>
+          <input class="field h-9 w-14 text-right text-xs border-danger" value="120" /></span>
+        <span class="text-right font-mono text-sm">₹ 0.00</span>
+        <button class="text-danger text-center">×</button>
+      </div>
+      <div class="border-b border-[#f3eee4] bg-[#fbf6ee] px-3 py-1.5 pl-11 text-[11px]">
+        <b class="mr-1 text-ink">Line 2:</b>
+        <span class="text-warn">not in catalogue — a new item will be created</span>
+        <span class="text-warn"> · choose per piece / per kg for the new item</span>
+        <span class="text-warn"> · rate outside usual ₹420–480</span>
+        <span class="text-danger"> · discount % can't exceed 100</span>
+        <span class="text-warn"> · HSN should be 4, 6 or 8 digits</span>
+      </div>
+    </div>
+
+    <div class="px-3 py-2"><span class="text-sm text-accent">+ Add line</span></div>
+  </div>
+  <p class="cap" style="text-align:left;max-width:none">Table stays dense; a line grows the
+  <b>error sub-row only when it has a problem</b>. Passive info (last rate, band, amount
+  working) is on <code>title=</code> tooltips. ₹/% toggle is inline in the Disc. cell.</p>
+
+  <h2>Behaviour notes</h2>
+  <ul style="font-size:13px;color:#7c766a;line-height:1.7">
+    <li><b>Unit</b>: always a dropdown, preselected to the item's <code>uom</code> (or <code>rate_mode</code> default for a new line). Options = the item's own unit(s) (<code>uom</code> + <code>secondary_uom</code>) then <code>nos</code> + <code>kg</code>, deduped — overridable per line, but not the raw 16-entry vocab. New typed item → piece/kg choice in the strip sets <code>rate_mode</code> + default <code>uom</code>. Rate label follows the selected unit.</li>
+    <li><b>Discount</b>: one field + ₹/% toggle. % is resolved to ₹ in <code>toLineIn</code> and the totals preview; the backend line still stores an absolute amount (a "10 %" line reloads as "₹236").</li>
+    <li><b>Guards</b> (<code>lineProblems()</code>, pure): qty/rate/unit missing (block), rate outside <code>price_min/max</code> (warn), discount % &gt; 100 (block), discount ≥ line total (block), HSN not 4/6/8 digits (warn), free-text line (warn) + piece/kg prompt, "also on line N" when the same item repeats.</li>
+    <li><b>tax.py untouched</b> — line total still <code>qty × rate − disc</code>.</li>
+    <li><b>Backend</b>: <code>secondary_uom</code> + <code>last_sold_at</code> added to <code>ItemListItem</code> (feeds <code>/items?q=</code> and <code>/items/resolve</code>). No migration.</li>
+  </ul>
+</div>
+</body>
+</html>
