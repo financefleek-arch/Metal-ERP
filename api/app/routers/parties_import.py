@@ -24,7 +24,11 @@ from tools.tally_import.parser import TallyLedger, parse_masters
 
 router = APIRouter(prefix="/api/parties/import", tags=["parties-import"])
 
-_MAX_BYTES = 10 * 1024 * 1024
+# A full "All Masters" TallyPrime export (every ledger with its address /
+# GST detail, often stock items too) runs well past 10 MB. Only LEDGER nodes
+# are read, so the parse stays fast; the cap just needs headroom. Mirrors the
+# items importer's 64 MB ceiling.
+_MAX_BYTES = 64 * 1024 * 1024
 _ALWAYS_GROUPS = {"sundry debtors", "sundry creditors"}
 _EXACT = {"exact_gstin", "exact_pan"}
 
@@ -141,7 +145,10 @@ async def upload(
 ) -> ImportBatchOut:
     raw = await file.read()
     if len(raw) > _MAX_BYTES:
-        raise HTTPException(status_code=413, detail="File is larger than 10 MB")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File is larger than {_MAX_BYTES // (1024 * 1024)} MB",
+        )
     try:
         masters = parse_masters(raw)
     except Exception as e:  # noqa: BLE001 - surface any XML problem as a 422
@@ -202,6 +209,11 @@ async def upload(
         gstins_in_file=gstins_in_file,
     )
 
+    # A LEDGER node is mostly unused address / GST boilerplate; nothing reads
+    # raw_xml back, so keep only a debugging prefix rather than staging tens of
+    # MB for a full "All Masters" import. Mirrors the items importer.
+    _RAW_XML_KEEP = 2000
+
     staged = 0
     for (led, _role, _dual), mr in zip(to_stage, matches, strict=True):
         session.add(
@@ -218,7 +230,7 @@ async def upload(
                 email=led.email,
                 address_lines_json=led.address_lines or None,
                 pincode=led.pincode,
-                raw_xml=led.raw_xml,
+                raw_xml=(led.raw_xml or "")[:_RAW_XML_KEEP] or None,
                 proposed_role=mr.proposed_role,
                 match_method=mr.method,
                 match_party_id=mr.party_id,

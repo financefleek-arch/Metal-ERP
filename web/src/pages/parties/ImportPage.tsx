@@ -121,7 +121,7 @@ export function ImportPage() {
           disabled={upload.isPending}
         >
           {upload.isPending ? "Parsing…" : "Click to choose the Tally masters XML"}
-          <span className="mt-1 block text-[11px] text-muted">.xml · UTF-16 or UTF-8 · up to 10 MB</span>
+          <span className="mt-1 block text-[11px] text-muted">.xml · UTF-16 or UTF-8</span>
         </button>
         <input
           ref={fileRef}
