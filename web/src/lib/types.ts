@@ -184,6 +184,21 @@ export interface HsnOption {
   gst_rate: number | null;
 }
 
+// --- invoice line type-ahead: POST /api/items/resolve ---
+
+export type ResolveMethod = "exact" | "alias" | "fuzzy" | null;
+
+export interface ResolveCandidate extends ItemListItem {
+  score: number;
+}
+
+export interface ResolveResult {
+  method: ResolveMethod;
+  confidence: number | null;
+  weak: boolean;
+  candidates: ResolveCandidate[];
+}
+
 // --- catalogue hierarchy ---
 
 export type RateMode = "piece" | "kg";

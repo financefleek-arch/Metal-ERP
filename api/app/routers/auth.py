@@ -15,6 +15,7 @@ from app.schemas import (
     UserOut,
 )
 from app.security import create_access_token, hash_password, verify_password
+from app.seed import seed_synonyms
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -63,6 +64,11 @@ def register(body: RegisterRequest, session: SessionDep) -> TokenResponse:
     for i, name in enumerate(_SEED_CATEGORIES):
         session.add(ItemCategory(tenant_id=tenant.id, name=name, sort=i))
     session.flush()
+
+    # Seed the name-normalization dictionary so the very first item created
+    # for this firm gets a consistent `name_normalized` (bartan/Hindi words
+    # collapse to their English trade term).
+    seed_synonyms(session, tenant.id)
 
     token = create_access_token(user_id=user.id, tenant_id=tenant.id, role=str(user.role))
     return TokenResponse(access_token=token)

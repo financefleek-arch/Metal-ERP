@@ -75,6 +75,16 @@ class TestNormalize:
     def test_token_order_preserved(self) -> None:
         assert normalize_name("angle ss") != normalize_name("ss angle")
 
+    def test_bartan_synonyms_english_canonical(self) -> None:
+        from app.seed import SYNONYMS
+
+        syn = dict(SYNONYMS)
+        # Hindi and English spellings collapse to the same key
+        assert normalize_name("Pital Balti No 3", syn) == "brass bucket no 3"
+        assert normalize_name("Brass Bucket No 3", syn) == "brass bucket no 3"
+        # spelling variants of the same object also converge
+        assert normalize_name("SS Kadhai 10", syn) == normalize_name("SS Karahi 10", syn)
+
     def test_empty(self) -> None:
         assert normalize_name("") == ""
         assert normalize_name("!!!") == ""

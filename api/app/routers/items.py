@@ -393,26 +393,60 @@ def merge_item(
     return _out(session, winner)
 
 
-@router.post("/resolve", response_model=dict)
+class ResolveCandidate(ItemListItem):
+    score: float
+
+
+class ResolveResult(BaseModel):
+    method: str | None
+    confidence: float | None
+    weak: bool
+    candidates: list[ResolveCandidate]
+
+
+@router.post("/resolve", response_model=ResolveResult)
 def resolve(
     user: CurrentUser,
     session: SessionDep,
     description: str = Query(..., min_length=1),
     hsn: str | None = Query(default=None),
-) -> dict:
+) -> ResolveResult:
     """Type-ahead helper for the invoice editor: what would this free text
-    match? Returns the shared ladder's result (no LLM).
+    match? Returns the shared ladder's result (no LLM), with each candidate
+    hydrated to full item fields so the editor can fill the line on pick.
+
+    On an exact / alias hit the single matched item is returned as the only
+    candidate (score 1.0 / 0.98). On a fuzzy pass the ranked candidates come
+    back with their adjusted trigram score. SQLite (no pg_trgm): a non-exact,
+    non-alias query returns `method=None, candidates=[]`.
     """
     from app.services.item_resolution import resolve_item
 
     m = resolve_item(session, user.tenant_id, description, hsn)
-    return {
-        "item_id": m.item_id,
-        "method": m.method.value if m.method else None,
-        "confidence": m.confidence,
-        "weak": m.weak,
-        "candidates": [
-            {"item_id": c.item_id, "name": c.name, "score": round(c.adjusted_score, 3)}
-            for c in m.candidates[:5]
-        ],
+
+    # (item_id -> score) preserving ladder order: the resolved item first
+    # (exact/alias), else the fuzzy candidates.
+    scored: list[tuple[str, float]] = []
+    if m.item_id is not None and not m.candidates:
+        scored.append((m.item_id, m.confidence or 1.0))
+    else:
+        scored = [(c.item_id, round(c.adjusted_score, 3)) for c in m.candidates[:5]]
+
+    items_by_id = {
+        it.id: it
+        for it in session.scalars(
+            select(Item).where(Item.id.in_([sid for sid, _ in scored]))
+        ).all()
     }
+    candidates = [
+        ResolveCandidate(**ItemListItem.model_validate(items_by_id[sid]).model_dump(), score=score)
+        for sid, score in scored
+        if sid in items_by_id
+    ]
+
+    return ResolveResult(
+        method=m.method.value if m.method else None,
+        confidence=m.confidence,
+        weak=m.weak,
+        candidates=candidates,
+    )

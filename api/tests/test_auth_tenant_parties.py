@@ -7,8 +7,12 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
+from app.db import SessionLocal
 from app.main import app
+from app.models import Synonym, User
+from app.seed import SYNONYMS
 
 
 @pytest.fixture
@@ -27,6 +31,19 @@ def _register(client: TestClient, email: str = "owner@sethia.example.com") -> st
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_register_seeds_synonym_dictionary(client: TestClient) -> None:
+    _register(client, "syn@sethia.example.com")
+    with SessionLocal() as s:
+        user = s.scalar(select(User).where(User.email == "syn@sethia.example.com"))
+        assert user is not None
+        rows = s.scalars(
+            select(Synonym).where(Synonym.tenant_id == user.tenant_id)
+        ).all()
+        assert len(rows) == len(SYNONYMS)
+        m = {r.from_token: r.to_token for r in rows}
+        assert m["balti"] == "bucket"
 
 
 def test_register_login_me_flow(client: TestClient) -> None:

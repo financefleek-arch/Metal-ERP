@@ -1,10 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
 import { computePreview, inr } from "../../lib/previewTotal";
 import { useVocab } from "../../lib/reference";
-import type { Invoice, InvoiceLineIn, ItemListItem, PartyListItem } from "../../lib/types";
+import type {
+  Invoice,
+  InvoiceLineIn,
+  ItemListItem,
+  PartyListItem,
+  ResolveCandidate,
+  ResolveResult,
+} from "../../lib/types";
 
 /** an editor row — string-typed so partial input never NaNs the totals */
 interface Row {
@@ -496,8 +503,28 @@ function PartyPicker({
 }
 
 // --------------------------------------------------------------------------
-// line row — item type-ahead against /api/items (list) + /api/items/resolve
+// line row — item type-ahead through POST /api/items/resolve
+//   Runs the typed text through the tenant synonym map + alias table + the
+//   confidence ladder, so "balti" finds the "Bucket" item. `exact` hits
+//   auto-adopt on Enter/blur; `alias`/`fuzzy` need a click. On SQLite (no
+//   pg_trgm) a non-exact/alias query returns no candidates — the "use as
+//   new item" row still lets the line through (created at finalize).
 // --------------------------------------------------------------------------
+
+const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
+  exact: { label: "exact", cls: "bg-[#dff0e3] text-[#3f7a4f]" },
+  alias: { label: "learned", cls: "bg-[#e3eef2] text-accent" },
+  fuzzy: { label: "≈ close", cls: "bg-[#f1e7d6] text-warn" },
+};
+
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const h = window.setTimeout(() => setV(value), ms);
+    return () => window.clearTimeout(h);
+  }, [value, ms]);
+  return v;
+}
 
 function LineRow({
   n,
@@ -518,15 +545,23 @@ function LineRow({
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState(row.description);
-  const debounceRef = useRef<number>();
 
   useEffect(() => setTyped(row.description), [row.description]);
 
+  const debounced = useDebounced(typed.trim(), 200);
+
   const search = useQuery({
-    queryKey: ["item-typeahead", typed],
-    queryFn: () => api<ItemListItem[]>(`/items?q=${encodeURIComponent(typed)}`),
-    enabled: open && typed.trim().length >= 1 && !row.item_id,
+    queryKey: ["item-resolve", debounced, row.hsn_code.trim()],
+    queryFn: () => {
+      const p = new URLSearchParams({ description: debounced });
+      if (row.hsn_code.trim()) p.set("hsn", row.hsn_code.trim());
+      return api<ResolveResult>(`/items/resolve?${p.toString()}`, { method: "POST" });
+    },
+    enabled: open && debounced.length >= 1 && !row.item_id,
   });
+
+  const method = search.data?.method ?? null;
+  const candidates = search.data?.candidates ?? [];
 
   function pick(it: ItemListItem) {
     onPatch({
@@ -561,14 +596,21 @@ function LineRow({
             setTyped(e.target.value);
             onPatch({ description: e.target.value, item_id: null, group_id: null });
             setOpen(true);
-            window.clearTimeout(debounceRef.current);
           }}
           onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 160)}
+          onBlur={() => {
+            // silent auto-adopt on an unambiguous exact match; anything
+            // weaker waits for a click.
+            if (method === "exact" && candidates[0] && !row.item_id) pick(candidates[0]);
+            setTimeout(() => setOpen(false), 160);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && search.data?.[0]) {
-              e.preventDefault();
-              pick(search.data[0]);
+            if (e.key === "Enter") {
+              // Enter adopts the top candidate only when it's an exact hit.
+              if (method === "exact" && candidates[0]) {
+                e.preventDefault();
+                pick(candidates[0]);
+              }
             } else if (e.key === "Escape") {
               setOpen(false);
             }
@@ -576,29 +618,41 @@ function LineRow({
         />
         {open && !row.item_id && typed.trim() && (
           <div className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg">
-            {search.data?.map((it) => (
-              <button
-                key={it.id}
-                className="flex w-full items-center justify-between border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
-                onMouseDown={() => pick(it)}
-              >
-                <span>
-                  {it.name}{" "}
-                  <span
-                    className={`ml-1 rounded px-1 py-0.5 text-[9px] ${
-                      it.item_type === "bulk"
-                        ? "bg-[#e3eef2] text-accent"
-                        : "bg-[#f1e7d6] text-warn"
-                    }`}
-                  >
-                    {it.item_type === "bulk" ? "⚖ BULK" : "📦 MRP"}
+            {candidates.map((c: ResolveCandidate) => {
+              const badge = method ? METHOD_BADGE[method] : undefined;
+              return (
+                <button
+                  key={c.id}
+                  className="flex w-full items-center justify-between border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
+                  onMouseDown={() => pick(c)}
+                >
+                  <span>
+                    {c.name}{" "}
+                    <span
+                      className={`ml-1 rounded px-1 py-0.5 text-[9px] ${
+                        c.item_type === "bulk"
+                          ? "bg-[#e3eef2] text-accent"
+                          : "bg-[#f1e7d6] text-warn"
+                      }`}
+                    >
+                      {c.item_type === "bulk" ? "⚖ BULK" : "📦 MRP"}
+                    </span>
+                    {badge && (
+                      <span className={`ml-1 rounded px-1 py-0.5 text-[9px] ${badge.cls}`}>
+                        {badge.label}
+                        {method === "fuzzy" ? ` ${c.score.toFixed(2)}` : ""}
+                      </span>
+                    )}
                   </span>
-                </span>
-                <span className="text-[11px] text-muted">
-                  {it.last_rate ? `₹${it.last_rate}` : ""} · {it.times_billed}×
-                </span>
-              </button>
-            ))}
+                  <span className="text-[11px] text-muted">
+                    {c.last_rate ? `₹${c.last_rate}` : ""} · {c.times_billed}×
+                  </span>
+                </button>
+              );
+            })}
+            {search.data?.weak && !candidates.length && (
+              <div className="px-3 py-2 text-[11px] text-muted">No strong match.</div>
+            )}
             <button
               className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
               onMouseDown={createNew}

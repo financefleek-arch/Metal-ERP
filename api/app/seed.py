@@ -98,6 +98,84 @@ SYNONYMS: list[tuple[str, str]] = [
     ("sht", "sheet"),
 ]
 
+# --- bartan (utensil) trade vocabulary ---
+# English-canonical: every Hindi word / spelling variant collapses to the
+# English trade term, so `item.name_normalized` stays consistent with the
+# English-leaning catalogue (Tally masters, HSN descriptions) and a shop-
+# keeper can type either the Hindi or English word and land on the same item.
+# All rows are many-to-one by design (`normalize_name` supports it).
+BARTAN_SYNONYMS: list[tuple[str, str]] = [
+    # Hindi noun -> English trade term
+    ("balti", "bucket"),
+    ("dolchi", "bucket"),
+    ("thali", "plate"),
+    ("rakabi", "plate"),
+    ("chamcha", "spoon"),
+    ("chammach", "spoon"),
+    ("chimta", "tong"),
+    ("katori", "bowl"),
+    ("gilas", "glass"),
+    ("gilaas", "glass"),
+    ("lota", "tumbler"),
+    ("dabba", "container"),
+    ("dibba", "container"),
+    ("tasla", "pan"),
+    ("tasala", "pan"),
+    ("sancha", "mould"),
+    ("saancha", "mould"),
+    ("jhara", "skimmer"),
+    ("zara", "skimmer"),
+    ("pauni", "ladle"),
+    ("chalni", "strainer"),
+    ("channi", "strainer"),
+    ("chhalni", "strainer"),
+    ("dhakkan", "lid"),
+    ("dhakni", "lid"),
+    ("parat", "tray"),
+    ("paraat", "tray"),
+    ("thal", "tray"),
+    ("patila", "pot"),
+    ("pateela", "pot"),
+    ("bhagona", "pot"),
+    ("bhagauna", "pot"),
+    ("topia", "pot"),
+    ("degchi", "pot"),
+    ("degacha", "pot"),
+    ("handi", "pot"),
+    # swing / cradle
+    ("jhula", "swing"),
+    ("jhoola", "swing"),
+    ("zhula", "swing"),
+    ("zula", "swing"),
+    # wok / frying vessel
+    ("kadai", "wok"),
+    ("kadhai", "wok"),
+    ("kadahi", "wok"),
+    ("karahi", "wok"),
+    ("karai", "wok"),
+    # pressure cooker
+    ("cooker", "cooker"),
+    ("prestige", "cooker"),
+    ("hawkins", "cooker"),
+    # metal shorthand seen on utensil bills
+    ("pital", "brass"),
+    ("peetal", "brass"),
+    ("tamba", "copper"),
+    ("tanba", "copper"),
+    ("loha", "iron"),
+    ("kansa", "bronze"),
+    ("kaansa", "bronze"),
+    # unit / pack noise
+    ("nag", "nos"),
+    ("nug", "nos"),
+    ("jodi", "pair"),
+    ("darjan", "dozen"),
+    ("doz", "dozen"),
+    ("dz", "dozen"),
+]
+
+SYNONYMS = SYNONYMS + BARTAN_SYNONYMS
+
 
 def seed_hsn(session) -> int:  # type: ignore[no-untyped-def]
     existing = set(session.scalars(select(HsnCode.code)).all())

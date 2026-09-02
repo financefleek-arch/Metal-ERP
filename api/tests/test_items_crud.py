@@ -198,8 +198,8 @@ def test_merge_aliases_and_hides_loser(client: TestClient) -> None:
         headers=h,
         params={"description": "SS Patti 4\" 2mm"},
     ).json()
-    assert res["item_id"] == winner["id"]
     assert res["method"] == "alias"
+    assert res["candidates"][0]["id"] == winner["id"]
 
 
 def test_merge_into_self_422(client: TestClient) -> None:
@@ -243,9 +243,10 @@ def test_resolve_exact_and_new(client: TestClient) -> None:
     hit = client.post(
         "/api/items/resolve", headers=h, params={"description": "ss utensil"}
     ).json()
-    assert hit["item_id"] == it["id"] and hit["method"] == "exact"
+    assert hit["method"] == "exact"
+    assert hit["candidates"][0]["id"] == it["id"]
 
     miss = client.post(
         "/api/items/resolve", headers=h, params={"description": "brand new widget xyz"}
     ).json()
-    assert miss["item_id"] is None and miss["method"] is None
+    assert miss["method"] is None and miss["candidates"] == []
