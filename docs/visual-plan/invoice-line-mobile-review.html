@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoice line — mobile redesign + error guards</title>
+<style>
+  :root {
+    --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a;
+    --accent:#2f6f89; --accent-dark:#245771; --accent-soft:#eef4f7;
+    --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+    font:15px/1.5 "IBM Plex Sans", system-ui, sans-serif; }
+  h1 { font-family:"Fraunces", Georgia, serif; font-size:20px; margin:0 0 4px; }
+  h2 { font-family:"Fraunces", Georgia, serif; font-size:15px; margin:30px 0 10px; }
+  .wrap { max-width:1240px; margin:0 auto; padding:24px 20px 90px; }
+  .lede { color:var(--muted); max-width:74ch; margin:0 0 8px; }
+  .cols { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:24px; align-items:start; }
+  .phone { width:322px; margin:0 auto; border:10px solid #d9d2c6; border-radius:26px;
+    background:var(--ground); padding:14px 10px; }
+  .cap { font-size:12px; color:var(--muted); text-align:center; margin:8px 0 0; max-width:322px; margin-inline:auto; }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; }
+  .lineno { display:flex; justify-content:space-between; align-items:center;
+    font-size:12px; color:var(--muted); padding:9px 12px 0; }
+  .status { font-size:11px; font-weight:600; }
+  .status.ok { color:var(--ok); } .status.block { color:var(--danger); }
+
+  .fl { display:flex; justify-content:space-between; align-items:baseline;
+    font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--muted); margin:0 0 3px; }
+  .inp { height:42px; width:100%; border:1px solid var(--line); border-radius:8px;
+    background:var(--card); padding:0 10px; font-size:15px; color:var(--ink); }
+  .inp.r { text-align:right; font-variant-numeric:tabular-nums; }
+  .inp.focused { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,111,137,.18); }
+  .inp.err  { border-color:var(--danger); }
+  .inp.warn { border-color:var(--warn); }
+  select.inp { appearance:none; background:
+    linear-gradient(45deg,transparent 50%,var(--muted) 50%) calc(100% - 15px) 18px/5px 5px no-repeat,
+    linear-gradient(135deg,var(--muted) 50%,transparent 50%) calc(100% - 10px) 18px/5px 5px no-repeat; }
+
+  .b-item { position:relative; padding:6px 12px 0; }
+  .b-item .inp { height:46px; font-size:16px; padding-right:88px; }
+  .b-tag { position:absolute; right:20px; top:20px; font-size:11px; font-weight:600; }
+  .b-tag.ok { color:var(--ok); }
+  .b-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:12px; }
+  .b-cell.span { grid-column:1 / -1; }
+  .hint { font-size:10px; margin:3px 2px 0; line-height:1.35; }
+  .hint.muted { color:var(--muted); } .hint.warn { color:var(--warn); } .hint.err { color:var(--danger); }
+
+  /* discount ₹/% toggle living in the label row */
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:5px; overflow:hidden; }
+  .seg button { border:0; background:var(--card); color:var(--muted); font-size:10px;
+    font-weight:700; padding:1px 6px; cursor:pointer; line-height:1.5; }
+  .seg button.on { background:var(--accent); color:#fff; }
+
+  .b-foot { display:flex; align-items:center; justify-content:space-between;
+    border-top:1px solid var(--line); padding:10px 12px; gap:10px; }
+  .b-amt { font-family:"Fraunces",Georgia,serif; font-size:17px; font-weight:600; }
+  .b-amt small { font-family:"IBM Plex Sans",sans-serif; font-weight:400;
+    color:var(--muted); font-size:11px; display:block; }
+  .b-amt.bad { color:var(--danger); }
+  .b-del { border:1px solid var(--line); background:var(--card); color:var(--danger);
+    width:36px; height:36px; border-radius:8px; font-size:16px; line-height:1; flex:none; }
+
+  .dd { position:absolute; left:12px; right:12px; z-index:5; margin-top:4px;
+    background:var(--card); border:1px solid var(--line); border-radius:8px;
+    box-shadow:0 8px 24px rgba(0,0,0,.12); overflow:hidden; }
+  .dd button { display:flex; width:100%; justify-content:space-between; gap:8px;
+    align-items:center; border:0; border-bottom:1px solid #f3eee4; background:none;
+    padding:9px 11px; text-align:left; font-size:14px; cursor:pointer; }
+  .dd button:hover { background:var(--accent-soft); }
+  .dd .size { color:var(--muted); font-size:12px; }
+  .dd .new { background:#f0f6f8; color:var(--accent); }
+  .pill { font-size:9px; border-radius:4px; padding:1px 5px; margin-left:2px; }
+  .pill.bulk { background:#e3eef2; color:var(--accent); }
+  .pill.mrp { background:#f1e7d6; color:var(--warn); }
+  .pill.exact { background:#dff0e3; color:var(--ok); }
+  .pill.fuzzy { background:#f6e2c8; color:var(--warn); }
+  .rt { font-size:11px; color:var(--muted); white-space:nowrap; }
+
+  .newstrip { margin:0 12px 12px; background:#fbf3e2; border:1px solid #ecdcb8;
+    color:var(--warn); font-size:11px; border-radius:6px; padding:6px 9px; }
+  .unitbadge { font-weight:700; font-size:10px; background:var(--accent-soft);
+    color:var(--accent); border-radius:4px; padding:1px 5px; text-transform:none;
+    letter-spacing:0; }
+  .newstrip .seg { margin-left:6px; }
+
+  table.g { border-collapse:collapse; width:100%; font-size:13px; margin-top:6px; }
+  table.g th, table.g td { border:1px solid var(--line); padding:7px 9px; text-align:left; vertical-align:top; }
+  table.g th { background:#faf7f2; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); }
+  .tag { font-size:10px; font-weight:700; padding:1px 6px; border-radius:4px; }
+  .tag.now { background:#dff0e3; color:var(--ok); }
+  .tag.later { background:#eee; color:var(--muted); }
+  .note { background:#fff; border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:6px; padding:10px 12px; font-size:13px; color:#4a4740; margin:12px 0 0; }
+  .note b { color:var(--ink); }
+
+  /* ---- desktop table mock ---- */
+  .deskwrap { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:var(--card); max-width:940px; }
+  .dhead, .drow { display:grid;
+    grid-template-columns:26px 1fr 84px 60px 58px 80px 96px 96px 30px; gap:8px;
+    align-items:center; padding:7px 12px; font-size:13px; }
+  .dhead { background:#faf7f2; border-bottom:1px solid var(--line);
+    font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .drow { border-bottom:1px solid #f3eee4; }
+  .drow.warnrow { border-bottom:0; }
+  .dn { color:var(--muted); font-size:12px; }
+  .dcell { min-width:0; }
+  .rr, .dcell.rr { text-align:right; font-variant-numeric:tabular-nums; }
+  .dcell .size { color:var(--muted); font-size:12px; }
+  .xd { border:1px solid var(--line); background:var(--card); color:var(--danger);
+    width:24px; height:24px; border-radius:6px; font-size:13px; line-height:1; }
+  .segd { display:inline-flex; border:1px solid var(--line); border-radius:4px; overflow:hidden;
+    margin-right:5px; vertical-align:1px; }
+  .segd b { font-size:9px; font-weight:700; padding:0 4px; color:var(--muted); }
+  .segd b.on { background:var(--accent); color:#fff; }
+  .db-warn { color:var(--warn); }
+  .db-err { color:var(--danger); }
+  .db-err-i { color:var(--danger); font-weight:700; margin-left:3px; }
+  .drow .db-warn, .drow .db-err { box-shadow:inset 0 -2px 0 currentColor; }
+  .dsub { grid-column:1/-1; background:#fbf6ee; border-bottom:1px solid #f3eee4;
+    padding:6px 12px 8px 44px; font-size:11px; color:var(--muted); }
+  .dsub.warn-sub { background:#fbf6ee; }
+  .dsub b { color:var(--ink); margin-right:4px; }
+  .bad { color:var(--danger); }
+  .dadd { padding:8px 12px; font-size:13px; color:var(--accent); }
+  h3 { color:var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Invoice line — mobile redesign + per-field error guards</h1>
+  <p class="lede">Compact card, every field labelled, discount is one field with a
+  <b>₹ / %</b> toggle. States below at phone width; the guards each field gets are in
+  the table underneath. Review before I change <code>LineRow</code>.</p>
+
+  <div class="cols">
+
+    <!-- STATE 1: empty -->
+    <div>
+      <div class="phone"><div class="card">
+        <div class="lineno"><span>1</span><span class="status block">needs item, qty, rate</span></div>
+        <div class="b-item"><input class="inp" placeholder="type an item name…" /></div>
+        <div class="b-grid">
+          <div class="b-cell"><span class="fl">Qty</span><input class="inp r" placeholder="0" /></div>
+          <div class="b-cell"><span class="fl">Unit</span>
+            <select class="inp"><option>—</option><option>kg</option><option>nos</option></select></div>
+          <div class="b-cell"><span class="fl">Rate ₹</span><input class="inp r" placeholder="0.00" /></div>
+          <div class="b-cell"><span class="fl">Discount
+            <span class="seg"><button class="on">₹</button><button>%</button></span></span>
+            <input class="inp r" placeholder="0" /></div>
+          <div class="b-cell span"><span class="fl">HSN <span style="font-weight:400;text-transform:none">optional</span></span>
+            <input class="inp" placeholder="4 / 6 / 8 digits" /></div>
+        </div>
+        <div class="b-foot"><span class="b-amt">—<small>Amount</small></span>
+          <button class="b-del">×</button></div>
+      </div></div>
+      <p class="cap">Empty. Per-line status chip top-right instead of only the totals-rail blocker list.</p>
+    </div>
+
+    <!-- STATE 2: typing -->
+    <div>
+      <div class="phone"><div class="card">
+        <div class="lineno"><span>2</span><span class="status block">choose an item</span></div>
+        <div class="b-item">
+          <input class="inp focused" value="karahi" />
+          <div class="dd">
+            <button><span>Iron Kadai <span class="pill bulk">⚖</span><span class="pill exact">exact</span></span>
+              <span class="rt">₹455 · 12×</span></button>
+            <button><span>SS Kadai <span class="size">10"</span> <span class="pill mrp">📦</span>
+              <span class="pill fuzzy">≈ close</span></span><span class="rt">₹690 · 4×</span></button>
+            <button class="new">+ Use "karahi" as a new item</button>
+          </div>
+        </div>
+        <div class="b-grid" style="opacity:.35;pointer-events:none">
+          <div class="b-cell"><span class="fl">Qty</span><input class="inp r" placeholder="0" /></div>
+          <div class="b-cell"><span class="fl">Unit</span><select class="inp"><option>—</option></select></div>
+          <div class="b-cell"><span class="fl">Rate ₹</span><input class="inp r" placeholder="0.00" /></div>
+          <div class="b-cell"><span class="fl">Discount <span class="seg"><button class="on">₹</button><button>%</button></span></span>
+            <input class="inp r" placeholder="0" /></div>
+          <div class="b-cell span"><span class="fl">HSN</span><input class="inp" /></div>
+        </div>
+        <div class="b-foot" style="opacity:.35"><span class="b-amt">—<small>Amount</small></span><button class="b-del">×</button></div>
+      </div></div>
+      <p class="cap">Synonym-aware list; each row shows size distinctly + a match badge
+      (<span class="pill exact">exact</span> louder than <span class="pill fuzzy">≈ close</span>).</p>
+    </div>
+
+    <!-- STATE 3: filled, clean -->
+    <div>
+      <div class="phone"><div class="card">
+        <div class="lineno"><span>1</span><span class="status ok">✓ ready</span></div>
+        <div class="b-item"><input class="inp" value="Iron Kadai" /><span class="b-tag ok">✓ matched</span></div>
+        <div class="b-grid">
+          <div class="b-cell"><span class="fl">Qty <span class="unitbadge">kg</span></span>
+            <input class="inp r" value="5.2" />
+            <div class="hint muted">weight item — enter kilograms</div></div>
+          <div class="b-cell"><span class="fl">Rate ₹/kg</span><input class="inp r" value="455" />
+            <div class="hint muted">last ₹455 · 12 Aug · band ₹420–480</div></div>
+          <div class="b-cell"><span class="fl">Discount <span class="seg"><button class="on">₹</button><button>%</button></span></span>
+            <input class="inp r" value="10" /></div>
+          <div class="b-cell"><span class="fl">HSN</span><input class="inp" value="732394" /></div>
+        </div>
+        <div class="b-foot"><span class="b-amt">₹ 2,356.00<small>5.2 kg × ₹455 − ₹10</small></span>
+          <button class="b-del">×</button></div>
+      </div></div>
+      <p class="cap"><b>Single-unit item</b> (uom = kg, no secondary): unit is a label on
+      the Qty field, no dropdown. Rate label reads <code>₹/kg</code>. User types kg only.</p>
+    </div>
+
+    <!-- STATE 3b: two-unit item -->
+    <div>
+      <div class="phone"><div class="card">
+        <div class="lineno"><span>2</span><span class="status ok">✓ ready</span></div>
+        <div class="b-item"><input class="inp" value="SS Kadai 12&quot;" /><span class="b-tag ok">✓ matched</span></div>
+        <div class="b-grid">
+          <div class="b-cell"><span class="fl">Qty</span>
+            <input class="inp r" value="6" /></div>
+          <div class="b-cell"><span class="fl">Unit</span>
+            <select class="inp"><option>nos</option><option>kg</option></select>
+            <div class="hint muted">sold by piece or weight</div></div>
+          <div class="b-cell"><span class="fl">Rate ₹/nos</span><input class="inp r" value="690" /></div>
+          <div class="b-cell"><span class="fl">Discount <span class="seg"><button class="on">₹</button><button>%</button></span></span>
+            <input class="inp r" value="0" /></div>
+          <div class="b-cell span"><span class="fl">HSN</span><input class="inp" value="7323" /></div>
+        </div>
+        <div class="b-foot"><span class="b-amt">₹ 4,140.00<small>6 nos × ₹690</small></span>
+          <button class="b-del">×</button></div>
+      </div></div>
+      <p class="cap"><b>Two-unit item</b> (uom = nos, secondary_uom = kg): dropdown shows
+      <i>only those two</i>, defaulted to the primary. Rate label follows the choice.
+      No auto-conversion of the amount — user types qty + rate for whichever unit.</p>
+    </div>
+
+    <!-- STATE 4: error surfaces -->
+    <div>
+      <div class="phone"><div class="card">
+        <div class="lineno"><span>3</span><span class="status block">fix highlighted fields</span></div>
+        <div class="b-item"><input class="inp warn" value="karahi steel" />
+          <span class="b-tag" style="color:var(--warn)">new item</span></div>
+        <div class="newstrip">Not in the catalogue — finalising creates "karahi steel" as a new item.
+          Sold <span class="seg"><button class="on">per piece</button><button>per kg</button></span></div>
+        <div class="b-grid">
+          <div class="b-cell"><span class="fl">Qty <span class="unitbadge">nos</span></span>
+            <input class="inp r warn" value="520" />
+            <div class="hint warn">⚠ unusually large vs past bills</div></div>
+          <div class="b-cell"><span class="fl">Rate ₹/nos</span><input class="inp warn r" value="4550" />
+            <div class="hint warn">outside usual ₹420–480</div></div>
+          <div class="b-cell"><span class="fl">Discount <span class="seg"><button>₹</button><button class="on">%</button></span></span>
+            <input class="inp err r" value="120" />
+            <div class="hint err">% can't exceed 100</div></div>
+          <div class="b-cell span"><span class="fl">HSN</span><input class="inp err" value="7323" />
+            <div class="hint err">unknown code — not in HSN list</div></div>
+        </div>
+        <div class="b-foot"><span class="b-amt bad">₹ 0.00<small>discount exceeds line total</small></span>
+          <button class="b-del">×</button></div>
+      </div></div>
+      <p class="cap">Every guard firing at once. <b>Amber = warn, never blocks.</b>
+      <b>Red = blocks finalize</b> (bad %, discount &gt; line, unknown HSN is amber not red — your call).</p>
+    </div>
+
+  </div>
+
+  <h2>Desktop / web — same component, table layout kept</h2>
+  <p class="lede">At <code>md:</code> the card unstacks back into the dense table row you have
+  today (nothing structural changes). Field labels come from the header strip, not per-field.
+  The guards that are <b>text hints</b> have no room in a 78px cell, so on desktop:
+  a coloured input border + an <b>error sub-row</b> that appears under a line only when it has
+  a warn/block; passive ghost text (<code>last rate</code>, <code>band</code>) moves to a
+  cell tooltip.</p>
+
+  <div class="deskwrap">
+    <div class="dhead">
+      <span>#</span><span>Item</span><span>HSN</span><span class="rr">Qty</span><span>Unit</span>
+      <span class="rr">Rate</span><span class="rr">Disc.</span><span class="rr">Amount</span><span></span>
+    </div>
+
+    <!-- clean row -->
+    <div class="drow">
+      <span class="dn">1</span>
+      <span class="dcell">Iron Kadai <span class="pill exact">exact</span></span>
+      <span class="dcell" title="item's HSN">732394</span>
+      <span class="dcell rr">5.2</span>
+      <span class="dcell">kg</span>
+      <span class="dcell rr" title="last ₹455 · 12 Aug · band ₹420–480">455</span>
+      <span class="dcell rr"><span class="segd"><b class="on">₹</b><b>%</b></span>10</span>
+      <span class="dcell rr" title="5.2 kg × ₹455 − ₹10">₹2,356.00</span>
+      <span class="dcell"><button class="xd">×</button></span>
+    </div>
+
+    <!-- warn row + its sub-row -->
+    <div class="drow warnrow">
+      <span class="dn" style="color:var(--warn)">2</span>
+      <span class="dcell">SS Kadai <span class="size">10"</span> <span class="pill fuzzy">≈ close</span></span>
+      <span class="dcell db-err">73239</span>
+      <span class="dcell rr db-warn">520</span>
+      <span class="dcell db-warn">nos</span>
+      <span class="dcell rr db-warn">4550</span>
+      <span class="dcell rr"><span class="segd"><b>₹</b><b class="on">%</b></span>120<span class="db-err-i">!</span></span>
+      <span class="dcell rr bad">₹0.00</span>
+      <span class="dcell"><button class="xd">×</button></span>
+    </div>
+    <div class="dsub">
+      <b>Line 2:</b>
+      <span class="db-err">HSN 73239 — must be 4/6/8 digits</span> ·
+      <span class="db-warn">qty 520 large vs past bills</span> ·
+      <span class="db-warn">item normally per kg</span> ·
+      <span class="db-warn">rate outside ₹420–480</span> ·
+      <span class="db-err">discount % &gt; 100</span> ·
+      <span class="db-err">discount exceeds line total</span>
+    </div>
+
+    <!-- new-item row -->
+    <div class="drow">
+      <span class="dn" style="color:var(--warn)">3</span>
+      <span class="dcell">karahi steel <span class="pill" style="background:#fbf3e2;color:var(--warn)">new item</span></span>
+      <span class="dcell">—</span><span class="dcell rr">2</span><span class="dcell">nos</span>
+      <span class="dcell rr">300</span><span class="dcell rr"><span class="segd"><b class="on">₹</b><b>%</b></span>0</span>
+      <span class="dcell rr">₹600.00</span><span class="dcell"><button class="xd">×</button></span>
+    </div>
+    <div class="dsub warn-sub"><b>Line 3:</b>
+      <span class="db-warn">"karahi steel" not in catalogue — finalising creates it as a new item</span>
+    </div>
+
+    <div class="dadd">+ Add line</div>
+  </div>
+
+  <p class="cap" style="max-width:none;text-align:left">Hover a cell for the passive info
+  (<code>title=</code> shown as the browser tooltip here). The <b>sub-row only exists when
+  the line has a problem</b> — a clean bill stays a tight table. The ₹/% toggle is a 2-glyph
+  inline control in the Disc. cell.</p>
+
+  <h3 style="font-family:Fraunces,Georgia,serif;font-size:14px;margin:22px 0 8px">Desktop error-display — pick one</h3>
+  <table class="g">
+    <tr><th>Option</th><th>How it looks</th><th>Trade-off</th></tr>
+    <tr><td><b>1. Border + tooltip only</b></td>
+      <td>Amber/red border on the bad input; message on hover/focus only</td>
+      <td>Most compact. Message hidden until hover — poor on a touch-screen counter PC.</td></tr>
+    <tr><td><b>2. Error sub-row</b> <span class="tag now">recommended — shown above</span></td>
+      <td>Line grows a full-width message strip <i>only</i> when it has a warn/block</td>
+      <td>Table stays dense when all-clean; problems are always visible, no hover needed. Slightly more row height on bad lines.</td></tr>
+    <tr><td><b>3. Cards at every width</b></td>
+      <td>Drop the desktop table; the mobile card is the only layout</td>
+      <td>One layout to maintain. But a 15-line bill becomes heavy vertical scrolling where a table was fine.</td></tr>
+  </table>
+
+  <h2>Per-field guards</h2>
+  <table class="g">
+    <tr><th>Field</th><th>Error it catches</th><th>Guard</th><th>Behaviour</th><th>When</th></tr>
+
+    <tr><td rowspan="4"><b>Item</b></td>
+      <td>Picks wrong size ("Kadai 10" vs "12")</td><td>Size/grade shown as a distinct column in the dropdown row</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Types name, forgets to pick → junk item at finalize</td><td>Amber "will create a new item" strip on the line</td><td>warn</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Accepts a weak fuzzy match blindly</td><td>Badge; <code>exact</code> auto-adopts, <code>≈ close</code> needs a tap</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Same item on two lines</td><td>"already on line 3" inline note on pick</td><td>warn</td><td><span class="tag now">now</span></td></tr>
+
+    <tr><td rowspan="3"><b>Qty</b></td>
+      <td>Blank / 0 finalised</td><td>Grey amount + "needs qty" per-line; finalize gate already blocks</td><td>block</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Decimal slip (52 vs 5.2, "5,2")</td><td><code>inputMode=decimal</code>, strip commas, reject non-numeric</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Wrong magnitude (520 kg)</td><td>Soft band vs this item's typical line value</td><td>warn</td><td><span class="tag later">later — needs a per-item typical-qty signal</span></td></tr>
+
+    <tr><td rowspan="3"><b>Unit</b></td>
+      <td>Picks a nonsense unit from the full 16-entry list</td><td>List narrowed to the item's own <code>uom</code> (+ <code>secondary_uom</code>); one unit → no dropdown at all</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>kg rate on a nos item (or reverse)</td><td>Unit defaulted from the item's <code>uom</code>/<code>rate_mode</code>; Rate label shows <code>₹/&lt;unit&gt;</code> so a mismatch is visible</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Blank unit with qty &gt; 0</td><td>Always populated from the item on pick; new typed item gets piece/kg choice</td><td>block if still blank</td><td><span class="tag now">now</span></td></tr>
+
+    <tr><td rowspan="4"><b>Rate</b></td>
+      <td>Off-by-10 / transposition (455 → 4550 / 545)</td><td>Price band (<code>price_min/max</code> already on the item) → "outside usual ₹420–480"</td><td>warn</td><td><span class="tag now">now — fields exist, just render</span></td></tr>
+    <tr><td>Stale rate (metal moved since last bill)</td><td>Ghost text: <code>last ₹455 · 12 Aug</code> under the field</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Sub-paise (455.999)</td><td>Round to 2dp on blur</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>First sale, no band, no history</td><td>Pre-fill <code>default_rate</code> if set; else leave blank so amount stays "—"</td><td>—</td><td><span class="tag now">now</span></td></tr>
+
+    <tr><td rowspan="3"><b>Discount</b></td>
+      <td>₹ vs % confusion (10 meaning 10%)</td><td>One field, <b>₹ / % toggle</b> in the label. % computes the ₹ amount live; only the ₹ amount is sent/stored</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>% &gt; 100</td><td>Reject, red hint</td><td>block</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Discount ≥ line value → negative</td><td>Clamp to 0, red "discount exceeds line total", block finalize</td><td>block</td><td><span class="tag now">now</span></td></tr>
+
+    <tr><td rowspan="3"><b>HSN</b></td>
+      <td>Wrong length (732394 = 6 ok; 7323 4 ok; 73239 not)</td><td>Digits-only + length ∈ {4,6,8}</td><td>warn</td><td><span class="tag now">now</span></td></tr>
+    <tr><td>Code not in the HSN reference table</td><td>"unknown HSN" hint (reference lookup already exists)</td><td>warn</td><td><span class="tag later">later — wire the lookup to the line (small backend touch)</span></td></tr>
+    <tr><td>Mismatched with the item's own HSN</td><td>Default from item on pick; "item's HSN is 7323 — keep?" on override</td><td>warn</td><td><span class="tag now">now</span></td></tr>
+
+    <tr><td><b>Amount</b></td>
+      <td>Can't tell if the total is right</td><td>Show the working inline (<code>qty × rate − disc</code>)</td><td>—</td><td><span class="tag now">now</span></td></tr>
+
+    <tr><td><b>Whole line</b></td>
+      <td>Blank trailing line finalised</td><td>Auto-drop lines with no description on save (already)</td><td>—</td><td><span class="tag now">now</span></td></tr>
+    <tr><td><b>Whole line</b></td>
+      <td>Can't map a totals-rail blocker to a line</td><td>Per-line status chip (✓ ready / red reason)</td><td>—</td><td><span class="tag now">now</span></td></tr>
+  </table>
+
+  <div class="note">
+    <b>Unit handling.</b> Every item already carries <code>rate_mode</code> (piece | kg) and
+    <code>uom</code>; <code>secondary_uom</code> exists for items sold two ways. The line:
+    <ul class="sm">
+      <li>on pick → unit = item's <code>uom</code>, defaulted, never the full 16-entry list</li>
+      <li><b>one unit</b> → shown as a badge on the Qty label, no dropdown; Rate label reads <code>₹/&lt;unit&gt;</code></li>
+      <li><b>two units</b> (<code>uom</code> + <code>secondary_uom</code>) → dropdown of exactly those two</li>
+      <li><b>new typed item</b> → a <i>per piece / per kg</i> choice in the "new item" strip sets the created item's <code>rate_mode</code> + a default <code>uom</code> (nos / kg)</li>
+      <li>changing the unit does <b>not</b> convert qty or rate — the stored factor
+        (<code>weight_per_piece</code>/<code>conversion_factor</code>) is not wired in this pass; user types qty + rate for the chosen unit</li>
+    </ul>
+    Backend: no migration. One field (<code>secondary_uom</code>) added to the
+    <code>/items</code> + <code>/items/resolve</code> response so the editor can narrow the list.
+  </div>
+
+  <div class="note">
+    <b>Discount toggle — the one trade-off:</b> the backend line stores an absolute
+    <code>discount</code> only. A line entered as "10 %" is sent as the computed ₹ amount,
+    so after finalize + reload it shows as "₹236 (₹)". The invoice is frozen by then and
+    ₹ is the source of truth, so this is acceptable — noted here so it's a decision, not a
+    surprise. (Persisting the % would need a new <code>discount_pct</code> column — separate,
+    later, only if you want the editor to remember it.)
+  </div>
+  <div class="note">
+    <b>Not in this change:</b> desktop layout, the search wiring, the totals rail,
+    <code>tax.py</code>, the PDF. Mobile <code>LineRow</code> markup + the "now" guards above.
+    The "later" rows need a data signal or a small backend touch and are tracked separately.
+  </div>
+</div>
+</body>
+</html>

@@ -138,6 +138,7 @@ class ItemListItem(BaseModel):
     sku: str | None
     size_label: str | None
     uom: str | None
+    secondary_uom: str | None  # the alternate sell unit, when sold two ways
     hsn_code: str | None
     metal: str | None
     shape: str | None
@@ -146,6 +147,7 @@ class ItemListItem(BaseModel):
     default_rate: Money | None
     last_rate: Money | None
     last_purchase_rate: Money | None
+    last_sold_at: datetime | None
     gst_rate: Money | None
     price_min: Money | None
     price_max: Money | None

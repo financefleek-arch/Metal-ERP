@@ -3,14 +3,18 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
 import { computePreview, inr } from "../../lib/previewTotal";
-import { useVocab } from "../../lib/reference";
 import type {
   Invoice,
   InvoiceLineIn,
   ItemListItem,
   PartyListItem,
+  RateMode,
   ResolveResult,
 } from "../../lib/types";
+
+type DiscMode = "amt" | "pct";
+/** piece/kg choice for a free-typed line that will become a new item */
+type NewMode = RateMode | "";
 
 /** an editor row — string-typed so partial input never NaNs the totals */
 interface Row {
@@ -21,8 +25,20 @@ interface Row {
   hsn_code: string;
   quantity: string;
   uom: string;
+  /** the picked item's alternate sell unit, if any — narrows the unit picker */
+  secondaryUom: string;
+  /** the picked item's rate_mode, drives the ₹/<unit> label + new-item default */
+  rateMode: RateMode | null;
   unit_rate: string;
   discount: string;
+  discMode: DiscMode;
+  /** for a line with no item match yet: sold per piece or per kg */
+  newMode: NewMode;
+  /** snapshots from the picked item — for guards + ghost text, not sent */
+  _priceMin: string | null;
+  _priceMax: string | null;
+  _lastRate: string | null;
+  _lastSoldAt: string | null;
 }
 
 let _rk = 0;
@@ -35,8 +51,16 @@ function blankRow(): Row {
     hsn_code: "",
     quantity: "",
     uom: "",
+    secondaryUom: "",
+    rateMode: null,
     unit_rate: "",
     discount: "",
+    discMode: "amt",
+    newMode: "",
+    _priceMin: null,
+    _priceMax: null,
+    _lastRate: null,
+    _lastSoldAt: null,
   };
 }
 
@@ -50,9 +74,96 @@ function rowsFromInvoice(inv: Invoice): Row[] {
     hsn_code: l.hsn_code ?? "",
     quantity: String(l.quantity ?? ""),
     uom: l.uom ?? "",
+    secondaryUom: "",
+    rateMode: null,
     unit_rate: String(l.unit_rate ?? ""),
+    // stored lines always carry an absolute discount
     discount: l.discount && Number(l.discount) ? String(l.discount) : "",
+    discMode: "amt" as DiscMode,
+    newMode: "" as NewMode,
+    _priceMin: null,
+    _priceMax: null,
+    _lastRate: null,
+    _lastSoldAt: null,
   }));
+}
+
+/** round half-away-from-zero to 2dp — mirrors the paise rounding in tax.py */
+function round2(n: number): number {
+  return Math.sign(n) * Math.round(Math.abs(n) * 100) / 100;
+}
+
+/** the absolute ₹ discount for a row, resolving a % into an amount */
+function rowDiscountAmount(r: Row): number {
+  const d = parseFloat(r.discount.replace(/,/g, ""));
+  if (!isFinite(d) || d <= 0) return 0;
+  if (r.discMode === "amt") return round2(d);
+  const qty = parseFloat(r.quantity.replace(/,/g, ""));
+  const rate = parseFloat(r.unit_rate.replace(/,/g, ""));
+  if (!isFinite(qty) || !isFinite(rate)) return 0;
+  const pct = Math.min(d, 100);
+  return round2((qty * rate * pct) / 100);
+}
+
+/** a per-line warning (amber) or blocker (red) surfaced under the line */
+interface LineProblem {
+  field: "item" | "qty" | "unit" | "rate" | "disc" | "hsn";
+  msg: string;
+  block: boolean;
+}
+
+/** All the "now" guards, in one place. Pure — takes a Row, returns problems. */
+function lineProblems(r: Row): LineProblem[] {
+  const out: LineProblem[] = [];
+  const qty = parseFloat(r.quantity.replace(/,/g, ""));
+  const rate = parseFloat(r.unit_rate.replace(/,/g, ""));
+  const hasQty = isFinite(qty) && qty > 0;
+  const hasRate = isFinite(rate) && rate > 0;
+  const gross = hasQty && hasRate ? qty * rate : 0;
+
+  // item
+  if (r.description.trim() && !r.item_id) {
+    out.push({ field: "item", block: false, msg: "not in catalogue — a new item will be created" });
+    if (!r.newMode)
+      out.push({ field: "item", block: false, msg: "choose per piece / per kg for the new item" });
+  }
+
+  // qty
+  if (!hasQty) out.push({ field: "qty", block: true, msg: "needs a quantity" });
+
+  // unit
+  if (hasQty && !r.uom.trim())
+    out.push({ field: "unit", block: true, msg: "needs a unit" });
+
+  // rate
+  if (!hasRate) {
+    out.push({ field: "rate", block: true, msg: "needs a rate" });
+  } else {
+    const lo = r._priceMin != null ? Number(r._priceMin) : null;
+    const hi = r._priceMax != null ? Number(r._priceMax) : null;
+    if ((lo != null && rate < lo) || (hi != null && rate > hi)) {
+      const band =
+        lo != null && hi != null ? `₹${lo}–${hi}` : lo != null ? `≥ ₹${lo}` : `≤ ₹${hi}`;
+      out.push({ field: "rate", block: false, msg: `rate outside usual ${band}` });
+    }
+  }
+
+  // discount
+  if (r.discount.trim()) {
+    const d = parseFloat(r.discount.replace(/,/g, ""));
+    if (r.discMode === "pct" && isFinite(d) && d > 100)
+      out.push({ field: "disc", block: true, msg: "discount % can't exceed 100" });
+    const amt = rowDiscountAmount(r);
+    if (gross > 0 && amt >= gross)
+      out.push({ field: "disc", block: true, msg: "discount is not less than the line total" });
+  }
+
+  // hsn
+  const hsn = r.hsn_code.trim();
+  if (hsn && !/^\d{4}(\d{2}(\d{2})?)?$/.test(hsn))
+    out.push({ field: "hsn", block: false, msg: "HSN should be 4, 6 or 8 digits" });
+
+  return out;
 }
 
 function toLineIn(r: Row): InvoiceLineIn {
@@ -64,7 +175,8 @@ function toLineIn(r: Row): InvoiceLineIn {
     quantity: r.quantity.trim() || "0",
     uom: r.uom.trim() || null,
     unit_rate: r.unit_rate.trim() || "0",
-    discount: r.discount.trim() || "0",
+    // % is resolved to an absolute amount here — the backend line stores ₹ only
+    discount: String(rowDiscountAmount(r) || 0),
     size_pos: null,
   };
 }
@@ -107,29 +219,30 @@ export function InvoiceEditorPage() {
     setDirty(false);
   }, [inv]);
 
-  const uoms = useVocab("uoms");
 
   const preview = useMemo(
     () =>
       computePreview({
         lines: rows
           .filter((r) => r.description.trim())
-          .map((r) => ({ quantity: r.quantity, unitRate: r.unit_rate, discount: r.discount })),
+          .map((r) => ({
+            quantity: r.quantity,
+            unitRate: r.unit_rate,
+            discount: rowDiscountAmount(r),
+          })),
         invoiceDiscount,
       }),
     [rows, invoiceDiscount],
   );
 
   const filledRows = rows.filter((r) => r.description.trim());
-  const badRows = filledRows.filter(
-    (r) => !(Number(r.quantity) > 0) || !(Number(r.unit_rate) > 0),
-  );
   const localBlockers: string[] = [];
   if (!partyId) localBlockers.push("select a party");
   if (!filledRows.length) localBlockers.push("add at least one line with an item");
-  badRows.forEach((r) => {
+  filledRows.forEach((r) => {
     const n = rows.indexOf(r) + 1;
-    localBlockers.push(`line ${n}: needs quantity and rate`);
+    const problems = lineProblems(r);
+    problems.filter((p) => p.block).forEach((p) => localBlockers.push(`line ${n}: ${p.msg}`));
   });
 
   const save = useMutation({
@@ -326,7 +439,7 @@ export function InvoiceEditorPage() {
 
           {/* line table */}
           <div className="card overflow-visible">
-            <div className="hidden grid-cols-[24px_1fr_84px_70px_64px_88px_78px_88px_28px] gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase text-muted md:grid">
+            <div className="hidden grid-cols-[24px_1fr_84px_66px_54px_84px_92px_92px_28px] gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase text-muted md:grid">
               <span>#</span>
               <span>Item</span>
               <span>HSN</span>
@@ -344,8 +457,12 @@ export function InvoiceEditorPage() {
                 n={i + 1}
                 row={r}
                 readOnly={readOnly}
-                uoms={uoms.data ?? []}
                 amount={preview.lines[filledRows.indexOf(r)]?.lineTotal}
+                otherItemLine={
+                  r.item_id
+                    ? rows.findIndex((x) => x !== r && x.item_id === r.item_id)
+                    : -1
+                }
                 onPatch={(p) => patchRow(r.key, p)}
                 onRemove={() => removeRow(r.key)}
               />
@@ -530,16 +647,17 @@ function LineRow({
   n,
   row,
   readOnly,
-  uoms,
   amount,
+  otherItemLine,
   onPatch,
   onRemove,
 }: {
   n: number;
   row: Row;
   readOnly: boolean;
-  uoms: string[];
   amount: string | undefined;
+  /** 0-based index of another line already using this item, or -1 */
+  otherItemLine: number;
   onPatch: (p: Partial<Row>) => void;
   onRemove: () => void;
 }) {
@@ -551,7 +669,7 @@ function LineRow({
   const debounced = useDebounced(typed.trim(), 200);
   const active = open && debounced.length >= 1 && !row.item_id;
 
-  // the visible candidate list — substring browse search
+  // visible candidate list — substring browse search
   const search = useQuery({
     queryKey: ["item-typeahead", debounced],
     queryFn: () => api<ItemListItem[]>(`/items?q=${encodeURIComponent(debounced)}`),
@@ -559,8 +677,7 @@ function LineRow({
   });
   const results = search.data ?? [];
 
-  // parallel: what does the ladder say this text resolves to? (for auto-pick
-  // + the badge only — NOT the list)
+  // parallel resolve — drives auto-pick + the badge only, never the list
   const resolve = useQuery({
     queryKey: ["item-resolve", debounced, row.hsn_code.trim()],
     queryFn: () => {
@@ -572,7 +689,6 @@ function LineRow({
   });
   const method = resolve.data?.method ?? null;
   const resolvedId = resolve.data?.candidates?.[0]?.id ?? null;
-  // an exact hit we can silently adopt — only if it's also in the visible list
   const autoPick =
     method === "exact" && resolvedId
       ? results.find((r) => r.id === resolvedId) ?? null
@@ -583,157 +699,418 @@ function LineRow({
       item_id: it.id,
       description: it.name,
       hsn_code: it.hsn_code ?? row.hsn_code,
-      uom: it.uom ?? row.uom,
-      unit_rate:
-        it.last_rate ?? it.default_rate ?? row.unit_rate ?? "",
+      uom: it.uom ?? it.secondary_uom ?? row.uom,
+      secondaryUom: it.secondary_uom ?? "",
+      rateMode: it.rate_mode ?? null,
+      unit_rate: it.last_rate ?? it.default_rate ?? row.unit_rate ?? "",
+      newMode: "",
+      _priceMin: it.price_min,
+      _priceMax: it.price_max,
+      _lastRate: it.last_rate,
+      _lastSoldAt: it.last_sold_at ?? null,
     });
     setTyped(it.name);
     setOpen(false);
   }
 
   function createNew() {
-    // keep the typed text as a free-form line; item row is created at finalize
-    onPatch({ item_id: null, description: typed.trim() });
+    onPatch({
+      item_id: null,
+      description: typed.trim(),
+      rateMode: null,
+      secondaryUom: "",
+      _priceMin: null,
+      _priceMax: null,
+      _lastRate: null,
+      _lastSoldAt: null,
+    });
     setOpen(false);
   }
 
-  return (
-    <div className="grid grid-cols-2 gap-2 border-b border-[#f3eee4] px-3 py-3 md:grid-cols-[24px_1fr_84px_70px_64px_88px_78px_88px_28px] md:items-center md:py-2">
-      <span className="text-xs text-muted md:text-center">{n}</span>
+  const problems = lineProblems(row);
+  const byField = (f: LineProblem["field"]) => problems.filter((p) => p.field === f);
+  const fieldClass = (f: LineProblem["field"]) => {
+    const ps = byField(f);
+    if (ps.some((p) => p.block)) return "border-danger focus:border-danger";
+    if (ps.length) return "border-warn focus:border-warn";
+    return "";
+  };
+  const blocked = problems.some((p) => p.block);
+  const filled = row.description.trim().length > 0;
 
-      <div className="relative col-span-2 md:col-span-1">
-        <input
-          className="field h-9 text-sm"
-          placeholder="type an item name…"
-          value={typed}
-          disabled={readOnly}
-          onChange={(e) => {
-            setTyped(e.target.value);
-            onPatch({ description: e.target.value, item_id: null, group_id: null });
-            setOpen(true);
-          }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => {
-            // silent auto-adopt only on an unambiguous exact match; anything
-            // weaker waits for a click.
-            if (autoPick && !row.item_id) pick(autoPick);
-            setTimeout(() => setOpen(false), 160);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              if (autoPick) pick(autoPick);
-              else if (results[0]) pick(results[0]);
-            } else if (e.key === "Escape") {
-              setOpen(false);
-            }
-          }}
-        />
-        {open && !row.item_id && typed.trim() && (
-          <div className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg">
-            {results.map((it) => {
-              const badge =
-                it.id === resolvedId && method ? METHOD_BADGE[method] : undefined;
-              return (
-                <button
-                  key={it.id}
-                  className="flex w-full items-center justify-between border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
-                  onMouseDown={() => pick(it)}
-                >
-                  <span>
-                    {it.name}{" "}
-                    <span
-                      className={`ml-1 rounded px-1 py-0.5 text-[9px] ${
-                        it.item_type === "bulk"
-                          ? "bg-[#e3eef2] text-accent"
-                          : "bg-[#f1e7d6] text-warn"
-                      }`}
-                    >
-                      {it.item_type === "bulk" ? "⚖ BULK" : "📦 MRP"}
+  // the unit the line is priced in — for the "Rate ₹/<unit>" label
+  const unitLabel = row.uom.trim() || (row.rateMode === "kg" ? "kg" : "");
+  // two-unit item → a narrowed dropdown; else a plain badge
+  const unitChoices = [row.uom, row.secondaryUom].filter(Boolean) as string[];
+  const twoUnits = unitChoices.length >= 2;
+
+  const discAmt = rowDiscountAmount(row);
+  const workingBits: string[] = [];
+  if (Number(row.quantity) && Number(row.unit_rate)) {
+    workingBits.push(`${row.quantity} ${unitLabel || ""}`.trim() + ` × ₹${row.unit_rate}`);
+    if (discAmt > 0) workingBits.push(`− ₹${discAmt}`);
+  }
+  const working = workingBits.join(" ");
+
+  const lastRateGhost =
+    row._lastRate && Number(row._lastRate)
+      ? `last ₹${row._lastRate}` +
+        (row._lastSoldAt ? ` · ${new Date(row._lastSoldAt).toLocaleDateString()}` : "")
+      : "";
+  const bandGhost =
+    row._priceMin || row._priceMax
+      ? `band ${row._priceMin ? `₹${row._priceMin}` : ""}${
+          row._priceMin && row._priceMax ? "–" : ""
+        }${row._priceMax ? `₹${row._priceMax}` : ""}`
+      : "";
+  const rateGhost = [lastRateGhost, bandGhost].filter(Boolean).join(" · ");
+
+  // ---- shared sub-pieces ----
+  const itemInput = (
+    <div className="relative">
+      <input
+        className={`field h-9 text-sm ${fieldClass("item")}`}
+        placeholder="type an item name…"
+        value={typed}
+        disabled={readOnly}
+        onChange={(e) => {
+          setTyped(e.target.value);
+          onPatch({ description: e.target.value, item_id: null, group_id: null });
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => {
+          if (autoPick && !row.item_id) pick(autoPick);
+          setTimeout(() => setOpen(false), 160);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            if (autoPick) pick(autoPick);
+            else if (results[0]) pick(results[0]);
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
+      />
+      {open && !row.item_id && typed.trim() && (
+        <div className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg">
+          {results.map((it) => {
+            const badge = it.id === resolvedId && method ? METHOD_BADGE[method] : undefined;
+            const size = it.size_text || it.grade;
+            return (
+              <button
+                key={it.id}
+                className="flex w-full items-center justify-between gap-2 border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
+                onMouseDown={() => pick(it)}
+              >
+                <span className="min-w-0">
+                  {it.name}
+                  {size && <span className="ml-1 text-[11px] text-muted">{size}</span>}
+                  <span
+                    className={`ml-1 rounded px-1 py-0.5 text-[9px] ${
+                      it.item_type === "bulk"
+                        ? "bg-[#e3eef2] text-accent"
+                        : "bg-[#f1e7d6] text-warn"
+                    }`}
+                  >
+                    {it.item_type === "bulk" ? "⚖" : "📦"}
+                  </span>
+                  {badge && (
+                    <span className={`ml-1 rounded px-1 py-0.5 text-[9px] ${badge.cls}`}>
+                      {badge.label}
                     </span>
-                    {badge && (
-                      <span className={`ml-1 rounded px-1 py-0.5 text-[9px] ${badge.cls}`}>
-                        {badge.label}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-[11px] text-muted">
-                    {it.last_rate ? `₹${it.last_rate}` : ""} · {it.times_billed}×
-                  </span>
-                </button>
-              );
-            })}
-            {!results.length && !search.isFetching && (
-              <div className="px-3 py-2 text-[11px] text-muted">No matching item.</div>
-            )}
-            <button
-              className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
-              onMouseDown={createNew}
-            >
-              + Use “{typed.trim()}” as a new item
-            </button>
-          </div>
-        )}
-        {row.item_id && (
-          <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#3f7a4f]">
-            ✓ matched
-          </span>
-        )}
+                  )}
+                </span>
+                <span className="whitespace-nowrap text-[11px] text-muted">
+                  {it.last_rate ? `₹${it.last_rate}` : ""} · {it.times_billed}×
+                </span>
+              </button>
+            );
+          })}
+          {!results.length && !search.isFetching && (
+            <div className="px-3 py-2 text-[11px] text-muted">No matching item.</div>
+          )}
+          <button
+            className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
+            onMouseDown={createNew}
+          >
+            + Use “{typed.trim()}” as a new item
+          </button>
+        </div>
+      )}
+      {row.item_id && (
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#3f7a4f]">
+          ✓ matched
+        </span>
+      )}
+    </div>
+  );
+
+  const discSeg = (
+    <span className="inline-flex overflow-hidden rounded border border-line">
+      {(["amt", "pct"] as DiscMode[]).map((m) => (
+        <button
+          key={m}
+          type="button"
+          disabled={readOnly}
+          className={`px-1.5 text-[9px] font-bold ${
+            row.discMode === m ? "bg-accent text-white" : "bg-card text-muted"
+          }`}
+          onClick={() => onPatch({ discMode: m })}
+        >
+          {m === "amt" ? "₹" : "%"}
+        </button>
+      ))}
+    </span>
+  );
+
+  // ---- MOBILE card ----
+  const mobile = (
+    <div className="md:hidden">
+      <div className="flex items-center justify-between px-3 pt-2 text-xs text-muted">
+        <span>{n}</span>
+        {filled &&
+          (blocked ? (
+            <span className="font-semibold text-danger">fix highlighted fields</span>
+          ) : (
+            <span className="font-semibold text-[#3f7a4f]">✓ ready</span>
+          ))}
       </div>
 
-      <input
-        className="field h-9 text-xs"
-        placeholder="HSN"
-        value={row.hsn_code}
-        disabled={readOnly}
-        onChange={(e) => onPatch({ hsn_code: e.target.value })}
-      />
-      <input
-        className="field h-9 text-right text-sm"
-        inputMode="decimal"
-        placeholder="0"
-        value={row.quantity}
-        disabled={readOnly}
-        onChange={(e) => onPatch({ quantity: e.target.value })}
-      />
-      <select
-        className="field h-9 px-1 text-xs"
-        value={row.uom}
-        disabled={readOnly}
-        onChange={(e) => onPatch({ uom: e.target.value })}
-      >
-        <option value="">—</option>
-        {uoms.map((u) => (
-          <option key={u}>{u}</option>
-        ))}
-      </select>
-      <input
-        className="field h-9 text-right text-sm"
-        inputMode="decimal"
-        placeholder="0"
-        value={row.unit_rate}
-        disabled={readOnly}
-        onChange={(e) => onPatch({ unit_rate: e.target.value })}
-      />
-      <input
-        className="field h-9 text-right text-xs"
-        inputMode="decimal"
-        placeholder="0"
-        value={row.discount}
-        disabled={readOnly}
-        onChange={(e) => onPatch({ discount: e.target.value })}
-      />
-      <span className="text-right font-mono text-sm">{amount ? inr(amount) : "—"}</span>
-      {!readOnly ? (
-        <button
-          className="text-danger md:text-center"
-          title="Remove line"
-          onClick={onRemove}
-        >
-          ×
-        </button>
-      ) : (
-        <span />
+      <div className="px-3 pt-1">{itemInput}</div>
+
+      {row.description.trim() && !row.item_id && (
+        <div className="mx-3 mt-2 rounded-md border border-[#ecdcb8] bg-[#fbf3e2] px-2.5 py-1.5 text-[11px] text-warn">
+          Not in the catalogue — finalising creates “{row.description.trim()}” as a new item.{" "}
+          <span className="ml-1 inline-flex overflow-hidden rounded border border-[#e2cfa0] align-middle">
+            {(["piece", "kg"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`px-1.5 py-0.5 text-[10px] font-bold ${
+                  row.newMode === m ? "bg-warn text-white" : "bg-transparent"
+                }`}
+                onClick={() => onPatch({ newMode: m, uom: row.uom || (m === "kg" ? "kg" : "nos") })}
+              >
+                per {m}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 p-3">
+        <div>
+          <label className="fl-m">
+            Qty
+            {!twoUnits && unitLabel && (
+              <span className="ml-1 rounded bg-accent-soft px-1 py-0.5 text-[10px] font-bold normal-case tracking-normal text-accent">
+                {unitLabel}
+              </span>
+            )}
+          </label>
+          <input
+            className={`field h-10 text-right ${fieldClass("qty")}`}
+            inputMode="decimal"
+            placeholder="0"
+            value={row.quantity}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ quantity: e.target.value })}
+          />
+        </div>
+
+        {twoUnits ? (
+          <div>
+            <label className="fl-m">Unit</label>
+            <select
+              className={`field h-10 px-1 text-sm ${fieldClass("unit")}`}
+              value={row.uom}
+              disabled={readOnly}
+              onChange={(e) => onPatch({ uom: e.target.value })}
+            >
+              {unitChoices.map((u) => (
+                <option key={u}>{u}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="fl-m">Rate {unitLabel ? `₹/${unitLabel}` : "₹"}</label>
+            <input
+              className={`field h-10 text-right ${fieldClass("rate")}`}
+              inputMode="decimal"
+              placeholder="0.00"
+              value={row.unit_rate}
+              disabled={readOnly}
+              onChange={(e) => onPatch({ unit_rate: e.target.value })}
+            />
+            {rateGhost && <p className="mt-0.5 text-[10px] text-muted">{rateGhost}</p>}
+          </div>
+        )}
+
+        {twoUnits && (
+          <div>
+            <label className="fl-m">Rate {unitLabel ? `₹/${unitLabel}` : "₹"}</label>
+            <input
+              className={`field h-10 text-right ${fieldClass("rate")}`}
+              inputMode="decimal"
+              placeholder="0.00"
+              value={row.unit_rate}
+              disabled={readOnly}
+              onChange={(e) => onPatch({ unit_rate: e.target.value })}
+            />
+            {rateGhost && <p className="mt-0.5 text-[10px] text-muted">{rateGhost}</p>}
+          </div>
+        )}
+
+        <div>
+          <label className="fl-m">Discount {discSeg}</label>
+          <input
+            className={`field h-10 text-right ${fieldClass("disc")}`}
+            inputMode="decimal"
+            placeholder="0"
+            value={row.discount}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ discount: e.target.value })}
+          />
+        </div>
+
+        <div className="col-span-2">
+          <label className="fl-m">HSN <span className="font-normal normal-case tracking-normal">optional</span></label>
+          <input
+            className={`field h-10 ${fieldClass("hsn")}`}
+            placeholder="4 / 6 / 8 digits"
+            value={row.hsn_code}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ hsn_code: e.target.value })}
+          />
+        </div>
+      </div>
+
+      {!readOnly && problems.length > 0 && (
+        <div className="mx-3 mb-2 rounded-md bg-[#fbf6ee] px-2.5 py-1.5 text-[11px]">
+          {problems.map((p, i) => (
+            <div key={i} className={p.block ? "text-danger" : "text-warn"}>
+              {p.block ? "•" : "⚠"} {p.msg}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center justify-between border-t border-line px-3 py-2">
+        <span className="font-serif text-base font-semibold">
+          {amount ? inr(amount) : "—"}
+          {working && (
+            <span className="block font-sans text-[11px] font-normal text-muted">{working}</span>
+          )}
+        </span>
+        {!readOnly && (
+          <button
+            className="h-9 w-9 rounded-md border border-line text-danger"
+            title="Remove line"
+            onClick={onRemove}
+          >
+            ×
+          </button>
+        )}
+      </div>
+    </div>
+  );
+
+  // ---- DESKTOP row ----
+  const desktop = (
+    <div className="hidden md:block">
+      <div className="grid grid-cols-[24px_1fr_84px_66px_54px_84px_92px_92px_28px] items-center gap-2 px-3 py-2 text-sm">
+        <span className={`text-center text-xs ${blocked ? "text-danger" : "text-muted"}`}>{n}</span>
+        {itemInput}
+        <input
+          className={`field h-9 text-xs ${fieldClass("hsn")}`}
+          placeholder="HSN"
+          value={row.hsn_code}
+          disabled={readOnly}
+          onChange={(e) => onPatch({ hsn_code: e.target.value })}
+        />
+        <input
+          className={`field h-9 text-right text-sm ${fieldClass("qty")}`}
+          inputMode="decimal"
+          placeholder="0"
+          value={row.quantity}
+          disabled={readOnly}
+          onChange={(e) => onPatch({ quantity: e.target.value })}
+        />
+        {twoUnits ? (
+          <select
+            className={`field h-9 px-1 text-xs ${fieldClass("unit")}`}
+            value={row.uom}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ uom: e.target.value })}
+          >
+            {unitChoices.map((u) => (
+              <option key={u}>{u}</option>
+            ))}
+          </select>
+        ) : (
+          <span
+            className="truncate text-xs text-muted"
+            title={row.rateMode === "kg" ? "weight item" : "piece item"}
+          >
+            {unitLabel || "—"}
+          </span>
+        )}
+        <input
+          className={`field h-9 text-right text-sm ${fieldClass("rate")}`}
+          inputMode="decimal"
+          placeholder="0"
+          value={row.unit_rate}
+          disabled={readOnly}
+          title={rateGhost || undefined}
+          onChange={(e) => onPatch({ unit_rate: e.target.value })}
+        />
+        <span className="flex items-center justify-end gap-1">
+          {discSeg}
+          <input
+            className={`field h-9 w-14 text-right text-xs ${fieldClass("disc")}`}
+            inputMode="decimal"
+            placeholder="0"
+            value={row.discount}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ discount: e.target.value })}
+          />
+        </span>
+        <span className="text-right font-mono text-sm" title={working || undefined}>
+          {amount ? inr(amount) : "—"}
+        </span>
+        {!readOnly ? (
+          <button className="text-danger md:text-center" title="Remove line" onClick={onRemove}>
+            ×
+          </button>
+        ) : (
+          <span />
+        )}
+      </div>
+      {!readOnly && problems.length > 0 && (
+        <div className="border-b border-[#f3eee4] bg-[#fbf6ee] px-3 py-1.5 pl-11 text-[11px]">
+          <b className="mr-1 text-ink">Line {n}:</b>
+          {problems.map((p, i) => (
+            <span key={i} className={p.block ? "text-danger" : "text-warn"}>
+              {i > 0 && " · "}
+              {p.msg}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="border-b border-[#f3eee4]">
+      {mobile}
+      {desktop}
+      {otherItemLine >= 0 && (
+        <div className="px-3 pb-1 text-[10px] text-warn md:pl-11">
+          also on line {otherItemLine + 1}
+        </div>
       )}
     </div>
   );

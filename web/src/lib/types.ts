@@ -141,7 +141,9 @@ export interface ItemListItem {
   name: string;
   item_type: ItemType;
   category: string | null;
+  rate_mode: RateMode;
   uom: string | null;
+  secondary_uom: string | null;
   hsn_code: string | null;
   metal: string | null;
   shape: string | null;
@@ -150,6 +152,7 @@ export interface ItemListItem {
   default_rate: string | null;
   last_rate: string | null;
   last_purchase_rate: string | null;
+  last_sold_at: string | null;
   gst_rate: string | null;
   price_min: string | null;
   price_max: string | null;
@@ -164,13 +167,11 @@ export interface Item extends ItemListItem {
   width_mm: string | null;
   length_mm: string | null;
   finish: string | null;
-  secondary_uom: string | null;
   conversion_factor: string | null;
   weight_per_uom: string | null;
   purchase_uom: string | null;
   mrp: string | null;
   default_discount_pct: string | null;
-  last_sold_at: string | null;
   last_purchased_at: string | null;
   merged_into_id: string | null;
   notes: string | null;
