@@ -349,14 +349,16 @@ export interface TreeGroup {
   id: string;
   name: string;
   item_type: ItemType;
-  leaves: TreeLeaf[];
+  /** leaf count — leaves themselves come from /items/tree/leaves on expand */
+  leaf_count: number;
 }
 
 export interface TreeCategory {
   id: string | null;
   name: string;
   groups: TreeGroup[];
-  loose: TreeLeaf[];
+  /** count of leaves in this category with no group */
+  loose_count: number;
 }
 
 // --- Tally item import ---

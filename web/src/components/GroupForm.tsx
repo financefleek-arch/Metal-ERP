@@ -29,6 +29,7 @@ export function GroupForm({ groupId }: { groupId: string }) {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["item-group", groupId] });
     qc.invalidateQueries({ queryKey: ["item-tree"] });
+    qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
   };
 
   const save = useMutation({

@@ -29,6 +29,10 @@ class Party(PkUuidMixin, TimestampMixin, Base):
     role: Mapped[PartyRole] = mapped_column(String(10), default=PartyRole.customer, nullable=False)
     default_state_code: Mapped[str | None] = mapped_column(String(2))
 
+    # Opt-in for WhatsApp messages (invoice-ready, payment reminders). Off by
+    # default; a send is refused unless this is true AND `phone` is set.
+    whatsapp_optin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
     # Lifecycle: archived parties drop out of the default list and every picker,
     # but stay linked to the documents that already reference them.
     status: Mapped[PartyStatus] = mapped_column(

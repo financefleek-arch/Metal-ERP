@@ -7,9 +7,9 @@ hand-made item still passes through the review queue once.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import Integer, case, func, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
@@ -29,11 +29,13 @@ from app.schemas_item import (
 )
 from app.services.catalogue.learn_from_recategorize import learn_from_recategorize
 from app.services.items import (
+    SEARCH_RESULT_CAP,
     apply_search,
     document_count,
     hsn_gst_rate,
     rate_in_band,
 )
+from app.services.pagination import finish_page, paginate
 
 router = APIRouter(prefix="/api/items", tags=["items"])
 
@@ -83,11 +85,16 @@ def _same(current: object, incoming: object) -> bool:
 def list_items(
     user: CurrentUser,
     session: SessionDep,
+    response: Response,
     q: str | None = Query(default=None, description="fuzzy name / grade / size / HSN"),
     type_: ItemType | None = Query(default=None, alias="type"),
     status_: ItemStatus | None = Query(default=None, alias="status"),
     no_hsn: bool = Query(default=False),
     price_review: bool = Query(default=False),
+    limit: int | None = Query(
+        default=None, ge=1, description="page size; omit for the whole list"
+    ),
+    cursor: str | None = Query(default=None, description="opaque next-page token"),
 ) -> list[ItemListItem]:
     stmt = select(Item).where(
         Item.tenant_id == user.tenant_id, Item.merged_into_id.is_(None)
@@ -104,13 +111,38 @@ def list_items(
         stmt = stmt.where(Item.price_review_pending.is_(True))
 
     if q:
-        stmt = apply_search(stmt, session, q, tenant_id=user.tenant_id)
-    else:
-        stmt = stmt.order_by(
-            (Item.status == ItemStatus.confirmed).desc(), func.lower(Item.name)
+        # Search is ranked by a non-deterministic fuzzy score, so keyset
+        # paging doesn't apply — hard-cap the result instead. Narrow with a
+        # second word, not another page.
+        stmt = apply_search(stmt, session, q, tenant_id=user.tenant_id).limit(
+            SEARCH_RESULT_CAP
         )
+        return [_list_item(i) for i in session.scalars(stmt).unique().all()]
 
-    return [_list_item(i) for i in session.scalars(stmt).unique().all()]
+    # Default browse order: confirmed rows first, then name, then id (the
+    # id is the stable tiebreak keyset paging needs). The "confirmed first"
+    # key is an int (1/0), not a bool — keyset comparison needs `<`/`>`.
+    confirmed_rank = case((Item.status == ItemStatus.confirmed, 1), else_=0).cast(Integer)
+    stmt, paginated = paginate(
+        stmt,
+        order_cols=[confirmed_rank, func.lower(Item.name), Item.id],
+        directions=["desc", "asc", "asc"],
+        limit=limit,
+        cursor=cursor,
+    )
+    rows = list(session.scalars(stmt).unique().all())
+    if paginated:
+        rows = finish_page(
+            rows,
+            limit=limit,
+            key_of=lambda it: [
+                1 if it.status == ItemStatus.confirmed else 0,
+                it.name.lower(),
+                it.id,
+            ],
+            response=response,
+        )
+    return [_list_item(i) for i in rows]
 
 
 # --------------------------------------------------------------------------
@@ -130,18 +162,31 @@ class TreeGroup(BaseModel):
     id: str
     name: str
     item_type: ItemType
-    leaves: list[TreeLeaf]
+    leaf_count: int
 
 
 class TreeCategory(BaseModel):
     id: str | None
     name: str
     groups: list[TreeGroup]
-    loose: list[TreeLeaf]  # leaves in this category with no group
+    loose_count: int  # leaves in this category with no group
+
+
+def _active_item(tenant_id: str):  # type: ignore[no-untyped-def]
+    return (
+        Item.tenant_id == tenant_id,
+        Item.merged_into_id.is_(None),
+        Item.status != ItemStatus.archived,
+    )
 
 
 @router.get("/tree", response_model=list[TreeCategory])
 def item_tree(user: CurrentUser, session: SessionDep) -> list[TreeCategory]:
+    """The catalogue skeleton — categories → groups with leaf COUNTS only.
+
+    Leaves are fetched per-node on expand via `/items/tree/leaves`, so this
+    stays cheap (three aggregate queries) even at 10k items.
+    """
     cats = list(
         session.scalars(
             select(ItemCategory)
@@ -156,82 +201,106 @@ def item_tree(user: CurrentUser, session: SessionDep) -> list[TreeCategory]:
             .order_by(func.lower(ProductGroup.name))
         ).all()
     )
-    items = list(
-        session.scalars(
-            select(Item).where(
-                Item.tenant_id == user.tenant_id,
-                Item.merged_into_id.is_(None),
-                Item.status != ItemStatus.archived,
-            )
-        ).all()
-    )
 
-    def leaf(it: Item) -> TreeLeaf:
-        return TreeLeaf(
+    # count(active leaves) grouped by group_id
+    leaf_counts: dict[str, int] = {
+        gid: n
+        for gid, n in session.execute(
+            select(Item.group_id, func.count())
+            .where(*_active_item(user.tenant_id), Item.group_id.is_not(None))
+            .group_by(Item.group_id)
+        ).all()
+        if gid is not None
+    }
+    # count(active loose leaves) grouped by category_id (None = uncategorised)
+    loose_counts: dict[str | None, int] = {
+        cid: n
+        for cid, n in session.execute(
+            select(Item.category_id, func.count())
+            .where(*_active_item(user.tenant_id), Item.group_id.is_(None))
+            .group_by(Item.category_id)
+        ).all()
+    }
+
+    groups_by_cat: dict[str | None, list[ProductGroup]] = {}
+    for g in groups:
+        groups_by_cat.setdefault(g.category_id, []).append(g)
+
+    def tree_groups(cat_id: str | None) -> list[TreeGroup]:
+        return [
+            TreeGroup(
+                id=g.id,
+                name=g.name,
+                item_type=g.item_type,
+                leaf_count=leaf_counts.get(g.id, 0),
+            )
+            for g in groups_by_cat.get(cat_id, [])
+        ]
+
+    out: list[TreeCategory] = [
+        TreeCategory(
+            id=c.id,
+            name=c.name,
+            groups=tree_groups(c.id),
+            loose_count=loose_counts.get(c.id, 0),
+        )
+        for c in cats
+    ]
+    unc_groups = groups_by_cat.get(None, [])
+    unc_loose = loose_counts.get(None, 0)
+    if unc_groups or unc_loose:
+        out.append(
+            TreeCategory(
+                id=None, name="Uncategorised", groups=tree_groups(None), loose_count=unc_loose
+            )
+        )
+    return out
+
+
+@router.get("/tree/leaves", response_model=list[TreeLeaf])
+def item_tree_leaves(
+    user: CurrentUser,
+    session: SessionDep,
+    group_id: str | None = Query(default=None),
+    category_id: str | None = Query(default=None, description="loose leaves in this category"),
+    uncategorised: bool = Query(default=False, description="loose leaves with no category"),
+) -> list[TreeLeaf]:
+    """Leaves for one tree node — a group, or the loose bucket of a category.
+
+    Exactly one selector: `group_id`, `category_id` (loose), or
+    `uncategorised=true` (loose + no category).
+    """
+    selectors = [group_id is not None, category_id is not None, uncategorised]
+    if sum(selectors) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="pass exactly one of group_id / category_id / uncategorised",
+        )
+
+    stmt = select(Item).where(*_active_item(user.tenant_id))
+    if group_id is not None:
+        stmt = stmt.where(Item.group_id == group_id)
+    elif category_id is not None:
+        stmt = stmt.where(Item.group_id.is_(None), Item.category_id == category_id)
+    else:
+        stmt = stmt.where(Item.group_id.is_(None), Item.category_id.is_(None))
+
+    # group leaves sort by size position; loose buckets by name
+    stmt = stmt.order_by(
+        func.coalesce(Item.size_pos, 9999) if group_id is not None else func.lower(Item.name),
+        func.lower(Item.name),
+    )
+    rows = session.scalars(stmt).unique().all()
+    return [
+        TreeLeaf(
             id=it.id,
             name=it.name,
             size_label=it.size_label or it.size_text,
             default_rate=str(it.default_rate) if it.default_rate is not None else None,
             status=it.status,
         )
-
-    leaves_by_group: dict[str, list[Item]] = {}
-    loose_by_cat: dict[str | None, list[Item]] = {}
-    for it in items:
-        if it.group_id:
-            leaves_by_group.setdefault(it.group_id, []).append(it)
-        else:
-            loose_by_cat.setdefault(it.category_id, []).append(it)
-
-    groups_by_cat: dict[str | None, list[ProductGroup]] = {}
-    for g in groups:
-        groups_by_cat.setdefault(g.category_id, []).append(g)
-
-    def sort_leaves(lst: list[Item]) -> list[Item]:
-        return sorted(
-            lst,
-            key=lambda x: (x.size_pos if x.size_pos is not None else 9999, x.name.lower()),
-        )
-
-    out: list[TreeCategory] = []
-    for c in cats:
-        out.append(
-            TreeCategory(
-                id=c.id,
-                name=c.name,
-                groups=[
-                    TreeGroup(
-                        id=g.id,
-                        name=g.name,
-                        item_type=g.item_type,
-                        leaves=[leaf(x) for x in sort_leaves(leaves_by_group.get(g.id, []))],
-                    )
-                    for g in groups_by_cat.get(c.id, [])
-                ],
-                loose=[leaf(x) for x in sort_leaves(loose_by_cat.get(c.id, []))],
-            )
-        )
-    # uncategorised groups + loose items
-    unc_groups = groups_by_cat.get(None, [])
-    unc_loose = loose_by_cat.get(None, [])
-    if unc_groups or unc_loose:
-        out.append(
-            TreeCategory(
-                id=None,
-                name="Uncategorised",
-                groups=[
-                    TreeGroup(
-                        id=g.id,
-                        name=g.name,
-                        item_type=g.item_type,
-                        leaves=[leaf(x) for x in sort_leaves(leaves_by_group.get(g.id, []))],
-                    )
-                    for g in unc_groups
-                ],
-                loose=[leaf(x) for x in sort_leaves(unc_loose)],
-            )
-        )
-    return out
+        for it in rows
+    ]
 
 
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
@@ -311,7 +380,9 @@ def _apply_group_inheritance(
 # --------------------------------------------------------------------------
 
 
-def _bulk_items(session: SessionDep, tenant_id: str, ids: list[str]) -> tuple[list[Item], list[str]]:
+def _bulk_items(
+    session: SessionDep, tenant_id: str, ids: list[str]
+) -> tuple[list[Item], list[str]]:
     """Load the given ids for this tenant, preserving request order. Returns
     (found_items, missing_ids). Merged / archived rows still load — the caller
     decides what to do with them.
@@ -468,7 +539,9 @@ def bulk_delete(
 
     for it in found:
         if it.merged_into_id is not None:
-            rows.append(BulkOutcome(id=it.id, name=it.name, result="error", detail="already merged"))
+            rows.append(
+                BulkOutcome(id=it.id, name=it.name, result="error", detail="already merged")
+            )
             continue
         refs = document_count(session, it.id)
         n = max(refs, it.times_billed)

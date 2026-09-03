@@ -117,6 +117,8 @@ export function ItemForm({
       setSaveState("saved");
       onChanged();
       qc.invalidateQueries({ queryKey: ["items"] });
+      qc.invalidateQueries({ queryKey: ["item-tree"] });
+      qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
     },
     onError: (e) => {
       setSaveState("error");
@@ -131,6 +133,8 @@ export function ItemForm({
     },
     onSuccess: (_d, kind) => {
       qc.invalidateQueries({ queryKey: ["items"] });
+      qc.invalidateQueries({ queryKey: ["item-tree"] });
+      qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
       if (kind === "delete") onDeleted();
       else onChanged();
     },

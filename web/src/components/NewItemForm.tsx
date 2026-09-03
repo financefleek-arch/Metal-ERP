@@ -60,6 +60,7 @@ export function NewItemForm({
     onSuccess: (it) => {
       qc.invalidateQueries({ queryKey: ["items"] });
       qc.invalidateQueries({ queryKey: ["item-tree"] });
+      qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
       onCreated(it);
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Create failed"),

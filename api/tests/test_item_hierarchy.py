@@ -249,11 +249,32 @@ def test_tree_shape(client: TestClient) -> None:
         json={"name": "MS Scrap Mixed", "category_id": steel},
     )
 
+    # /tree is now the skeleton: groups + counts, no leaf rows
     tree = client.get("/api/items/tree", headers=h).json()
     steel_node = next(c for c in tree if c["name"] == "MS Bar Stock")
     assert [g["name"] for g in steel_node["groups"]] == ["MS Angle"]
-    assert steel_node["groups"][0]["leaves"][0]["name"] == "MS Angle 40x40x5"
-    assert [x["name"] for x in steel_node["loose"]] == ["MS Scrap Mixed"]
+    assert steel_node["groups"][0]["leaf_count"] == 1
+    assert steel_node["loose_count"] == 1
+
+    # leaves come from /tree/leaves per node
+    grp_id = steel_node["groups"][0]["id"]
+    grp_leaves = client.get(
+        f"/api/items/tree/leaves?group_id={grp_id}", headers=h
+    ).json()
+    assert [x["name"] for x in grp_leaves] == ["MS Angle 40x40x5"]
+    loose = client.get(
+        f"/api/items/tree/leaves?category_id={steel}", headers=h
+    ).json()
+    assert [x["name"] for x in loose] == ["MS Scrap Mixed"]
+
+    # bad selector combos are rejected
+    assert client.get("/api/items/tree/leaves", headers=h).status_code == 422
+    assert (
+        client.get(
+            f"/api/items/tree/leaves?group_id={grp_id}&uncategorised=true", headers=h
+        ).status_code
+        == 422
+    )
 
 
 # --------------------------------------------------------------------------

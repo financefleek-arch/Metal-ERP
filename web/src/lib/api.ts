@@ -70,6 +70,43 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   return data as T;
 }
 
+export type Page<T> = { data: T; nextCursor: string | null };
+
+/**
+ * GET that also surfaces the `X-Next-Cursor` response header the paginated
+ * list endpoints set. `nextCursor` is null on the last page (or when the
+ * endpoint isn't paginating — i.e. no `limit` was passed).
+ */
+export async function apiPage<T>(path: string, opts: Options = {}): Promise<Page<T>> {
+  const { method = "GET", body, auth = true } = opts;
+  const headers: Record<string, string> = {};
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (auth) {
+    const t = getToken();
+    if (t) headers["Authorization"] = `Bearer ${t}`;
+  }
+
+  const res = await fetch(`/api${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  const text = await res.text();
+  const data = text ? JSON.parse(text) : undefined;
+  if (!res.ok) {
+    if (res.status === 401) setToken(null);
+    const detail =
+      data?.detail && typeof data.detail === "string"
+        ? data.detail
+        : Array.isArray(data?.detail)
+          ? data.detail.map((d: { msg?: string }) => d.msg).join("; ")
+          : res.statusText;
+    throw new ApiError(res.status, detail);
+  }
+  return { data: data as T, nextCursor: res.headers.get("X-Next-Cursor") };
+}
+
 /** multipart/form-data POST (file upload). Same auth + error handling as `api`. */
 export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
   const headers: Record<string, string> = {};

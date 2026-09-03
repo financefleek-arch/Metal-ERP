@@ -25,7 +25,9 @@ from app.routers import (
     parties,
     parties_import,
     reference,
+    tally_agent,
     tenant,
+    whatsapp,
 )
 
 settings = get_settings()
@@ -59,6 +61,9 @@ app.include_router(items.router)
 app.include_router(item_categories.router)
 app.include_router(item_groups.router)
 app.include_router(invoices.router)
+app.include_router(whatsapp.router)
+app.include_router(whatsapp.invoice_router)
+app.include_router(tally_agent.router)
 app.include_router(inward.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.

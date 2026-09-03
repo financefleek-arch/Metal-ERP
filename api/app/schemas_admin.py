@@ -90,3 +90,29 @@ class AdminUserPatch(BaseModel):
     role: UserRole | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=200)
+
+
+# --------------------------------------------------------------------------
+# firm WhatsApp config
+# --------------------------------------------------------------------------
+
+
+class FirmWhatsappOut(BaseModel):
+    """Per-firm number registry. There is no token here — sends use the
+    process-wide FleekWA System User token."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    configured: bool
+    is_active: bool = False
+    phone_number_id: str | None = None
+    waba_id: str | None = None
+    display_phone_number: str | None = None
+    updated_at: datetime | None = None
+
+
+class FirmWhatsappUpsert(BaseModel):
+    phone_number_id: str = Field(min_length=1, max_length=40)
+    waba_id: str = Field(min_length=1, max_length=40)
+    display_phone_number: str | None = Field(default=None, max_length=30)
+    is_active: bool = True

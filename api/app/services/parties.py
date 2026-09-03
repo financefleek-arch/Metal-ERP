@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, and_, func, literal, or_, select, text
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -67,6 +67,10 @@ def document_count(session: Session, party_id: str) -> int:
 
 _NAME_SIMILARITY_FLOOR = 0.3
 
+# Fuzzy search is ranked by a non-deterministic score — no stable keyset to
+# page on. Cap the result; narrow with a second word.
+SEARCH_RESULT_CAP = 50
+
 
 def _digits(s: str) -> str:
     return re.sub(r"\D", "", s)
@@ -120,7 +124,17 @@ def apply_search(stmt: Select, session: Session, q: str) -> Select:
         conds.append(stripped.like(f"%{phone_digits}%"))
 
     if is_pg:
-        conds.append(func.similarity(Party.legal_name, q) > _NAME_SIMILARITY_FLOOR)
+        # `%` operator (not `similarity(...) > k`) so the GIN trigram index on
+        # lower(legal_name) can serve this OR branch. `%` tests against
+        # pg_trgm.similarity_threshold, so pin it for this transaction.
+        session.execute(
+            text("SET LOCAL pg_trgm.similarity_threshold = :t").bindparams(
+                t=_NAME_SIMILARITY_FLOOR
+            )
+        )
+        conds.append(
+            func.lower(Party.legal_name).op("%", is_comparison=True)(literal(q.lower()))
+        )
         stmt = stmt.where(or_(*conds)).order_by(
             func.similarity(Party.legal_name, q).desc(),
             Party.last_txn_at.desc().nullslast(),

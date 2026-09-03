@@ -46,6 +46,7 @@ export function BulkPanel({
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["items"] });
     qc.invalidateQueries({ queryKey: ["item-tree"] });
+    qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
     qc.invalidateQueries({ queryKey: ["item-categories"] });
   };
 

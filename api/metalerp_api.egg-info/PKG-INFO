@@ -10,6 +10,7 @@ Requires-Dist: alembic>=1.14
 Requires-Dist: psycopg[binary]>=3.2
 Requires-Dist: pydantic>=2.10
 Requires-Dist: pydantic-settings>=2.6
+Requires-Dist: httpx>=0.28
 Requires-Dist: passlib[argon2]>=1.7.4
 Requires-Dist: python-jose[cryptography]>=3.3
 Requires-Dist: python-multipart>=0.0.12
@@ -20,6 +21,7 @@ Requires-Dist: segno>=1.6
 Requires-Dist: lxml>=5.3
 Requires-Dist: pdfplumber>=0.11
 Requires-Dist: pymupdf>=1.24
+Requires-Dist: boto3>=1.35
 Provides-Extra: dev
 Requires-Dist: pytest>=8.3; extra == "dev"
 Requires-Dist: pytest-cov>=6.0; extra == "dev"

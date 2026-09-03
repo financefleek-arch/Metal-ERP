@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.deps import SessionDep, require_platform_admin
-from app.models import Tenant, User
+from app.models import Tenant, TenantWhatsappConfig, User
 from app.models._mixins import UserRole
 from app.schemas_admin import (
     ASSIGNABLE_ROLES,
@@ -28,6 +28,8 @@ from app.schemas_admin import (
     FirmDetail,
     FirmListItem,
     FirmPatch,
+    FirmWhatsappOut,
+    FirmWhatsappUpsert,
 )
 from app.security import hash_password
 from app.seed import seed_synonyms
@@ -148,6 +150,71 @@ def update_firm(firm_id: str, body: FirmPatch, session: SessionDep) -> FirmDetai
         firm.ext_inward_import = data["ext_inward_import"]
     session.flush()
     return _detail(firm)
+
+
+# --------------------------------------------------------------------------
+# firm WhatsApp config
+# --------------------------------------------------------------------------
+
+
+def _whatsapp_out(cfg: TenantWhatsappConfig | None) -> FirmWhatsappOut:
+    if cfg is None:
+        return FirmWhatsappOut(configured=False)
+    return FirmWhatsappOut(
+        configured=True,
+        is_active=cfg.is_active,
+        phone_number_id=cfg.phone_number_id,
+        waba_id=cfg.waba_id,
+        display_phone_number=cfg.display_phone_number,
+        updated_at=cfg.updated_at,
+    )
+
+
+@router.get("/firms/{firm_id}/whatsapp", response_model=FirmWhatsappOut)
+def get_firm_whatsapp(firm_id: str, session: SessionDep) -> FirmWhatsappOut:
+    _load_firm(session, firm_id)
+    cfg = session.scalar(
+        select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == firm_id)
+    )
+    return _whatsapp_out(cfg)
+
+
+@router.put("/firms/{firm_id}/whatsapp", response_model=FirmWhatsappOut)
+def upsert_firm_whatsapp(
+    firm_id: str, body: FirmWhatsappUpsert, session: SessionDep
+) -> FirmWhatsappOut:
+    _load_firm(session, firm_id)
+    cfg = session.scalar(
+        select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == firm_id)
+    )
+
+    if cfg is None:
+        cfg = TenantWhatsappConfig(
+            tenant_id=firm_id,
+            phone_number_id=body.phone_number_id.strip(),
+            waba_id=body.waba_id.strip(),
+            display_phone_number=(body.display_phone_number or None),
+            is_active=body.is_active,
+        )
+        session.add(cfg)
+    else:
+        cfg.phone_number_id = body.phone_number_id.strip()
+        cfg.waba_id = body.waba_id.strip()
+        cfg.display_phone_number = body.display_phone_number or None
+        cfg.is_active = body.is_active
+
+    session.flush()
+    return _whatsapp_out(cfg)
+
+
+@router.delete("/firms/{firm_id}/whatsapp", status_code=status.HTTP_204_NO_CONTENT)
+def delete_firm_whatsapp(firm_id: str, session: SessionDep) -> None:
+    _load_firm(session, firm_id)
+    cfg = session.scalar(
+        select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == firm_id)
+    )
+    if cfg is not None:
+        session.delete(cfg)
 
 
 # --------------------------------------------------------------------------

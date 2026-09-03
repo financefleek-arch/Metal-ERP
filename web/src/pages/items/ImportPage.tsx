@@ -74,6 +74,7 @@ export function ItemsImportPage() {
       setDone(r);
       qc.invalidateQueries({ queryKey: ["items"] });
       qc.invalidateQueries({ queryKey: ["item-tree"] });
+      qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
     },
   });
 

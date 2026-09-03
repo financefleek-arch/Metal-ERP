@@ -2,12 +2,14 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
-import type { TreeCategory } from "../lib/types";
+import type { TreeCategory, TreeLeaf } from "../lib/types";
 
 /**
- * The catalogue tree: category → product group → leaf. Categories and
- * groups collapse. A permanent "Ungrouped" list per category holds loose
- * leaves. Selecting a group navigates to /items/g/:id; a leaf to /items/:id.
+ * The catalogue tree: category → product group → leaf. `/items/tree` returns
+ * only the skeleton (groups + counts); the leaves for a node are fetched
+ * from `/items/tree/leaves` the first time it's expanded, so this stays
+ * cheap at 10k items. Selecting a group navigates to /items/g/:id; a leaf to
+ * /items/:id.
  */
 export function ItemTree({
   selectedItemId,
@@ -23,6 +25,7 @@ export function ItemTree({
   });
   const [openCats, setOpenCats] = useState<Set<string>>(new Set());
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [openLoose, setOpenLoose] = useState<Set<string>>(new Set());
 
   if (tree.isLoading) return <div className="px-3 py-6 text-xs text-muted">Loading…</div>;
   const cats = tree.data ?? [];
@@ -46,8 +49,8 @@ export function ItemTree({
         const catKey = c.id ?? "__none__";
         const open = openCats.has(catKey);
         const nGroups = c.groups.length;
-        const nItems =
-          c.groups.reduce((a, g) => a + g.leaves.length, 0) + c.loose.length;
+        const nItems = c.groups.reduce((a, g) => a + g.leaf_count, 0) + c.loose_count;
+        const looseKey = c.id ?? "__uncat__";
         return (
           <div key={catKey}>
             <button
@@ -82,10 +85,7 @@ export function ItemTree({
                         >
                           {gOpen ? "▾" : "▸"}
                         </span>
-                        <span
-                          className="flex-1"
-                          onClick={() => nav(`/items/g/${g.id}`)}
-                        >
+                        <span className="flex-1" onClick={() => nav(`/items/g/${g.id}`)}>
                           <span
                             className={`mr-1 rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase ${
                               g.item_type === "bulk"
@@ -97,65 +97,40 @@ export function ItemTree({
                           </span>
                           {g.name}
                         </span>
-                        <span className="font-mono text-[9px] text-muted">
-                          {g.leaves.length}
-                        </span>
+                        <span className="font-mono text-[9px] text-muted">{g.leaf_count}</span>
                       </button>
-                      {gOpen &&
-                        g.leaves.map((l) => (
-                          <button
-                            key={l.id}
-                            onClick={() => nav(`/items/${l.id}`)}
-                            className={`flex w-full items-center gap-2 border-b border-[#f3eee4] py-2.5 pl-10 pr-3 text-left md:py-1.5 ${
-                              l.id === selectedItemId
-                                ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
-                                : "hover:bg-accent-soft"
-                            }`}
-                          >
-                            <span>{l.size_label ?? l.name}</span>
-                            {l.status === "unconfirmed" && (
-                              <span className="rounded-sm bg-[#f1e7d6] px-1 text-[8px] font-bold uppercase text-warn">
-                                unconf
-                              </span>
-                            )}
-                            {l.default_rate != null && (
-                              <span className="ml-auto font-mono text-[9px] text-muted">
-                                ₹{l.default_rate}
-                              </span>
-                            )}
-                          </button>
-                        ))}
+                      {gOpen && (
+                        <LeafList
+                          query={`group_id=${g.id}`}
+                          pad="pl-10"
+                          selectedItemId={selectedItemId}
+                          useSizeLabel
+                          onPick={(id) => nav(`/items/${id}`)}
+                        />
+                      )}
                     </div>
                   );
                 })}
-                {c.loose.length > 0 && (
+                {c.loose_count > 0 && (
                   <>
-                    <div className="border-b border-[#f3eee4] py-1 pl-6 text-[9px] uppercase tracking-wide text-muted">
+                    <button
+                      className="flex w-full items-center gap-1.5 border-b border-[#f3eee4] py-2 pl-6 pr-3 text-left text-[9px] uppercase tracking-wide text-muted"
+                      onClick={() => toggle(openLoose, setOpenLoose, looseKey)}
+                    >
+                      <span className="text-[8px] text-faint">
+                        {openLoose.has(looseKey) ? "▾" : "▸"}
+                      </span>
                       Ungrouped
-                    </div>
-                    {c.loose.map((l) => (
-                      <button
-                        key={l.id}
-                        onClick={() => nav(`/items/${l.id}`)}
-                        className={`flex w-full items-center gap-2 border-b border-[#f3eee4] py-2.5 pl-10 pr-3 text-left md:py-1.5 ${
-                          l.id === selectedItemId
-                            ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
-                            : "hover:bg-accent-soft"
-                        }`}
-                      >
-                        <span>{l.name}</span>
-                        {l.status === "unconfirmed" && (
-                          <span className="rounded-sm bg-[#f1e7d6] px-1 text-[8px] font-bold uppercase text-warn">
-                            unconf
-                          </span>
-                        )}
-                        {l.default_rate != null && (
-                          <span className="ml-auto font-mono text-[9px] text-muted">
-                            ₹{l.default_rate}
-                          </span>
-                        )}
-                      </button>
-                    ))}
+                      <span className="ml-auto font-mono text-[9px]">{c.loose_count}</span>
+                    </button>
+                    {openLoose.has(looseKey) && (
+                      <LeafList
+                        query={c.id ? `category_id=${c.id}` : "uncategorised=true"}
+                        pad="pl-10"
+                        selectedItemId={selectedItemId}
+                        onPick={(id) => nav(`/items/${id}`)}
+                      />
+                    )}
                   </>
                 )}
               </>
@@ -164,5 +139,57 @@ export function ItemTree({
         );
       })}
     </div>
+  );
+}
+
+/** Leaves for one expanded node — fetched on first open, then cached. */
+function LeafList({
+  query,
+  pad,
+  selectedItemId,
+  useSizeLabel,
+  onPick,
+}: {
+  query: string;
+  pad: string;
+  selectedItemId: string | null;
+  useSizeLabel?: boolean;
+  onPick: (id: string) => void;
+}) {
+  const leaves = useQuery({
+    queryKey: ["item-tree-leaves", query],
+    queryFn: () => api<TreeLeaf[]>(`/items/tree/leaves?${query}`),
+  });
+
+  if (leaves.isLoading)
+    return <div className={`${pad} py-2 pr-3 text-[10px] text-muted`}>Loading…</div>;
+  const rows = leaves.data ?? [];
+  if (rows.length === 0)
+    return <div className={`${pad} py-2 pr-3 text-[10px] text-faint`}>(empty)</div>;
+
+  return (
+    <>
+      {rows.map((l) => (
+        <button
+          key={l.id}
+          onClick={() => onPick(l.id)}
+          className={`flex w-full items-center gap-2 border-b border-[#f3eee4] py-2.5 ${pad} pr-3 text-left md:py-1.5 ${
+            l.id === selectedItemId
+              ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
+              : "hover:bg-accent-soft"
+          }`}
+        >
+          <span>{useSizeLabel ? (l.size_label ?? l.name) : l.name}</span>
+          {l.status === "unconfirmed" && (
+            <span className="rounded-sm bg-[#f1e7d6] px-1 text-[8px] font-bold uppercase text-warn">
+              unconf
+            </span>
+          )}
+          {l.default_rate != null && (
+            <span className="ml-auto font-mono text-[9px] text-muted">₹{l.default_rate}</span>
+          )}
+        </button>
+      ))}
+    </>
   );
 }

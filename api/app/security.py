@@ -8,6 +8,8 @@ to authorise.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -26,6 +28,16 @@ def hash_password(plain: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return _pwd.verify(plain, hashed)
+
+
+# Shop API keys (tally-agent). Unlike a password, a shop key must be looked
+# up by exact match on every checkin/upload call — Argon2's per-hash salt
+# would force a full-table scan-and-verify instead of an indexed lookup.
+# The key is generated with enough entropy (tools.make_backup_shop) that a
+# deterministic HMAC digest is safe to index directly, same tradeoff as an
+# API-key-hash column in any token-per-request system.
+def hash_shop_key(plain: str) -> str:
+    return hmac.new(_settings.jwt_secret.encode(), plain.encode(), hashlib.sha256).hexdigest()
 
 
 def create_access_token(*, user_id: str, tenant_id: str, role: str) -> str:
@@ -48,6 +60,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
 __all__ = [
     "hash_password",
     "verify_password",
+    "hash_shop_key",
     "create_access_token",
     "decode_access_token",
     "JWTError",

@@ -185,6 +185,18 @@ def compute_invoice(inp: InvoiceInput) -> ComputedInvoice:
 
 **API:** `GET /api/invoices` (filters: status, date range, party), `POST /api/invoices/{id}/duplicate`, `POST /api/invoices/{id}/cancel`, `GET /api/invoices/{id}/pdf` (streams the file), `GET /api/dashboard/summary`, `GET /api/reports/invoice-register.csv`.
 
+**PDF download name** (2026-09-03): `GET /api/invoices/{id}/pdf` streams with a
+human-readable `Content-Disposition` filename — `_download_name(inv)` in
+`app/routers/invoices.py` builds `"<Party slug> <YYYY-MM-DD> <total>.pdf"`
+(e.g. `Sri-Balaji-Metals-Co 2026-09-02 125430.50.pdf`). Party = `legal_name`
+with non-word runs → `-`, capped 60 chars, `Party` fallback; date = `invoice.date`
+ISO (`nodate` fallback); total = frozen `grand_total`, 2 dp, no separators
+(`0.00` fallback). The **on-disk** file stays `invoice-<uuid>.pdf` (stable,
+collision-free) — only the download name changed. Frontend: the two invoice
+pages must save via `downloadFile()` in `web/src/lib/download.ts` (fetch blob +
+bearer, parse the header filename, synthetic `<a download>`); the old
+`window.open(URL.createObjectURL(blob))` drops the server filename.
+
 **UI**
 - **`InvoicesPage`** — table: number, date, party, amount, status badge. Filter bar (status / date / party). Row → finalized view; DRAFT rows → back into the editor. Per-row actions: **Download PDF**, **Duplicate** (→ new draft, opens editor), **Cancel** (confirm → status CANCELLED, number *not* reused).
 - **`DashboardPage`** — tiles: sales this month, invoices raised, new/unconfirmed items; a "recent invoices" list; an "items to review" count linking to the Items page filtered to `Unconfirmed`.

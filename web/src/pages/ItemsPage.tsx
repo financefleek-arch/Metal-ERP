@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { api, apiPage } from "../lib/api";
+import { useDebounced } from "../lib/useDebounced";
 import { useIsDesktop } from "../lib/useIsDesktop";
 import type { Item, ItemListItem } from "../lib/types";
+
+const PAGE_SIZE = 50;
 import { ItemForm } from "../components/ItemForm";
 import { NewItemForm } from "../components/NewItemForm";
 import { ItemTree } from "../components/ItemTree";
@@ -25,7 +28,7 @@ const FILTERS: { key: Scope; label: string }[] = [
   { key: "archived", label: "Archived" },
 ];
 
-function buildQuery(q: string, scope: Scope) {
+function buildQuery(q: string, scope: Scope, cursor?: string | null) {
   const p = new URLSearchParams();
   if (q.trim()) p.set("q", q.trim());
   if (scope === "bulk" || scope === "mrp") p.set("type", scope);
@@ -33,7 +36,44 @@ function buildQuery(q: string, scope: Scope) {
   if (scope === "archived") p.set("status", "archived");
   if (scope === "no_hsn") p.set("no_hsn", "true");
   if (scope === "price_review") p.set("price_review", "true");
+  // Server caps a search result and doesn't page it; page only the browse list.
+  if (!q.trim()) {
+    p.set("limit", String(PAGE_SIZE));
+    if (cursor) p.set("cursor", cursor);
+  }
   return p.toString();
+}
+
+/** Bottom-of-list sentinel: auto-loads the next page when scrolled into view. */
+function LoadMore({
+  hasMore,
+  loading,
+  onLoad,
+}: {
+  hasMore: boolean;
+  loading: boolean;
+  onLoad: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !hasMore) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loading) onLoad();
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, loading, onLoad]);
+
+  if (!hasMore) return null;
+  return (
+    <div ref={ref} className="px-3 py-3 text-center text-[11px] text-muted">
+      {loading ? "Loading…" : "Scroll for more"}
+    </div>
+  );
 }
 
 export function ItemsPage() {
@@ -47,6 +87,7 @@ export function ItemsPage() {
 
   const [view, setView] = useState<View>("tree");
   const [q, setQ] = useState("");
+  const dq = useDebounced(q.trim(), 250);
   const [scope, setScope] = useState<Scope>("");
   const isDesktop = useIsDesktop();
 
@@ -59,9 +100,12 @@ export function ItemsPage() {
   const showDetailPane = isDesktop || inDetail;
   const showRailPane = isDesktop || !inDetail;
 
-  const list = useQuery({
-    queryKey: ["items", q, scope],
-    queryFn: () => api<ItemListItem[]>(`/items?${buildQuery(q, scope)}`),
+  const list = useInfiniteQuery({
+    queryKey: ["items", dq, scope],
+    queryFn: ({ pageParam }) =>
+      apiPage<ItemListItem[]>(`/items?${buildQuery(dq, scope, pageParam)}`),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
     enabled: view === "flat",
   });
 
@@ -79,9 +123,12 @@ export function ItemsPage() {
   useEffect(() => {
     setSelected(new Set());
     setBulkMode(null);
-  }, [q, scope, view]);
+  }, [dq, scope, view]);
 
-  const rows = useMemo(() => list.data ?? [], [list.data]);
+  const rows = useMemo(
+    () => list.data?.pages.flatMap((p) => p.data) ?? [],
+    [list.data],
+  );
   const selectedRows = useMemo(
     () => rows.filter((r) => selected.has(r.id)),
     [rows, selected],
@@ -247,7 +294,7 @@ export function ItemsPage() {
               )}
               {!list.isLoading && rows.length === 0 && !isNew && (
                 <div className="px-3 py-8 text-center text-xs text-muted">
-                  {q || scope ? "No matches." : "No items yet."}
+                  {dq || scope ? "No matches." : "No items yet."}
                 </div>
               )}
               {rows.map((it) => {
@@ -308,6 +355,18 @@ export function ItemsPage() {
                   </div>
                 );
               })}
+              {view === "flat" && !dq && (
+                <LoadMore
+                  hasMore={!!list.hasNextPage}
+                  loading={list.isFetchingNextPage}
+                  onLoad={() => list.fetchNextPage()}
+                />
+              )}
+              {dq && rows.length >= PAGE_SIZE && (
+                <div className="px-3 py-3 text-center text-[10px] text-muted">
+                  Showing the closest {PAGE_SIZE} — add another word to narrow.
+                </div>
+              )}
             </>
           )}
         </div>

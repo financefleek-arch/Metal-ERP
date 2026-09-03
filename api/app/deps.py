@@ -9,15 +9,15 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import User
+from app.models import BackupShop, User
 from app.models._mixins import UserRole
-from app.security import JWTError, decode_access_token
+from app.security import JWTError, decode_access_token, hash_shop_key
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -79,3 +79,28 @@ def require_write(user: CurrentUser) -> User:
 
 
 WriteUser = Annotated[User, Depends(require_write)]
+
+
+def get_shop(
+    session: SessionDep,
+    x_shop_key: Annotated[str | None, Header()] = None,
+) -> BackupShop:
+    """Auth for `/api/tally-agent/*` — machine-to-machine, not a human login.
+
+    A distinct scheme from the JWT bearer used everywhere else: the Windows
+    tally-agent tool authenticates with a per-shop API key issued once by
+    `tools.make_backup_shop`, sent as `X-Shop-Key`. No JWT/User is involved.
+    """
+    if not x_shop_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="X-Shop-Key header required"
+        )
+    shop = session.scalar(
+        select(BackupShop).where(BackupShop.api_key_hash == hash_shop_key(x_shop_key))
+    )
+    if shop is None or not shop.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid shop key")
+    return shop
+
+
+ShopAuth = Annotated[BackupShop, Depends(get_shop)]

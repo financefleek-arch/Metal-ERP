@@ -161,6 +161,7 @@ class PartyBase(BaseModel):
     role: PartyRole = PartyRole.customer
     default_state_code: StateCode = None
     gstin: Gstin = None
+    whatsapp_optin: bool = False
 
 
 class PartyCreate(PartyBase):
@@ -175,6 +176,7 @@ class PartyUpdate(BaseModel):
     role: PartyRole | None = None
     default_state_code: StateCode = None
     gstin: Gstin = None
+    whatsapp_optin: bool | None = None
     status: PartyStatus | None = None
     addresses: list[PartyAddressIn] | None = None
 

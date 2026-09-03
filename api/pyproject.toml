@@ -11,6 +11,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pydantic>=2.10",
     "pydantic-settings>=2.6",
+    "httpx>=0.28",
     "passlib[argon2]>=1.7.4",
     "python-jose[cryptography]>=3.3",
     "python-multipart>=0.0.12",
@@ -22,6 +23,8 @@ dependencies = [
     # Inward Bill Import (ext_inward_import) — supplier-PDF extraction.
     "pdfplumber>=0.11",
     "pymupdf>=1.24",
+    # Tally companion agent — pre-signed R2 (S3-compatible) upload URLs.
+    "boto3>=1.35",
 ]
 
 [project.optional-dependencies]
@@ -57,7 +60,7 @@ disallow_untyped_defs = true
 exclude = ["alembic/versions/", "tests/"]
 
 [[tool.mypy.overrides]]
-module = ["passlib.*", "weasyprint.*", "segno.*", "jose.*", "lxml.*", "pdfplumber.*", "fitz.*", "pymupdf.*", "pyzbar.*"]
+module = ["passlib.*", "weasyprint.*", "segno.*", "jose.*", "lxml.*", "pdfplumber.*", "fitz.*", "pymupdf.*", "pyzbar.*", "boto3.*", "botocore.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

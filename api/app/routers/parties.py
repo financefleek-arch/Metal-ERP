@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
@@ -22,7 +22,9 @@ from app.schemas import (
     PartyOut,
     PartyUpdate,
 )
+from app.services.pagination import finish_page, paginate
 from app.services.parties import (
+    SEARCH_RESULT_CAP,
     apply_search,
     completeness_for,
     document_count,
@@ -59,6 +61,7 @@ def _out(session: SessionDep, party: Party) -> PartyOut:
         role=party.role,
         default_state_code=party.default_state_code,
         gstin=party.gstin,
+        whatsapp_optin=party.whatsapp_optin,
         status=party.status,
         source=party.source,
         source_ref=party.source_ref,
@@ -89,6 +92,7 @@ def _list_item(party: Party) -> PartyListItem:
 def list_parties(
     user: CurrentUser,
     session: SessionDep,
+    response: Response,
     q: str | None = Query(default=None, description="fuzzy name / address / phone"),
     role: PartyRole | None = Query(default=None),
     status_: PartyStatus | None = Query(
@@ -96,6 +100,10 @@ def list_parties(
     ),
     completeness: Literal["incomplete"] | None = Query(default=None),
     dormant: bool = Query(default=False, description="no transaction in the tenant window"),
+    limit: int | None = Query(
+        default=None, ge=1, description="page size; omit for the whole list"
+    ),
+    cursor: str | None = Query(default=None, description="opaque next-page token"),
 ) -> list[PartyListItem]:
     stmt = select(Party).where(Party.tenant_id == user.tenant_id)
 
@@ -114,18 +122,38 @@ def list_parties(
         days = tenant.dormant_party_days if tenant else 180
         stmt = stmt.where(dormant_filter(dormant_cutoff(days)))
 
-    stmt = (
-        apply_search(stmt, session, q)
-        if q
-        else stmt.order_by(func.lower(Party.legal_name))
-    )
+    if q:
+        # Ranked by fuzzy score — cap, don't page (see items list_items).
+        stmt = apply_search(stmt, session, q).limit(SEARCH_RESULT_CAP)
+        parties = list(session.scalars(stmt).unique().all())
+        if completeness == "incomplete":
+            parties = [p for p in parties if is_incomplete(p)]
+        return [_list_item(p) for p in parties]
 
-    parties = list(session.scalars(stmt).unique().all())
-
+    # `completeness=incomplete` is a post-query Python filter, so keyset
+    # paging (page-then-filter) would give short/empty pages — fall back to
+    # the full list for that one filter.
     if completeness == "incomplete":
-        parties = [p for p in parties if is_incomplete(p)]
+        stmt = stmt.order_by(func.lower(Party.legal_name))
+        parties = [p for p in session.scalars(stmt).unique().all() if is_incomplete(p)]
+        return [_list_item(p) for p in parties]
 
-    return [_list_item(p) for p in parties]
+    stmt, paginated = paginate(
+        stmt,
+        order_cols=[func.lower(Party.legal_name), Party.id],
+        directions=["asc", "asc"],
+        limit=limit,
+        cursor=cursor,
+    )
+    rows = list(session.scalars(stmt).unique().all())
+    if paginated:
+        rows = finish_page(
+            rows,
+            limit=limit,
+            key_of=lambda p: [p.legal_name.lower(), p.id],
+            response=response,
+        )
+    return [_list_item(p) for p in rows]
 
 
 @router.post("", response_model=PartyOut, status_code=status.HTTP_201_CREATED)

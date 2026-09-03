@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { api, apiPage } from "../lib/api";
+import { useDebounced } from "../lib/useDebounced";
 import { lastSeenLabel, missingLabel } from "../lib/format";
 import { useIsDesktop } from "../lib/useIsDesktop";
 import type { Party, PartyListItem, PartyRole, PartyStatus } from "../lib/types";
+
+const PAGE_SIZE = 50;
 import { PartyForm } from "../components/PartyForm";
 import { NewPartyForm } from "../components/NewPartyForm";
 
@@ -23,13 +26,41 @@ function roleTag(role: PartyRole) {
   return role === "customer" ? "cust" : role === "supplier" ? "supp" : "both";
 }
 
-function buildQuery(q: string, scope: Scope) {
+function buildQuery(q: string, scope: Scope, cursor?: string | null) {
   const p = new URLSearchParams();
   if (q.trim()) p.set("q", q.trim());
   if (scope === "customer" || scope === "supplier" || scope === "both") p.set("role", scope);
   if (scope === "incomplete") p.set("completeness", "incomplete");
   if (scope === "archived") p.set("status", "archived" satisfies PartyStatus);
+  // The server pages only the plain browse list — not a search, and not the
+  // `incomplete` filter (a post-query Python filter).
+  if (!q.trim() && scope !== "incomplete") {
+    p.set("limit", String(PAGE_SIZE));
+    if (cursor) p.set("cursor", cursor);
+  }
   return p.toString();
+}
+
+/** Bottom-of-list sentinel: auto-loads the next page when scrolled into view. */
+function LoadMore({ loading, onLoad }: { loading: boolean; onLoad: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !loading) onLoad();
+      },
+      { rootMargin: "200px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [loading, onLoad]);
+  return (
+    <div ref={ref} className="px-3 py-3 text-center text-[11px] text-muted">
+      {loading ? "Loading…" : "Scroll for more"}
+    </div>
+  );
 }
 
 export function PartiesPage() {
@@ -41,16 +72,26 @@ export function PartiesPage() {
   const selectedId = isNew ? null : (id ?? null);
 
   const [q, setQ] = useState("");
+  const dq = useDebounced(q.trim(), 250);
   const [scope, setScope] = useState<Scope>("");
   const isDesktop = useIsDesktop();
   // On mobile we show one pane at a time, driven by the route.
   const showDetailPane = isDesktop || isNew || !!selectedId;
   const showRailPane = isDesktop || (!isNew && !selectedId);
 
-  const list = useQuery({
-    queryKey: ["parties", q, scope],
-    queryFn: () => api<PartyListItem[]>(`/parties?${buildQuery(q, scope)}`),
+  const paged = !dq && scope !== "incomplete";
+
+  const list = useInfiniteQuery({
+    queryKey: ["parties", dq, scope],
+    queryFn: ({ pageParam }) =>
+      apiPage<PartyListItem[]>(`/parties?${buildQuery(dq, scope, pageParam)}`),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
   });
+  const rows = useMemo(
+    () => list.data?.pages.flatMap((p) => p.data) ?? [],
+    [list.data],
+  );
 
   const detail = useQuery({
     queryKey: ["party", selectedId],
@@ -60,10 +101,10 @@ export function PartiesPage() {
 
   // If the selected id vanishes from a fresh list (deleted/archived-out), clear it.
   useEffect(() => {
-    if (selectedId && list.data && !list.data.some((p) => p.id === selectedId) && detail.isError) {
+    if (selectedId && rows.length && !rows.some((p) => p.id === selectedId) && detail.isError) {
       nav("/parties", { replace: true });
     }
-  }, [selectedId, list.data, detail.isError, nav]);
+  }, [selectedId, rows, detail.isError, nav]);
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-5xl flex-col gap-0 rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
@@ -120,12 +161,12 @@ export function PartiesPage() {
             </div>
           )}
           {list.isLoading && <div className="px-3 py-6 text-xs text-muted">Loading…</div>}
-          {!list.isLoading && list.data?.length === 0 && !isNew && (
+          {!list.isLoading && rows.length === 0 && !isNew && (
             <div className="px-3 py-8 text-center text-xs text-muted">
-              {q || scope ? "No matches." : "No parties yet."}
+              {dq || scope ? "No matches." : "No parties yet."}
             </div>
           )}
-          {list.data?.map((p) => (
+          {rows.map((p) => (
             <button
               key={p.id}
               onClick={() => nav(`/parties/${p.id}`)}
@@ -154,6 +195,17 @@ export function PartiesPage() {
               </div>
             </button>
           ))}
+          {paged && list.hasNextPage && (
+            <LoadMore
+              loading={list.isFetchingNextPage}
+              onLoad={() => list.fetchNextPage()}
+            />
+          )}
+          {dq && rows.length >= PAGE_SIZE && (
+            <div className="px-3 py-3 text-center text-[10px] text-muted">
+              Showing the closest {PAGE_SIZE} — add another word to narrow.
+            </div>
+          )}
         </div>
       </div>
 

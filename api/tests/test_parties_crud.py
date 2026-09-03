@@ -126,6 +126,33 @@ def test_archive_hides_from_default_list(client: TestClient) -> None:
     assert len(client.get("/api/parties", headers=h).json()) == 1
 
 
+def test_parties_keyset_pagination(client: TestClient) -> None:
+    h = _auth(_register(client, "page@x.example.com"))
+    made = [f"Firm {i:02d} Traders" for i in range(6)]
+    for nm in made:
+        _mk(client, h, nm)
+
+    # no limit -> whole list, no cursor header
+    r = client.get("/api/parties", headers=h)
+    assert "x-next-cursor" not in {k.lower() for k in r.headers}
+    assert len(r.json()) == 6
+
+    seen: list[str] = []
+    cursor: str | None = None
+    for _ in range(10):
+        qs = "/api/parties?limit=2" + (f"&cursor={cursor}" if cursor else "")
+        resp = client.get(qs, headers=h)
+        seen += [p["legal_name"] for p in resp.json()]
+        cursor = resp.headers.get("x-next-cursor")
+        if cursor is None:
+            break
+    assert seen == sorted(made)
+
+    assert (
+        client.get("/api/parties?limit=2&cursor=@@bad@@", headers=h).status_code == 400
+    )
+
+
 # --------------------------------------------------------------------------
 # delete guard (document_count is 0 until Sales/Inward land, so hard delete
 # always succeeds here; the 409 path is covered once those FKs exist)

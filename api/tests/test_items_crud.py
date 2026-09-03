@@ -149,6 +149,45 @@ def test_list_filters(client: TestClient) -> None:
     assert names("?no_hsn=true") == ["MS Angle 50x50"]
 
 
+def test_list_keyset_pagination(client: TestClient) -> None:
+    h = _h(_token(client, "it-page@x.example.com"))
+    made = [f"Widget {i:02d}" for i in range(7)]
+    for nm in made:
+        _mk(client, h, nm)
+
+    # no limit -> whole list, no cursor header (legacy behaviour)
+    r = client.get("/api/items", headers=h)
+    assert "x-next-cursor" not in {k.lower() for k in r.headers}
+    assert len(r.json()) == 7
+
+    # limit -> page + cursor; walk to exhaustion, no dupes, no gaps
+    seen: list[str] = []
+    cursor: str | None = None
+    for _ in range(10):
+        qs = "/api/items?limit=3" + (f"&cursor={cursor}" if cursor else "")
+        resp = client.get(qs, headers=h)
+        page = [i["name"] for i in resp.json()]
+        assert len(page) <= 3
+        seen += page
+        cursor = resp.headers.get("x-next-cursor")
+        if cursor is None:
+            break
+    assert seen == sorted(made)  # confirmed-first tie broken by lower(name)
+
+    # a mangled cursor is a clean 400, not a 500
+    assert client.get("/api/items?limit=3&cursor=not-base64!!", headers=h).status_code == 400
+
+
+def test_search_result_is_capped(client: TestClient) -> None:
+    from app.services.items import SEARCH_RESULT_CAP
+
+    h = _h(_token(client, "it-cap@x.example.com"))
+    for i in range(SEARCH_RESULT_CAP + 5):
+        _mk(client, h, f"Zeta Bracket {i:03d}")
+    rows = client.get("/api/items?q=zeta+bracket", headers=h).json()
+    assert len(rows) <= SEARCH_RESULT_CAP
+
+
 def test_search_by_name_grade_size(client: TestClient) -> None:
     h = _h(_token(client, "it-8@x.example.com"))
     _mk(client, h, "SS 304 Patta 4in 2mm", grade="304", size_text="4in")
