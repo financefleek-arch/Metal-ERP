@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.main import app
 from app.models._mixins import PartyRole
@@ -38,6 +39,22 @@ def test_parser_reads_ledgers_and_groups() -> None:
     assert bal.pincode == "734001"
     group_names = {g.name for g in m.groups}
     assert {"Sundry Debtors", "Sundry Creditors", "Local", "Steel Cos"} <= group_names
+
+
+def test_parser_reads_nested_mailing_address() -> None:
+    """TallyPrime "All Masters" nests the address as
+    LEDMAILINGDETAILS.LIST/ADDRESS.LIST/ADDRESS, not as a direct child.
+    """
+    m = parse_masters(FIXTURE.read_bytes())
+    nil = next(led for led in m.ledgers if led.name == "Nilkanth Hardware")
+    assert nil.address_lines == ["Station Feeder Road", "Jalpaiguri"]
+
+
+def test_parser_falls_back_to_old_state_name() -> None:
+    """Consumer ledgers in a real export often carry only OLDLEDSTATENAME."""
+    m = parse_masters(FIXTURE.read_bytes())
+    metro = next(led for led in m.ledgers if led.name == "Metro Steel Corp")
+    assert metro.state_name == "West Bengal"
 
 
 def test_parser_handles_utf16_and_bom() -> None:
@@ -284,6 +301,34 @@ def test_commit_survives_a_multi_number_phone_field(client: TestClient) -> None:
         if p["legal_name"] == "Balaji Traders"
     )
     assert client.get(f"/api/parties/{bal['id']}", headers=h).json()["phone"] is None
+
+
+def test_commit_survives_a_full_masters_guid(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    """A real "All Masters" GUID is 45 chars; party.source_ref is VARCHAR(36).
+    The GUID must land in tally_guid, source_ref left null, commit not crash.
+    """
+    from app.models import Party
+
+    h = _h(_token(client, "imp-guid@x.example.com"))
+    long_guid = "855c8380-be8e-4063-b8ab-c5e636fa1b9d-000026bd"  # 45 chars
+    assert len(long_guid) > 36
+    raw = FIXTURE.read_bytes().replace(b"a1b2c3d4-0001", long_guid.encode())
+    r = client.post(
+        "/api/parties/import",
+        headers=h,
+        files={"file": ("masters.xml", raw, "text/xml")},
+    )
+    assert r.status_code == 201, r.text
+    batch = r.json()["batch_id"]
+    out = client.post(f"/api/parties/import/{batch}/commit", headers=h).json()
+    assert out["created"] == 3
+
+    session.expire_all()
+    bal = session.scalar(
+        select(Party).where(Party.legal_name == "Balaji Traders")
+    )
+    assert bal.source_ref is None
+    assert bal.tally_guid == long_guid
 
 
 def test_current_batch_resume(client: TestClient) -> None:

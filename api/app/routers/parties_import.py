@@ -417,6 +417,14 @@ def _norm_name(s: str) -> str:
     return " ".join((s or "").lower().split())
 
 
+def _fit_source_ref(guid: str | None) -> str | None:
+    """Party.source_ref is VARCHAR(36); a full Tally masters GUID is 45 chars.
+    Keep it only when it fits — tally_guid holds the authoritative value.
+    """
+    g = (guid or "").strip()
+    return g if g and len(g) <= 36 else None
+
+
 def _clean_phone(raw: str | None) -> str | None:
     """Normalise a ledger phone, dropping it if it isn't a single valid number.
 
@@ -563,7 +571,10 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             default_state_code=state_code,
             status=PartyStatus.active,
             source=PartySource.tally_import,
-            source_ref=row.tally_guid,
+            # source_ref is VARCHAR(36) (sized for an internal id). A Tally
+            # "All Masters" GUID is 45 chars, so keep it only when it fits;
+            # the full value always lives in tally_guid (VARCHAR(64)).
+            source_ref=_fit_source_ref(row.tally_guid),
             tally_guid=row.tally_guid,
         )
         if row.address_lines_json:

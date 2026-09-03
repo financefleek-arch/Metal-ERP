@@ -102,17 +102,30 @@ def _first(el: etree._Element, *tags: str) -> str | None:
 
 
 def _address_lines(led: etree._Element) -> list[str]:
-    lines: list[str] = []
-    for lst_tag in ("ADDRESS.LIST", "LEDMAILINGDETAILS.LIST"):
-        lst = led.find(lst_tag)
-        if lst is None:
-            continue
-        for addr in lst.findall("ADDRESS"):
-            if addr.text and addr.text.strip():
-                lines.append(addr.text.strip())
+    """Mailing address lines. Tally nests these differently by version:
+
+    - TallyPrime "All Masters": LEDMAILINGDETAILS.LIST/ADDRESS.LIST/ADDRESS
+    - older / simpler exports:   ADDRESS.LIST/ADDRESS  (a direct child)
+    - some exports skip the inner .LIST: LEDMAILINGDETAILS.LIST/ADDRESS
+    - last resort, the archived address: OLDADDRESS.LIST/OLDADDRESS
+
+    First path that yields any non-empty line wins.
+    """
+    paths = (
+        "LEDMAILINGDETAILS.LIST/ADDRESS.LIST/ADDRESS",
+        "ADDRESS.LIST/ADDRESS",
+        "LEDMAILINGDETAILS.LIST/ADDRESS",
+        "OLDADDRESS.LIST/OLDADDRESS",
+    )
+    for path in paths:
+        lines = [
+            el.text.strip()
+            for el in led.findall(path)
+            if el.text and el.text.strip()
+        ]
         if lines:
-            break
-    return lines
+            return lines
+    return []
 
 
 def parse_masters(raw: bytes) -> TallyMasters:
@@ -139,7 +152,13 @@ def parse_masters(raw: bytes) -> TallyMasters:
                 guid=_first(led, "GUID", "MASTERID"),
                 gstin=_first(led, "PARTYGSTIN", "GSTIN", "GSTREGISTRATIONNUMBER"),
                 pan=_first(led, "INCOMETAXNUMBER", "PANNO", "PAN"),
-                state_name=_first(led, "LEDSTATENAME", "STATENAME"),
+                state_name=_first(
+                    led,
+                    "LEDSTATENAME",
+                    "STATENAME",
+                    "OLDLEDSTATENAME",
+                    "PRIORSTATENAME",
+                ),
                 phone=_first(led, "LEDGERMOBILE", "LEDGERPHONE", "PHONENUMBER"),
                 email=_first(led, "EMAIL", "LEDGEREMAIL"),
                 address_lines=_address_lines(led),
