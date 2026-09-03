@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import Select, and_, func, literal, or_, select, text
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
@@ -139,18 +139,7 @@ def apply_search(
         if not multi:
             sim_arg = nkey or q.lower()
             wsim = func.word_similarity(sim_arg, Item.name_normalized)
-            # Use the `%>` operator (not `word_similarity(...) > k`) so the GIN
-            # trigram index on name_normalized can serve this branch of the OR.
-            # `%>` compares against pg_trgm.word_similarity_threshold, so pin
-            # that to our floor for the life of this transaction.
-            session.execute(
-                text("SET LOCAL pg_trgm.word_similarity_threshold = :t").bindparams(
-                    t=_WORD_SIMILARITY_FLOOR
-                )
-            )
-            conds.append(
-                literal(sim_arg).op("%>", is_comparison=True)(Item.name_normalized)
-            )
+            conds.append(wsim > _WORD_SIMILARITY_FLOOR)
             order_sim = wsim
         else:
             # rank by how well the whole phrase matches the whole name

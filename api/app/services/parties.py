@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Select, and_, func, literal, or_, select, text
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -124,17 +124,7 @@ def apply_search(stmt: Select, session: Session, q: str) -> Select:
         conds.append(stripped.like(f"%{phone_digits}%"))
 
     if is_pg:
-        # `%` operator (not `similarity(...) > k`) so the GIN trigram index on
-        # lower(legal_name) can serve this OR branch. `%` tests against
-        # pg_trgm.similarity_threshold, so pin it for this transaction.
-        session.execute(
-            text("SET LOCAL pg_trgm.similarity_threshold = :t").bindparams(
-                t=_NAME_SIMILARITY_FLOOR
-            )
-        )
-        conds.append(
-            func.lower(Party.legal_name).op("%", is_comparison=True)(literal(q.lower()))
-        )
+        conds.append(func.similarity(Party.legal_name, q) > _NAME_SIMILARITY_FLOOR)
         stmt = stmt.where(or_(*conds)).order_by(
             func.similarity(Party.legal_name, q).desc(),
             Party.last_txn_at.desc().nullslast(),
