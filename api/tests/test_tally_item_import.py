@@ -250,6 +250,20 @@ def test_discard_batch(client: TestClient) -> None:
     assert client.get(f"/api/items/import/{batch}", headers=h).status_code == 404
 
 
+def test_current_batch_resume(client: TestClient) -> None:
+    h = _h(_token(client, "ii-resume@x.example.com"))
+    assert client.get("/api/items/import/current", headers=h).json()["batch_id"] is None
+
+    batch = _upload(client, h, seed_all_hsn=True).json()["batch_id"]
+    cur = client.get("/api/items/import/current", headers=h).json()
+    assert cur["batch_id"] == batch
+    assert cur["total"] == 3
+    assert client.get(f"/api/items/import/{batch}", headers=h).status_code == 200
+
+    client.post(f"/api/items/import/{batch}/commit", headers=h)
+    assert client.get("/api/items/import/current", headers=h).json()["batch_id"] is None
+
+
 def test_upload_rejects_junk(client: TestClient) -> None:
     h = _h(_token(client, "ii-8@x.example.com"))
     r = client.post(

@@ -131,6 +131,11 @@ export interface ImportBatch {
   groups: ImportGroup[];
 }
 
+export interface ImportCurrentBatch {
+  batch_id: string | null;
+  total: number;
+}
+
 export interface ImportFlag {
   code: string;
   message: string;
@@ -368,6 +373,11 @@ export interface ItemImportBatch {
   total: number;
   dummies_skipped: number;
   groups: StockGroupCount[];
+}
+
+export interface ItemImportCurrentBatch {
+  batch_id: string | null;
+  total: number;
 }
 
 export interface StagedItemRow {

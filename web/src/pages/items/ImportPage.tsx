@@ -5,6 +5,7 @@ import { api, apiUpload, ApiError } from "../../lib/api";
 import type {
   ItemImportBatch,
   ItemImportCommitResult,
+  ItemImportCurrentBatch,
   ItemImportOutcome,
   ItemImportReview,
   ItemType,
@@ -81,6 +82,20 @@ export function ItemsImportPage() {
     onSuccess: () => nav("/items"),
   });
 
+  // A batch staged earlier (another session, or before a reload) is kept in
+  // the DB until commit — offer to resume it instead of re-uploading the XML.
+  const resume = useQuery({
+    queryKey: ["item-import-current"],
+    queryFn: () => api<ItemImportCurrentBatch>("/items/import/current"),
+    enabled: !batchId && !done,
+  });
+
+  const discardCurrent = useMutation({
+    mutationFn: (id: string) =>
+      api<void>(`/items/import/${id}`, { method: "DELETE" }),
+    onSuccess: () => resume.refetch(),
+  });
+
   if (done) {
     return (
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
@@ -107,15 +122,37 @@ export function ItemsImportPage() {
   }
 
   if (!batchId) {
+    const staged = resume.data?.batch_id ? resume.data : null;
     return (
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
         <h1 className="font-serif text-2xl font-semibold">Import items from Tally</h1>
-        <p className="mt-1 max-w-prose text-sm text-muted">
+        {staged && (
+          <div className="mt-4 rounded-xl border border-accent/40 bg-accent-soft/40 px-4 py-3 text-sm">
+            <p>
+              An import staged earlier is waiting for review —{" "}
+              <strong>{staged.total}</strong> stock item{staged.total === 1 ? "" : "s"}.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button className="btn-primary" onClick={() => setBatchId(staged.batch_id)}>
+                Review it
+              </button>
+              <button
+                className="btn-ghost"
+                disabled={discardCurrent.isPending}
+                onClick={() => discardCurrent.mutate(staged.batch_id!)}
+              >
+                {discardCurrent.isPending ? "Discarding…" : "Discard & start over"}
+              </button>
+            </div>
+          </div>
+        )}
+        <p className="mt-4 max-w-prose text-sm text-muted">
           In TallyPrime: <span className="font-mono text-xs">Alt+G</span> →{" "}
           <em>Chart of Accounts → Stock Items</em>, then{" "}
           <span className="font-mono text-xs">Ctrl+E</span> → File Format:{" "}
           <strong>XML (Data Interchange)</strong>. A Stock Summary report export
           will not work — it has no HSN, units or GUID. Drop the masters file here.
+          {staged && " Uploading a new file replaces the staged batch above."}
         </p>
         <button
           className="mt-5 w-full rounded-xl border-2 border-dashed border-accent bg-accent-soft/50 p-8 text-sm text-accent"

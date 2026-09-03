@@ -12,12 +12,17 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.deps import SessionDep, WriteUser
 from app.models import Party, PartyAddress, StagingTallyParty
 from app.models._mixins import PartyRole, PartySource, PartyStatus
-from app.reference import state_code_from_name, validate_gstin, validate_pan
+from app.reference import (
+    state_code_from_name,
+    validate_gstin,
+    validate_pan,
+    validate_phone,
+)
 from tools.tally_import.groups import GroupTree
 from tools.tally_import.match import match_ledgers_bulk
 from tools.tally_import.parser import TallyLedger, parse_masters
@@ -253,6 +258,42 @@ async def upload(
     return ImportBatchOut(batch_id=batch_id, total=staged, groups=groups)
 
 
+class CurrentBatchOut(BaseModel):
+    batch_id: str | None
+    total: int
+
+
+@router.get("/current", response_model=CurrentBatchOut)
+def current_batch(user: WriteUser, session: SessionDep) -> CurrentBatchOut:
+    """The tenant's in-flight (staged, not yet committed) import, if any.
+
+    Lets the review screen resume a batch that was staged earlier instead of
+    forcing a re-upload of the whole XML. Only one uncommitted batch can exist
+    per tenant (upload clears the previous one), so the newest wins.
+    """
+    row = session.scalars(
+        select(StagingTallyParty)
+        .where(
+            StagingTallyParty.tenant_id == user.tenant_id,
+            StagingTallyParty.committed_as.is_(None),
+        )
+        .order_by(StagingTallyParty.created_at.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return CurrentBatchOut(batch_id=None, total=0)
+    total = session.scalar(
+        select(func.count())
+        .select_from(StagingTallyParty)
+        .where(
+            StagingTallyParty.tenant_id == user.tenant_id,
+            StagingTallyParty.batch_id == row.batch_id,
+            StagingTallyParty.committed_as.is_(None),
+        )
+    )
+    return CurrentBatchOut(batch_id=row.batch_id, total=total or 0)
+
+
 def _rows(session: SessionDep, tenant_id: str, batch_id: str) -> list[StagingTallyParty]:
     rows = list(
         session.scalars(
@@ -376,6 +417,22 @@ def _norm_name(s: str) -> str:
     return " ".join((s or "").lower().split())
 
 
+def _clean_phone(raw: str | None) -> str | None:
+    """Normalise a ledger phone, dropping it if it isn't a single valid number.
+
+    Tally ledgers routinely hold two numbers in one field
+    ("98645-51155 / 70025-01556"); `party.phone` is VARCHAR(20), so an
+    un-validated value both overflows the column and is useless as a contact.
+    Same fallback-to-None behaviour as the inward-bill approval path.
+    """
+    if not raw or not raw.strip():
+        return None
+    try:
+        return validate_phone(raw)
+    except ValueError:
+        return None
+
+
 @router.post("/{batch_id}/commit", response_model=CommitOut)
 def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     rows = _rows(session, user.tenant_id, batch_id)
@@ -425,8 +482,8 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     ) -> None:
         _fill_blank(party, "gstin", gstin)
         _fill_blank(party, "pan", pan)
-        _fill_blank(party, "phone", (row.phone or "").strip() or None)
-        _fill_blank(party, "email", (row.email or "").strip() or None)
+        _fill_blank(party, "phone", _clean_phone(row.phone))
+        _fill_blank(party, "email", (row.email or "").strip()[:200] or None)
         _fill_blank(party, "default_state_code", state_code)
         if not party.tally_guid:
             party.tally_guid = row.tally_guid
@@ -497,12 +554,12 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         party = Party(
             id=str(uuid.uuid4()),
             tenant_id=user.tenant_id,
-            legal_name=_effective_name(row),
+            legal_name=_effective_name(row)[:200],
             role=role,
             gstin=gstin,
             pan=pan,
-            phone=(row.phone or "").strip() or None,
-            email=(row.email or "").strip() or None,
+            phone=_clean_phone(row.phone),
+            email=(row.email or "").strip()[:200] or None,
             default_state_code=state_code,
             status=PartyStatus.active,
             source=PartySource.tally_import,

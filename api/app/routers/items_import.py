@@ -12,7 +12,7 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.deps import SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
@@ -100,6 +100,11 @@ class CommitOut(BaseModel):
     groups_created: int
 
 
+class CurrentBatchOut(BaseModel):
+    batch_id: str | None
+    total: int
+
+
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
@@ -183,6 +188,37 @@ def _rows(session: SessionDep, tenant_id: str, batch_id: str) -> list[StagingTal
     if not rows:
         raise HTTPException(status_code=404, detail="Import batch not found")
     return rows
+
+
+@router.get("/current", response_model=CurrentBatchOut)
+def current_batch(user: WriteUser, session: SessionDep) -> CurrentBatchOut:
+    """The tenant's in-flight (staged, not yet committed) import, if any.
+
+    Lets the review screen resume a batch that was staged earlier instead of
+    forcing a re-upload of the whole XML. Only one uncommitted batch can exist
+    per tenant (upload clears the previous one), so the newest wins.
+    """
+    row = session.scalars(
+        select(StagingTallyItem)
+        .where(
+            StagingTallyItem.tenant_id == user.tenant_id,
+            StagingTallyItem.committed_as.is_(None),
+        )
+        .order_by(StagingTallyItem.created_at.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return CurrentBatchOut(batch_id=None, total=0)
+    total = session.scalar(
+        select(func.count())
+        .select_from(StagingTallyItem)
+        .where(
+            StagingTallyItem.tenant_id == user.tenant_id,
+            StagingTallyItem.batch_id == row.batch_id,
+            StagingTallyItem.committed_as.is_(None),
+        )
+    )
+    return CurrentBatchOut(batch_id=row.batch_id, total=total or 0)
 
 
 def _row_out(session: SessionDep, r: StagingTallyItem) -> StagedRowOut:

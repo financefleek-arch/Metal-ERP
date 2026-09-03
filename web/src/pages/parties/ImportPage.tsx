@@ -5,6 +5,7 @@ import { api, apiUpload, ApiError } from "../../lib/api";
 import type {
   ImportBatch,
   ImportCommitResult,
+  ImportCurrentBatch,
   ImportOutcome,
   ImportReview,
   PartyRole,
@@ -81,6 +82,20 @@ export function ImportPage() {
     onSuccess: () => nav("/parties"),
   });
 
+  // A batch staged earlier (another session, or before a reload) is kept in
+  // the DB until commit — offer to resume it instead of re-uploading the XML.
+  const resume = useQuery({
+    queryKey: ["party-import-current"],
+    queryFn: () => api<ImportCurrentBatch>("/parties/import/current"),
+    enabled: !batchId && !done,
+  });
+
+  const discardCurrent = useMutation({
+    mutationFn: (id: string) =>
+      api<void>(`/parties/import/${id}`, { method: "DELETE" }),
+    onSuccess: () => resume.refetch(),
+  });
+
   // ---- done state ----
   if (done) {
     return (
@@ -107,13 +122,38 @@ export function ImportPage() {
 
   // ---- upload state ----
   if (!batchId) {
+    const staged = resume.data?.batch_id ? resume.data : null;
     return (
       <div className="mx-auto max-w-2xl p-4 sm:p-8">
         <h1 className="font-serif text-2xl font-semibold">Import parties from Tally</h1>
-        <p className="mt-1 max-w-prose text-sm text-muted">
+        {staged && (
+          <div className="mt-4 rounded-xl border border-accent/40 bg-accent-soft/40 px-4 py-3 text-sm">
+            <p>
+              An import staged earlier is waiting for review —{" "}
+              <strong>{staged.total}</strong> ledger{staged.total === 1 ? "" : "s"}.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                className="btn-primary"
+                onClick={() => setBatchId(staged.batch_id)}
+              >
+                Review it
+              </button>
+              <button
+                className="btn-ghost"
+                disabled={discardCurrent.isPending}
+                onClick={() => discardCurrent.mutate(staged.batch_id!)}
+              >
+                {discardCurrent.isPending ? "Discarding…" : "Discard & start over"}
+              </button>
+            </div>
+          </div>
+        )}
+        <p className="mt-4 max-w-prose text-sm text-muted">
           In Tally: <em>Gateway → Display More Reports → List of Accounts → Ledgers</em>, then{" "}
           <span className="font-mono text-xs">Alt+E</span> → format <strong>XML</strong> (or{" "}
           <em>Export → Masters → All Masters</em>). Drop that file here.
+          {staged && " Uploading a new file replaces the staged batch above."}
         </p>
         <button
           className="mt-5 w-full rounded-xl border-2 border-dashed border-accent bg-accent-soft/50 p-8 text-sm text-accent"

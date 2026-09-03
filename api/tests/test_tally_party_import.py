@@ -261,6 +261,55 @@ def test_discard_batch(client: TestClient) -> None:
     assert client.get(f"/api/parties/import/{batch}", headers=h).status_code == 404
 
 
+def test_commit_survives_a_multi_number_phone_field(client: TestClient) -> None:
+    """A ledger whose phone field holds two numbers ("A / B") must still
+    import — party.phone is VARCHAR(20), so the value is dropped, not stored.
+    """
+    h = _h(_token(client, "imp-phone@x.example.com"))
+    raw = FIXTURE.read_bytes().replace(
+        b"<LEDGERMOBILE>9832011223</LEDGERMOBILE>",
+        b"<LEDGERMOBILE>98645-51155 / 70025-01556</LEDGERMOBILE>",
+    )
+    r = client.post(
+        "/api/parties/import",
+        headers=h,
+        files={"file": ("masters.xml", raw, "text/xml")},
+    )
+    assert r.status_code == 201, r.text
+    batch = r.json()["batch_id"]
+    out = client.post(f"/api/parties/import/{batch}/commit", headers=h).json()
+    assert out["created"] == 3
+    bal = next(
+        p for p in client.get("/api/parties", headers=h).json()
+        if p["legal_name"] == "Balaji Traders"
+    )
+    assert client.get(f"/api/parties/{bal['id']}", headers=h).json()["phone"] is None
+
+
+def test_current_batch_resume(client: TestClient) -> None:
+    h = _h(_token(client, "imp-resume@x.example.com"))
+    # nothing staged yet
+    assert client.get("/api/parties/import/current", headers=h).json()["batch_id"] is None
+
+    batch = _upload(client, h).json()["batch_id"]
+    cur = client.get("/api/parties/import/current", headers=h).json()
+    assert cur["batch_id"] == batch
+    assert cur["total"] == 3
+    # the batch is reviewable via the id we got back
+    assert client.get(f"/api/parties/import/{batch}", headers=h).status_code == 200
+
+    # once committed it is no longer "current"
+    client.post(f"/api/parties/import/{batch}/commit", headers=h)
+    assert client.get("/api/parties/import/current", headers=h).json()["batch_id"] is None
+
+
+def test_current_batch_is_tenant_scoped(client: TestClient) -> None:
+    h1 = _h(_token(client, "imp-t1@x.example.com"))
+    _upload(client, h1)
+    h2 = _h(_token(client, "imp-t2@x.example.com"))
+    assert client.get("/api/parties/import/current", headers=h2).json()["batch_id"] is None
+
+
 def test_upload_rejects_non_xml(client: TestClient) -> None:
     h = _h(_token(client, "imp-8@x.example.com"))
     r = client.post(
