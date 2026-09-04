@@ -77,6 +77,13 @@ class Settings(BaseSettings):
             and self.tally_r2_bucket
         )
 
+    # Pre-published tally-agent Windows build (dotnet publish -r win-x64
+    # --self-contained output), dropped here by a manual/CI step. The admin
+    # "download installer" action zips this directory + a generated
+    # per-shop appsettings.json + install.ps1 on the fly — one build serves
+    # every shop, only the small config file differs per download.
+    tally_agent_build_dir: str = "/data/tally-agent-build"
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

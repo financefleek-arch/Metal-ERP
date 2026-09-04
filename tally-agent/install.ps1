@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Installs (or updates) the Tally Agent Windows Service on a shop PC.
 
@@ -50,7 +50,7 @@ Write-Host "Installing Tally Agent to $InstallDir ..."
 
 $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($existing) {
-    Write-Host "Existing service found — stopping for update."
+    Write-Host "Existing service found - stopping for update."
     Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
 }
 
@@ -58,7 +58,7 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item -Path (Join-Path $SourceDir "*") -Destination $InstallDir -Recurse -Force
 
 # appsettings.json ships with placeholder values (see appsettings.json in
-# source) — overwrite the per-shop fields with what was passed in, so a
+# source) - overwrite the per-shop fields with what was passed in, so a
 # re-run of this script (update path) doesn't require re-typing the key.
 $settingsPath = Join-Path $InstallDir "appsettings.json"
 $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json

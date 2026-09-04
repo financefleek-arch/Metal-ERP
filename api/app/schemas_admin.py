@@ -116,3 +116,29 @@ class FirmWhatsappUpsert(BaseModel):
     waba_id: str = Field(min_length=1, max_length=40)
     display_phone_number: str | None = Field(default=None, max_length=30)
     is_active: bool = True
+
+
+# --------------------------------------------------------------------------
+# firm tally-agent shop (cloud backup sync — a separate product, see
+# app/routers/tally_agent.py; a "shop" is soft-linked to a firm here, not
+# a tenant-scoped row)
+# --------------------------------------------------------------------------
+
+
+class FirmTallyShopOut(BaseModel):
+    """Whether this firm has a provisioned tally-agent shop yet. No key here
+    — a key is only ever returned once, from the provision/rotate call."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    provisioned: bool
+    shop_id: str | None = None
+    is_active: bool = False
+    last_checkin_at: datetime | None = None
+    last_upload_at: datetime | None = None
+
+
+class FirmTallyShopProvisionResult(BaseModel):
+    shop_id: str
+    api_key: str = Field(description="plaintext — shown once, never returned again")
+    created: bool
