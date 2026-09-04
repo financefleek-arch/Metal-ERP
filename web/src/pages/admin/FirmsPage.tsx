@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "../../lib/api";
-import type { AdminUser, AssignableRole, FirmDetail } from "../../lib/types";
+import type {
+  AdminUser,
+  AssignableRole,
+  FirmDetail,
+  FirmWhatsapp,
+} from "../../lib/types";
 import { adminApi } from "./api";
 
 const ROLES: AssignableRole[] = ["accountant", "owner", "viewer"];
@@ -171,8 +176,187 @@ function FirmDetailPane({ firmId }: { firmId: string }) {
   return (
     <div>
       <FirmFields firm={firm.data} onSaved={refresh} />
+      <WhatsappPanel firmId={firm.data.id} />
       <UsersTable firm={firm.data} onChanged={refresh} />
     </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+
+/** Per-firm WhatsApp number. The operator adds the firm's number to Fleek's
+ *  FleekWA Business Manager in Meta first, then pastes the two IDs here.
+ *  Mirrors fleek-frontend's WhatsAppIntegration.vue, minus the Embedded
+ *  Signup popup — we onboard by hand, so it is a plain form + status. */
+function WhatsappPanel({ firmId }: { firmId: string }) {
+  const qc = useQueryClient();
+  const key = ["admin-firm-whatsapp", firmId];
+  // FirmDetailPane carries key={selected}, so this whole subtree remounts on
+  // firm switch — a one-shot form seed in an effect is enough, no re-seed.
+  const wa = useQuery({ queryKey: key, queryFn: () => adminApi.getFirmWhatsapp(firmId) });
+
+  const [pnid, setPnid] = useState("");
+  const [waba, setWaba] = useState("");
+  const [display, setDisplay] = useState("");
+  const [active, setActive] = useState(true);
+  const [seeded, setSeeded] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (wa.data && !seeded) {
+      setPnid(wa.data.phone_number_id ?? "");
+      setWaba(wa.data.waba_id ?? "");
+      setDisplay(wa.data.display_phone_number ?? "");
+      setActive(wa.data.is_active);
+      setSeeded(true);
+    }
+  }, [wa.data, seeded]);
+
+  const refresh = () => void qc.invalidateQueries({ queryKey: key });
+
+  const save = useMutation({
+    mutationFn: () =>
+      adminApi.putFirmWhatsapp(firmId, {
+        phone_number_id: pnid.trim(),
+        waba_id: waba.trim(),
+        display_phone_number: display.trim() || null,
+        is_active: active,
+      }),
+    onSuccess: refresh,
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Save failed"),
+  });
+
+  const remove = useMutation({
+    mutationFn: () => adminApi.deleteFirmWhatsapp(firmId),
+    onSuccess: () => {
+      setPnid("");
+      setWaba("");
+      setDisplay("");
+      setActive(true);
+      refresh();
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Remove failed"),
+  });
+
+  const d: FirmWhatsapp | undefined = wa.data;
+  const dirty =
+    !!d &&
+    (pnid.trim() !== (d.phone_number_id ?? "") ||
+      waba.trim() !== (d.waba_id ?? "") ||
+      display.trim() !== (d.display_phone_number ?? "") ||
+      active !== d.is_active);
+  const canSave = pnid.trim().length > 0 && waba.trim().length > 0;
+
+  return (
+    <div className="border-b border-line py-5">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+          WhatsApp
+        </h3>
+        {d && <StatusPill wa={d} />}
+      </div>
+
+      {wa.isLoading ? (
+        <p className="mt-2 text-sm text-muted">Loading…</p>
+      ) : (
+        <>
+          <div className="mt-3 flex flex-wrap gap-4">
+            <div>
+              <label className="label">Phone number ID</label>
+              <input
+                className="field w-64"
+                value={pnid}
+                onChange={(e) => setPnid(e.target.value)}
+                placeholder="from WhatsApp Manager → API Setup"
+              />
+            </div>
+            <div>
+              <label className="label">WABA ID</label>
+              <input
+                className="field w-56"
+                value={waba}
+                onChange={(e) => setWaba(e.target.value)}
+                placeholder="WhatsApp Business Account ID"
+              />
+            </div>
+            <div>
+              <label className="label">Display number</label>
+              <input
+                className="field w-44"
+                value={display}
+                onChange={(e) => setDisplay(e.target.value)}
+                placeholder="+91 98xxxxxxxx"
+              />
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-6">
+            <Toggle
+              label="Active"
+              on={active}
+              onToggle={() => setActive((v) => !v)}
+            />
+            <div className="ml-auto flex gap-2">
+              {d?.configured && (
+                <button
+                  className="rounded border border-danger/40 px-2 py-1 text-xs text-danger enabled:hover:bg-danger/5 disabled:opacity-40"
+                  disabled={remove.isPending}
+                  onClick={() => {
+                    setErr(null);
+                    remove.mutate();
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+              <button
+                className="btn-ghost"
+                disabled={
+                  !canSave || save.isPending || (d?.configured && !dirty)
+                }
+                onClick={() => {
+                  setErr(null);
+                  save.mutate();
+                }}
+              >
+                {save.isPending
+                  ? "Saving…"
+                  : d?.configured
+                    ? "Save"
+                    : "Connect"}
+              </button>
+            </div>
+          </div>
+
+          {err && <p className="err">{err}</p>}
+          <p className="mt-2 text-xs text-muted">
+            Add this firm's number to Fleek's WhatsApp Business Manager in Meta
+            first, then paste the IDs from WhatsApp Manager. Messages send from
+            the shared Fleek token — no per-firm credential is stored here.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatusPill({ wa }: { wa: FirmWhatsapp }) {
+  if (!wa.configured)
+    return (
+      <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-semibold text-muted">
+        not connected
+      </span>
+    );
+  if (!wa.is_active)
+    return (
+      <span className="rounded-full bg-warn/15 px-2 py-0.5 text-[11px] font-semibold text-warn">
+        paused
+      </span>
+    );
+  return (
+    <span className="rounded-full bg-ok/15 px-2 py-0.5 text-[11px] font-semibold text-ok">
+      connected
+    </span>
   );
 }
 

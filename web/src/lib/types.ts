@@ -48,6 +48,25 @@ export interface FirmDetail {
   users: AdminUser[];
 }
 
+/** Per-firm WhatsApp number registry (GET/PUT /api/admin/firms/{id}/whatsapp).
+ *  There is no token here — sends use the process-wide FleekWA System User
+ *  token; this row only picks which number the firm sends from. */
+export interface FirmWhatsapp {
+  configured: boolean;
+  is_active: boolean;
+  phone_number_id: string | null;
+  waba_id: string | null;
+  display_phone_number: string | null;
+  updated_at: string | null;
+}
+
+export interface FirmWhatsappUpsert {
+  phone_number_id: string;
+  waba_id: string;
+  display_phone_number?: string | null;
+  is_active: boolean;
+}
+
 export interface Tenant {
   id: string;
   legal_name: string;

@@ -4,6 +4,8 @@ import type {
   AssignableRole,
   FirmDetail,
   FirmListItem,
+  FirmWhatsapp,
+  FirmWhatsappUpsert,
 } from "../../lib/types";
 
 export const adminApi = {
@@ -37,4 +39,13 @@ export const adminApi = {
 
   disableUser: (userId: string) =>
     api<void>(`/admin/users/${userId}`, { method: "DELETE" }),
+
+  getFirmWhatsapp: (firmId: string) =>
+    api<FirmWhatsapp>(`/admin/firms/${firmId}/whatsapp`),
+
+  putFirmWhatsapp: (firmId: string, body: FirmWhatsappUpsert) =>
+    api<FirmWhatsapp>(`/admin/firms/${firmId}/whatsapp`, { method: "PUT", body }),
+
+  deleteFirmWhatsapp: (firmId: string) =>
+    api<void>(`/admin/firms/${firmId}/whatsapp`, { method: "DELETE" }),
 };
