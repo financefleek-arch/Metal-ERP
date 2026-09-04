@@ -51,7 +51,7 @@ interface Row {
  *  they never drift. Item gets a wide, flexible column; the rest are tight
  *  fixed widths. */
 const LINE_GRID =
-  "grid-cols-[22px_minmax(180px,1.7fr)_76px_60px_58px_80px_86px_84px_24px]";
+  "grid-cols-[22px_minmax(180px,1.7fr)_76px_60px_58px_80px_112px_84px_24px]";
 
 let _rk = 0;
 function blankRow(segmentNo = 1): Row {
@@ -1373,10 +1373,11 @@ function LineRow({
   const itemInput = (
     <div className="relative">
       <input
-        className={`field h-9 text-sm ${fieldClass("item")}`}
+        className={`field h-9 text-sm ${row.item_id ? "pr-16" : ""} ${fieldClass("item")}`}
         placeholder="type an item name…"
         value={typed}
         disabled={readOnly}
+        title={typed}
         onChange={(e) => {
           setTyped(e.target.value);
           onPatch({ description: e.target.value, item_id: null, group_id: null });
@@ -1444,7 +1445,7 @@ function LineRow({
         </div>
       )}
       {row.item_id && (
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-[#3f7a4f]">
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-semibold text-[#3f7a4f]">
           ✓ matched
         </span>
       )}
@@ -1452,14 +1453,15 @@ function LineRow({
   );
 
   const discSeg = (
-    <span className="inline-flex overflow-hidden rounded border border-line">
+    <span className="inline-flex h-9 flex-none overflow-hidden rounded-md border border-line">
       {(["amt", "pct"] as DiscMode[]).map((m) => (
         <button
           key={m}
           type="button"
           disabled={readOnly}
-          className={`px-1.5 text-[9px] font-bold ${
-            row.discMode === m ? "bg-accent text-white" : "bg-card text-muted"
+          title={m === "amt" ? "Discount in ₹" : "Discount in %"}
+          className={`w-7 border-r border-line text-xs font-bold last:border-r-0 ${
+            row.discMode === m ? "bg-accent text-white" : "bg-card text-muted hover:bg-ground"
           }`}
           onClick={() => onPatch({ discMode: m })}
         >
@@ -1766,10 +1768,10 @@ function LineRow({
           title={rateGhost || undefined}
           onChange={(e) => onPatch({ unit_rate: e.target.value })}
         />
-        <span className="flex items-center justify-end gap-1">
+        <span className="flex items-center justify-end gap-1.5">
           {discSeg}
           <input
-            className={`field h-9 w-14 text-right text-xs ${fieldClass("disc")}`}
+            className={`field h-9 w-12 text-right text-xs ${fieldClass("disc")}`}
             inputMode="decimal"
             placeholder="0"
             value={row.discount}
