@@ -10,6 +10,7 @@ import type { Party, PartyListItem, PartyRole, PartyStatus } from "../lib/types"
 const PAGE_SIZE = 50;
 import { PartyForm } from "../components/PartyForm";
 import { NewPartyForm } from "../components/NewPartyForm";
+import { PartyAccountTab } from "../components/PartyAccountTab";
 
 type Scope = "" | PartyRole | "incomplete" | "archived";
 
@@ -74,6 +75,7 @@ export function PartiesPage() {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
   const [scope, setScope] = useState<Scope>("");
+  const [detailTab, setDetailTab] = useState<"details" | "account">("details");
   const isDesktop = useIsDesktop();
   // On mobile we show one pane at a time, driven by the route.
   const showDetailPane = isDesktop || isNew || !!selectedId;
@@ -105,6 +107,9 @@ export function PartiesPage() {
       nav("/parties", { replace: true });
     }
   }, [selectedId, rows, detail.isError, nav]);
+
+  // a fresh party selection always opens on Details.
+  useEffect(() => setDetailTab("details"), [selectedId]);
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-5xl flex-col gap-0 rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
@@ -219,6 +224,23 @@ export function PartiesPage() {
             ← Parties
           </button>
         )}
+        {!isNew && selectedId && detail.data && (
+          <div className="flex border-b border-line bg-card">
+            {(["details", "account"] as const).map((t) => (
+              <button
+                key={t}
+                className={`-mb-px flex-1 border-b-2 py-3 text-center text-sm md:flex-none md:px-5 ${
+                  detailTab === t
+                    ? "border-accent font-semibold text-ink"
+                    : "border-transparent text-muted"
+                }`}
+                onClick={() => setDetailTab(t)}
+              >
+                {t === "details" ? "Details" : "Account"}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto p-4 md:p-5">
         {isNew ? (
           <NewPartyForm
@@ -232,12 +254,16 @@ export function PartiesPage() {
         ) : detail.isLoading ? (
           <div className="grid h-full place-items-center text-sm text-muted">Loading…</div>
         ) : detail.data ? (
-          <PartyForm
-            key={detail.data.id}
-            party={detail.data}
-            onChanged={() => detail.refetch()}
-            onDeleted={() => nav("/parties")}
-          />
+          detailTab === "account" ? (
+            <PartyAccountTab party={detail.data} />
+          ) : (
+            <PartyForm
+              key={detail.data.id}
+              party={detail.data}
+              onChanged={() => detail.refetch()}
+              onDeleted={() => nav("/parties")}
+            />
+          )
         ) : (
           <div className="grid h-full place-items-center text-sm text-muted">Party not found.</div>
         )}

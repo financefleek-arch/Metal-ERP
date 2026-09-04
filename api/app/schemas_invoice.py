@@ -11,11 +11,13 @@ from __future__ import annotations
 from datetime import date as date_t
 from datetime import datetime as datetime_t
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models._mixins import InvoiceStatus, PdfStatus
+
+PaymentStatusLabel = Literal["unpaid", "partial", "paid"]
 
 Money = Annotated[Decimal, Field(max_digits=15, decimal_places=2)]
 Qty = Annotated[Decimal, Field(max_digits=15, decimal_places=3)]
@@ -177,6 +179,13 @@ class InvoiceOut(BaseModel):
     lines: list[InvoiceLineOut] = Field(default_factory=list)
     finalize_blockers: list[str] = Field(default_factory=list)
 
+    # Payments — only meaningful (non-null) for status == "final"; a
+    # draft/cancelled invoice has no grand_total to bill against so these
+    # stay None rather than computing pointless zeros.
+    paid_amount: Money | None = None
+    balance_due: Money | None = None
+    payment_status: PaymentStatusLabel | None = None
+
     created_at: datetime_t
     updated_at: datetime_t
 
@@ -193,6 +202,7 @@ class InvoiceListItem(BaseModel):
     party_name: str
     grand_total: Money | None
     pdf_status: PdfStatus
+    payment_status: PaymentStatusLabel | None = None
 
 
 class FinalizeOut(BaseModel):

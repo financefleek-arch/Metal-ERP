@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { inr } from "../../lib/previewTotal";
-import type { InvoiceListItem, InvoiceStatus } from "../../lib/types";
+import type { InvoiceListItem, InvoicePaymentStatus, InvoiceStatus } from "../../lib/types";
 
 type Scope = "" | InvoiceStatus;
 
@@ -22,6 +22,19 @@ function statusBadge(s: InvoiceStatus) {
       : s === "cancelled"
         ? "bg-[#f1e0e0] text-danger"
         : "bg-[#f1e7d6] text-warn";
+  return (
+    <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase ${cls}`}>{s}</span>
+  );
+}
+
+function paymentPill(s: InvoicePaymentStatus | null) {
+  if (!s) return null;
+  const cls =
+    s === "paid"
+      ? "bg-accent-soft text-accent"
+      : s === "partial"
+        ? "bg-[#f1e7d6] text-warn"
+        : "bg-[#f1e0e0] text-danger";
   return (
     <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase ${cls}`}>{s}</span>
   );
@@ -157,7 +170,10 @@ export function InvoiceListPage() {
             <span className="text-right font-mono">
               {iv.grand_total ? inr(iv.grand_total) : "—"}
             </span>
-            <span>{statusBadge(iv.status)}</span>
+            <span className="flex flex-wrap gap-1">
+              {statusBadge(iv.status)}
+              {paymentPill(iv.payment_status)}
+            </span>
             <div className="col-span-2 flex flex-wrap justify-end gap-1.5 md:col-span-1">
               <button
                 className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"

@@ -24,6 +24,7 @@ from app.routers import (
     items_import,
     parties,
     parties_import,
+    payments,
     reference,
     tally_agent,
     tenant,
@@ -61,6 +62,9 @@ app.include_router(items.router)
 app.include_router(item_categories.router)
 app.include_router(item_groups.router)
 app.include_router(invoices.router)
+app.include_router(payments.router)
+app.include_router(payments.collections_router)
+app.include_router(payments.ledger_router)
 app.include_router(whatsapp.router)
 app.include_router(whatsapp.invoice_router)
 app.include_router(tally_agent.router)

@@ -159,3 +159,29 @@ class JobStatus(enum.StrEnum):
     running = "running"
     done = "done"
     failed = "failed"
+
+
+# --- payments (party ledger, Tally-shaped for future export) ---
+
+
+class PaymentMode(enum.StrEnum):
+    cash = "cash"
+    upi = "upi"
+    bank = "bank"
+    cheque = "cheque"
+
+
+class PaymentStatus(enum.StrEnum):
+    posted = "posted"
+    # a bounced cheque / wrong entry — allocations unwound, balances restored.
+    # never deleted outright: keeps the ledger + any future Tally export honest.
+    reversed = "reversed"
+
+
+class AllocationType(enum.StrEnum):
+    """Mirrors Tally's Bill-wise Details BILLTYPE: "Agst Ref" vs "New Ref"/On
+    Account. against_invoice ties the amount to one invoice's balance; on_account
+    is an unapplied credit sitting against the party only."""
+
+    against_invoice = "against_invoice"
+    on_account = "on_account"

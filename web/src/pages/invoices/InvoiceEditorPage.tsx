@@ -5,6 +5,7 @@ import { api, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { computePreview, inr } from "../../lib/previewTotal";
 import { computeMeasure, kg } from "../../lib/weighment";
+import { PaymentDialog } from "../../components/PaymentDialog";
 import type {
   Invoice,
   InvoiceLineIn,
@@ -240,6 +241,7 @@ export function InvoiceEditorPage() {
   const [err, setErr] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [payingOpen, setPayingOpen] = useState(false);
 
   const inv = detail.data;
   const finalized = inv?.status === "final";
@@ -809,6 +811,36 @@ export function InvoiceEditorPage() {
             </div>
           )}
 
+          {finalized && (
+            <div className="mt-4 rounded-md border border-line bg-card p-3">
+              <div className="label mb-2">Payment</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[11px] text-muted">Paid so far</div>
+                  <div className="font-serif text-base font-semibold">
+                    {inv?.paid_amount ? inr(inv.paid_amount) : inr(0)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[11px] text-muted">Balance due</div>
+                  <div
+                    className={`font-serif text-base font-semibold ${
+                      Number(inv?.balance_due ?? 0) > 0 ? "text-danger" : ""
+                    }`}
+                  >
+                    {inv?.balance_due ? inr(inv.balance_due) : inr(0)}
+                  </div>
+                </div>
+              </div>
+              <button
+                className="btn-ghost mt-3 h-9 w-full text-xs"
+                onClick={() => setPayingOpen(true)}
+              >
+                + Record payment
+              </button>
+            </div>
+          )}
+
           {!readOnly && (
             <div className="mt-4 rounded-md border border-line bg-ground p-3 text-xs">
               <div className="font-semibold">
@@ -838,6 +870,19 @@ export function InvoiceEditorPage() {
           lineSumKg={openSegWeight}
           onCancel={() => setClosingSeg(null)}
           onConfirm={confirmSegment}
+        />
+      )}
+
+      {payingOpen && inv?.party_id && (
+        <PaymentDialog
+          partyId={inv.party_id}
+          partyName={inv.party?.legal_name ?? partyLabel}
+          focusInvoiceId={inv.id}
+          onClose={() => setPayingOpen(false)}
+          onSaved={() => {
+            setPayingOpen(false);
+            detail.refetch();
+          }}
         />
       )}
     </div>
@@ -1004,11 +1049,18 @@ function PartyPicker({
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
   const results = useQuery({
     queryKey: ["party-search", q],
     queryFn: () => api<PartyListItem[]>(`/parties?q=${encodeURIComponent(q)}&role=customer`),
     enabled: open && q.trim().length >= 1,
   });
+
+  function handlePick(p: PartyListItem) {
+    onPick(p);
+    setOpen(false);
+    setQ("");
+  }
 
   return (
     <div className="relative">
@@ -1029,11 +1081,7 @@ function PartyPicker({
             <button
               key={p.id}
               className="block w-full border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
-              onMouseDown={() => {
-                onPick(p);
-                setOpen(false);
-                setQ("");
-              }}
+              onMouseDown={() => handlePick(p)}
             >
               <span className="font-medium">{p.legal_name}</span>
               {p.default_state_code && (
@@ -1041,8 +1089,108 @@ function PartyPicker({
               )}
             </button>
           ))}
+          {q.trim() && (
+            <button
+              className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
+              onMouseDown={() => setCreating(true)}
+            >
+              + Create “{q.trim()}” as a new party
+            </button>
+          )}
         </div>
       )}
+      {open && q.trim() && !results.isFetching && (results.data?.length ?? 0) === 0 && (
+        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-line bg-card shadow-lg">
+          <div className="px-3 py-2 text-[11px] text-muted">No matching party.</div>
+          <button
+            className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
+            onMouseDown={() => setCreating(true)}
+          >
+            + Create “{q.trim()}” as a new party
+          </button>
+        </div>
+      )}
+      {creating && (
+        <QuickCreatePartyDialog
+          initialName={q.trim()}
+          onCancel={() => setCreating(false)}
+          onCreated={(p) => {
+            setCreating(false);
+            handlePick(p);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function QuickCreatePartyDialog({
+  initialName,
+  onCancel,
+  onCreated,
+}: {
+  initialName: string;
+  onCancel: () => void;
+  onCreated: (p: PartyListItem) => void;
+}) {
+  const [name, setName] = useState(initialName);
+  const [phone, setPhone] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const create = useMutation({
+    mutationFn: () =>
+      api<PartyListItem>("/parties", {
+        method: "POST",
+        body: {
+          legal_name: name.trim(),
+          phone: phone.trim() || null,
+          role: "customer",
+        },
+      }),
+    onSuccess: onCreated,
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not create party"),
+  });
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="w-full max-w-sm rounded-lg border border-line bg-card p-4 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-serif text-sm font-semibold">New party</h3>
+        {err && <p className="err mt-2">{err}</p>}
+        <label className="label mt-3 block">Legal name</label>
+        <input
+          className="field"
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && name.trim()) create.mutate();
+          }}
+        />
+        <label className="label mt-3 block">Phone (optional)</label>
+        <input
+          className="field"
+          inputMode="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        <div className="mt-4 flex gap-2">
+          <button className="btn-ghost h-9 flex-1 px-4 text-sm" onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            className="btn-primary h-9 flex-1 px-4 text-sm"
+            disabled={!name.trim() || create.isPending}
+            onClick={() => create.mutate()}
+          >
+            {create.isPending ? "Creating…" : "Create & use"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

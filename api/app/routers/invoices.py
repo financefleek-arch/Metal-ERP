@@ -19,8 +19,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import Invoice, InvoiceLine, Party
-from app.models._mixins import DocType, InvoiceStatus, PdfStatus
+from app.models import Invoice, InvoiceLine, Party, Payment, PaymentAllocation
+from app.models._mixins import AllocationType, DocType, InvoiceStatus, PaymentStatus, PdfStatus
 from app.schemas_invoice import (
     DuplicateOut,
     FinalizeOut,
@@ -38,6 +38,7 @@ from app.services.invoices.common import (
     totals_for,
 )
 from app.services.invoices.finalize import FinalizeError, finalize_invoice
+from app.services.payments import paid_amount_for_invoice
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -91,8 +92,28 @@ def _slips_payload(slips: list | None) -> list | None:
     return [{"seg": int(s.seg), "recorded_kg": str(s.recorded_kg)} for s in slips]
 
 
+def _payment_fields(session: SessionDep, inv: Invoice) -> tuple[Decimal | None, Decimal | None, str | None]:
+    """paid_amount / balance_due / payment_status — only computed for a
+    finalized invoice (draft/cancelled have no frozen grand_total to bill
+    against, so these stay None rather than reporting pointless zeros).
+    """
+    if inv.status != InvoiceStatus.final:
+        return None, None, None
+    total = inv.grand_total or Decimal("0")
+    paid = paid_amount_for_invoice(session, inv.id)
+    balance = total - paid
+    if paid <= 0:
+        label = "unpaid"
+    elif paid >= total:
+        label = "paid"
+    else:
+        label = "partial"
+    return paid, balance, label
+
+
 def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
     party = session.get(Party, inv.party_id) if inv.party_id else None
+    paid_amount, balance_due, payment_status = _payment_fields(session, inv)
     return InvoiceOut(
         id=inv.id,
         doc_type=inv.doc_type,
@@ -116,6 +137,9 @@ def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
         has_pdf=bool(inv.pdf_path),
         lines=[InvoiceLineOut.model_validate(ln) for ln in inv.lines],
         finalize_blockers=finalize_blockers(inv) if inv.status == InvoiceStatus.draft else [],
+        paid_amount=paid_amount,
+        balance_due=balance_due,
+        payment_status=payment_status,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
     )
@@ -136,9 +160,27 @@ def list_invoices(
     date_to: date | None = Query(default=None),
     q: str | None = Query(default=None, description="party name contains"),
 ) -> list[InvoiceListItem]:
+    # paid_amount per invoice_id in one round trip (posted allocations only)
+    # so payment_status can be derived per row below without a query per
+    # invoice — same aggregate-subquery approach as collections_summary.
+    paid_sq = (
+        select(
+            PaymentAllocation.invoice_id.label("invoice_id"),
+            func.sum(PaymentAllocation.amount).label("paid"),
+        )
+        .join(Payment, Payment.id == PaymentAllocation.payment_id)
+        .where(
+            PaymentAllocation.type == AllocationType.against_invoice,
+            Payment.status == PaymentStatus.posted,
+        )
+        .group_by(PaymentAllocation.invoice_id)
+        .subquery()
+    )
+
     stmt = (
-        select(Invoice, Party.legal_name)
+        select(Invoice, Party.legal_name, paid_sq.c.paid)
         .outerjoin(Party, Party.id == Invoice.party_id)
+        .outerjoin(paid_sq, paid_sq.c.invoice_id == Invoice.id)
         .where(Invoice.tenant_id == user.tenant_id)
     )
     if status_ is not None:
@@ -158,6 +200,18 @@ def list_invoices(
         Invoice.created_at.desc(),
     )
     rows = session.execute(stmt).all()
+
+    def _payment_status(inv: Invoice, paid: Decimal | None) -> str | None:
+        if inv.status != InvoiceStatus.final:
+            return None
+        total = inv.grand_total or Decimal("0")
+        p = Decimal(paid or 0)
+        if p <= 0:
+            return "unpaid"
+        if p >= total:
+            return "paid"
+        return "partial"
+
     return [
         InvoiceListItem(
             id=inv.id,
@@ -169,8 +223,9 @@ def list_invoices(
             party_name=name or "(no party)",
             grand_total=inv.grand_total,
             pdf_status=inv.pdf_status,
+            payment_status=_payment_status(inv, paid),
         )
-        for inv, name in rows
+        for inv, name, paid in rows
     ]
 
 

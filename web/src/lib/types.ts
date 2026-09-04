@@ -537,6 +537,10 @@ export interface Invoice {
   finalize_blockers: string[];
   created_at: string;
   updated_at: string;
+  /** Only set once status === "final"; null on draft/cancelled. */
+  paid_amount: string | null;
+  balance_due: string | null;
+  payment_status: InvoicePaymentStatus | null;
 }
 
 export interface InvoiceListItem {
@@ -549,6 +553,8 @@ export interface InvoiceListItem {
   party_name: string;
   grand_total: string | null;
   pdf_status: PdfStatus;
+  /** Only set once status === "final"; null on draft/cancelled. */
+  payment_status: InvoicePaymentStatus | null;
 }
 
 export interface FinalizeResult {
@@ -570,4 +576,100 @@ export interface ItemResolveResult {
   confidence: number | null;
   weak: boolean;
   candidates: { item_id: string; name: string; score: number }[];
+}
+
+// --- payments (party ledger, bill-wise allocation) ---
+
+export type PaymentMode = "cash" | "upi" | "bank" | "cheque";
+export type PaymentStatus = "posted" | "reversed";
+export type AllocationType = "against_invoice" | "on_account";
+export type InvoicePaymentStatus = "unpaid" | "partial" | "paid";
+
+export interface PaymentAllocationIn {
+  invoice_id: string | null;
+  type: AllocationType;
+  amount: string;
+}
+
+export interface PaymentCreate {
+  party_id: string;
+  date: string;
+  amount: string;
+  mode: PaymentMode;
+  ref_no: string | null;
+  notes: string | null;
+  ledger_name: string | null;
+  allocations: PaymentAllocationIn[];
+}
+
+export interface PaymentAllocationOut {
+  id: string;
+  invoice_id: string | null;
+  invoice_number: number | null;
+  type: AllocationType;
+  amount: string;
+}
+
+export interface PaymentOut {
+  id: string;
+  party_id: string;
+  party_name: string | null;
+  date: string;
+  amount: string;
+  mode: PaymentMode;
+  ref_no: string | null;
+  notes: string | null;
+  voucher_no: number | null;
+  ledger_name: string | null;
+  status: PaymentStatus;
+  reversed_at: string | null;
+  reversed_reason: string | null;
+  allocations: PaymentAllocationOut[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** One row in a party's open-invoices allocation table (payment dialog). */
+export interface OpenInvoiceForAllocation {
+  invoice_id: string;
+  number: number;
+  date: string;
+  grand_total: string;
+  balance_due: string;
+  days_old: number;
+}
+
+/** One allocation row nested inside a payment's PartyLedgerEntry — raw
+ *  shape (no invoice number join), unlike PaymentAllocationOut. */
+export interface LedgerAllocation {
+  invoice_id: string | null;
+  type: AllocationType;
+  amount: string;
+}
+
+/** One row in a party's running statement (Account tab) — newest first,
+ *  running_balance computed server-side walking oldest-to-newest. */
+export interface PartyLedgerEntry {
+  kind: "invoice" | "payment";
+  date: string;
+  ref_id: string;
+  /** "INV #123" / "INV (draft)" / "PMT #45" */
+  ref_label: string;
+  debit: string;
+  credit: string;
+  running_balance: string;
+  /** invoice: draft/final/cancelled. payment: posted/reversed. */
+  status: string;
+  /** only set for kind === "payment" */
+  allocations: LedgerAllocation[] | null;
+}
+
+/** One row in the Collections list — parties with outstanding balance > 0. */
+export interface CollectionsRow {
+  party_id: string;
+  legal_name: string;
+  phone: string | null;
+  outstanding_balance: string;
+  oldest_unpaid_days: number | null;
+  open_invoice_count: number;
 }

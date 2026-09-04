@@ -7,6 +7,7 @@ out across name (fuzzy on Postgres), address, and phone.
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -22,6 +23,7 @@ from app.schemas import (
     PartyOut,
     PartyUpdate,
 )
+from app.schemas_payments import OpenInvoiceForAllocation
 from app.services.pagination import finish_page, paginate
 from app.services.parties import (
     SEARCH_RESULT_CAP,
@@ -32,6 +34,7 @@ from app.services.parties import (
     dormant_filter,
     is_incomplete,
 )
+from app.services.payments import balance_due_for_invoice, open_invoices_for_party
 
 router = APIRouter(prefix="/api/parties", tags=["parties"])
 
@@ -227,3 +230,29 @@ def delete_party(party_id: str, user: WriteUser, session: SessionDep) -> None:
             ),
         )
     session.delete(party)
+
+
+# --------------------------------------------------------------------------
+# open invoices — feeds the payment dialog's FIFO-default allocation table
+# --------------------------------------------------------------------------
+
+
+@router.get("/{party_id}/open-invoices", response_model=list[OpenInvoiceForAllocation])
+def list_open_invoices(
+    party_id: str, user: CurrentUser, session: SessionDep
+) -> list[OpenInvoiceForAllocation]:
+    _get_owned(session, user.tenant_id, party_id)
+    today = date.today()
+    out: list[OpenInvoiceForAllocation] = []
+    for inv in open_invoices_for_party(session, party_id):
+        out.append(
+            OpenInvoiceForAllocation(
+                invoice_id=inv.id,
+                number=inv.number,
+                date=inv.date,
+                grand_total=inv.grand_total,
+                balance_due=balance_due_for_invoice(session, inv),
+                days_old=(today - inv.date).days,
+            )
+        )
+    return out

@@ -248,7 +248,10 @@ def send_invoice(
     cfg = get_config(session, invoice.tenant_id)
 
     grand_total = invoice.grand_total
-    total_str = f"₹{grand_total:,.2f}" if grand_total is not None else "the invoice amount"
+    # {{3}} is declared as a Number variable in the WhatsApp template, so it
+    # must be a bare numeric string — no ₹, no thousands separators. The ₹
+    # symbol lives in the template's static text ("Amount: ₹{{3}}").
+    total_str = f"{grand_total:.2f}" if grand_total is not None else "0.00"
     param_values = {
         "party_name": party.legal_name,
         "invoice_number": str(invoice.number or ""),

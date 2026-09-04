@@ -24,6 +24,7 @@ from app.models.item import Item, ItemAlias, ProductGroup
 from app.models.item_category import ItemCategory
 from app.models.item_classify_rule import ItemClassifyRule
 from app.models.party import Party, PartyAddress
+from app.models.payment import Payment, PaymentAllocation
 from app.models.tally_agent import AgentOutboxItem, BackupShop, BackupUpload
 from app.models.tally_import import StagingTallyParty
 from app.models.tally_stock_import import StagingTallyItem
@@ -53,6 +54,8 @@ __all__ = [
     "ProductGroup",
     "Party",
     "PartyAddress",
+    "Payment",
+    "PaymentAllocation",
     "StagingTallyItem",
     "StagingTallyParty",
     "Tenant",
