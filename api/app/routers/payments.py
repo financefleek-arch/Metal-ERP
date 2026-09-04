@@ -16,7 +16,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import lazyload, selectinload
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Invoice, Party, Payment, PaymentAllocation
@@ -142,7 +142,11 @@ def create_payment(body: PaymentCreate, user: WriteUser, session: SessionDep) ->
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                     detail="against_invoice allocation requires invoice_id",
                 )
-            inv_stmt = select(Invoice).where(
+            # `Invoice.party` is `lazy="joined"`, which LEFT OUTER JOINs party
+            # on every plain select(Invoice) — Postgres refuses FOR UPDATE on
+            # the nullable side of an outer join, so drop the eager load here
+            # (unused in this branch; `party` above is already the row we need).
+            inv_stmt = select(Invoice).options(lazyload(Invoice.party)).where(
                 Invoice.id == a.invoice_id,
                 Invoice.tenant_id == user.tenant_id,
                 Invoice.party_id == party.id,
