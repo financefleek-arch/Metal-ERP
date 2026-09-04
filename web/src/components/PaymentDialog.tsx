@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { inr } from "../lib/previewTotal";
@@ -37,16 +37,37 @@ interface AllocRow {
   edited: boolean;
 }
 
-function fifoFill(rows: AllocRow[], amount: number): AllocRow[] {
+/** Derive the allocation table from the server's open-invoice list, the
+ *  typed amount, and any rows the operator has hand-edited — pure, no
+ *  stored/re-seeded state, so a query refetch or a keystroke never race
+ *  each other into a flicker. */
+function buildRows(
+  invoices: OpenInvoiceForAllocation[],
+  amount: number,
+  edits: Record<string, string>,
+): AllocRow[] {
   let remaining = amount;
-  return rows.map((r) => {
-    if (r.edited) {
-      remaining -= parseAmt(r.apply);
-      return r;
+  return invoices.map((iv) => {
+    const balanceDue = Number(iv.balance_due);
+    const edited = Object.prototype.hasOwnProperty.call(edits, iv.invoice_id);
+    let apply: string;
+    if (edited) {
+      apply = edits[iv.invoice_id];
+      remaining -= parseAmt(apply);
+    } else {
+      const fill = Math.max(0, Math.min(balanceDue, remaining));
+      remaining -= fill;
+      apply = fill > 0 ? String(round2(fill)) : "0";
     }
-    const apply = Math.max(0, Math.min(r.balanceDue, remaining));
-    remaining -= apply;
-    return { ...r, apply: apply > 0 ? String(round2(apply)) : "0" };
+    return {
+      invoiceId: iv.invoice_id,
+      number: iv.number,
+      date: iv.date,
+      balanceDue,
+      daysOld: iv.days_old,
+      apply,
+      edited,
+    };
   });
 }
 
@@ -78,7 +99,8 @@ export function PaymentDialog({
   const [mode, setMode] = useState<PaymentMode>("cash");
   const [refNo, setRefNo] = useState("");
   const [notes, setNotes] = useState("");
-  const [rows, setRows] = useState<AllocRow[]>([]);
+  /** rows the operator has hand-edited, by invoice id — everything else is FIFO-derived */
+  const [edits, setEdits] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
   const openInvoices = useQuery({
@@ -86,29 +108,25 @@ export function PaymentDialog({
     queryFn: () => api<OpenInvoiceForAllocation[]>(`/parties/${partyId}/open-invoices`),
   });
 
-  // seed rows once the open-invoice list loads — oldest first, matching the
-  // server's FIFO ordering
-  useEffect(() => {
-    if (!openInvoices.data) return;
-    setRows(
-      openInvoices.data.map((iv) => ({
-        invoiceId: iv.invoice_id,
-        number: iv.number,
-        date: iv.date,
-        balanceDue: Number(iv.balance_due),
-        daysOld: iv.days_old,
-        apply: "0",
-        edited: false,
-      })),
-    );
-  }, [openInvoices.data]);
-
   const amountNum = parseAmt(amount);
 
-  // re-run FIFO fill whenever the amount changes, respecting hand-edited rows
-  useEffect(() => {
-    setRows((rs) => fifoFill(rs, amountNum));
-  }, [amountNum]);
+  const rows = useMemo(
+    () => buildRows(openInvoices.data ?? [], amountNum, edits),
+    [openInvoices.data, amountNum, edits],
+  );
+
+  // total across every open invoice — what "Pay in full" fills in, so the
+  // operator never has to type back a number already on screen
+  const totalOutstanding = useMemo(
+    () =>
+      round2((openInvoices.data ?? []).reduce((s, iv) => s + Number(iv.balance_due), 0)),
+    [openInvoices.data],
+  );
+
+  function payInFull() {
+    setEdits({});
+    setAmount(totalOutstanding > 0 ? String(totalOutstanding) : "");
+  }
 
   const allocatedTotal = useMemo(
     () => round2(rows.reduce((sum, r) => sum + parseAmt(r.apply), 0)),
@@ -118,9 +136,7 @@ export function PaymentDialog({
   const overAllocated = allocatedTotal > amountNum + 0.005;
 
   function patchRow(invoiceId: string, apply: string) {
-    setRows((rs) =>
-      rs.map((r) => (r.invoiceId === invoiceId ? { ...r, apply, edited: true } : r)),
-    );
+    setEdits((es) => ({ ...es, [invoiceId]: apply }));
   }
 
   const save = useMutation({
@@ -193,7 +209,18 @@ export function PaymentDialog({
               />
             </div>
             <div>
-              <label className="label">Amount received</label>
+              <label className="label flex items-center justify-between">
+                <span>Amount received</span>
+                {totalOutstanding > 0 && (
+                  <button
+                    type="button"
+                    className="normal-case tracking-normal text-accent hover:underline"
+                    onClick={payInFull}
+                  >
+                    Pay in full
+                  </button>
+                )}
+              </label>
               <input
                 className="field text-right font-semibold"
                 inputMode="decimal"

@@ -7,10 +7,13 @@ import { computePreview, inr } from "../../lib/previewTotal";
 import { computeMeasure, kg } from "../../lib/weighment";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import type {
+  FinalizeResult,
   Invoice,
   InvoiceLineIn,
   ItemListItem,
   PartyListItem,
+  PaymentCreate,
+  PaymentOut,
   RateMode,
   ResolveResult,
   WeighmentSlipIn,
@@ -242,6 +245,10 @@ export function InvoiceEditorPage() {
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [payingOpen, setPayingOpen] = useState(false);
+  /** cash-and-carry: record a payment right after finalize, no dialog needed
+   *  for "full"; "partial" reveals a plain amount field. */
+  const [finalizePayMode, setFinalizePayMode] = useState<"none" | "full" | "partial">("none");
+  const [finalizePayAmount, setFinalizePayAmount] = useState("");
 
   const inv = detail.data;
   const finalized = inv?.status === "final";
@@ -377,14 +384,49 @@ export function InvoiceEditorPage() {
   const finalize = useMutation({
     mutationFn: async () => {
       const saved = await save.mutateAsync();
-      return api<{ number: number; pdf_status: string }>(`/invoices/${saved.id}/finalize`, {
+      const result = await api<FinalizeResult>(`/invoices/${saved.id}/finalize`, {
         method: "POST",
       });
+      const grand = Number(result.totals.grand_total);
+      const payAmount =
+        finalizePayMode === "full"
+          ? result.totals.grand_total
+          : finalizePayMode === "partial"
+            ? finalizePayAmount.trim()
+            : "";
+      const payAmountNum = parseFloat(payAmount.replace(/,/g, ""));
+
+      if (finalizePayMode !== "none" && saved.party_id && payAmountNum > 0) {
+        // never let a typo in the partial-amount field allocate more than
+        // the invoice actually totals
+        const clamped = Math.min(payAmountNum, grand);
+        const body: PaymentCreate = {
+          party_id: saved.party_id,
+          // today, not the invoice's (possibly backdated) date — this
+          // records cash received right now, at the counter
+          date: new Date().toISOString().slice(0, 10),
+          amount: String(clamped),
+          mode: "cash",
+          ref_no: null,
+          notes: null,
+          ledger_name: null,
+          allocations: [{ invoice_id: saved.id, type: "against_invoice", amount: String(clamped) }],
+        };
+        await api<PaymentOut>("/payments", { method: "POST", body });
+        qc.invalidateQueries({ queryKey: ["collections"] });
+        qc.invalidateQueries({ queryKey: ["party-ledger", saved.party_id] });
+      }
+      return result;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["invoices"] });
       qc.invalidateQueries({ queryKey: ["invoice", id] });
       detail.refetch();
+      if (finalizePayMode === "full") setSavedNote("Finalized — payment recorded in full.");
+      else if (finalizePayMode === "partial" && parseFloat(finalizePayAmount) > 0)
+        setSavedNote("Finalized — partial payment recorded.");
+      setFinalizePayMode("none");
+      setFinalizePayAmount("");
     },
     onError: (e) => {
       if (e instanceof ApiError) {
@@ -513,6 +555,31 @@ export function InvoiceEditorPage() {
               >
                 {save.isPending ? "Saving…" : "Save draft"}
               </button>
+              <div className="flex items-center gap-1.5" title="Record a cash payment against this invoice right after it's finalized — for customers who pay on the spot">
+                <div className="inline-flex overflow-hidden rounded-md border border-line">
+                  {(["none", "full", "partial"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      className={`px-2 py-1.5 text-[11px] font-semibold ${
+                        finalizePayMode === m ? "bg-accent text-white" : "bg-card text-muted"
+                      }`}
+                      onClick={() => setFinalizePayMode(m)}
+                    >
+                      {m === "none" ? "No payment" : m === "full" ? "Paid in full" : "Partial"}
+                    </button>
+                  ))}
+                </div>
+                {finalizePayMode === "partial" && (
+                  <input
+                    className="field h-9 w-24 text-right text-xs"
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={finalizePayAmount}
+                    onChange={(e) => setFinalizePayAmount(e.target.value)}
+                  />
+                )}
+              </div>
               <button
                 className="btn-primary h-9 px-4 text-sm"
                 disabled={localBlockers.length > 0 || finalize.isPending}
@@ -521,7 +588,11 @@ export function InvoiceEditorPage() {
                   finalize.mutate();
                 }}
               >
-                {finalize.isPending ? "Finalizing…" : "Finalize"}
+                {finalize.isPending
+                  ? finalizePayMode !== "none"
+                    ? "Finalizing & recording payment…"
+                    : "Finalizing…"
+                  : "Finalize"}
               </button>
             </>
           )}
