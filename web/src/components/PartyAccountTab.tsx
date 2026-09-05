@@ -1,19 +1,48 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError } from "../lib/api";
 import { inr } from "../lib/previewTotal";
 import { PaymentDialog } from "./PaymentDialog";
 import type { Party, PartyLedgerEntry } from "../lib/types";
 
 /** Party detail page's "Account" tab — running statement + record-payment entry. */
 export function PartyAccountTab({ party }: { party: Party }) {
+  const qc = useQueryClient();
   const [payingOpen, setPayingOpen] = useState(false);
   const [openAlloc, setOpenAlloc] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const ledger = useQuery({
     queryKey: ["party-ledger", party.id],
     queryFn: () => api<PartyLedgerEntry[]>(`/parties/${party.id}/ledger`),
   });
+
+  const reverse = useMutation({
+    mutationFn: ({ paymentId, reason }: { paymentId: string; reason: string }) =>
+      api(`/payments/${paymentId}/reverse`, { method: "POST", body: { reason } }),
+    onSuccess: () => {
+      setErr(null);
+      ledger.refetch();
+      qc.invalidateQueries({ queryKey: ["collections"] });
+      qc.invalidateQueries({ queryKey: ["open-invoices", party.id] });
+      qc.invalidateQueries({ queryKey: ["invoice"] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not reverse payment"),
+  });
+
+  function confirmReverse(paymentId: string, label: string) {
+    const reason = window.prompt(
+      `Reverse ${label}? This won't delete it — it stays on the statement as reversed, ` +
+        `and its allocations stop counting toward any balance.\n\nReason (e.g. "cheque bounced", "wrong entry"):`,
+    );
+    if (reason === null) return; // cancelled
+    if (!reason.trim()) {
+      setErr("A reason is required to reverse a payment.");
+      return;
+    }
+    reverse.mutate({ paymentId, reason: reason.trim() });
+  }
 
   // entries are newest-first; the most recent row's running balance is the
   // current balance — negative means the party has an unapplied credit.
@@ -23,6 +52,7 @@ export function PartyAccountTab({ party }: { party: Party }) {
 
   return (
     <div>
+      {err && <p className="err mb-3">{err}</p>}
       <div className="card p-4">
         <div className="label mb-0.5">{isCredit ? "Credit balance" : "Outstanding balance"}</div>
         <div className={`font-serif text-2xl font-semibold ${isCredit ? "text-ok" : ""}`}>
@@ -96,6 +126,16 @@ export function PartyAccountTab({ party }: { party: Party }) {
                     {inr(isPayment ? e.credit : e.debit)}
                   </div>
                   <div className="text-[10px] text-muted">bal {inr(e.running_balance)}</div>
+                  {isPayment && !isReversed && (
+                    <button
+                      type="button"
+                      className="mt-1 text-[10px] font-semibold text-danger hover:underline disabled:opacity-50"
+                      disabled={reverse.isPending}
+                      onClick={() => confirmReverse(e.ref_id, e.ref_label)}
+                    >
+                      {reverse.isPending ? "Reversing…" : "Reverse"}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

@@ -311,6 +311,24 @@ def delete_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> Non
             status_code=status.HTTP_409_CONFLICT,
             detail="a finalized invoice cannot be deleted — cancel it instead",
         )
+    # A *posted* payment blocks delete — reverse it first (real money was
+    # recorded; deleting the invoice out from under it would be silently
+    # discarding that fact). A *reversed* payment does NOT block: its
+    # allocation row stays forever for the audit trail (never deleted), but
+    # payment_allocation.invoice_id is ON DELETE SET NULL (migration 0019)
+    # specifically so this delete can still go through — the payment record
+    # itself, reversed status included, is untouched either way.
+    has_posted_payment = session.scalar(
+        select(PaymentAllocation.id)
+        .join(Payment, Payment.id == PaymentAllocation.payment_id)
+        .where(PaymentAllocation.invoice_id == inv.id, Payment.status == PaymentStatus.posted)
+        .limit(1)
+    )
+    if has_posted_payment:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="cannot delete — a payment is recorded against this invoice; reverse it first",
+        )
     # a draft (never numbered) or a cancelled invoice (number already burned,
     # not reused) can be removed outright
     session.delete(inv)

@@ -447,3 +447,44 @@ def test_open_invoices_and_ledger_endpoints(client: TestClient) -> None:
     kinds = [e["kind"] for e in r3.json()]
     assert kinds.count("invoice") == 2
     assert kinds.count("payment") == 1
+
+
+def test_invoice_with_payment_cannot_be_deleted(client: TestClient) -> None:
+    """payment_allocation.invoice_id has no ON DELETE rule on purpose
+    (allocations are an audit trail) — deleting the invoice must be blocked
+    with a clean 409, not surface as a raw FK-violation error. Cancel first
+    (a finalized invoice can't be deleted directly either way) then confirm
+    delete is still refused while the payment stands.
+    """
+    h = _h(_register(client, "p14@x.example.com"))
+    pid = _party(client, h)
+    inv = _finalized_invoice(client, h, pid, "1000.00")
+
+    pay = client.post(
+        "/api/payments",
+        headers=h,
+        json={
+            "party_id": pid,
+            "amount": "1000.00",
+            "mode": "cash",
+            "allocations": [
+                {"invoice_id": inv["id"], "type": "against_invoice", "amount": "1000.00"}
+            ],
+        },
+    ).json()
+
+    r = client.post(f"/api/invoices/{inv['id']}/cancel", headers=h)
+    assert r.status_code == 200, r.text
+
+    r2 = client.delete(f"/api/invoices/{inv['id']}", headers=h)
+    assert r2.status_code == 409, r2.text
+    assert "payment" in r2.json()["detail"].lower()
+
+    # reversing the payment (the delete error's own advice) clears the way
+    r3 = client.post(
+        f"/api/payments/{pay['id']}/reverse", headers=h, json={"reason": "test cleanup"}
+    )
+    assert r3.status_code == 200, r3.text
+
+    r4 = client.delete(f"/api/invoices/{inv['id']}", headers=h)
+    assert r4.status_code == 204, r4.text
