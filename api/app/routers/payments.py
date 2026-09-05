@@ -255,10 +255,13 @@ collections_router = APIRouter(prefix="/api/collections", tags=["payments"])
 def collections(
     user: CurrentUser,
     session: SessionDep,
+    scope: str = Query(default="outstanding", pattern="^(outstanding|overpaid|either)$"),
     sort: str = Query(default="balance", pattern="^(balance|oldest)$"),
     q: str | None = Query(default=None),
 ) -> list[CollectionsRow]:
-    rows = collections_summary(session, user.tenant_id, sort=sort, q=q)  # type: ignore[arg-type]
+    rows = collections_summary(
+        session, user.tenant_id, scope=scope, sort=sort, q=q  # type: ignore[arg-type]
+    )
     return [
         CollectionsRow(
             party_id=r.party_id,

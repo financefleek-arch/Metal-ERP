@@ -218,3 +218,149 @@ def test_draft_cannot_be_cancelled(client: TestClient) -> None:
     pid = _party(client, h)
     d = client.post("/api/invoices", headers=h, json={"party_id": pid}).json()
     assert client.post(f"/api/invoices/{d['id']}/cancel", headers=h).status_code == 409
+
+
+# --------------------------------------------------------------------------
+# discount_pct round-trip (Bug 1)
+# --------------------------------------------------------------------------
+
+
+def test_discount_pct_round_trips(client: TestClient) -> None:
+    h = _h(_register(client, "fin11@x.example.com"))
+    pid = _party(client, h)
+    iid = _draft_with_lines(
+        client, h, pid,
+        [
+            {
+                "description": "SS Utensil",
+                "quantity": "10",
+                "unit_rate": "100",
+                "discount": "150.00",  # 15% of 1000, resolved by the client
+                "discount_pct": "15.00",
+            }
+        ],
+    )
+    got = client.get(f"/api/invoices/{iid}", headers=h).json()
+    line = got["lines"][0]
+    assert line["discount_pct"] == "15.00"
+    assert line["discount"] == "150.00"
+    # billing math is untouched by discount_pct — the absolute ₹ `discount`
+    # is what feeds the total, same as if discount_pct had never been sent
+    assert got["totals"]["grand_total"] == "850.00"
+
+
+def test_discount_pct_null_when_omitted(client: TestClient) -> None:
+    h = _h(_register(client, "fin12@x.example.com"))
+    pid = _party(client, h)
+    iid = _draft_with_lines(
+        client, h, pid,
+        [{"description": "SS Utensil", "quantity": "10", "unit_rate": "100", "discount": "50"}],
+    )
+    got = client.get(f"/api/invoices/{iid}", headers=h).json()
+    assert got["lines"][0]["discount_pct"] is None
+    assert got["lines"][0]["discount"] == "50.00"
+
+
+def test_discount_pct_survives_duplicate(client: TestClient) -> None:
+    h = _h(_register(client, "fin13@x.example.com"))
+    pid = _party(client, h)
+    iid = _draft_with_lines(
+        client, h, pid,
+        [
+            {
+                "description": "SS Utensil",
+                "quantity": "10",
+                "unit_rate": "100",
+                "discount": "150.00",
+                "discount_pct": "15.00",
+            }
+        ],
+    )
+    r = client.post(f"/api/invoices/{iid}/duplicate", headers=h)
+    assert r.status_code == 201
+    clone = client.get(f"/api/invoices/{r.json()['id']}", headers=h).json()
+    assert clone["lines"][0]["discount_pct"] == "15.00"
+
+
+# --------------------------------------------------------------------------
+# finalize gate: qty/rate zero (Bug 2 — already-existing behaviour, guarded
+# here so a future refactor doesn't silently drop it)
+# --------------------------------------------------------------------------
+
+
+def test_gate_blocks_zero_quantity(client: TestClient) -> None:
+    h = _h(_register(client, "fin14@x.example.com"))
+    pid = _party(client, h)
+    iid = _draft_with_lines(
+        client, h, pid, [{"description": "MS Angle", "quantity": "0", "unit_rate": "58"}]
+    )
+    r = client.post(f"/api/invoices/{iid}/finalize", headers=h)
+    assert r.status_code == 422
+    assert any("line 1" in x for x in r.json()["detail"])
+
+
+def test_gate_blocks_zero_rate(client: TestClient) -> None:
+    h = _h(_register(client, "fin15@x.example.com"))
+    pid = _party(client, h)
+    iid = _draft_with_lines(
+        client, h, pid, [{"description": "MS Angle", "quantity": "5", "unit_rate": "0"}]
+    )
+    r = client.post(f"/api/invoices/{iid}/finalize", headers=h)
+    assert r.status_code == 422
+    assert any("line 1" in x for x in r.json()["detail"])
+
+
+# --------------------------------------------------------------------------
+# finalize gate: zero recorded weight against a kg-uom segment (Bug 2)
+# --------------------------------------------------------------------------
+
+
+def test_gate_blocks_zero_recorded_weight_with_kg_line(client: TestClient) -> None:
+    h = _h(_register(client, "fin16@x.example.com"))
+    pid = _party(client, h)
+    d = client.post("/api/invoices", headers=h, json={"party_id": pid}).json()
+    r = client.put(
+        f"/api/invoices/{d['id']}",
+        headers=h,
+        json={
+            "lines": [
+                {
+                    "description": "MS Rod",
+                    "quantity": "50",
+                    "uom": "kg",
+                    "unit_rate": "60",
+                    "segment_no": 1,
+                }
+            ],
+            "weighment_slips": [{"seg": 1, "recorded_kg": "0"}],
+        },
+    )
+    assert r.status_code == 200, r.text
+    fr = client.post(f"/api/invoices/{d['id']}/finalize", headers=h)
+    assert fr.status_code == 422
+    assert any("segment 1" in x for x in fr.json()["detail"])
+
+
+def test_gate_allows_zero_recorded_weight_for_piece_only_segment(client: TestClient) -> None:
+    h = _h(_register(client, "fin17@x.example.com"))
+    pid = _party(client, h)
+    d = client.post("/api/invoices", headers=h, json={"party_id": pid}).json()
+    r = client.put(
+        f"/api/invoices/{d['id']}",
+        headers=h,
+        json={
+            "lines": [
+                {
+                    "description": "SS Balti No.3",
+                    "quantity": "4",
+                    "uom": "nos",
+                    "unit_rate": "532",
+                    "segment_no": 1,
+                }
+            ],
+            "weighment_slips": [{"seg": 1, "recorded_kg": "0"}],
+        },
+    )
+    assert r.status_code == 200, r.text
+    fr = client.post(f"/api/invoices/{d['id']}/finalize", headers=h)
+    assert fr.status_code == 200, fr.text

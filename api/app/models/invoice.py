@@ -150,6 +150,10 @@ class InvoiceLine(PkUuidMixin, TimestampMixin, Base):
     segment_no: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     unit_rate: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
     discount: Mapped[Decimal] = mapped_column(_MONEY, default=0, nullable=False)
+    # Persisted UI hint only — set when the operator entered the discount as
+    # a percentage, so a reopened draft can show "15%" instead of a raw ₹
+    # figure; null when they entered ₹ directly. Never read by domain.tax.
+    discount_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2))
     line_total: Mapped[Decimal | None] = mapped_column(_MONEY)
 
     # --- Phase 2 (GST) — dormant ---

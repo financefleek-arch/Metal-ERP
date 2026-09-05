@@ -89,14 +89,20 @@ function rowsFromInvoice(inv: Invoice): Row[] {
     group_id: null,
     description: l.description,
     hsn_code: l.hsn_code ?? "",
-    quantity: String(l.quantity ?? ""),
-    uom: l.uom ?? "",
+    quantity: trimQty(l.quantity),
+    uom: normalizeUom(l.uom),
     secondaryUom: "",
     rateMode: null,
     unit_rate: String(l.unit_rate ?? ""),
-    // stored lines always carry an absolute discount — reloads as ₹
-    discount: l.discount && Number(l.discount) ? String(l.discount) : "",
-    discMode: "amt" as DiscMode,
+    // discount_pct is a persisted UI hint: if the operator originally typed
+    // a % it round-trips as that same %, not the computed ₹ figure.
+    discount:
+      l.discount_pct && Number(l.discount_pct)
+        ? String(l.discount_pct)
+        : l.discount && Number(l.discount)
+          ? String(l.discount)
+          : "",
+    discMode: l.discount_pct && Number(l.discount_pct) ? "pct" : ("amt" as DiscMode),
     segmentNo: l.segment_no ?? 1,
     newMode: "" as NewMode,
     _priceMin: null,
@@ -109,6 +115,41 @@ function rowsFromInvoice(inv: Invoice): Row[] {
 /** round half-away-from-zero to 2dp — mirrors the paise rounding in tax.py */
 function round2(n: number): number {
   return Math.sign(n) * Math.round(Math.abs(n) * 100) / 100;
+}
+
+/** Catalogue items carry whatever unit spelling they were created/imported
+ *  with ("pcs", "pc", "nos", "no", "each" all mean the same thing for a
+ *  piece-counted item) — normalise to one canonical spelling per concept so
+ *  a bill never shows two different unit labels for the same kind of good.
+ *  Anything not recognised passes through unchanged (a real, distinct unit
+ *  like "mt" or "bundle" is left alone). */
+const UOM_ALIASES: Record<string, string> = {
+  pc: "nos",
+  pcs: "nos",
+  piece: "nos",
+  pieces: "nos",
+  no: "nos",
+  nos: "nos",
+  each: "nos",
+  unit: "nos",
+  units: "nos",
+  kgs: "kg",
+  kg: "kg",
+};
+
+function normalizeUom(u: string | null | undefined): string {
+  const t = (u ?? "").trim().toLowerCase();
+  if (!t) return "";
+  return UOM_ALIASES[t] ?? t;
+}
+
+/** the backend returns quantity at fixed 3dp ("1.000") — trim trailing
+ *  zeros on load so a reloaded line reads the same as a freshly-typed one
+ *  ("1", not "1.000"), while still allowing real fractional qty ("2.5"). */
+function trimQty(v: string | number | null | undefined): string {
+  const s = String(v ?? "").trim();
+  if (!s || !/^-?\d+(\.\d+)?$/.test(s)) return s;
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
 }
 
 /** the absolute ₹ discount for a row, resolving a % into an amount */
@@ -185,6 +226,7 @@ function lineProblems(r: Row): LineProblem[] {
 }
 
 function toLineIn(r: Row): InvoiceLineIn {
+  const pct = parseFloat(r.discount.replace(/,/g, ""));
   return {
     item_id: r.item_id,
     group_id: r.group_id,
@@ -193,8 +235,12 @@ function toLineIn(r: Row): InvoiceLineIn {
     quantity: r.quantity.trim() || "0",
     uom: r.uom.trim() || null,
     unit_rate: r.unit_rate.trim() || "0",
-    // % is resolved to an absolute amount here — the backend line stores ₹ only
+    // % is resolved to an absolute amount for billing — the backend line's
+    // `discount` (₹) is the only value tax computation reads
     discount: String(rowDiscountAmount(r) || 0),
+    // …but the original % is persisted alongside it purely so the row
+    // round-trips as a % on reload instead of a converted ₹ figure
+    discount_pct: r.discMode === "pct" && isFinite(pct) && pct > 0 ? String(pct) : null,
     size_pos: null,
     segment_no: r.segmentNo || 1,
   };
@@ -313,6 +359,20 @@ export function InvoiceEditorPage() {
     [rows, invDiscAmt],
   );
 
+  // live preview of the finalize-time payment (used by the totals rail) —
+  // clamped to the grand total so a typo in "partial" never previews an
+  // impossible overpayment against the invoice being drafted.
+  const finalizePayPreview = useMemo(() => {
+    const grand = Number(preview.grandTotal);
+    const amount =
+      finalizePayMode === "full"
+        ? grand
+        : finalizePayMode === "partial"
+          ? Math.min(parseFloat(finalizePayAmount.replace(/,/g, "")) || 0, grand)
+          : 0;
+    return { amount, balanceAfter: Math.max(0, grand - amount) };
+  }, [finalizePayMode, finalizePayAmount, preview.grandTotal]);
+
   const filledRows = rows.filter((r) => r.description.trim());
 
   // derived weight / count / segments — mirrors the backend measure
@@ -339,6 +399,19 @@ export function InvoiceEditorPage() {
     const problems = lineProblems(r);
     problems.filter((p) => p.block).forEach((p) => localBlockers.push(`line ${n}: ${p.msg}`));
   });
+  // every CLOSED segment (< openSeg) that actually has weighed lines must
+  // carry a real recorded scale weight — a blank/zero slip on a real weighed
+  // segment is the fat-finger case this guard exists to catch
+  measure.segments
+    .filter((s) => s.seg < openSeg && s.weightKg > 0)
+    .forEach((s) => {
+      const recorded = parseFloat(
+        slips.find((sl) => sl.seg === s.seg)?.recorded_kg ?? "",
+      );
+      if (!isFinite(recorded) || recorded <= 0) {
+        localBlockers.push(`weighment ${s.seg}: needs a recorded scale weight`);
+      }
+    });
 
   const save = useMutation({
     mutationFn: async (): Promise<Invoice> => {
@@ -844,6 +917,26 @@ export function InvoiceEditorPage() {
             <p className="min-h-[28px] text-[11px] leading-snug text-muted">
               {Number(preview.grandTotal) > 0 ? preview.amountInWords : ""}
             </p>
+
+            {!readOnly && finalizePayMode !== "none" && (
+              <div className="mt-1 rounded-md border border-dashed border-accent bg-accent-soft p-2.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-muted">
+                    Payment on finalize {finalizePayMode === "partial" && "(partial)"}
+                  </span>
+                  <span className="font-semibold text-accent">
+                    {inr(finalizePayPreview.amount)}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex items-center justify-between text-xs">
+                  <span className="text-muted">Balance after payment</span>
+                  <span className="font-semibold">{inr(finalizePayPreview.balanceAfter)}</span>
+                </div>
+                <p className="mt-1.5 text-[10px] leading-snug text-accent-dark">
+                  Only recorded when you Finalize — “Save draft” does not record this payment.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* weighment — always shown once there's a line */}
@@ -988,6 +1081,11 @@ function SlipDivider({
   onReopen: () => void;
 }) {
   const drift = Number(recordedKg) - lineSumKg;
+  // same "blank/zero against real weighed lines" guard as the close-segment
+  // dialog — this field can silently overwrite a valid recorded weight
+  const needsWeight = lineSumKg > 0;
+  const recordedNum = parseFloat(recordedKg);
+  const invalid = needsWeight && (!recordedKg.trim() || !isFinite(recordedNum) || recordedNum <= 0);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-[#c9ddc9] bg-[#eef3ee] px-3 py-1.5">
       <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ok">
@@ -1001,7 +1099,7 @@ function SlipDivider({
       ) : (
         <span className="flex items-center gap-1">
           <input
-            className="field h-7 w-24 text-right font-mono text-xs"
+            className={`field h-7 w-24 text-right font-mono text-xs ${invalid ? "border-danger focus:border-danger" : ""}`}
             inputMode="decimal"
             value={recordedKg}
             onChange={(e) => onEdit(e.target.value)}
@@ -1013,11 +1111,17 @@ function SlipDivider({
         lines {lineFrom}–{lineTo}
         {count > 0 && ` · ${count} pcs`}
       </span>
-      {Math.abs(drift) >= 0.005 && (
-        <span className="text-[10px] text-warn">
-          {drift > 0 ? "+" : "−"}
-          {Math.abs(drift).toFixed(2)} kg vs line sum
+      {invalid ? (
+        <span className="text-[10px] font-semibold text-danger">
+          can't be blank/zero — this segment has weighed lines
         </span>
+      ) : (
+        Math.abs(drift) >= 0.005 && (
+          <span className="text-[10px] text-warn">
+            {drift > 0 ? "+" : "−"}
+            {Math.abs(drift).toFixed(2)} kg vs line sum
+          </span>
+        )
       )}
       {!readOnly && isLastClosed && (
         <button
@@ -1044,7 +1148,15 @@ function CloseSegmentDialog({
   onConfirm: (recordedKg: string) => void;
 }) {
   const [val, setVal] = useState(lineSumKg ? String(lineSumKg) : "");
+  const [touched, setTouched] = useState(false);
   const drift = (parseFloat(val) || 0) - lineSumKg;
+  // this segment has real kg-bearing lines (weightKg only accumulates from
+  // kg-uom lines) — a blank/zero scale reading against them is exactly the
+  // fat-finger case reported, so block it. A piece-only segment (lineSumKg
+  // === 0 by construction) has nothing to weigh and is never blocked.
+  const needsWeight = lineSumKg > 0;
+  const parsed = parseFloat(val);
+  const invalid = needsWeight && (!val.trim() || !isFinite(parsed) || parsed <= 0);
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4"
@@ -1061,17 +1173,23 @@ function CloseSegmentDialog({
         </p>
         <label className="label mt-3 block">Weight shown on the platform scale</label>
         <input
-          className="field text-right font-mono"
+          className={`field text-right font-mono ${invalid && touched ? "border-danger focus:border-danger" : ""}`}
           inputMode="decimal"
           autoFocus
           value={val}
           placeholder="0.000"
           onChange={(e) => setVal(e.target.value)}
+          onBlur={() => setTouched(true)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") onConfirm(val);
+            if (e.key === "Enter" && !invalid) onConfirm(val);
           }}
         />
-        {Math.abs(drift) >= 0.005 && (
+        {invalid && touched && (
+          <p className="mt-1 text-[11px] text-danger">
+            enter the scale weight — it can't be blank or zero for a weighed segment
+          </p>
+        )}
+        {!invalid && Math.abs(drift) >= 0.005 && (
           <p className="mt-1 text-[11px] text-warn">
             {drift > 0 ? "+" : "−"}
             {Math.abs(drift).toFixed(2)} kg vs line sum — recorded as-is on the slip
@@ -1085,8 +1203,12 @@ function CloseSegmentDialog({
             Cancel
           </button>
           <button
-            className="h-9 flex-1 rounded-md bg-ok px-4 text-sm font-semibold text-white"
-            onClick={() => onConfirm(val)}
+            className="h-9 flex-1 rounded-md bg-ok px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={invalid}
+            onClick={() => {
+              setTouched(true);
+              if (!invalid) onConfirm(val);
+            }}
           >
             Close &amp; start seg {seg + 1}
           </button>
@@ -1361,8 +1483,8 @@ function LineRow({
       item_id: it.id,
       description: it.name,
       hsn_code: it.hsn_code ?? row.hsn_code,
-      uom: it.uom ?? it.secondary_uom ?? row.uom,
-      secondaryUom: it.secondary_uom ?? "",
+      uom: normalizeUom(it.uom) || normalizeUom(it.secondary_uom) || row.uom,
+      secondaryUom: normalizeUom(it.secondary_uom),
       rateMode: it.rate_mode ?? null,
       unit_rate: it.last_rate ?? it.default_rate ?? row.unit_rate ?? "",
       newMode: "",
@@ -1401,13 +1523,14 @@ function LineRow({
   const filled = row.description.trim().length > 0;
 
   // the unit the line is priced in — for the "Rate ₹/<unit>" label
-  const unitLabel = row.uom.trim() || (row.rateMode === "kg" ? "kg" : "nos");
+  const unitLabel = normalizeUom(row.uom) || (row.rateMode === "kg" ? "kg" : "nos");
   // Always a dropdown, defaulted to the item's unit but overridable: the
-  // item's own unit(s) first, then the two rate-mode defaults, deduped.
+  // item's own unit(s) first, then the two rate-mode defaults, deduped —
+  // all normalised so "pcs"/"nos"/"pc" never appear as separate options.
   const unitChoices = Array.from(
     new Set(
       [row.uom, row.secondaryUom, "nos", "kg"]
-        .map((u) => u.trim().toLowerCase())
+        .map(normalizeUom)
         .filter(Boolean),
     ),
   );
@@ -1563,10 +1686,11 @@ function LineRow({
   const showUnit = reveal.has("unit");
   const anyExtra = showDisc || showHsn || showUnit;
 
-  // % → ₹ explainer under the discount field
+  // % → ₹ explainer under the discount field — billing uses the ₹ figure;
+  // the % itself is kept too, so this line reloads showing the same %
   const discExplain =
     row.discMode === "pct" && discAmt > 0
-      ? `${row.discount.trim()}% = ₹${discAmt} — stored as ₹${discAmt}`
+      ? `${row.discount.trim()}% = ₹${discAmt} off this line`
       : "";
 
   const collapsedRow = (
@@ -1722,7 +1846,7 @@ function LineRow({
           <label className="fl-m">Unit</label>
           <select
             className={`field h-10 px-2 text-sm ${fieldClass("unit")}`}
-            value={row.uom.trim().toLowerCase() || unitLabel}
+            value={normalizeUom(row.uom) || unitLabel}
             disabled={readOnly}
             onChange={(e) => onPatch({ uom: e.target.value })}
           >
@@ -1821,7 +1945,7 @@ function LineRow({
         />
         <select
           className={`field h-9 px-1 text-xs ${fieldClass("unit")}`}
-          value={row.uom.trim().toLowerCase() || unitLabel}
+          value={normalizeUom(row.uom) || unitLabel}
           disabled={readOnly}
           title={row.rateMode === "kg" ? "weight item" : "piece item"}
           onChange={(e) => onPatch({ uom: e.target.value })}

@@ -44,6 +44,9 @@ class InvoiceLineIn(BaseModel):
     uom: str | None = Field(default=None, max_length=20)
     unit_rate: Money = Decimal("0")
     discount: Money = Decimal("0")  # absolute amount off this line
+    # set only when the operator entered `discount` as a percentage; a
+    # persisted UI hint, not read by domain.tax's billing math
+    discount_pct: Annotated[Decimal, Field(max_digits=5, decimal_places=2)] | None = None
     size_pos: int | None = None
     segment_no: int = Field(default=1, ge=1)  # weighment segment this line is in
 
@@ -60,6 +63,7 @@ class InvoiceLineOut(BaseModel):
     uom: str | None
     unit_rate: Money
     discount: Money
+    discount_pct: Annotated[Decimal, Field(max_digits=5, decimal_places=2)] | None = None
     line_total: Money | None
     segment_no: int = 1
 

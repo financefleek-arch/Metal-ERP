@@ -24,8 +24,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Invoice, Party, PartyAddress, Tenant
-from app.models._mixins import PdfStatus
+from app.models._mixins import InvoiceStatus, PdfStatus
 from app.services.invoices.common import measure_for
+from app.services.payments import balance_due_for_invoice, paid_amount_for_invoice
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
 _env = Environment(
@@ -106,6 +107,16 @@ def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
     )
 
     measure = measure_for(invoice)
+
+    # Payment/balance — only meaningful once finalized (a draft has no frozen
+    # grand_total to bill against); a fully-paid bill omits the line entirely
+    # rather than printing a redundant "Balance due: 0.00".
+    paid_amount = None
+    balance_due = None
+    if invoice.status == InvoiceStatus.final:
+        paid_amount = paid_amount_for_invoice(session, invoice.id)
+        balance_due = balance_due_for_invoice(session, invoice)
+
     html = _env.get_template("invoice_v1_nongst.html").render(
         doc_label=(tenant.document_label if tenant else "Invoice"),
         tenant=tenant,
@@ -117,6 +128,8 @@ def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
         measure=measure,
         # segment_no of the last line in each segment -> the slip to print after it
         seg_break_after={s.line_to: s for s in measure.segments},
+        paid_amount=paid_amount,
+        balance_due=balance_due,
     )
 
     out_dir = Path(settings.pdf_dir)

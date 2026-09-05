@@ -456,6 +456,10 @@ export interface InvoiceLineIn {
   uom: string | null;
   unit_rate: string;
   discount: string;
+  /** persisted UI hint only — the original % the operator typed, if they
+   *  entered the discount as a percentage rather than a ₹ amount. `discount`
+   *  above (an absolute ₹) is always the value billing math uses. */
+  discount_pct: string | null;
   size_pos: number | null;
   segment_no: number;
 }
@@ -470,6 +474,7 @@ export interface InvoiceLineOut {
   uom: string | null;
   unit_rate: string;
   discount: string;
+  discount_pct: string | null;
   line_total: string | null;
   segment_no: number;
 }
@@ -665,10 +670,14 @@ export interface PartyLedgerEntry {
 }
 
 /** One row in the Collections list — parties with outstanding balance > 0. */
+export type CollectionsScope = "outstanding" | "overpaid" | "either";
+
 export interface CollectionsRow {
   party_id: string;
   legal_name: string;
   phone: string | null;
+  /** positive = party owes us; negative = we owe the party (on-account
+   *  credit exceeds what's billed). Never zero — settled parties don't appear. */
   outstanding_balance: string;
   oldest_unpaid_days: number | null;
   open_invoice_count: number;

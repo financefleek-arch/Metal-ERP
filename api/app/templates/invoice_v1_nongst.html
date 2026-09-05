@@ -133,6 +133,10 @@
           {% endif %}
           <tr class="totrow"><td>Round Off</td><td class="r">{{ invoice.round_off|money }}</td></tr>
           <tr class="grand"><td>Grand Total</td><td class="r">{{ invoice.grand_total|money }}</td></tr>
+          {% if paid_amount is not none and paid_amount|float > 0 %}
+          <tr class="totrow"><td>Amount Received</td><td class="r">{{ paid_amount|money }}</td></tr>
+          <tr class="totrow b"><td>Balance Due</td><td class="r">{{ balance_due|money }}</td></tr>
+          {% endif %}
         </table>
       </td>
     </tr>

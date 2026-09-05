@@ -335,6 +335,51 @@ def test_collections_list_balance_and_oldest_sort(client: TestClient) -> None:
     assert {row["legal_name"] for row in r2.json()} == {"Big Debt Co", "Small Debt Co"}
 
 
+def test_collections_overpaid_scope(client: TestClient) -> None:
+    """A party who has fully paid their only invoice AND left an on-account
+    credit has NO open invoice at all — the old INNER-JOIN-to-open-invoices
+    query structurally couldn't surface that party under any scope. The
+    party-driven LEFT JOIN must.
+    """
+    h = _h(_register(client, "p13@x.example.com"))
+    p_credit = _party(client, h, "Overpaid Co")
+    p_owes = _party(client, h, "Owes Co")
+
+    inv = _finalized_invoice(client, h, p_credit, "100.00")
+    client.post(
+        "/api/payments",
+        headers=h,
+        json={
+            "party_id": p_credit,
+            "amount": "150.00",
+            "mode": "cash",
+            "allocations": [
+                {"invoice_id": inv["id"], "type": "against_invoice", "amount": "100.00"}
+            ],
+        },
+    )
+    _finalized_invoice(client, h, p_owes, "75.00")
+
+    r = client.get("/api/collections", headers=h, params={"scope": "outstanding"})
+    assert r.status_code == 200, r.text
+    names = {row["legal_name"] for row in r.json()}
+    assert names == {"Owes Co"}  # the overpaid party must NOT show here
+
+    r2 = client.get("/api/collections", headers=h, params={"scope": "overpaid"})
+    assert r2.status_code == 200, r2.text
+    rows2 = r2.json()
+    assert {row["legal_name"] for row in rows2} == {"Overpaid Co"}
+    row = rows2[0]
+    assert row["open_invoice_count"] == 0
+    assert row["oldest_unpaid_days"] is None
+    # positive in the payload — the frontend takes abs() and labels it a credit
+    assert float(row["outstanding_balance"]) == pytest.approx(-50.00)
+
+    r3 = client.get("/api/collections", headers=h, params={"scope": "either"})
+    assert r3.status_code == 200, r3.text
+    assert {row["legal_name"] for row in r3.json()} == {"Owes Co", "Overpaid Co"}
+
+
 def test_voucher_no_gap_free_and_sequential(client: TestClient) -> None:
     h = _h(_register(client, "p12@x.example.com"))
     pid = _party(client, h)

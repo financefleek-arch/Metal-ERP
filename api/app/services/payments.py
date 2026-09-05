@@ -108,22 +108,35 @@ class CollectionsSummaryRow:
     party_id: str
     legal_name: str
     phone: str | None
+    # positive = party owes us; negative = we owe the party (on-account credit
+    # exceeds what's billed); zero rows are never returned.
     outstanding_balance: Decimal
     oldest_unpaid_days: int | None
     open_invoice_count: int
+
+
+CollectionsScope = Literal["outstanding", "overpaid", "either"]
 
 
 def collections_summary(
     session: Session,
     tenant_id: str,
     *,
+    scope: CollectionsScope = "outstanding",
     sort: Literal["balance", "oldest"] = "balance",
     q: str | None = None,
 ) -> list[CollectionsSummaryRow]:
-    """One round trip: per-party (gross balance_due, oldest unpaid invoice
-    date, open invoice count) via a paid-subquery join, then subtract
-    on-account credit per party via a second aggregate. Only parties with a
-    net outstanding_balance > 0 are returned.
+    """One round trip: per-party gross balance_due (party-driven LEFT JOINs,
+    so a party with only an on-account credit and no open invoice still
+    surfaces) minus on-account credit = net outstanding_balance. `scope`
+    selects which sign(s) to return:
+
+      * "outstanding" — balance > 0 (they owe us) — the everyday collections view
+      * "overpaid"     — balance < 0 (we owe them, e.g. an unapplied credit
+                          with nothing left to apply it to)
+      * "either"        — both, |balance| > 0
+
+    A party with balance == 0 (fully settled) is never returned in any scope.
     """
     paid_sq = (
         select(
@@ -141,7 +154,7 @@ def collections_summary(
 
     balance_due_expr = Invoice.grand_total - func.coalesce(paid_sq.c.paid, 0)
 
-    inv_stmt = (
+    inv_sq = (
         select(
             Invoice.party_id.label("party_id"),
             func.sum(balance_due_expr).label("gross_balance"),
@@ -173,28 +186,45 @@ def collections_summary(
         .subquery()
     )
 
-    net_balance_expr = inv_stmt.c.gross_balance - func.coalesce(credit_sq.c.credit, 0)
+    net_balance_expr = func.coalesce(inv_sq.c.gross_balance, 0) - func.coalesce(
+        credit_sq.c.credit, 0
+    )
 
+    # party-driven: LEFT JOIN both sides so a party with ONLY an on-account
+    # credit (no open invoice at all) still gets a row — an INNER JOIN to
+    # inv_sq (the old shape) structurally can't surface that party.
     stmt = (
         select(
             Party.id,
             Party.legal_name,
             Party.phone,
             net_balance_expr.label("outstanding_balance"),
-            inv_stmt.c.oldest_date,
-            inv_stmt.c.open_invoice_count,
+            inv_sq.c.oldest_date,
+            inv_sq.c.open_invoice_count,
         )
-        .join(inv_stmt, inv_stmt.c.party_id == Party.id)
+        .select_from(Party)
+        .outerjoin(inv_sq, inv_sq.c.party_id == Party.id)
         .outerjoin(credit_sq, credit_sq.c.party_id == Party.id)
-        .where(net_balance_expr > 0)
+        .where(Party.tenant_id == tenant_id)
     )
+    if scope == "outstanding":
+        stmt = stmt.where(net_balance_expr > 0)
+    elif scope == "overpaid":
+        stmt = stmt.where(net_balance_expr < 0)
+    else:
+        stmt = stmt.where(net_balance_expr != 0)
+
     if q:
         stmt = stmt.where(func.lower(Party.legal_name).like(f"%{q.lower().strip()}%"))
 
     if sort == "oldest":
-        stmt = stmt.order_by(inv_stmt.c.oldest_date.asc())
+        # overpaid-only rows have no oldest_date (no open invoice) — push
+        # them last within a scope that can mix signs.
+        stmt = stmt.order_by(inv_sq.c.oldest_date.is_(None), inv_sq.c.oldest_date.asc())
     else:
-        stmt = stmt.order_by(net_balance_expr.desc())
+        # sort by distance from zero either direction ("biggest balance,
+        # whichever way it points") so "either" reads sensibly too.
+        stmt = stmt.order_by(func.abs(net_balance_expr).desc())
 
     today = date.today()
     rows = session.execute(stmt).all()

@@ -78,6 +78,7 @@ def _apply_lines(inv: Invoice, lines: list) -> None:
                 uom=ln.uom,
                 unit_rate=ln.unit_rate,
                 discount=ln.discount or Decimal("0"),
+                discount_pct=ln.discount_pct,
                 size_pos=ln.size_pos,
                 segment_no=getattr(ln, "segment_no", 1) or 1,
             )
@@ -388,6 +389,7 @@ def duplicate_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> 
                 uom=ln.uom,
                 unit_rate=ln.unit_rate,
                 discount=ln.discount,
+                discount_pct=ln.discount_pct,
                 size_pos=ln.size_pos,
                 segment_no=ln.segment_no or 1,
             )

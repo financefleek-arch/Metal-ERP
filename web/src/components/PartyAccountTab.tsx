@@ -16,15 +16,18 @@ export function PartyAccountTab({ party }: { party: Party }) {
   });
 
   // entries are newest-first; the most recent row's running balance is the
-  // current outstanding balance.
+  // current balance — negative means the party has an unapplied credit.
   const entries = ledger.data ?? [];
-  const outstanding = entries[0]?.running_balance ?? "0";
+  const balance = Number(entries[0]?.running_balance ?? "0");
+  const isCredit = balance < 0;
 
   return (
     <div>
       <div className="card p-4">
-        <div className="label mb-0.5">Outstanding balance</div>
-        <div className="font-serif text-2xl font-semibold">{inr(outstanding)}</div>
+        <div className="label mb-0.5">{isCredit ? "Credit balance" : "Outstanding balance"}</div>
+        <div className={`font-serif text-2xl font-semibold ${isCredit ? "text-ok" : ""}`}>
+          {inr(Math.abs(balance))}
+        </div>
         <button
           className="btn-primary mt-3 h-10 px-4 text-sm"
           onClick={() => setPayingOpen(true)}
@@ -104,7 +107,7 @@ export function PartyAccountTab({ party }: { party: Party }) {
         <PaymentDialog
           partyId={party.id}
           partyName={party.legal_name}
-          outstandingBalance={outstanding}
+          outstandingBalance={isCredit ? null : entries[0]?.running_balance}
           onClose={() => setPayingOpen(false)}
           onSaved={() => {
             setPayingOpen(false);

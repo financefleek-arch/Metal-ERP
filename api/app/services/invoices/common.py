@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.domain.tax import InvoiceInput, LineInput, compute_invoice
-from app.domain.weighment import LineMeasure, compute_measure
+from app.domain.weighment import LineMeasure, compute_measure, is_weight_uom
 from app.models import Invoice
 from app.models._mixins import InvoiceStatus
 from app.schemas_invoice import (
@@ -121,4 +121,25 @@ def finalize_blockers(inv: Invoice) -> list[str]:
         r = Decimal(str(ln.unit_rate or 0))
         if q <= 0 or r <= 0:
             reasons.append(f"line {ln.sl_no}: needs quantity and rate")
+
+    # weighment: a segment with at least one kg-uom line must have a
+    # nonzero recorded scale weight — a 0 kg reading against real weight
+    # goods is the fat-fingered-zero case; a segment with only piece-lines
+    # legitimately has no weight, so that's not blocked.
+    recorded: dict[int, Decimal] = {}
+    for s in inv.weighment_slips or []:
+        try:
+            recorded[int(s["seg"])] = Decimal(str(s["recorded_kg"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if recorded:
+        has_kg_line: dict[int, bool] = {}
+        for ln in real_lines:
+            seg = ln.segment_no or 1
+            if is_weight_uom(ln.uom):
+                has_kg_line[seg] = True
+        for seg, kg in recorded.items():
+            if has_kg_line.get(seg) and kg == 0:
+                reasons.append(f"segment {seg}: recorded weight is 0 kg")
+
     return reasons
