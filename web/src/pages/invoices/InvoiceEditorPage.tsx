@@ -488,6 +488,17 @@ export function InvoiceEditorPage() {
         await api<PaymentOut>("/payments", { method: "POST", body });
         qc.invalidateQueries({ queryKey: ["collections"] });
         qc.invalidateQueries({ queryKey: ["party-ledger", saved.party_id] });
+        // finalize() already rendered the PDF with zero payment recorded —
+        // the payment above happens strictly after that render, so without
+        // this the very first PDF a "pay at finalize" invoice ever gets is
+        // permanently stale (no Amount Received / Balance Due lines) until
+        // someone happens to click "Re-render PDF" by hand.
+        if (result.pdf_status !== "failed") {
+          await api(`/invoices/${saved.id}/rerender`, { method: "POST" }).catch(() => {
+            // best-effort: a failed re-render here shouldn't fail the whole
+            // finalize+pay action — "Re-render PDF" is still available
+          });
+        }
       }
       return result;
     },
