@@ -28,7 +28,10 @@ from app.services import llm
 from app.services.item_resolution import resolve_item
 
 # UOMs that mean "discrete unit" -> item_type = mrp; else bulk.
-_MRP_UOMS = {"nos", "pcs", "pc", "set", "no", "each", "unit", "box", "btl", "bottle"}
+_MRP_UOMS = {
+    "nos", "pcs", "pc", "set", "no", "each", "unit", "box", "btl", "bottle",
+    "doz", "dz", "dozen", "gross", "grs",
+}
 
 
 @dataclass

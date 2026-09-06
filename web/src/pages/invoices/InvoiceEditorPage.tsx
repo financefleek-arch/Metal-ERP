@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { computePreview, inr } from "../../lib/previewTotal";
-import { computeMeasure, kg } from "../../lib/weighment";
+import { computeMeasure, isWeightUom, kg } from "../../lib/weighment";
+import { PRIMARY_UOMS } from "../../lib/reference";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import type {
   FinalizeResult,
@@ -20,8 +21,6 @@ import type {
 } from "../../lib/types";
 
 type DiscMode = "amt" | "pct";
-/** piece/kg choice for a free-typed line that will become a new item */
-type NewMode = RateMode | "";
 
 /** an editor row — string-typed so partial input never NaNs the totals */
 interface Row {
@@ -34,15 +33,13 @@ interface Row {
   uom: string;
   /** the picked item's alternate sell unit, if any — narrows the unit picker */
   secondaryUom: string;
-  /** the picked item's rate_mode, drives the ₹/<unit> label + new-item default */
+  /** derived from `uom` (kg -> "kg", else "piece"); drives the ₹/<unit> label */
   rateMode: RateMode | null;
   unit_rate: string;
   discount: string;
   discMode: DiscMode;
   /** 1-based weighment segment this line belongs to */
   segmentNo: number;
-  /** for a line with no item match yet: sold per piece or per kg */
-  newMode: NewMode;
   /** snapshots from the picked item — for guards + ghost text, not sent */
   _priceMin: string | null;
   _priceMax: string | null;
@@ -73,7 +70,6 @@ function blankRow(segmentNo = 1): Row {
     // % is the default discount mode for a fresh line
     discMode: "pct",
     segmentNo,
-    newMode: "",
     _priceMin: null,
     _priceMax: null,
     _lastRate: null,
@@ -92,7 +88,7 @@ function rowsFromInvoice(inv: Invoice): Row[] {
     quantity: trimQty(l.quantity),
     uom: normalizeUom(l.uom),
     secondaryUom: "",
-    rateMode: null,
+    rateMode: isWeightUom(l.uom) ? "kg" : "piece",
     unit_rate: String(l.unit_rate ?? ""),
     // discount_pct is a persisted UI hint: if the operator originally typed
     // a % it round-trips as that same %, not the computed ₹ figure.
@@ -104,7 +100,6 @@ function rowsFromInvoice(inv: Invoice): Row[] {
           : "",
     discMode: l.discount_pct && Number(l.discount_pct) ? "pct" : ("amt" as DiscMode),
     segmentNo: l.segment_no ?? 1,
-    newMode: "" as NewMode,
     _priceMin: null,
     _priceMax: null,
     _lastRate: null,
@@ -135,6 +130,13 @@ const UOM_ALIASES: Record<string, string> = {
   units: "nos",
   kgs: "kg",
   kg: "kg",
+  dz: "doz",
+  doz: "doz",
+  dozen: "doz",
+  dozens: "doz",
+  grs: "gross",
+  gro: "gross",
+  gross: "gross",
 };
 
 function normalizeUom(u: string | null | undefined): string {
@@ -183,8 +185,6 @@ function lineProblems(r: Row): LineProblem[] {
   // item
   if (r.description.trim() && !r.item_id) {
     out.push({ field: "item", block: false, msg: "not in catalogue — a new item will be created" });
-    if (!r.newMode)
-      out.push({ field: "item", block: false, msg: "choose per piece / per kg for the new item" });
   }
 
   // qty
@@ -526,7 +526,19 @@ export function InvoiceEditorPage() {
   }, [dirty]);
 
   function patchRow(key: string, patch: Partial<Row>) {
-    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+    setRows((rs) =>
+      rs.map((r) => {
+        if (r.key !== key) return r;
+        const next = { ...r, ...patch };
+        // rateMode is derived from the unit, not set on its own: a kg line
+        // prices "₹/kg", everything else "₹/nos". Only override when the
+        // caller didn't explicitly pass a rateMode (item pick does).
+        if ("uom" in patch && !("rateMode" in patch)) {
+          next.rateMode = isWeightUom(next.uom) ? "kg" : "piece";
+        }
+        return next;
+      }),
+    );
     setDirty(true);
   }
   function addRow() {
@@ -1454,9 +1466,9 @@ function LineRow({
   const [touched, setTouched] = useState<Set<LineProblem["field"]>>(new Set());
   const touch = (f: LineProblem["field"]) =>
     setTouched((s) => (s.has(f) ? s : new Set(s).add(f)));
-  /** mobile: which "+" panels the user has opened (discount / hsn / unit) */
-  const [reveal, setReveal] = useState<Set<"disc" | "hsn" | "unit">>(new Set());
-  const show = (k: "disc" | "hsn" | "unit") => setReveal((s) => new Set(s).add(k));
+  /** mobile: which "+" panels the user has opened (discount / hsn) */
+  const [reveal, setReveal] = useState<Set<"disc" | "hsn">>(new Set());
+  const show = (k: "disc" | "hsn") => setReveal((s) => new Set(s).add(k));
   const hideExtras = () => setReveal(new Set());
 
   useEffect(() => setTyped(row.description), [row.description]);
@@ -1490,15 +1502,18 @@ function LineRow({
       : null;
 
   function pick(it: ItemListItem) {
+    // the item's own unit wins on pick; rateMode follows that unit (kg vs
+    // piece), independent of the item's stored rate_mode which can drift.
+    const nextUom =
+      normalizeUom(it.uom) || normalizeUom(it.secondary_uom) || row.uom;
     onPatch({
       item_id: it.id,
       description: it.name,
       hsn_code: it.hsn_code ?? row.hsn_code,
-      uom: normalizeUom(it.uom) || normalizeUom(it.secondary_uom) || row.uom,
+      uom: nextUom,
       secondaryUom: normalizeUom(it.secondary_uom),
-      rateMode: it.rate_mode ?? null,
+      rateMode: isWeightUom(nextUom) ? "kg" : "piece",
       unit_rate: it.last_rate ?? it.default_rate ?? row.unit_rate ?? "",
-      newMode: "",
       _priceMin: it.price_min,
       _priceMax: it.price_max,
       _lastRate: it.last_rate,
@@ -1509,10 +1524,14 @@ function LineRow({
   }
 
   function createNew() {
+    // a free-typed item defaults to pieces; the operator changes the Unit
+    // dropdown if it's kg / doz / gross, and that unit is what the item is
+    // created with on finalize.
     onPatch({
       item_id: null,
       description: typed.trim(),
-      rateMode: null,
+      uom: row.uom.trim() || "nos",
+      rateMode: isWeightUom(row.uom) ? "kg" : "piece",
       secondaryUom: "",
       _priceMin: null,
       _priceMax: null,
@@ -1535,14 +1554,12 @@ function LineRow({
 
   // the unit the line is priced in — for the "Rate ₹/<unit>" label
   const unitLabel = normalizeUom(row.uom) || (row.rateMode === "kg" ? "kg" : "nos");
-  // Always a dropdown, defaulted to the item's unit but overridable: the
-  // item's own unit(s) first, then the two rate-mode defaults, deduped —
-  // all normalised so "pcs"/"nos"/"pc" never appear as separate options.
+  // The strict billing set (nos / kg / doz / gross), plus the row's current
+  // unit if it's a legacy value not in that set — so an old "bundle" line
+  // stays selectable and never silently flips on open.
   const unitChoices = Array.from(
     new Set(
-      [row.uom, row.secondaryUom, "nos", "kg"]
-        .map(normalizeUom)
-        .filter(Boolean),
+      [...PRIMARY_UOMS, normalizeUom(row.uom)].filter(Boolean),
     ),
   );
 
@@ -1689,13 +1706,11 @@ function LineRow({
   const rateMsg = fieldMsg("rate");
   const discMsg = fieldMsg("disc");
   const hsnMsg = fieldMsg("hsn");
+  const unitMsg = fieldMsg("unit");
 
-  // is this a two-unit item? then offer a "change unit" reveal; else unit is fixed
-  const twoUnit = unitChoices.length > 1;
   const showDisc = reveal.has("disc") || (row.discount.trim() && discAmt > 0);
   const showHsn = reveal.has("hsn") || row.hsn_code.trim().length > 0;
-  const showUnit = reveal.has("unit");
-  const anyExtra = showDisc || showHsn || showUnit;
+  const anyExtra = showDisc || showHsn;
 
   // % → ₹ explainer under the discount field — billing uses the ₹ figure;
   // the % itself is kept too, so this line reloads showing the same %
@@ -1756,37 +1771,15 @@ function LineRow({
 
       {row.description.trim() && !row.item_id && (
         <div className="mt-2 rounded-md border border-[#ecdcb8] bg-[#fbf3e2] px-2.5 py-1.5 text-[11px] text-warn">
-          Not in the catalogue — finalising creates “{row.description.trim()}” as a new item.{" "}
-          <span className="ml-1 inline-flex overflow-hidden rounded border border-[#e2cfa0] align-middle">
-            {(["piece", "kg"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={`px-1.5 py-0.5 text-[10px] font-bold ${
-                  row.newMode === m ? "bg-warn text-white" : "bg-transparent"
-                }`}
-                onClick={() =>
-                  onPatch({
-                    newMode: m,
-                    uom: m === "kg" ? "kg" : "nos",
-                    rateMode: m,
-                  })
-                }
-              >
-                per {m}
-              </button>
-            ))}
-          </span>
+          Not in the catalogue — finalising creates “{row.description.trim()}” as a
+          new item, with the unit you pick below.
         </div>
       )}
 
-      {/* Qty × Rate — the two you always need */}
-      <div className="mt-2.5 grid grid-cols-[92px_16px_1fr] items-end gap-2">
+      {/* Qty · Unit · Rate — the three you always need */}
+      <div className="mt-2.5 grid grid-cols-[1fr_84px_1fr] items-end gap-2">
         <div>
-          <label className="fl-m">
-            Qty
-            {!twoUnit && <span className="unit-badge">{unitLabel}</span>}
-          </label>
+          <label className="fl-m">Qty</label>
           <input
             className={`field h-10 text-right ${fieldClass("qty")}`}
             inputMode="decimal"
@@ -1797,7 +1790,19 @@ function LineRow({
             onBlur={() => touch("qty")}
           />
         </div>
-        <div className="pb-2.5 text-center text-base text-muted">×</div>
+        <div>
+          <label className="fl-m">Unit</label>
+          <select
+            className={`field h-10 px-1.5 text-sm ${fieldClass("unit")}`}
+            value={normalizeUom(row.uom) || unitLabel}
+            disabled={readOnly}
+            onChange={(e) => onPatch({ uom: e.target.value })}
+          >
+            {unitChoices.map((u) => (
+              <option key={u}>{u}</option>
+            ))}
+          </select>
+        </div>
         <div>
           <label className="fl-m">Rate ₹/{unitLabel}</label>
           <input
@@ -1811,6 +1816,7 @@ function LineRow({
           />
         </div>
       </div>
+      {unitMsg && <p className={`mt-1 text-[11px] ${unitMsg.cls}`}>{unitMsg.text}</p>}
       {qtyMsg && <p className={`mt-1 text-[11px] ${qtyMsg.cls}`}>{qtyMsg.text}</p>}
       {(rateMsg || rateGhost) && (
         <p className={`mt-1 text-[11px] ${rateMsg ? rateMsg.cls : "text-muted"}`}>
@@ -1852,22 +1858,6 @@ function LineRow({
           )}
         </div>
       )}
-      {showUnit && twoUnit && (
-        <div className="mt-2.5 rounded-md bg-ground p-2.5">
-          <label className="fl-m">Unit</label>
-          <select
-            className={`field h-10 px-2 text-sm ${fieldClass("unit")}`}
-            value={normalizeUom(row.uom) || unitLabel}
-            disabled={readOnly}
-            onChange={(e) => onPatch({ uom: e.target.value })}
-          >
-            {unitChoices.map((u) => (
-              <option key={u}>{u}</option>
-            ))}
-          </select>
-          <p className="mt-1 text-[11px] text-muted">this item is sold more than one way</p>
-        </div>
-      )}
       {showHsn && (
         <div className="mt-2.5 rounded-md bg-ground p-2.5">
           <label className="fl-m">
@@ -1897,11 +1887,6 @@ function LineRow({
           {!showHsn && (
             <button type="button" onClick={() => show("hsn")}>
               <span className="text-[15px]">＋</span> HSN
-            </button>
-          )}
-          {twoUnit && !showUnit && (
-            <button type="button" onClick={() => show("unit")}>
-              change unit
             </button>
           )}
           {anyExtra && (

@@ -12,7 +12,13 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from app.domain.weighment import LineMeasure, compute_measure, is_weight_uom, to_kg
+from app.domain.weighment import (
+    LineMeasure,
+    compute_measure,
+    count_multiplier,
+    is_weight_uom,
+    to_kg,
+)
 from app.main import app
 
 
@@ -43,6 +49,29 @@ def test_compute_measure_splits_weight_and_count() -> None:
     assert [(s.seg, s.line_from, s.line_to) for s in m.segments] == [(1, 1, 2), (2, 3, 3)]
     assert m.segments[0].weight_kg == Decimal("128.000")
     assert m.segments[0].count == 6
+
+
+def test_count_multiplier_table() -> None:
+    assert count_multiplier("nos") == 1
+    assert count_multiplier("doz") == 12
+    assert count_multiplier("DOZEN") == 12
+    assert count_multiplier("gross") == 144
+    assert count_multiplier(None) == 1
+    assert count_multiplier("bundle") == 1  # unknown -> 1, unchanged behaviour
+
+
+def test_dozen_and_gross_expand_into_the_piece_count() -> None:
+    m = compute_measure(
+        [
+            LineMeasure(Decimal("5"), "doz", 1),   # 60 pcs
+            LineMeasure(Decimal("2"), "gross", 1),  # 288 pcs
+            LineMeasure(Decimal("3"), "nos", 1),    # 3 pcs
+            LineMeasure(Decimal("10"), "kg", 1),    # weight, not counted
+        ]
+    )
+    assert m.total_count == 60 + 288 + 3
+    assert m.total_weight_kg == Decimal("10.000")
+    assert m.segments[0].count == 351
 
 
 def test_recorded_slip_attaches_but_does_not_change_total() -> None:

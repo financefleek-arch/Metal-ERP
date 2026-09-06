@@ -29,6 +29,8 @@ from app.schemas_admin import (
     FirmListItem,
     FirmPatch,
     FirmWhatsappOut,
+    FirmWhatsappTestIn,
+    FirmWhatsappTestOut,
     FirmWhatsappUpsert,
 )
 from app.security import hash_password
@@ -215,6 +217,39 @@ def delete_firm_whatsapp(firm_id: str, session: SessionDep) -> None:
     )
     if cfg is not None:
         session.delete(cfg)
+
+
+@router.post("/firms/{firm_id}/whatsapp/test", response_model=FirmWhatsappTestOut)
+def test_firm_whatsapp(
+    firm_id: str, body: FirmWhatsappTestIn, session: SessionDep
+) -> FirmWhatsappTestOut:
+    """Send one template message with dummy data to prove this firm's
+    WhatsApp config works — no invoice needed. Records a `whatsapp_message`
+    row so the status webhook can still be observed moving it along."""
+    from app.services.whatsapp import (
+        WhatsappError,
+        WhatsappNotConfigured,
+        send_test_message,
+    )
+
+    _load_firm(session, firm_id)
+    try:
+        msg = send_test_message(
+            session,
+            firm_id,
+            to_phone=body.to_phone,
+            template_name=body.template_name,
+            with_document=body.with_document,
+        )
+    except WhatsappNotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except WhatsappError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
+    return FirmWhatsappTestOut.model_validate(msg)
 
 
 # --------------------------------------------------------------------------

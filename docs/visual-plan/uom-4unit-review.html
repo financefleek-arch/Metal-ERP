@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UOM &mdash; fixed 4-unit picker</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; font: 15px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
+         color: #1c1c1c; background: #f6f5f2; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 34px 0 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .built { display: inline-block; background: #16794b; color: #fff; font-weight: 700;
+           font-size: 12px; letter-spacing: .06em; padding: 4px 10px; border-radius: 4px; }
+  code { background: #ececec; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px; }
+  .card { background: #fff; border: 1px solid #e2e0da; border-radius: 8px; padding: 16px; }
+  .card h3 { margin: 0 0 10px; font-size: 14px; text-transform: uppercase;
+             letter-spacing: .05em; color: #666; }
+  .mock { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; background: #fbfbf9;
+          border: 1px dashed #cfcdc6; border-radius: 6px; padding: 12px; white-space: pre;
+          overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 13.5px; }
+  th, td { border: 1px solid #ddd; padding: 6px 9px; text-align: left; vertical-align: top; }
+  th { background: #efeee9; }
+  .gone { color: #a33; text-decoration: line-through; }
+  ul { margin: 8px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="built">BUILT &mdash; not yet committed</span>
+  <h1>Units of measure: one fixed set of four</h1>
+  <p>Replaces the free-text UOM story and the per-line <em>piece / kg</em> toggle
+     with a single strict picker &mdash; <code>nos</code>, <code>kg</code>,
+     <code>doz</code>, <code>gross</code> &mdash; used identically in the invoice
+     editor and the Items forms. Dozen &amp; gross expand into the printed piece
+     count.</p>
+
+  <h2>What changed at a glance</h2>
+  <table>
+    <tr><th>Before</th><th>After</th></tr>
+    <tr>
+      <td class="gone">Amber banner with <em>per piece / per kg</em> buttons that
+          set <code>uom</code> + <code>rateMode</code> + <code>newMode</code></td>
+      <td>Amber banner is text only. A first-class <strong>Unit</strong> dropdown
+          sits between Qty and Rate on every line.</td>
+    </tr>
+    <tr>
+      <td class="gone">Unit <code>&lt;select&gt;</code> hidden behind a
+          &ldquo;change unit&rdquo; link, only for two-unit items</td>
+      <td>Unit <code>&lt;select&gt;</code> always visible. Options are the fixed 4
+          (plus the row&rsquo;s own legacy value if it has one).</td>
+    </tr>
+    <tr>
+      <td class="gone"><code>rateMode</code> a separate stored choice</td>
+      <td><code>rateMode</code> derived: <code>kg &rarr; "kg"</code>, else
+          <code>"piece"</code>. Single choke point in <code>patchRow</code>.</td>
+    </tr>
+    <tr>
+      <td class="gone">A <code>doz</code> line counted as its raw qty (5)</td>
+      <td><code>compute_measure</code> multiplies: 5&nbsp;doz &rarr; 60 in
+          &ldquo;Count&rdquo;; 2&nbsp;gross &rarr; 288.</td>
+    </tr>
+    <tr>
+      <td class="gone">16-entry <code>UOMS</code> list feeds every picker</td>
+      <td><code>PRIMARY_UOMS</code> (the 4) for the invoice line + an item&rsquo;s
+          primary unit; the wide list stays for <em>secondary</em> /
+          <em>purchase</em> unit.</td>
+    </tr>
+  </table>
+
+  <h2>Invoice editor &mdash; free-typed line (mobile)</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Before</h3>
+      <div class="mock">┌─────────────────────────────────────┐
+│ Not in the catalogue &mdash; finalising   │
+│ creates &ldquo;MS Angle&rdquo; as a new item.    │
+│                   [ per piece ][ per kg ] │
+└─────────────────────────────────────┘
+
+  Qty (nos)              Rate &#8377;/nos
+┌──────────┐  &times;   ┌───────────────────┐
+│      5   │      │        0.00       │
+└──────────┘      └───────────────────┘</div>
+    </div>
+    <div class="card">
+      <h3>After</h3>
+      <div class="mock">┌─────────────────────────────────────┐
+│ Not in the catalogue &mdash; finalising   │
+│ creates &ldquo;MS Angle&rdquo; as a new item,   │
+│ with the unit you pick below.        │
+└─────────────────────────────────────┘
+
+  Qty          Unit          Rate &#8377;/nos
+┌────────┐  ┌────────┐  ┌───────────────┐
+│    5   │  │ nos  &#9662;│  │      0.00     │
+└────────┘  └────────┘  └───────────────┘
+            nos · kg · doz · gross</div>
+    </div>
+  </div>
+  <ul>
+    <li>Changing Unit to <code>kg</code> flips the label to <code>Rate &#8377;/kg</code> live.</li>
+    <li>For a <strong>matched item</strong> the dropdown defaults to the item&rsquo;s
+        own unit and is still overridable for this one bill.</li>
+    <li>A legacy item whose unit is <code>bundle</code> shows
+        <code>nos · kg · doz · gross · bundle</code> &mdash; nothing flips silently.</li>
+  </ul>
+
+  <h2>Items tab &mdash; create &amp; edit</h2>
+  <div class="mock">Units &amp; conversion
+  Bill in (UOM)            [ nos  &#9662; ]   &larr; nos / kg / doz / gross
+  Also counted in          [ &mdash;    &#9662; ]   &larr; wide list (bundle, coil, ft&hellip;)
+  Purchase UOM             [ &mdash;    &#9662; ]   &larr; wide list
+
+  note: the primary unit follows the most recent invoice this item appears on</div>
+
+  <h2>Printed invoice (WeasyPrint) &mdash; markup unchanged</h2>
+  <div class="mock">Sl  Description        HSN     Qty     Unit   Rate    Disc.   Amount
+ 1  Steel Tumbler      7323    5.000   doz    90.00           450.00
+ &hellip;
+┌───────────────────────────────────────────────────────────┐
+│ Total weight 487.500 kg  ·  Count 60 pcs  ·  1 weighment    │
+└───────────────────────────────────────────────────────────┘</div>
+  <p>The line prints <code>5&nbsp;doz</code> verbatim; only the aggregate
+     &ldquo;Count&rdquo; and any per-segment <code>pcs</code> figure are now
+     piece-expanded.</p>
+
+  <h2>The item-default lifecycle (&ldquo;last billed wins&rdquo;)</h2>
+  <ul>
+    <li>A free-typed line has <strong>no item</strong> until finalize.</li>
+    <li>At finalize, a line with no match creates the <code>Item</code> with
+        <code>uom = line.uom</code> and
+        <code>rate_mode = kg if weight else piece</code>
+        (<code>finalize.py</code>, item-create branch).</li>
+    <li>For <strong>every</strong> finalized line linked to an item, if the billed
+        unit differs from <code>item.uom</code>, the item is updated to the billed
+        unit (and its <code>rate_mode</code> re-derived). So an Items-tab edit can
+        be superseded by the next invoice &mdash; surfaced by the form note above.</li>
+    <li>Multi-line invoice, same item in two units &rarr; the last line
+        (<code>sl_no</code> order) wins.</li>
+  </ul>
+
+  <h2>Files touched</h2>
+  <table>
+    <tr><th>File</th><th>Change</th></tr>
+    <tr><td><code>api/app/routers/reference.py</code></td><td><code>PRIMARY_UOMS</code> + <code>GET /reference/uoms/primary</code>; wide <code>UOMS</code> kept</td></tr>
+    <tr><td><code>api/app/domain/weighment.py</code></td><td><code>_COUNT_UNITS</code> table + <code>count_multiplier()</code>; piece branch multiplies</td></tr>
+    <tr><td><code>web/src/lib/weighment.ts</code></td><td>mirror of the above</td></tr>
+    <tr><td><code>api/app/services/invoices/finalize.py</code></td><td>&ldquo;last billed wins&rdquo; <code>uom</code>/<code>rate_mode</code> refresh; derived <code>rate_mode</code> on item-create</td></tr>
+    <tr><td><code>web/src/pages/invoices/InvoiceEditorPage.tsx</code></td><td>toggle removed; <code>unitChoices</code> = 4 + current; Unit select always shown (mobile + desktop); <code>rateMode</code> derived in <code>patchRow</code>; <code>normalizeUom</code> folds doz/gross; <code>NewMode</code> type &amp; <code>newMode</code> field deleted</td></tr>
+    <tr><td><code>web/src/lib/reference.ts</code></td><td><code>useVocab("uoms_primary")</code> + exported <code>PRIMARY_UOMS</code></td></tr>
+    <tr><td><code>web/src/components/ItemForm.tsx</code>, <code>NewItemForm.tsx</code></td><td>primary UOM select &rarr; <code>uoms_primary</code>; secondary/purchase unchanged</td></tr>
+    <tr><td><code>api/app/services/inward/resolve_lines.py</code></td><td><code>_MRP_UOMS</code> gains doz/gross</td></tr>
+    <tr><td>tests</td><td><code>test_invoice_weighment.py</code> (count multiplier + doz/gross expand), <code>test_invoice_finalize.py</code> (kg rate_mode on create, last-billed-wins), <code>test_items_crud.py</code> (<code>/uoms/primary</code>)</td></tr>
+  </table>
+  <p>No DB migration &mdash; <code>uom</code> stays <code>String(20)</code>; this is
+     vocabulary + display logic only.</p>
+</div>
+</body>
+</html>

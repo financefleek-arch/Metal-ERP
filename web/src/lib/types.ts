@@ -67,6 +67,17 @@ export interface FirmWhatsappUpsert {
   is_active: boolean;
 }
 
+/** Result of POST /api/admin/firms/{id}/whatsapp/test — a dummy-data send to
+ *  prove the firm's number + token + approved template line up. */
+export interface FirmWhatsappTestResult {
+  id: string;
+  status: string;
+  template_name: string;
+  to_phone: string;
+  wa_message_id: string | null;
+  error: string | null;
+}
+
 export interface Tenant {
   id: string;
   legal_name: string;

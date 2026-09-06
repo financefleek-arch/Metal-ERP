@@ -15,6 +15,14 @@ router = APIRouter(prefix="/api/reference", tags=["reference"])
 
 # Small fixed vocabularies — code lists, not DB tables. The item form uses
 # these for its pickers; free text is still allowed on save.
+#
+# PRIMARY_UOMS is the strict set a shop bills in — pieces, weight, and the
+# two pack multiples (a dozen = 12 nos, a gross = 144 nos). The invoice line
+# unit and an item's *primary* unit are limited to these (the picker still
+# shows a legacy value already on the row so nothing flips silently).
+# UOMS is the wider list, kept for an item's secondary / purchase unit where
+# a supplier really may invoice in coils, sheets or running feet.
+PRIMARY_UOMS: list[str] = ["nos", "kg", "doz", "gross"]
 UOMS: list[str] = [
     "kg", "mt", "quintal", "nos", "pcs", "set", "pair", "bundle",
     "coil", "sheet", "length", "ft", "m", "sqft", "sqm", "ltr",
@@ -51,6 +59,12 @@ def states() -> list[dict[str, str]]:
 @router.get("/uoms")
 def uoms() -> list[str]:
     return UOMS
+
+
+@router.get("/uoms/primary")
+def uoms_primary() -> list[str]:
+    """The strict billing set: nos / kg / doz / gross."""
+    return PRIMARY_UOMS
 
 
 @router.get("/categories")

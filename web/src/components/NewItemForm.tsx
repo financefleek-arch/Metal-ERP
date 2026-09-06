@@ -30,7 +30,7 @@ export function NewItemForm({
 
   const metals = useVocab("metals");
   const shapes = useVocab("shapes");
-  const uoms = useVocab("uoms");
+  const uoms = useVocab("uoms_primary");
   const cats = useQuery({
     queryKey: ["item-categories"],
     queryFn: () => api<ItemCategoryRow[]>("/item-categories"),

@@ -118,6 +118,28 @@ class FirmWhatsappUpsert(BaseModel):
     is_active: bool = True
 
 
+class FirmWhatsappTestIn(BaseModel):
+    """Fire one template send to `to_phone` with dummy data — proves the
+    firm's number + token + approved template all line up, no invoice needed.
+    Recipient must be reachable (added as a tester on the WABA if the app is
+    still in development)."""
+
+    to_phone: str = Field(min_length=8, max_length=20, description="digits, country code ok, no +")
+    template_name: str = "invoice_ready"
+    with_document: bool = True
+
+
+class FirmWhatsappTestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    status: str
+    template_name: str
+    to_phone: str
+    wa_message_id: str | None = None
+    error: str | None = None
+
+
 # --------------------------------------------------------------------------
 # firm tally-agent shop (cloud backup sync — a separate product, see
 # app/routers/tally_agent.py; a "shop" is soft-linked to a firm here, not

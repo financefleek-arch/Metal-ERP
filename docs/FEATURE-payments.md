@@ -1,8 +1,9 @@
 # Payments — party-ledger, bill-wise allocation
 
-Status: **built, committed on `main`** (not yet deployed to prod as of
-2026-09-05 — no evidence of a prod migration run for 0017/0018 in this
-doc; confirm against the deploy log before assuming it's live).
+Status: **built, committed on `main`** (7 commits `27ba3ad`→`bbf919c`,
+2026-09-04→06). **Not confirmed deployed** as of 2026-09-06 — no evidence
+of a prod migration run for 0017/0018/0019 in this doc; confirm against
+the deploy log before assuming it's live.
 
 ## Why this shape, not a simpler one
 
@@ -31,6 +32,9 @@ locked" below), not an oversight to revisit.
   alongside the billing-authoritative `discount` (₹). `domain/tax.py` never
   reads it. Exists purely so a %-discount line round-trips as the same %
   after save/reload instead of silently converting to a ₹ figure forever.
+- `payment_allocation.invoice_id` FK is **`ON DELETE SET NULL`** (migration
+  `0019`, added after 0017 shipped it as a bare unconstrained FK). See
+  "Delete guard" below for why.
 
 ## Decisions locked (don't re-litigate without re-reading why)
 
@@ -78,6 +82,15 @@ locked" below), not an oversight to revisit.
   `ledger_name` exist so a future export is a serialization, not a
   redesign — `against_invoice`/`on_account` map directly to Tally's "Agst
   Ref"/"New Ref" bill-wise-detail types. No export code exists yet.
+- **Deleting an invoice with a payment: blocks only on a `posted` payment,
+  not a `reversed` one.** A reversed payment's allocation row is kept
+  forever (audit trail, per the reversal decision above) — if "any
+  allocation row exists" were the gate, a reversed payment would
+  *permanently* pin its invoice, making "reverse it first" a dead end.
+  `payment_allocation.invoice_id` is `ON DELETE SET NULL` (migration
+  `0019`) specifically so the delete can go through once only reversed
+  allocations remain — the payment record itself (reversed status
+  included) is never touched by deleting its invoice.
 
 ## What's built
 
@@ -103,8 +116,15 @@ Backend (`api/`):
   editor's Partial/Full option) or any time after (re-render picks up the
   latest state). A bill with zero payments prints exactly as before (no
   block shown).
-- 14 payment tests + 8 finalize-guard tests + 4 PDF-context tests, full
-  suite green, no regressions across the arc.
+- **`delete_invoice` guard** (`routers/invoices.py`): checks for a
+  `posted` `payment_allocation` against the invoice and refuses with a
+  clean 409 ("reverse it first") instead of letting the DELETE reach
+  Postgres and fail as a raw FK-violation. Only checks `posted` — see the
+  "decisions locked" entry above for why `reversed` doesn't block.
+- 15 payment tests + 17 finalize-related tests (`test_invoice_finalize.py`,
+  includes both the pre-existing gate and the 8 new zero/weighment guards)
+  + 4 PDF-context tests, full suite green throughout, no regressions
+  across the whole arc.
 
 Frontend (`web/`):
 - `PaymentDialog.tsx` — allocation table is **derived** (`useMemo` over
@@ -122,6 +142,11 @@ Frontend (`web/`):
   feature**; it's now the one precedent if another tab gets added later.
   Credit balance also shown correctly (was a display bug: negative
   `running_balance` briefly rendered as "−₹X outstanding", fixed).
+  **Each non-reversed payment row now has a "Reverse" action** — prompts
+  for a required reason, calls `POST /payments/{id}/reverse`. Before this
+  was added there was genuinely no way to reverse a payment from the UI at
+  all (only the API existed) — worth remembering if a future session sees
+  "reverse it" advice anywhere and goes looking for the button.
 - Invoice editor: balance strip + Record-payment button (finalized only);
   a **3-way finalize-time control** — No payment / Paid in full / Partial
   (typed amount, clamped to grand total) — plus a **live totals-rail
@@ -129,6 +154,14 @@ Frontend (`web/`):
   explicit note that Save Draft does **not** persist this choice (only
   Finalize records the payment) — this distinction was a specific ask,
   don't let the UI go quiet about it again.
+  **The finalize-time payment call also re-renders the PDF afterward.**
+  `finalize_invoice()` renders the PDF as its own step, synchronously,
+  *before* the frontend's follow-up payment POST is even sent — so
+  without an explicit re-render call after that payment succeeds, the
+  very first PDF a "pay at finalize" invoice ever got was permanently
+  stale (no Amount Received / Balance Due lines) until someone happened to
+  click "Re-render PDF" by hand. Fixed, best-effort (a failed re-render
+  here doesn't fail the whole finalize+pay action).
 - Unit-string normalization (`normalizeUom`: pcs/pc/piece/no/each→nos,
   kgs→kg) and quantity-decimal trimming (`trimQty`: backend's "1.000"
   reads as "1", matching a freshly-typed line) — fixed as a byproduct of
@@ -144,13 +177,32 @@ Frontend (`web/`):
   already supports it (on_account allocation type exists); needs its own
   entry point when prioritized.
 - **Tally export** — schema is shaped for it, no export code exists.
-- **Payment editing** — a wrong payment is reversed (status flip), never
-  edited in place. No UI/API for "correct this payment's amount/mode" —
-  only reverse-and-re-enter.
-- **Deploy**: confirm 0017 + 0018 have actually run against prod before
-  assuming this is live for real users — this doc was written from local
-  dev/test state, not a deploy log.
+- **Payment editing** — a wrong payment is reversed (status flip; the
+  frontend action IS built now, see "What's built"), never edited in
+  place. No UI/API for "correct this payment's amount/mode" — only
+  reverse-and-re-enter.
+- **PDF staleness for a payment recorded well after finalize.** The
+  finalize-time payment path now auto-reruns the PDF (fixed, see "What's
+  built"), but a payment recorded later — from Collections, the Account
+  tab, or the invoice balance strip, anytime after finalize — does NOT
+  trigger a re-render. `GET /invoices/{id}/pdf` just serves whatever file
+  is already on disk with no staleness check; the operator has to know to
+  click "Re-render PDF" by hand. This is the same underlying issue as the
+  finalize-time bug, just not closed for every entry point — a real gap,
+  flagged but not fixed.
+- **Deploy**: confirm 0017 + 0018 + 0019 have actually run against prod
+  before assuming this is live for real users — this doc was written from
+  local dev/test state, not a deploy log.
 - **Rate/finalize sanity ranges** (an explicitly declined broader option
   during this arc): only hard zero/invalid blocks were built — no
   "rate looks 10x the usual band" or similar soft warnings beyond what
   the price-band guard already did pre-existing this feature.
+- **SQLite test suite doesn't enforce foreign keys** (`PRAGMA
+  foreign_keys` is off, nothing turns it on) — no test in this project can
+  verify `ON DELETE SET NULL` (migration 0019) actually fires at the
+  database level; only the application-layer delete guard is
+  test-covered. The migration's SQL was hand-verified by executing it
+  directly against a live SQLite connection outside the test harness (not
+  via `alembic upgrade`, which fails on an earlier Postgres-only
+  migration when run against SQLite) — real confidence needs an actual
+  Postgres run.

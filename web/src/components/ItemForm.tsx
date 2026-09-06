@@ -95,6 +95,10 @@ export function ItemForm({
   const loadedId = useRef(item.id);
 
   const categories = useVocab("categories");
+  // primary billing unit is the strict set (nos / kg / doz / gross); the
+  // secondary / purchase units keep the wider list (a supplier may invoice
+  // in coils, sheets, running feet).
+  const uomsPrimary = useVocab("uoms_primary");
   const uoms = useVocab("uoms");
   const metals = useVocab("metals");
   const shapes = useVocab("shapes");
@@ -322,9 +326,9 @@ export function ItemForm({
       </Section>
 
       {/* Units & conversion */}
-      <Section title="Units & conversion" note="stored now; invoice-editor wiring is a later slice">
+      <Section title="Units & conversion" note="the primary unit follows the most recent invoice this item appears on">
         <Field label="Bill in (UOM)">
-          <Select value={v.uom} onChange={(x) => patch({ uom: x })} options={uoms.data} />
+          <Select value={v.uom} onChange={(x) => patch({ uom: x })} options={uomsPrimary.data} />
         </Field>
         <Field label="Also counted in">
           <Select

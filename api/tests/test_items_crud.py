@@ -300,6 +300,9 @@ def test_delete_unbilled_item(client: TestClient) -> None:
 def test_reference_lookups(client: TestClient) -> None:
     h = _h(_token(client, "it-13@x.example.com"))
     assert "kg" in client.get("/api/reference/uoms", headers=h).json()
+    assert client.get("/api/reference/uoms/primary", headers=h).json() == [
+        "nos", "kg", "doz", "gross",
+    ]
     assert "SS" in client.get("/api/reference/metals", headers=h).json()
     assert "angle" in client.get("/api/reference/shapes", headers=h).json()
     assert any("Stainless" in c for c in client.get("/api/reference/categories", headers=h).json())

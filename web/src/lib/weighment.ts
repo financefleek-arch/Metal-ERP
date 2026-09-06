@@ -59,6 +59,29 @@ export function isWeightUom(uom: string | null | undefined): boolean {
   return (uom ?? "").trim().toLowerCase() in WEIGHT_UNITS;
 }
 
+/** uom (lower, trimmed) -> individual pieces in one unit. Absent => 1. */
+const COUNT_UNITS: Record<string, number> = {
+  nos: 1,
+  no: 1,
+  pcs: 1,
+  pc: 1,
+  piece: 1,
+  pieces: 1,
+  each: 1,
+  unit: 1,
+  doz: 12,
+  dz: 12,
+  dozen: 12,
+  dozens: 12,
+  gross: 144,
+  grs: 144,
+  gro: 144,
+};
+
+export function countMultiplier(uom: string | null | undefined): number {
+  return COUNT_UNITS[(uom ?? "").trim().toLowerCase()] ?? 1;
+}
+
 function num(v: string | number | null | undefined): number {
   if (v === null || v === undefined || v === "") return 0;
   const n = typeof v === "number" ? v : parseFloat(String(v).replace(/,/g, ""));
@@ -107,7 +130,7 @@ export function computeMeasure(
       b.w += kg;
       totalW += kg;
     } else {
-      const n = Math.round(num(ln.quantity));
+      const n = Math.round(num(ln.quantity) * countMultiplier(ln.uom));
       b.c += n;
       totalC += n;
     }

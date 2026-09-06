@@ -15,15 +15,30 @@ export function useStates() {
   });
 }
 
-/** A fixed vocabulary list (uoms / categories / shapes / metals / finishes). */
-export function useVocab(kind: "uoms" | "categories" | "shapes" | "metals" | "finishes") {
+/** A fixed vocabulary list. `uoms` is the wide list (secondary / purchase
+ *  unit); `uoms_primary` is the strict billing set — nos / kg / doz / gross —
+ *  used for an item's primary unit and every invoice-line unit picker. */
+export function useVocab(
+  kind:
+    | "uoms"
+    | "uoms_primary"
+    | "categories"
+    | "shapes"
+    | "metals"
+    | "finishes",
+) {
+  const path = kind === "uoms_primary" ? "uoms/primary" : kind;
   return useQuery({
     queryKey: ["reference", kind],
-    queryFn: () => api<string[]>(`/reference/${kind}`, { auth: true }),
+    queryFn: () => api<string[]>(`/reference/${path}`, { auth: true }),
     staleTime: Infinity,
     gcTime: Infinity,
   });
 }
+
+/** The strict billing units, also hard-coded here so a picker can render
+ *  before the network call resolves. Must match PRIMARY_UOMS on the server. */
+export const PRIMARY_UOMS = ["nos", "kg", "doz", "gross"] as const;
 
 // Client-side hints — the backend (app/reference.py) is the real guarantee (422).
 // Keep these in lockstep with the server regexes.

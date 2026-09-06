@@ -8,7 +8,8 @@ rest, plus the operator-drawn weighment segments.
 A line is a *weight line* when its `uom` string normalises to a mass unit
 (kg / g / quintal / tonne family). Its `quantity` is converted to kg and
 added to the weight total. Every other line is a *piece line* — its
-`quantity` is added to the count (shown as a whole number).
+`quantity` is multiplied out to individual pieces (a dozen = 12, a gross =
+144; anything else = 1) and added to the count (shown as a whole number).
 
 The web mirror is `web/src/lib/weighment.ts`; keep the unit table and the
 segment grouping identical.
@@ -43,8 +44,34 @@ _WEIGHT_UNITS: dict[str, Decimal] = {
 }
 
 
+# uom (lower-cased, stripped) -> how many individual pieces one unit is.
+# Anything not here (and not a weight unit) counts as 1.
+_COUNT_UNITS: dict[str, int] = {
+    "nos": 1,
+    "no": 1,
+    "pcs": 1,
+    "pc": 1,
+    "piece": 1,
+    "pieces": 1,
+    "each": 1,
+    "unit": 1,
+    "doz": 12,
+    "dz": 12,
+    "dozen": 12,
+    "dozens": 12,
+    "gross": 144,
+    "grs": 144,
+    "gro": 144,
+}
+
+
 def is_weight_uom(uom: str | None) -> bool:
     return (uom or "").strip().lower() in _WEIGHT_UNITS
+
+
+def count_multiplier(uom: str | None) -> int:
+    """Individual pieces in one `uom` (dozen -> 12, gross -> 144, else 1)."""
+    return _COUNT_UNITS.get((uom or "").strip().lower(), 1)
 
 
 def to_kg(quantity: Decimal | int | float | str, uom: str | None) -> Decimal:
@@ -118,7 +145,8 @@ def compute_measure(
             total_w += kg
         else:
             q = ln.quantity if isinstance(ln.quantity, Decimal) else Decimal(str(ln.quantity or 0))
-            n = int(q.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            pieces = q * count_multiplier(ln.uom)
+            n = int(pieces.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
             b["c"] += n
             total_c += n
 

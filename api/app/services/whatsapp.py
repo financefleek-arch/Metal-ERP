@@ -54,8 +54,8 @@ class WhatsappError(Exception):
 
 
 class WhatsappNotConfigured(WhatsappError):
-    """Process-wide config (`whatsapp_api_key` / `whatsapp_app_secret`) or the
-    firm's `tenant_whatsapp_config` row is missing or inactive."""
+    """`whatsapp_api_key` is unset, or the firm's `tenant_whatsapp_config`
+    row is missing or inactive."""
 
 
 # --------------------------------------------------------------------------
@@ -72,11 +72,13 @@ class ResolvedConfig:
 
 
 def get_config(session: Session, tenant_id: str) -> ResolvedConfig:
+    # Only the System User token is needed to *send*. `whatsapp_app_secret`
+    # is used solely to verify inbound status webhooks (see the webhook
+    # route + verify_webhook_challenge) — its absence degrades receipts, it
+    # doesn't block sending.
     token = _settings.whatsapp_api_key
-    if not token or not _settings.whatsapp_app_secret:
-        raise WhatsappNotConfigured(
-            "whatsapp_api_key / whatsapp_app_secret are not set"
-        )
+    if not token:
+        raise WhatsappNotConfigured("whatsapp_api_key is not set")
     row = session.scalar(
         select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == tenant_id)
     )
@@ -192,6 +194,125 @@ def _send_template_message(
         return resp.json()["messages"][0]["id"]
     except (KeyError, IndexError, ValueError) as exc:
         raise WhatsappError(f"send response had no message id: {resp.text[:300]}") from exc
+
+
+# --------------------------------------------------------------------------
+# test send — prove a firm's config works without a real invoice
+# --------------------------------------------------------------------------
+
+
+# A valid, minimal one-page PDF ("Fleek — WhatsApp test document"). Hand-built
+# so the test path has no WeasyPrint / native-lib dependency (see
+# services/invoices/pdf.py's note about bare dev boxes).
+_TEST_PDF_BYTES = (
+    b"%PDF-1.4\n"
+    b"1 0 obj<< /Type /Catalog /Pages 2 0 R >>endobj\n"
+    b"2 0 obj<< /Type /Pages /Kids [3 0 R] /Count 1 >>endobj\n"
+    b"3 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 120] "
+    b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>endobj\n"
+    b"4 0 obj<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>endobj\n"
+    b"5 0 obj<< /Length 74 >>stream\n"
+    b"BT /F1 14 Tf 20 60 Td (Fleek - WhatsApp test document) Tj ET\n"
+    b"endstream endobj\n"
+    b"xref\n0 6\n"
+    b"0000000000 65535 f \n"
+    b"0000000009 00000 n \n"
+    b"0000000058 00000 n \n"
+    b"0000000115 00000 n \n"
+    b"0000000241 00000 n \n"
+    b"0000000312 00000 n \n"
+    b"trailer<< /Size 6 /Root 1 0 R >>\n"
+    b"startxref\n437\n%%EOF\n"
+)
+
+
+def send_test_message(
+    session: Session,
+    tenant_id: str,
+    *,
+    to_phone: str,
+    template_name: str = "invoice_ready",
+    with_document: bool = True,
+) -> WhatsappMessage:
+    """Send `template_name` to `to_phone` using the firm's configured number,
+    with dummy body params (and a throwaway PDF header when `with_document`).
+
+    No invoice, party, or opt-in required — this only proves the firm's
+    `tenant_whatsapp_config` + the process token + the approved template all
+    line up. Records a `whatsapp_message` row (party_id / invoice_id NULL)
+    exactly like a real send, so the webhook can still move it to
+    delivered/read.
+    """
+    if template_name not in TEMPLATE_BODY_PARAMS:
+        raise WhatsappError(f"unknown template: {template_name!r}")
+
+    cfg = get_config(session, tenant_id)
+    to = _phone_e164(to_phone)
+    if len(to) < 10:
+        raise WhatsappError(f"recipient phone looks invalid: {to_phone!r}")
+
+    # Dummy values, positional per the template's declared param order.
+    dummy = {
+        "party_name": "Test Customer",
+        "invoice_number": "TEST-0001",
+        "grand_total": "1234.00",
+    }
+    body_params = [dummy[k] for k in TEMPLATE_BODY_PARAMS[template_name]]
+
+    msg = WhatsappMessage(
+        tenant_id=tenant_id,
+        party_id=None,
+        invoice_id=None,
+        template_name=template_name,
+        to_phone=to,
+        status="pending",
+    )
+    session.add(msg)
+    session.flush()
+
+    media_id: str | None = None
+    try:
+        if with_document:
+            media_id = _upload_media_bytes(
+                cfg, _TEST_PDF_BYTES, filename="Fleek-test.pdf"
+            )
+            msg.media_id = media_id
+        wa_id = _send_template_message(
+            cfg,
+            to_phone=to,
+            template_name=template_name,
+            body_params=body_params,
+            document_media_id=media_id,
+            document_filename="Fleek-test.pdf",
+        )
+    except WhatsappError as exc:
+        msg.status = "failed"
+        msg.error = str(exc)[:1000]
+        session.flush()
+        raise
+
+    msg.status = "sent"
+    msg.wa_message_id = wa_id
+    msg.sent_at = datetime.now(UTC)
+    session.flush()
+    return msg
+
+
+def _upload_media_bytes(cfg: ResolvedConfig, data: bytes, *, filename: str) -> str:
+    """Like `upload_media` but from an in-memory buffer (test PDF)."""
+    resp = httpx.post(
+        f"{_api_base(cfg)}/media",
+        headers=_headers(cfg),
+        data={"messaging_product": "whatsapp", "type": "application/pdf"},
+        files={"file": (filename, data, "application/pdf")},
+        timeout=_TIMEOUT,
+    )
+    if resp.status_code >= 400:
+        raise WhatsappError(f"media upload failed: {resp.status_code} {resp.text[:300]}")
+    media_id = resp.json().get("id")
+    if not media_id:
+        raise WhatsappError(f"media upload returned no id: {resp.text[:300]}")
+    return media_id
 
 
 # --------------------------------------------------------------------------

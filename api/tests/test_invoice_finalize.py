@@ -124,6 +124,39 @@ def test_accretion_creates_unconfirmed_item(client: TestClient, session) -> None
     assert inv.lines[0].item_id == it.id
 
 
+def test_free_typed_kg_line_creates_item_with_kg_rate_mode(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    h = _h(_register(client, "fin4b@x.example.com"))
+    pid = _party(client, h)
+    iid = _draft_with_lines(
+        client, h, pid,
+        [{"description": "MS Scrap Turnings", "quantity": "250", "unit_rate": "42", "uom": "kg"}],
+    )
+    assert client.post(f"/api/invoices/{iid}/finalize", headers=h).status_code == 200
+    it = session.scalar(select(Item).where(Item.name == "MS Scrap Turnings"))
+    assert it is not None
+    assert it.uom == "kg"
+    assert it.rate_mode == "kg"
+
+
+def test_last_billed_unit_wins_on_existing_item(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    h = _h(_register(client, "fin5b@x.example.com"))
+    pid = _party(client, h)
+    mk = client.post("/api/items", headers=h, json={"name": "Steel Tumbler", "uom": "nos"})
+    item_id = mk.json()["id"]
+
+    # bill it in dozens this time
+    iid = _draft_with_lines(
+        client, h, pid,
+        [{"description": "Steel Tumbler", "quantity": "5", "unit_rate": "90", "uom": "doz"}],
+    )
+    assert client.post(f"/api/invoices/{iid}/finalize", headers=h).status_code == 200
+
+    session.expire_all()
+    it = session.get(Item, item_id)
+    assert it.uom == "doz"          # follows the most recent invoice line
+    assert it.rate_mode == "piece"  # doz is a count unit, not weight
+
+
 def test_existing_item_is_reused_and_bumped(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
     h = _h(_register(client, "fin5@x.example.com"))
     pid = _party(client, h)

@@ -5,6 +5,7 @@ import type {
   FirmDetail,
   FirmListItem,
   FirmWhatsapp,
+  FirmWhatsappTestResult,
   FirmWhatsappUpsert,
 } from "../../lib/types";
 
@@ -48,4 +49,13 @@ export const adminApi = {
 
   deleteFirmWhatsapp: (firmId: string) =>
     api<void>(`/admin/firms/${firmId}/whatsapp`, { method: "DELETE" }),
+
+  testFirmWhatsapp: (
+    firmId: string,
+    body: { to_phone: string; template_name?: string; with_document?: boolean },
+  ) =>
+    api<FirmWhatsappTestResult>(`/admin/firms/${firmId}/whatsapp/test`, {
+      method: "POST",
+      body,
+    }),
 };

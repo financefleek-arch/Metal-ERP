@@ -238,6 +238,22 @@ function WhatsappPanel({ firmId }: { firmId: string }) {
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Remove failed"),
   });
 
+  const [testPhone, setTestPhone] = useState("");
+  const [testResult, setTestResult] = useState<string | null>(null);
+  const test = useMutation({
+    mutationFn: () =>
+      adminApi.testFirmWhatsapp(firmId, { to_phone: testPhone.trim() }),
+    onMutate: () => setTestResult(null),
+    onSuccess: (r) =>
+      setTestResult(
+        r.wa_message_id
+          ? `Sent — status "${r.status}", id ${r.wa_message_id}. Check the phone.`
+          : `Sent — status "${r.status}".`,
+      ),
+    onError: (e) =>
+      setTestResult(e instanceof ApiError ? `Failed: ${e.message}` : "Failed"),
+  });
+
   const d: FirmWhatsapp | undefined = wa.data;
   const dirty =
     !!d &&
@@ -334,6 +350,48 @@ function WhatsappPanel({ firmId }: { firmId: string }) {
             first, then paste the IDs from WhatsApp Manager. Messages send from
             the shared Fleek token — no per-firm credential is stored here.
           </p>
+
+          {d?.configured && !dirty && (
+            <div className="mt-4 rounded-md bg-ground/60 p-3">
+              <div className="text-xs font-semibold text-muted">
+                Send a test message
+              </div>
+              <div className="mt-2 flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="label">Recipient phone</label>
+                  <input
+                    className="field w-56"
+                    value={testPhone}
+                    onChange={(e) => setTestPhone(e.target.value)}
+                    placeholder="9198xxxxxxxx"
+                  />
+                </div>
+                <button
+                  className="btn-primary"
+                  disabled={testPhone.trim().length < 8 || test.isPending}
+                  onClick={() => test.mutate()}
+                >
+                  {test.isPending ? "Sending…" : "Send test"}
+                </button>
+              </div>
+              {testResult && (
+                <p
+                  className={`mt-2 text-xs ${
+                    testResult.startsWith("Failed")
+                      ? "text-danger"
+                      : "text-ok"
+                  }`}
+                >
+                  {testResult}
+                </p>
+              )}
+              <p className="mt-1 text-[11px] text-muted">
+                Sends the <code>invoice_ready</code> template with dummy data
+                and a throwaway PDF. If the app is still in development, the
+                recipient must be a registered tester on the WABA.
+              </p>
+            </div>
+          )}
         </>
       )}
     </div>

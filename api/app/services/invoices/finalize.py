@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.domain.tax import InvoiceInput, LineInput, compute_invoice
-from app.domain.weighment import LineMeasure, compute_measure
+from app.domain.weighment import LineMeasure, compute_measure, is_weight_uom
 from app.models import (
     AuditLog,
     Invoice,
@@ -205,7 +205,7 @@ def finalize_invoice(
                         name_normalized=key or line.description.strip().lower()[:300],
                         uom=line.uom,
                         hsn_code=line.hsn_code,
-                        rate_mode="piece",
+                        rate_mode="kg" if is_weight_uom(line.uom) else "piece",
                         group_id=applied.group_id,
                         category_id=applied.category_id,
                         source=ItemSource.auto_from_invoice,
@@ -223,6 +223,14 @@ def finalize_invoice(
                 it.last_rate = float(line.unit_rate)
             it.last_sold_at = now
             it.times_billed = (it.times_billed or 0) + 1
+            # "last billed wins": the item's default unit follows the most
+            # recent finalized invoice line. Keeps a free-typed item's unit
+            # in step with how it's actually being sold; an Items-tab edit
+            # can be superseded by the next bill (documented in the UI).
+            billed_uom = (line.uom or "").strip()
+            if billed_uom and billed_uom.lower() != (it.uom or "").strip().lower():
+                it.uom = billed_uom
+                it.rate_mode = "kg" if is_weight_uom(billed_uom) else "piece"
 
     # --- 5. Loop 2: learn categories from the linked products ---
     learn = learn_from_invoice(

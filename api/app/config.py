@@ -45,19 +45,26 @@ class Settings(BaseSettings):
     # WhatsApp Business (Meta Cloud API). We reuse the existing "FleekWA" Meta
     # app exactly as fleek-backend does: one process-wide System User token
     # (`whatsapp_api_key`) that already has access to every number shared into
-    # the Business Manager, plus the App Secret (also serving as the webhook
-    # verify-token). Per-firm rows in `tenant_whatsapp_config` only carry the
-    # `phone_number_id` that selects which number a firm sends from — no
-    # per-firm token, so nothing secret is stored at rest.
+    # the Business Manager. Per-firm rows in `tenant_whatsapp_config` only
+    # carry the `phone_number_id` that selects which number a firm sends from
+    # — no per-firm token, so nothing secret is stored at rest.
+    #
+    # `whatsapp_app_secret` holds the Meta App Secret (FleekWA). Metal ERP
+    # uses it for the inbound status webhook only: as the HMAC key for the
+    # POST `X-Hub-Signature-256` check AND as the GET-handshake verify-token
+    # (one secret, both jobs — see routers/whatsapp.py). fleek-backend uses
+    # this same App Secret for its own webhook HMAC check
+    # (routes/intelligence.py), sourced from the same Vault field
+    # `fleek-backend/core#whatsapp_app_secret`. Outbound sends need only the
+    # token; a missing app secret degrades receipts, it doesn't block sends.
     whatsapp_api_key: str | None = None
     whatsapp_app_secret: str | None = None
-    whatsapp_api_version: str = "v22.0"
+    whatsapp_api_version: str = "v25.0"  # matches fleek-backend's tested value
 
     @property
     def whatsapp_configured(self) -> bool:
-        """Send paths need the System User token; the webhook needs the app
-        secret for HMAC verification."""
-        return bool(self.whatsapp_api_key and self.whatsapp_app_secret)
+        """Outbound sends need only the System User token."""
+        return bool(self.whatsapp_api_key)
 
     # Tally companion agent — cloud backup sync. A dedicated Cloudflare R2
     # bucket/token, deliberately separate from the infra/postgres backup
