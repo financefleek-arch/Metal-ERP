@@ -1,0 +1,33 @@
+# The fleek-stack SPA build (fleek-infra/metalerp/web.Dockerfile) uses this
+# repo ROOT as its Docker context so it can COPY shared/ alongside web/.
+# Keep the context to source only — none of the below is needed by the
+# `npm ci && npm run build` in that Dockerfile.
+
+# python / api build artefacts
+api/.venv/
+**/__pycache__/
+**/*.pyc
+api/.pytest_cache/
+api/*.db
+api/*.db-journal
+api/_*.db
+
+# node / web build artefacts
+**/node_modules/
+web/dist/
+web/.vite/
+
+# vcs / editor / os
+.git/
+.github/
+.idea/
+.vscode/
+**/.DS_Store
+
+# local env
+**/.env
+**/.env.*
+!**/.env.example
+
+# docs & plans aren't part of any image
+docs/visual-plan/*.html

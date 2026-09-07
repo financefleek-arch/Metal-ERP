@@ -1,19 +1,36 @@
-// Generates web/src/lib/units.generated.ts from ../../shared/units.json.
-// Runs in web's prebuild (see package.json). Commit the generated file so
-// tsc works offline and CI has no codegen step to trip over.
+// Generates web/src/lib/units.generated.ts from shared/units.json.
+//
+// Runs in web's prebuild (see package.json). The generated file is
+// COMMITTED so tsc works offline; a pytest (api/tests/test_units.py)
+// fails if it ever drifts from shared/units.json.
+//
+// The fleek-stack SPA build runs with the Metal-ERP repo ROOT as its
+// Docker context (fleek-infra/metalerp/web.Dockerfile does
+// `COPY shared/ /shared/`), so units.json is reachable at /shared/ there.
+// The two candidate paths cover: a normal repo checkout ("../../shared")
+// and that Docker layout ("/shared", i.e. "../.." from web/scripts).
 //
 //   node scripts/gen-units.mjs
-//
-// A pytest (api/tests/test_units.py) asserts this output matches what the
-// Python loader produces, so the two sides can never silently drift.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const srcPath = resolve(here, "../../shared/units.json");
 const outPath = resolve(here, "../src/lib/units.generated.ts");
+
+const candidates = [
+  resolve(here, "../../shared/units.json"), // repo checkout, and the Docker /shared/ layout
+  resolve(here, "../shared/units.json"), // a copy dropped into web/, if ever needed
+];
+const srcPath = candidates.find(existsSync);
+
+if (!srcPath) {
+  console.error(
+    `gen-units: shared/units.json not found (looked in: ${candidates.join(", ")})`,
+  );
+  process.exit(1);
+}
 
 const raw = JSON.parse(readFileSync(srcPath, "utf-8"));
 
