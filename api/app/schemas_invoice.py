@@ -145,6 +145,7 @@ class PartyBrief(BaseModel):
 
     id: str
     legal_name: str
+    phone: str | None = None
     gstin: str | None = None
     pan: str | None = None
     default_state_code: str | None = None

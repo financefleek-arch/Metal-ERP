@@ -30,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Invoice, Party, TenantWhatsappConfig, WhatsappMessage
+from app.models import Invoice, TenantWhatsappConfig, WhatsappMessage
 
 log = logging.getLogger("whatsapp")
 _settings = get_settings()
@@ -329,7 +329,7 @@ def _phone_e164(raw: str) -> str:
     return digits
 
 
-def _pdf_filename(invoice: Invoice, party: Party) -> str:
+def _pdf_filename(invoice: Invoice) -> str:
     num = invoice.number or "draft"
     return f"Invoice-{num}.pdf"
 
@@ -339,13 +339,20 @@ def send_invoice(
     invoice: Invoice,
     *,
     template_name: str,
+    to_phone: str | None = None,
 ) -> WhatsappMessage:
-    """Send `invoice` to its party over WhatsApp as `template_name`.
+    """Send `invoice` (as `template_name`, with its PDF attached) over WhatsApp.
 
-    Guards (raise WhatsappError, nothing sent):
-      * template unknown
-      * invoice not finalized / has no party / party not opted in / no phone
-      * firm has no active WhatsApp config
+    `to_phone` given  → send to that number, an explicit operator choice; the
+                        party's `whatsapp_optin` flag and stored phone are
+                        not consulted. `party_name` in the message still
+                        comes from the invoice's party (or "Customer" if the
+                        invoice has none).
+    `to_phone` omitted → send to the invoice's party: requires the party to
+                        exist, have `whatsapp_optin=True`, and have a phone.
+
+    Guards (raise WhatsappError, nothing sent): unknown template, invoice not
+    finalized, no usable recipient, firm has no active WhatsApp config.
 
     On success the returned `WhatsappMessage` is `sent` with `wa_message_id`;
     on a Meta rejection it is `failed` with `error`, and the exception is
@@ -358,13 +365,20 @@ def send_invoice(
 
     if invoice.status != InvoiceStatus.final:
         raise WhatsappError("invoice is not finalized")
+
     party = invoice.party
-    if party is None:
-        raise WhatsappError("invoice has no party")
-    if not party.whatsapp_optin:
-        raise WhatsappError("party has not opted in to WhatsApp messages")
-    if not party.phone:
-        raise WhatsappError("party has no phone number")
+    if to_phone:
+        recipient = _phone_e164(to_phone)
+        if len(recipient) < 10:
+            raise WhatsappError(f"recipient phone looks invalid: {to_phone!r}")
+    else:
+        if party is None:
+            raise WhatsappError("invoice has no party")
+        if not party.whatsapp_optin:
+            raise WhatsappError("party has not opted in to WhatsApp messages")
+        if not party.phone:
+            raise WhatsappError("party has no phone number")
+        recipient = _phone_e164(party.phone)
 
     cfg = get_config(session, invoice.tenant_id)
 
@@ -374,33 +388,32 @@ def send_invoice(
     # symbol lives in the template's static text ("Amount: ₹{{3}}").
     total_str = f"{grand_total:.2f}" if grand_total is not None else "0.00"
     param_values = {
-        "party_name": party.legal_name,
+        "party_name": party.legal_name if party else "Customer",
         "invoice_number": str(invoice.number or ""),
         "grand_total": total_str,
     }
     body_params = [param_values[k] for k in TEMPLATE_BODY_PARAMS[template_name]]
 
-    to_phone = _phone_e164(party.phone)
     msg = WhatsappMessage(
         tenant_id=invoice.tenant_id,
-        party_id=party.id,
+        party_id=party.id if party else None,
         invoice_id=invoice.id,
         template_name=template_name,
-        to_phone=to_phone,
+        to_phone=recipient,
         status="pending",
     )
     session.add(msg)
     session.flush()
 
     media_id: str | None = None
-    filename = _pdf_filename(invoice, party)
+    filename = _pdf_filename(invoice)
     try:
         if invoice.pdf_path and Path(invoice.pdf_path).exists():
             media_id = upload_media(cfg, invoice.pdf_path, filename=filename)
             msg.media_id = media_id
         wa_id = _send_template_message(
             cfg,
-            to_phone=to_phone,
+            to_phone=recipient,
             template_name=template_name,
             body_params=body_params,
             document_media_id=media_id,

@@ -518,6 +518,7 @@ export interface InvoiceMeasure {
 export interface PartyBrief {
   id: string;
   legal_name: string;
+  phone: string | null;
   gstin: string | null;
   pan: string | null;
   default_state_code: string | null;

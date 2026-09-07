@@ -249,6 +249,7 @@ export function InvoiceEditorPage() {
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [payingOpen, setPayingOpen] = useState(false);
+  const [waOpen, setWaOpen] = useState(false);
   /** cash-and-carry: record a payment right after finalize, no dialog needed
    *  for "full"; "partial" reveals a plain amount field. */
   const [finalizePayMode, setFinalizePayMode] = useState<"none" | "full" | "partial">("none");
@@ -643,6 +644,18 @@ export function InvoiceEditorPage() {
               <button className="btn-ghost h-9 px-4 text-sm" onClick={openPdf}>
                 Download PDF
               </button>
+              <button
+                className="btn-ghost h-9 px-4 text-sm"
+                onClick={() => setWaOpen(true)}
+                disabled={inv?.pdf_status !== "rendered"}
+                title={
+                  inv?.pdf_status !== "rendered"
+                    ? "Re-render the PDF first"
+                    : "Send this invoice PDF on WhatsApp"
+                }
+              >
+                Send on WhatsApp
+              </button>
               {inv?.pdf_status !== "rendered" && (
                 <button
                   className="btn-ghost h-9 px-4 text-sm"
@@ -1018,6 +1031,110 @@ export function InvoiceEditorPage() {
           }}
         />
       )}
+
+      {waOpen && inv && (
+        <WhatsappSendDialog
+          invoiceId={inv.id}
+          invoiceNumber={inv.number}
+          defaultPhone={inv.party?.phone ?? ""}
+          onClose={() => setWaOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// send the finalized invoice PDF on WhatsApp (invoice_ready template)
+// --------------------------------------------------------------------------
+
+function WhatsappSendDialog({
+  invoiceId,
+  invoiceNumber,
+  defaultPhone,
+  onClose,
+}: {
+  invoiceId: string;
+  invoiceNumber: number | null;
+  defaultPhone: string;
+  onClose: () => void;
+}) {
+  const [phone, setPhone] = useState(defaultPhone);
+  const [done, setDone] = useState<string | null>(null);
+
+  const send = useMutation({
+    mutationFn: () =>
+      api<{ status: string; wa_message_id: string | null; error: string | null }>(
+        `/invoices/${invoiceId}/whatsapp`,
+        { method: "POST", body: { to_phone: phone.trim() } },
+      ),
+    onMutate: () => setDone(null),
+    onSuccess: (r) =>
+      setDone(
+        r.wa_message_id
+          ? `Sent — the customer will get the invoice PDF shortly.`
+          : `Sent (status "${r.status}").`,
+      ),
+    onError: (e) =>
+      setDone(e instanceof ApiError ? `Failed: ${e.message}` : "Send failed"),
+  });
+
+  const digits = phone.replace(/\D/g, "");
+  const canSend = digits.length >= 10 && !send.isPending;
+  const ok = done?.startsWith("Sent");
+
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-xl bg-card p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="font-serif text-lg font-semibold">
+          Send invoice{invoiceNumber ? ` #${invoiceNumber}` : ""} on WhatsApp
+        </h2>
+        <p className="mt-1 text-xs text-muted">
+          Sends the invoice PDF using the <code>invoice_ready</code> template
+          from this firm's WhatsApp number.
+        </p>
+
+        <label className="label mt-4">Recipient WhatsApp number</label>
+        <input
+          className="field"
+          autoFocus
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="9198xxxxxxxx"
+          inputMode="tel"
+        />
+        <p className="mt-1 text-[11px] text-muted">
+          Include the country code. A bare 10-digit number is treated as India
+          (+91).
+        </p>
+
+        {done && (
+          <p className={`mt-3 text-xs ${ok ? "text-[#3f7a4f]" : "text-danger"}`}>
+            {done}
+          </p>
+        )}
+
+        <div className="mt-5 flex justify-end gap-2">
+          <button className="btn-ghost h-9 px-4 text-sm" onClick={onClose}>
+            {ok ? "Close" : "Cancel"}
+          </button>
+          {!ok && (
+            <button
+              className="btn-primary h-9 px-4 text-sm"
+              disabled={!canSend}
+              onClick={() => send.mutate()}
+            >
+              {send.isPending ? "Sending…" : "Send"}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

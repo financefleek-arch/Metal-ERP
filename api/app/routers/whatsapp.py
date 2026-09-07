@@ -103,7 +103,17 @@ async def webhook_receive(request: Request, session: SessionDep) -> dict[str, st
 
 
 class InvoiceWhatsappSend(BaseModel):
-    template_name: str = Field(description="approved WABA template; one of TEMPLATE_BODY_PARAMS")
+    template_name: str = Field(
+        default="invoice_ready",
+        description="approved WABA template; one of TEMPLATE_BODY_PARAMS",
+    )
+    to_phone: str | None = Field(
+        default=None,
+        max_length=20,
+        description="explicit recipient; digits, country code ok, no +. "
+        "When given, the party's opt-in flag and stored phone are not used. "
+        "When omitted, sends to the invoice's opted-in party.",
+    )
 
 
 class InvoiceWhatsappOut(BaseModel):
@@ -144,7 +154,12 @@ def send_invoice_whatsapp(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
 
     try:
-        msg = send_invoice(session, inv, template_name=body.template_name)
+        msg = send_invoice(
+            session,
+            inv,
+            template_name=body.template_name,
+            to_phone=(body.to_phone.strip() if body.to_phone else None),
+        )
     except WhatsappNotConfigured as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
