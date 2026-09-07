@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useVocab } from "../lib/reference";
-import type { GroupDetail, ItemCategoryRow, ItemType, RateMode } from "../lib/types";
+import type { GroupDetail, ItemCategoryRow, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
 
 /** Product-group editor + its size grid (drag to reorder). */
@@ -128,17 +128,6 @@ export function GroupForm({ groupId }: { groupId: string }) {
           </select>
         </div>
         <div>
-          <label className="label">Default rate mode</label>
-          <select
-            className="field"
-            value={g.default_rate_mode}
-            onChange={(e) => patch({ default_rate_mode: e.target.value as RateMode })}
-          >
-            <option value="piece">per piece</option>
-            <option value="kg">per kg</option>
-          </select>
-        </div>
-        <div>
           <label className="label">UOM</label>
           <select
             className="field"
@@ -190,7 +179,7 @@ export function GroupForm({ groupId }: { groupId: string }) {
                 if (order) reorder.mutate(order);
                 dragId.current = null;
               }}
-              className="grid cursor-grab grid-cols-[24px_1fr_90px_90px] items-center gap-2 px-3 py-2 text-xs"
+              className="grid cursor-grab grid-cols-[24px_1fr_90px] items-center gap-2 px-3 py-2 text-xs"
             >
               <span className="text-faint">☰</span>
               <button
@@ -202,7 +191,6 @@ export function GroupForm({ groupId }: { groupId: string }) {
               <span className="font-mono text-muted">
                 {l.default_rate != null ? `₹${l.default_rate}` : "—"}
               </span>
-              <span className="text-muted">{l.rate_mode}</span>
             </div>
           ))}
           {leaves.length === 0 && (

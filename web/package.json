@@ -4,8 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "gen:units": "node scripts/gen-units.mjs",
+    "dev": "npm run gen:units && vite",
+    "build": "npm run gen:units && tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint . --max-warnings 0",
     "typecheck": "tsc -b --noEmit"

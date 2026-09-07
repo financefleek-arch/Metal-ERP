@@ -30,7 +30,7 @@ from app.domain.item_taxonomy import (
 )
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import ItemCategory, ProductGroup
-from app.models._mixins import ItemType, RateMode
+from app.models._mixins import ItemType
 
 
 @dataclass
@@ -83,7 +83,6 @@ def seed_taxonomy(session: Session, tenant_id: str) -> SeedResult:
                 name_normalized=key,
                 category_id=existing_cats.get(dept.lower()),
                 item_type=ItemType.mrp,
-                default_rate_mode=RateMode.piece,
             )
         )
         existing_group_keys.add(key)

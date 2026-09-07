@@ -213,7 +213,6 @@ export interface ItemListItem {
   name: string;
   item_type: ItemType;
   category: string | null;
-  rate_mode: RateMode;
   uom: string | null;
   secondary_uom: string | null;
   hsn_code: string | null;
@@ -327,7 +326,6 @@ export interface BulkDeleteResult {
 
 // --- catalogue hierarchy ---
 
-export type RateMode = "piece" | "kg";
 
 export interface ItemCategoryRow {
   id: string;
@@ -346,7 +344,6 @@ export interface GroupOut {
   hsn_code: string | null;
   uom: string | null;
   item_type: ItemType;
-  default_rate_mode: RateMode;
   item_count: number;
 }
 
@@ -356,7 +353,6 @@ export interface GroupLeaf {
   size_label: string | null;
   size_text: string | null;
   sku: string | null;
-  rate_mode: RateMode;
   weight_per_piece: string | null;
   default_rate: string | null;
   last_rate: string | null;
@@ -421,7 +417,6 @@ export interface StagedItemRow {
   gst_rate: string | null;
   standard_rate: string | null;
   item_type: ItemType;
-  rate_mode: RateMode;
   parsed: {
     metal: string | null;
     shape: string | null;

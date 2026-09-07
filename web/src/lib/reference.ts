@@ -36,9 +36,10 @@ export function useVocab(
   });
 }
 
-/** The strict billing units, also hard-coded here so a picker can render
- *  before the network call resolves. Must match PRIMARY_UOMS on the server. */
-export const PRIMARY_UOMS = ["nos", "kg", "doz", "gross"] as const;
+// The canonical unit lists come from `units.generated.ts` (built from
+// `shared/units.json`, same source the API uses). Re-exported here so
+// existing importers of "../lib/reference" keep working.
+export { PRIMARY_UOMS, ALL_UOMS } from "./units.generated";
 
 // Client-side hints — the backend (app/reference.py) is the real guarantee (422).
 // Keep these in lockstep with the server regexes.

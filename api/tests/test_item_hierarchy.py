@@ -102,12 +102,11 @@ def test_group_crud_and_dedupe(client: TestClient) -> None:
             "hsn_code": "72142000",
             "uom": "kg",
             "item_type": "bulk",
-            "default_rate_mode": "kg",
         },
     )
     assert g.status_code == 201
     assert g.json()["name_normalized"]
-    assert g.json()["default_rate_mode"] == "kg"
+    assert g.json()["uom"] == "kg"
 
     dupe = client.post("/api/item-groups", headers=h, json={"name": "ms  tmt  bar"})
     assert dupe.status_code == 409
@@ -125,7 +124,6 @@ def test_leaf_inherits_from_group(client: TestClient) -> None:
             "hsn_code": "73239390",
             "uom": "nos",
             "item_type": "mrp",
-            "default_rate_mode": "piece",
         },
     ).json()
 
@@ -138,7 +136,6 @@ def test_leaf_inherits_from_group(client: TestClient) -> None:
     assert leaf.status_code == 201
     body = leaf.json()
     assert body["group_id"] == g["id"]
-    assert body["rate_mode"] == "piece"          # from group.default_rate_mode
     assert body["category_id"] == cid            # from group
     assert body["hsn_code"] == "73239390"        # from group
     assert body["uom"] == "nos"                  # from group
@@ -153,10 +150,10 @@ def test_leaf_inherits_from_group(client: TestClient) -> None:
             "name": "SS Balti No.5 kg-sold",
             "group_id": g["id"],
             "size_label": "No.5",
-            "rate_mode": "kg",
+            "uom": "kg",
         },
     ).json()
-    assert leaf2["rate_mode"] == "kg"
+    assert leaf2["uom"] == "kg"
 
 
 def test_group_detail_lists_leaves_with_generated_name(client: TestClient) -> None:
@@ -165,7 +162,7 @@ def test_group_detail_lists_leaves_with_generated_name(client: TestClient) -> No
     g = client.post(
         "/api/item-groups",
         headers=h,
-        json={"name": "Mintage Casserole", "category_id": cat, "default_rate_mode": "piece"},
+        json={"name": "Mintage Casserole", "category_id": cat},
     ).json()
     client.post(
         "/api/items",

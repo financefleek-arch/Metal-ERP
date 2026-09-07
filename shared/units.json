@@ -1,0 +1,225 @@
+{
+  "_comment": "CANONICAL unit-of-measure table. Single source of truth for both the API (api/app/domain/units.py loads this at import) and the web app (web/src/lib/units.generated.ts is generated from it by scripts/gen-units.mjs, run in web's prebuild). To add a unit: add a row here, run `node scripts/gen-units.mjs` from web/, commit both files. A pytest asserts the two stay in lockstep.",
+  "_fields": {
+    "value": "the canonical stored + printed string (lowercase)",
+    "label": "human label for a picker",
+    "kind": "'weight' | 'count' — weight units roll into total_weight_kg, count units into total_count",
+    "kg_factor": "multiply a quantity in this unit by this to get kilograms (weight units only, else null)",
+    "piece_multiplier": "multiply a quantity in this unit by this to get individual pieces (count units only, else null)",
+    "is_mrp": "true => a discrete/boxed good (item_type hint = mrp); false => loose/bulk",
+    "primary": "true => offered in the strict billing picker (invoice line + item primary unit); false => wider list only (secondary/purchase unit, legacy)",
+    "aliases": "spelling variants that normalise to `value` (all lowercase, compared case-insensitively)"
+  },
+  "units": [
+    {
+      "value": "nos",
+      "label": "Nos (pieces)",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": true,
+      "primary": true,
+      "aliases": ["no", "pc", "pcs", "piece", "pieces", "each", "unit", "units", "nug"]
+    },
+    {
+      "value": "kg",
+      "label": "Kg (weight)",
+      "kind": "weight",
+      "kg_factor": 1,
+      "piece_multiplier": null,
+      "is_mrp": false,
+      "primary": true,
+      "aliases": ["kgs", "kilo", "kilos", "kilogram", "kilograms"]
+    },
+    {
+      "value": "doz",
+      "label": "Dozen (12)",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 12,
+      "is_mrp": true,
+      "primary": true,
+      "aliases": ["dz", "dozen", "dozens"]
+    },
+    {
+      "value": "gross",
+      "label": "Gross (144)",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 144,
+      "is_mrp": true,
+      "primary": true,
+      "aliases": ["grs", "gro", "grss"]
+    },
+    {
+      "value": "g",
+      "label": "Gram",
+      "kind": "weight",
+      "kg_factor": 0.001,
+      "piece_multiplier": null,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["gm", "gms", "gram", "grams"]
+    },
+    {
+      "value": "quintal",
+      "label": "Quintal (100 kg)",
+      "kind": "weight",
+      "kg_factor": 100,
+      "piece_multiplier": null,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["qtl", "quintals"]
+    },
+    {
+      "value": "mt",
+      "label": "Metric tonne",
+      "kind": "weight",
+      "kg_factor": 1000,
+      "piece_multiplier": null,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["ton", "tonne", "tonnes", "tons"]
+    },
+    {
+      "value": "set",
+      "label": "Set",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": true,
+      "primary": false,
+      "aliases": ["sets"]
+    },
+    {
+      "value": "pair",
+      "label": "Pair",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 2,
+      "is_mrp": true,
+      "primary": false,
+      "aliases": ["pairs", "pr"]
+    },
+    {
+      "value": "bundle",
+      "label": "Bundle",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["bdl", "bundles", "bunch"]
+    },
+    {
+      "value": "coil",
+      "label": "Coil",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["coils"]
+    },
+    {
+      "value": "sheet",
+      "label": "Sheet",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["sheets", "sht"]
+    },
+    {
+      "value": "length",
+      "label": "Length",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["lengths", "len"]
+    },
+    {
+      "value": "ft",
+      "label": "Foot",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["feet", "foot"]
+    },
+    {
+      "value": "m",
+      "label": "Metre",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["mtr", "mtrs", "meter", "metre", "meters", "metres"]
+    },
+    {
+      "value": "sqft",
+      "label": "Square foot",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["sq ft", "sft"]
+    },
+    {
+      "value": "sqm",
+      "label": "Square metre",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": false,
+      "primary": false,
+      "aliases": ["sq m", "sqmtr"]
+    },
+    {
+      "value": "ltr",
+      "label": "Litre",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": true,
+      "primary": false,
+      "aliases": ["l", "lt", "lit", "litre", "litres", "liter", "liters"]
+    },
+    {
+      "value": "box",
+      "label": "Box",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": true,
+      "primary": false,
+      "aliases": ["boxes", "bx"]
+    },
+    {
+      "value": "pkt",
+      "label": "Packet",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": true,
+      "primary": false,
+      "aliases": ["packet", "packets", "pkts"]
+    },
+    {
+      "value": "btl",
+      "label": "Bottle",
+      "kind": "count",
+      "kg_factor": null,
+      "piece_multiplier": 1,
+      "is_mrp": true,
+      "primary": false,
+      "aliases": ["bottle", "bottles", "btls"]
+    }
+  ]
+}

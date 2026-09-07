@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { computePreview, inr } from "../../lib/previewTotal";
-import { computeMeasure, isWeightUom, kg } from "../../lib/weighment";
-import { PRIMARY_UOMS } from "../../lib/reference";
+import { computeMeasure, kg } from "../../lib/weighment";
+import { PRIMARY_UOMS, isWeightUom, normalizeUom } from "../../lib/units.generated";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import type {
   FinalizeResult,
@@ -15,7 +15,6 @@ import type {
   PartyListItem,
   PaymentCreate,
   PaymentOut,
-  RateMode,
   ResolveResult,
   WeighmentSlipIn,
 } from "../../lib/types";
@@ -31,10 +30,6 @@ interface Row {
   hsn_code: string;
   quantity: string;
   uom: string;
-  /** the picked item's alternate sell unit, if any — narrows the unit picker */
-  secondaryUom: string;
-  /** derived from `uom` (kg -> "kg", else "piece"); drives the ₹/<unit> label */
-  rateMode: RateMode | null;
   unit_rate: string;
   discount: string;
   discMode: DiscMode;
@@ -63,8 +58,6 @@ function blankRow(segmentNo = 1): Row {
     hsn_code: "",
     quantity: "",
     uom: "",
-    secondaryUom: "",
-    rateMode: null,
     unit_rate: "",
     discount: "",
     // % is the default discount mode for a fresh line
@@ -87,8 +80,6 @@ function rowsFromInvoice(inv: Invoice): Row[] {
     hsn_code: l.hsn_code ?? "",
     quantity: trimQty(l.quantity),
     uom: normalizeUom(l.uom),
-    secondaryUom: "",
-    rateMode: isWeightUom(l.uom) ? "kg" : "piece",
     unit_rate: String(l.unit_rate ?? ""),
     // discount_pct is a persisted UI hint: if the operator originally typed
     // a % it round-trips as that same %, not the computed ₹ figure.
@@ -110,39 +101,6 @@ function rowsFromInvoice(inv: Invoice): Row[] {
 /** round half-away-from-zero to 2dp — mirrors the paise rounding in tax.py */
 function round2(n: number): number {
   return Math.sign(n) * Math.round(Math.abs(n) * 100) / 100;
-}
-
-/** Catalogue items carry whatever unit spelling they were created/imported
- *  with ("pcs", "pc", "nos", "no", "each" all mean the same thing for a
- *  piece-counted item) — normalise to one canonical spelling per concept so
- *  a bill never shows two different unit labels for the same kind of good.
- *  Anything not recognised passes through unchanged (a real, distinct unit
- *  like "mt" or "bundle" is left alone). */
-const UOM_ALIASES: Record<string, string> = {
-  pc: "nos",
-  pcs: "nos",
-  piece: "nos",
-  pieces: "nos",
-  no: "nos",
-  nos: "nos",
-  each: "nos",
-  unit: "nos",
-  units: "nos",
-  kgs: "kg",
-  kg: "kg",
-  dz: "doz",
-  doz: "doz",
-  dozen: "doz",
-  dozens: "doz",
-  grs: "gross",
-  gro: "gross",
-  gross: "gross",
-};
-
-function normalizeUom(u: string | null | undefined): string {
-  const t = (u ?? "").trim().toLowerCase();
-  if (!t) return "";
-  return UOM_ALIASES[t] ?? t;
 }
 
 /** the backend returns quantity at fixed 3dp ("1.000") — trim trailing
@@ -526,19 +484,7 @@ export function InvoiceEditorPage() {
   }, [dirty]);
 
   function patchRow(key: string, patch: Partial<Row>) {
-    setRows((rs) =>
-      rs.map((r) => {
-        if (r.key !== key) return r;
-        const next = { ...r, ...patch };
-        // rateMode is derived from the unit, not set on its own: a kg line
-        // prices "₹/kg", everything else "₹/nos". Only override when the
-        // caller didn't explicitly pass a rateMode (item pick does).
-        if ("uom" in patch && !("rateMode" in patch)) {
-          next.rateMode = isWeightUom(next.uom) ? "kg" : "piece";
-        }
-        return next;
-      }),
-    );
+    setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
     setDirty(true);
   }
   function addRow() {
@@ -1502,8 +1448,8 @@ function LineRow({
       : null;
 
   function pick(it: ItemListItem) {
-    // the item's own unit wins on pick; rateMode follows that unit (kg vs
-    // piece), independent of the item's stored rate_mode which can drift.
+    // the item's own unit wins on pick (falling back to its secondary unit,
+    // then whatever's already on the row). The ₹/<unit> label follows it.
     const nextUom =
       normalizeUom(it.uom) || normalizeUom(it.secondary_uom) || row.uom;
     onPatch({
@@ -1511,8 +1457,6 @@ function LineRow({
       description: it.name,
       hsn_code: it.hsn_code ?? row.hsn_code,
       uom: nextUom,
-      secondaryUom: normalizeUom(it.secondary_uom),
-      rateMode: isWeightUom(nextUom) ? "kg" : "piece",
       unit_rate: it.last_rate ?? it.default_rate ?? row.unit_rate ?? "",
       _priceMin: it.price_min,
       _priceMax: it.price_max,
@@ -1531,8 +1475,6 @@ function LineRow({
       item_id: null,
       description: typed.trim(),
       uom: row.uom.trim() || "nos",
-      rateMode: isWeightUom(row.uom) ? "kg" : "piece",
-      secondaryUom: "",
       _priceMin: null,
       _priceMax: null,
       _lastRate: null,
@@ -1553,7 +1495,7 @@ function LineRow({
   const filled = row.description.trim().length > 0;
 
   // the unit the line is priced in — for the "Rate ₹/<unit>" label
-  const unitLabel = normalizeUom(row.uom) || (row.rateMode === "kg" ? "kg" : "nos");
+  const unitLabel = normalizeUom(row.uom) || "nos";
   // The strict billing set (nos / kg / doz / gross), plus the row's current
   // unit if it's a legacy value not in that set — so an old "bundle" line
   // stays selectable and never silently flips on open.
@@ -1943,7 +1885,7 @@ function LineRow({
           className={`field h-9 px-1 text-xs ${fieldClass("unit")}`}
           value={normalizeUom(row.uom) || unitLabel}
           disabled={readOnly}
-          title={row.rateMode === "kg" ? "weight item" : "piece item"}
+          title={isWeightUom(row.uom) ? "weight item" : "piece item"}
           onChange={(e) => onPatch({ uom: e.target.value })}
         >
           {unitChoices.map((u) => (

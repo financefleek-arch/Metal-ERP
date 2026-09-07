@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>UOM &mdash; fixed 4-unit picker</title>
+<title>UOM &mdash; canonical unit table + rate_mode retired</title>
 <style>
   :root { color-scheme: light; }
   body { margin: 0; font: 15px/1.55 -apple-system, "Segoe UI", Roboto, sans-serif;
          color: #1c1c1c; background: #f6f5f2; }
-  .wrap { max-width: 860px; margin: 0 auto; padding: 32px 20px 80px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; }
   h1 { font-size: 24px; margin: 0 0 4px; }
   h2 { font-size: 17px; margin: 34px 0 10px; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
   .built { display: inline-block; background: #16794b; color: #fff; font-weight: 700;
@@ -27,139 +27,177 @@
   .gone { color: #a33; text-decoration: line-through; }
   ul { margin: 8px 0; padding-left: 22px; }
   li { margin: 3px 0; }
-  @media (max-width: 640px) { .grid { grid-template-columns: 1fr; } }
+  @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <div class="wrap">
   <span class="built">BUILT &mdash; not yet committed</span>
-  <h1>Units of measure: one fixed set of four</h1>
-  <p>Replaces the free-text UOM story and the per-line <em>piece / kg</em> toggle
-     with a single strict picker &mdash; <code>nos</code>, <code>kg</code>,
-     <code>doz</code>, <code>gross</code> &mdash; used identically in the invoice
-     editor and the Items forms. Dozen &amp; gross expand into the printed piece
-     count.</p>
+  <h1>Units: one canonical table, <code>rate_mode</code> retired</h1>
+  <p>Two changes that go together:</p>
+  <ol>
+    <li><strong>One canonical unit table</strong> &mdash; <code>shared/units.json</code>
+      &mdash; read by the API (<code>app/domain/units.py</code>) and, via a
+      generated file, by the web app. Adding a unit is a one-row edit.</li>
+    <li><strong><code>rate_mode</code> is gone.</strong> It was a 2-value
+      <code>piece&nbsp;|&nbsp;kg</code> enum that duplicated what <code>uom</code>
+      already says. Every consumer now keys off <code>uom</code> +
+      <code>is_weight_uom()</code>.</li>
+  </ol>
 
-  <h2>What changed at a glance</h2>
+  <h2>The canonical table (<code>shared/units.json</code>)</h2>
+  <div class="mock">value    kind     kg_factor  piece_mult  is_mrp  primary  aliases
+nos      count    &mdash;          1           yes     yes      no pc pcs piece each unit nug
+kg       weight   1          &mdash;           no      yes      kgs kilo kilogram
+doz      count    &mdash;          12          yes     yes      dz dozen
+gross    count    &mdash;          144         no      yes      grs gro
+g        weight   0.001      &mdash;           no      no       gm gms gram
+quintal  weight   100        &mdash;           no      no       qtl
+mt       weight   1000       &mdash;           no      no       ton tonne
+pair     count    &mdash;          2           yes     no       pr
+bundle / coil / sheet / length / ft / m / sqft / sqm / ltr / box / pkt / btl   (primary=no)</div>
+  <ul>
+    <li><code>primary=yes</code> &rarr; shown in the strict billing picker
+      (invoice line + an item's primary unit): <code>nos / kg / doz / gross</code>.</li>
+    <li><code>primary=no</code> &rarr; the wider list (an item's <em>secondary</em>
+      / <em>purchase</em> unit, and legacy data).</li>
+    <li>A unit not in the table passes through <strong>lowercased, not blanked</strong>
+      &mdash; a real but un-tabled unit stays recognisable.</li>
+  </ul>
+
+  <h2>How the two sides stay in sync</h2>
+  <div class="mock">shared/units.json
+     |
+     |--- app/domain/units.py            reads JSON at import
+     |
+     '--- web/scripts/gen-units.mjs  --> web/src/lib/units.generated.ts
+              (runs in `npm run build` / `npm run dev` prebuild)
+
+api/tests/test_units.py  asserts the generated .ts matches the JSON row-for-row
+                         (edit the JSON, forget to regen -> this test fails)</div>
+
+  <h2>What <code>rate_mode</code>'s removal touched</h2>
   <table>
-    <tr><th>Before</th><th>After</th></tr>
+    <tr><th>Layer</th><th>Before</th><th>After</th></tr>
     <tr>
-      <td class="gone">Amber banner with <em>per piece / per kg</em> buttons that
-          set <code>uom</code> + <code>rateMode</code> + <code>newMode</code></td>
-      <td>Amber banner is text only. A first-class <strong>Unit</strong> dropdown
-          sits between Qty and Rate on every line.</td>
+      <td>DB</td>
+      <td><code>item.rate_mode</code>, <code>product_group.default_rate_mode</code>,
+          <code>staging_tally_item.proposed_rate_mode</code></td>
+      <td>all dropped &mdash; migration <code>0020</code>.
+          <code>item.weight_per_piece</code> kept (inward line-splitter).</td>
     </tr>
     <tr>
-      <td class="gone">Unit <code>&lt;select&gt;</code> hidden behind a
-          &ldquo;change unit&rdquo; link, only for two-unit items</td>
-      <td>Unit <code>&lt;select&gt;</code> always visible. Options are the fixed 4
-          (plus the row&rsquo;s own legacy value if it has one).</td>
+      <td><code>product_parse.py</code></td>
+      <td>outputs <code>ParsedLine.rate_mode: RateMode</code></td>
+      <td>outputs <code>ParsedLine.weight_priced: bool | None</code> &mdash; same
+          signal (decimal qty / "per kg" marker / KGS), just a bool.</td>
     </tr>
     <tr>
-      <td class="gone"><code>rateMode</code> a separate stored choice</td>
-      <td><code>rateMode</code> derived: <code>kg &rarr; "kg"</code>, else
-          <code>"piece"</code>. Single choke point in <code>patchRow</code>.</td>
+      <td>Group editor (<code>GroupForm</code>)</td>
+      <td class="gone">a standalone "Default rate mode" <code>&lt;select&gt;</code>
+          (per&nbsp;piece / per&nbsp;kg)</td>
+      <td>removed. The group's <code>uom</code> is the only unit control.</td>
     </tr>
     <tr>
-      <td class="gone">A <code>doz</code> line counted as its raw qty (5)</td>
-      <td><code>compute_measure</code> multiplies: 5&nbsp;doz &rarr; 60 in
-          &ldquo;Count&rdquo;; 2&nbsp;gross &rarr; 288.</td>
+      <td>Item editor (<code>ItemForm</code>)</td>
+      <td>had no <code>rate_mode</code> control anyway; primary UOM was the wide
+          16-item list</td>
+      <td>primary UOM = the strict 4 (<code>uoms_primary</code>); secondary /
+          purchase UOM keep the wide list. Note: "the primary unit follows the
+          most recent invoice".</td>
     </tr>
     <tr>
-      <td class="gone">16-entry <code>UOMS</code> list feeds every picker</td>
-      <td><code>PRIMARY_UOMS</code> (the 4) for the invoice line + an item&rsquo;s
-          primary unit; the wide list stays for <em>secondary</em> /
-          <em>purchase</em> unit.</td>
+      <td>Invoice editor</td>
+      <td class="gone"><code>Row.rateMode</code>, <code>Row.secondaryUom</code>,
+          the <code>per&nbsp;piece / per&nbsp;kg</code> banner toggle, a local
+          <code>UOM_ALIASES</code> map</td>
+      <td>Unit is a first-class <code>&lt;select&gt;</code> (nos / kg / doz / gross
+          + any legacy value on the row). <code>₹/&lt;unit&gt;</code> label and the
+          weight/count split both read <code>uom</code> via
+          <code>units.generated.ts</code>.</td>
+    </tr>
+    <tr>
+      <td>Finalize</td>
+      <td>set <code>item.rate_mode</code> on create + on every "last billed wins"
+          refresh</td>
+      <td>sets only <code>item.uom</code> (folded to canonical).
+          <code>rate_mode</code> lines gone.</td>
+    </tr>
+    <tr>
+      <td>Catalogue learning</td>
+      <td><code>resolve_or_create_group(..., rate_mode=)</code>,
+          <code>default_rate_mode=</code> on 4 group-create sites</td>
+      <td>kwarg dropped everywhere; groups no longer carry a rate mode.</td>
     </tr>
   </table>
 
   <h2>Invoice editor &mdash; free-typed line (mobile)</h2>
-  <div class="grid">
-    <div class="card">
-      <h3>Before</h3>
-      <div class="mock">┌─────────────────────────────────────┐
-│ Not in the catalogue &mdash; finalising   │
-│ creates &ldquo;MS Angle&rdquo; as a new item.    │
-│                   [ per piece ][ per kg ] │
-└─────────────────────────────────────┘
-
-  Qty (nos)              Rate &#8377;/nos
-┌──────────┐  &times;   ┌───────────────────┐
-│      5   │      │        0.00       │
-└──────────┘      └───────────────────┘</div>
-    </div>
-    <div class="card">
-      <h3>After</h3>
-      <div class="mock">┌─────────────────────────────────────┐
-│ Not in the catalogue &mdash; finalising   │
-│ creates &ldquo;MS Angle&rdquo; as a new item,   │
-│ with the unit you pick below.        │
-└─────────────────────────────────────┘
+  <div class="mock">Not in the catalogue &mdash; finalising creates &ldquo;MS Angle&rdquo; as a
+new item, with the unit you pick below.
 
   Qty          Unit          Rate &#8377;/nos
 ┌────────┐  ┌────────┐  ┌───────────────┐
 │    5   │  │ nos  &#9662;│  │      0.00     │
 └────────┘  └────────┘  └───────────────┘
             nos · kg · doz · gross</div>
-    </div>
-  </div>
-  <ul>
-    <li>Changing Unit to <code>kg</code> flips the label to <code>Rate &#8377;/kg</code> live.</li>
-    <li>For a <strong>matched item</strong> the dropdown defaults to the item&rsquo;s
-        own unit and is still overridable for this one bill.</li>
-    <li>A legacy item whose unit is <code>bundle</code> shows
-        <code>nos · kg · doz · gross · bundle</code> &mdash; nothing flips silently.</li>
-  </ul>
+  <p>Change Unit to <code>kg</code> &rarr; label becomes <code>Rate &#8377;/kg</code>.
+     A matched item's line defaults to the item's own unit; still overridable
+     for one bill.</p>
 
-  <h2>Items tab &mdash; create &amp; edit</h2>
-  <div class="mock">Units &amp; conversion
-  Bill in (UOM)            [ nos  &#9662; ]   &larr; nos / kg / doz / gross
-  Also counted in          [ &mdash;    &#9662; ]   &larr; wide list (bundle, coil, ft&hellip;)
-  Purchase UOM             [ &mdash;    &#9662; ]   &larr; wide list
-
-  note: the primary unit follows the most recent invoice this item appears on</div>
-
-  <h2>Printed invoice (WeasyPrint) &mdash; markup unchanged</h2>
-  <div class="mock">Sl  Description        HSN     Qty     Unit   Rate    Disc.   Amount
- 1  Steel Tumbler      7323    5.000   doz    90.00           450.00
+  <h2>Dozen / gross in the printed totals</h2>
+  <div class="mock">Sl  Description      HSN     Qty     Unit   Rate    Amount
+ 1  Steel Tumbler    7323    5.000   doz    90.00   450.00
  &hellip;
 ┌───────────────────────────────────────────────────────────┐
 │ Total weight 487.500 kg  ·  Count 60 pcs  ·  1 weighment    │
 └───────────────────────────────────────────────────────────┘</div>
-  <p>The line prints <code>5&nbsp;doz</code> verbatim; only the aggregate
-     &ldquo;Count&rdquo; and any per-segment <code>pcs</code> figure are now
-     piece-expanded.</p>
+  <p>Line prints <code>5&nbsp;doz</code> verbatim; the aggregate "Count" is
+     piece-expanded (5&nbsp;doz &rarr; 60, 2&nbsp;gross &rarr; 288). PDF template
+     markup unchanged &mdash; <code>compute_measure</code> does the multiplication.</p>
 
-  <h2>The item-default lifecycle (&ldquo;last billed wins&rdquo;)</h2>
+  <h2>The item-default lifecycle ("last billed wins")</h2>
   <ul>
-    <li>A free-typed line has <strong>no item</strong> until finalize.</li>
-    <li>At finalize, a line with no match creates the <code>Item</code> with
-        <code>uom = line.uom</code> and
-        <code>rate_mode = kg if weight else piece</code>
-        (<code>finalize.py</code>, item-create branch).</li>
-    <li>For <strong>every</strong> finalized line linked to an item, if the billed
-        unit differs from <code>item.uom</code>, the item is updated to the billed
-        unit (and its <code>rate_mode</code> re-derived). So an Items-tab edit can
-        be superseded by the next invoice &mdash; surfaced by the form note above.</li>
-    <li>Multi-line invoice, same item in two units &rarr; the last line
-        (<code>sl_no</code> order) wins.</li>
+    <li>A free-typed line has no item until finalize.</li>
+    <li>Finalize creates the item with <code>uom = normalize_uom(line.uom)</code>.</li>
+    <li>Every later finalize: if the billed unit (folded) differs from
+      <code>item.uom</code>, the item is updated to it. An Items-tab edit can be
+      superseded by the next bill &mdash; surfaced by the form note.</li>
   </ul>
 
-  <h2>Files touched</h2>
+  <h2>Legacy data</h2>
+  <p>Tally import stored <code>base_units</code> verbatim (<code>Doz</code>,
+     <code>PKT</code>, <code>Mtr</code>, <code>Kgs</code>&hellip;). The importer now
+     folds via <code>normalize_uom</code>, and a one-time CLI folds what's already
+     in the DB:</p>
+  <div class="mock">python -m tools.normalize_uom --all --out uom-changes.csv   # dry run, report only
+python -m tools.normalize_uom --tenant &lt;id&gt; --apply           # write folded values</div>
+  <p>Pure spelling fold &mdash; only rows whose value changes; an un-tabled unit
+     is lowercased, never blanked.</p>
+
+  <h2>Files</h2>
   <table>
-    <tr><th>File</th><th>Change</th></tr>
-    <tr><td><code>api/app/routers/reference.py</code></td><td><code>PRIMARY_UOMS</code> + <code>GET /reference/uoms/primary</code>; wide <code>UOMS</code> kept</td></tr>
-    <tr><td><code>api/app/domain/weighment.py</code></td><td><code>_COUNT_UNITS</code> table + <code>count_multiplier()</code>; piece branch multiplies</td></tr>
-    <tr><td><code>web/src/lib/weighment.ts</code></td><td>mirror of the above</td></tr>
-    <tr><td><code>api/app/services/invoices/finalize.py</code></td><td>&ldquo;last billed wins&rdquo; <code>uom</code>/<code>rate_mode</code> refresh; derived <code>rate_mode</code> on item-create</td></tr>
-    <tr><td><code>web/src/pages/invoices/InvoiceEditorPage.tsx</code></td><td>toggle removed; <code>unitChoices</code> = 4 + current; Unit select always shown (mobile + desktop); <code>rateMode</code> derived in <code>patchRow</code>; <code>normalizeUom</code> folds doz/gross; <code>NewMode</code> type &amp; <code>newMode</code> field deleted</td></tr>
-    <tr><td><code>web/src/lib/reference.ts</code></td><td><code>useVocab("uoms_primary")</code> + exported <code>PRIMARY_UOMS</code></td></tr>
-    <tr><td><code>web/src/components/ItemForm.tsx</code>, <code>NewItemForm.tsx</code></td><td>primary UOM select &rarr; <code>uoms_primary</code>; secondary/purchase unchanged</td></tr>
-    <tr><td><code>api/app/services/inward/resolve_lines.py</code></td><td><code>_MRP_UOMS</code> gains doz/gross</td></tr>
-    <tr><td>tests</td><td><code>test_invoice_weighment.py</code> (count multiplier + doz/gross expand), <code>test_invoice_finalize.py</code> (kg rate_mode on create, last-billed-wins), <code>test_items_crud.py</code> (<code>/uoms/primary</code>)</td></tr>
+    <tr><th>New</th><th></th></tr>
+    <tr><td><code>shared/units.json</code></td><td>the canonical table</td></tr>
+    <tr><td><code>api/app/domain/units.py</code></td><td>loader + <code>normalize_uom / is_weight_uom / is_mrp_uom / count_multiplier / to_kg / primary_uoms / all_uoms</code></td></tr>
+    <tr><td><code>web/scripts/gen-units.mjs</code></td><td>JSON &rarr; <code>units.generated.ts</code> (wired into build + dev)</td></tr>
+    <tr><td><code>web/src/lib/units.generated.ts</code></td><td>generated; committed</td></tr>
+    <tr><td><code>api/alembic/versions/0020_retire_rate_mode.py</code></td><td>drops the 3 columns</td></tr>
+    <tr><td><code>api/tools/normalize_uom.py</code></td><td>legacy-uom backfill CLI</td></tr>
+    <tr><td><code>api/tests/test_units.py</code>, <code>api/tests/test_normalize_uom.py</code></td><td>+ py&harr;ts lockstep assertion</td></tr>
+    <tr><th>Changed</th><th></th></tr>
+    <tr><td colspan="2"><code>weighment.py</code> / <code>weighment.ts</code> (delegate to units), <code>reference.py</code> / <code>reference.ts</code>, <code>product_parse.py</code>, <code>finalize.py</code>, <code>resolve_lines.py</code>, <code>items_import.py</code>, <code>item_groups.py</code>, <code>items.py</code>, <code>common.py</code>, <code>learn_from_invoice.py</code>, <code>classify_apply.py</code>, <code>seed_taxonomy.py</code>, <code>schemas_item.py</code>, <code>schemas_catalogue.py</code>, <code>models/{item,tally_stock_import,_mixins}.py</code>; <code>InvoiceEditorPage.tsx</code>, <code>GroupForm.tsx</code>, <code>ItemForm.tsx</code>, <code>NewItemForm.tsx</code>, <code>types.ts</code>, <code>web/package.json</code>; tests: <code>test_product_parse.py</code>, <code>test_item_hierarchy.py</code>, <code>test_invoice_finalize.py</code>, <code>test_invoice_weighment.py</code>, <code>fixtures/real_bill_lines.py</code>, <code>test_alias_sweep.py</code>, <code>test_backfill_bartan.py</code></td></tr>
   </table>
-  <p>No DB migration &mdash; <code>uom</code> stays <code>String(20)</code>; this is
-     vocabulary + display logic only.</p>
+
+  <h2>Deploy</h2>
+  <ol>
+    <li><code>alembic upgrade head</code> &rarr; runs <code>0020</code> (drops 3 columns).</li>
+    <li><code>python -m tools.normalize_uom --all --apply</code> once per env
+      (dry-run first, keep the CSV).</li>
+    <li>Web build regenerates <code>units.generated.ts</code> automatically.</li>
+  </ol>
+  <p>Tests: <strong>364 passed, 1 skipped</strong> (backend). Web build + lint green
+     on changed files. (Pre-existing, untouched: one <code>CollectionsPage.tsx</code>
+     lint warning, one <code>payments.py</code> mypy error.)</p>
 </div>
 </body>
 </html>

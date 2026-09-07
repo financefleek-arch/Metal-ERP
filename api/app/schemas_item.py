@@ -11,7 +11,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models._mixins import ItemSource, ItemStatus, ItemType, RateMode
+from app.models._mixins import ItemSource, ItemStatus, ItemType
 
 # Money / quantity as Decimal so we don't lose paise to float.
 Money = Annotated[Decimal, Field(max_digits=15, decimal_places=2)]
@@ -29,7 +29,6 @@ class ItemBase(BaseModel):
     category: str | None = Field(default=None, max_length=50)
     category_id: str | None = None
     group_id: str | None = None
-    rate_mode: RateMode | None = None
     weight_per_piece: Decimal | None = Field(default=None, max_digits=12, decimal_places=3, ge=0)
     sku: str | None = _SHORT
     size_label: str | None = Field(default=None, max_length=50)
@@ -84,7 +83,6 @@ class ItemUpdate(BaseModel):
     category: str | None = Field(default=None, max_length=50)
     category_id: str | None = None
     group_id: str | None = None
-    rate_mode: RateMode | None = None
     weight_per_piece: Decimal | None = Field(default=None, max_digits=12, decimal_places=3, ge=0)
     sku: str | None = _SHORT
     size_label: str | None = Field(default=None, max_length=50)
@@ -222,7 +220,6 @@ class ItemListItem(BaseModel):
     category: str | None
     category_id: str | None
     group_id: str | None
-    rate_mode: RateMode
     sku: str | None
     size_label: str | None
     uom: str | None

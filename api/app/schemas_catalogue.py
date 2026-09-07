@@ -7,7 +7,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models._mixins import ItemType, RateMode
+from app.models._mixins import ItemType
 
 Money = Annotated[Decimal, Field(max_digits=15, decimal_places=2)]
 
@@ -54,7 +54,6 @@ class GroupIn(BaseModel):
     hsn_code: str | None = Field(default=None, max_length=8)
     uom: str | None = Field(default=None, max_length=20)
     item_type: ItemType = ItemType.mrp
-    default_rate_mode: RateMode = RateMode.piece
 
 
 class GroupUpdate(BaseModel):
@@ -63,7 +62,6 @@ class GroupUpdate(BaseModel):
     hsn_code: str | None = Field(default=None, max_length=8)
     uom: str | None = Field(default=None, max_length=20)
     item_type: ItemType | None = None
-    default_rate_mode: RateMode | None = None
 
 
 class GroupLeaf(BaseModel):
@@ -74,7 +72,6 @@ class GroupLeaf(BaseModel):
     size_label: str | None
     size_text: str | None
     sku: str | None
-    rate_mode: RateMode
     weight_per_piece: Decimal | None
     default_rate: Money | None
     last_rate: Money | None
@@ -93,7 +90,6 @@ class GroupOut(BaseModel):
     hsn_code: str | None
     uom: str | None
     item_type: ItemType
-    default_rate_mode: RateMode
     item_count: int = 0
 
 

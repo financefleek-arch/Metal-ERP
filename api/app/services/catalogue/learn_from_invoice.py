@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map
 from app.domain.product_parse import parse_product_line
+from app.domain.units import is_weight_uom
 from app.models import InvoiceLine, Item, ItemCategory
 from app.models._mixins import AliasSource
 from app.services.catalogue.common import resolve_or_create_group, write_alias
@@ -78,7 +79,7 @@ def learn_from_invoice(
 
         parsed = parse_product_line(
             description, brands=brands, synonyms=synonyms,
-            default_rate_mode=item.rate_mode,
+            default_weight_priced=is_weight_uom(item.uom),
         )
 
         # --- 2. group attach / backfill ---
@@ -92,7 +93,6 @@ def learn_from_invoice(
                 parsed=parsed,
                 hsn_code=line.hsn_code or item.hsn_code,
                 uom=line.uom or item.uom,
-                rate_mode=item.rate_mode,
                 synonyms=synonyms,
             )
             if res is not None:

@@ -27,7 +27,7 @@ from app.domain.item_classify import (
 )
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import ItemCategory, ItemClassifyRule, ProductGroup
-from app.models._mixins import ItemStatus, ItemType, RateMode
+from app.models._mixins import ItemStatus, ItemType
 
 
 @dataclass
@@ -106,7 +106,6 @@ def _group_id_for(
             name_normalized=key,
             category_id=cat_id,
             item_type=ItemType.mrp,
-            default_rate_mode=RateMode.piece,
         )
         session.add(grp)
         session.flush()

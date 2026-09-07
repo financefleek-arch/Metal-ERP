@@ -28,7 +28,6 @@ from app.models._mixins import (
     ItemStatus,
     ItemType,
     PkUuidMixin,
-    RateMode,
     TimestampMixin,
 )
 
@@ -57,9 +56,6 @@ class ProductGroup(PkUuidMixin, TimestampMixin, Base):
     hsn_code: Mapped[str | None] = mapped_column(ForeignKey("hsn_code.code"))
     uom: Mapped[str | None] = mapped_column(String(20))
     item_type: Mapped[ItemType] = mapped_column(String(10), default=ItemType.mrp, nullable=False)
-    default_rate_mode: Mapped[RateMode] = mapped_column(
-        String(10), default=RateMode.piece, nullable=False
-    )
     group_code: Mapped[str | None] = mapped_column(String(32))
     default_size_pos: Mapped[int | None] = mapped_column(Integer)
 
@@ -85,13 +81,8 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     uom: Mapped[str | None] = mapped_column(String(20))
     hsn_code: Mapped[str | None] = mapped_column(ForeignKey("hsn_code.code"))
 
-    # per piece | per kg (weight goods). Default from the group; the invoice
-    # line copies it and may flip it for one bill.
-    rate_mode: Mapped[RateMode] = mapped_column(
-        String(10), default=RateMode.piece, nullable=False
-    )
-    # kg per one piece, when rate_mode = kg (used to split a pooled inward line
-    # and, later, to convert pieces↔kg in the editor).
+    # kg per one piece, for a weight-priced item (uom = kg). Used to split a
+    # pooled inward line and, later, to convert pieces↔kg in the editor.
     weight_per_piece: Mapped[float | None] = mapped_column(Numeric(12, 3))
 
     # --- metal-trade attributes (all optional; sharpen search + the printed line) ---

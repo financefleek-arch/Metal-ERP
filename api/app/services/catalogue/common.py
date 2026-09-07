@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.domain.normalize import normalize_name
 from app.domain.product_parse import ParsedLine
 from app.models import ItemAlias, ItemCategory, ProductGroup
-from app.models._mixins import AliasSource, ItemType, RateMode
+from app.models._mixins import AliasSource, ItemType
 from app.services.item_resolution import resolve_group
 
 
@@ -61,14 +61,13 @@ def resolve_or_create_group(
     parsed: ParsedLine | None = None,
     hsn_code: str | None = None,
     uom: str | None = None,
-    rate_mode: RateMode | None = None,
     synonyms: dict[str, str] | None = None,
 ) -> GroupResolution | None:
     """Find the product group `text` names, or create it.
 
     Returns None when `text` normalises to nothing (a group needs a key).
-    On create: category from the parsed brand (created if new); HSN / UOM /
-    rate_mode from the line.
+    On create: category from the parsed brand (created if new); HSN / UOM
+    from the line.
     """
     key = normalize_name(text, synonyms or {})
     if not key:
@@ -97,7 +96,6 @@ def resolve_or_create_group(
         hsn_code=hsn_code,
         uom=uom,
         item_type=ItemType.bulk,
-        default_rate_mode=rate_mode or RateMode.piece,
     )
     session.add(grp)
     session.flush()

@@ -35,7 +35,6 @@ def test_sweep(client: TestClient, session) -> None:  # type: ignore[no-untyped-
     _tok, tenant_id = _register(client)
     it = Item(
         tenant_id=tenant_id, name="Base Item", name_normalized="base item",
-        rate_mode="piece",
     )
     session.add(it)
     session.flush()

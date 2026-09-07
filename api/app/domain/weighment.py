@@ -5,14 +5,14 @@ only sums the physical measures a metal-trade bill has always carried at
 the bottom: total weight of weight-priced goods, and a piece count of the
 rest, plus the operator-drawn weighment segments.
 
-A line is a *weight line* when its `uom` string normalises to a mass unit
-(kg / g / quintal / tonne family). Its `quantity` is converted to kg and
-added to the weight total. Every other line is a *piece line* — its
+A line is a *weight line* when its `uom` is a mass unit (kg / g / quintal /
+tonne family — see `shared/units.json`). Its `quantity` is converted to kg
+and added to the weight total. Every other line is a *piece line* — its
 `quantity` is multiplied out to individual pieces (a dozen = 12, a gross =
 144; anything else = 1) and added to the count (shown as a whole number).
 
-The web mirror is `web/src/lib/weighment.ts`; keep the unit table and the
-segment grouping identical.
+The unit table itself lives in `app.domain.units` (loaded from
+`shared/units.json`); the web mirror is generated from the same JSON.
 """
 
 from __future__ import annotations
@@ -20,67 +20,20 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.domain.units import count_multiplier, is_weight_uom, to_kg
+
+__all__ = [
+    "count_multiplier",
+    "is_weight_uom",
+    "to_kg",
+    "LineMeasure",
+    "SegmentMeasure",
+    "InvoiceMeasure",
+    "compute_measure",
+]
+
 _Q3 = Decimal("0.001")
 _ZERO = Decimal("0")
-
-# uom (lower-cased, stripped) -> multiplier to kilograms. Anything not here
-# is treated as a piece unit.
-_WEIGHT_UNITS: dict[str, Decimal] = {
-    "kg": Decimal("1"),
-    "kgs": Decimal("1"),
-    "kilogram": Decimal("1"),
-    "kilograms": Decimal("1"),
-    "g": Decimal("0.001"),
-    "gm": Decimal("0.001"),
-    "gms": Decimal("0.001"),
-    "gram": Decimal("0.001"),
-    "grams": Decimal("0.001"),
-    "quintal": Decimal("100"),
-    "qtl": Decimal("100"),
-    "ton": Decimal("1000"),
-    "tonne": Decimal("1000"),
-    "tonnes": Decimal("1000"),
-    "mt": Decimal("1000"),
-}
-
-
-# uom (lower-cased, stripped) -> how many individual pieces one unit is.
-# Anything not here (and not a weight unit) counts as 1.
-_COUNT_UNITS: dict[str, int] = {
-    "nos": 1,
-    "no": 1,
-    "pcs": 1,
-    "pc": 1,
-    "piece": 1,
-    "pieces": 1,
-    "each": 1,
-    "unit": 1,
-    "doz": 12,
-    "dz": 12,
-    "dozen": 12,
-    "dozens": 12,
-    "gross": 144,
-    "grs": 144,
-    "gro": 144,
-}
-
-
-def is_weight_uom(uom: str | None) -> bool:
-    return (uom or "").strip().lower() in _WEIGHT_UNITS
-
-
-def count_multiplier(uom: str | None) -> int:
-    """Individual pieces in one `uom` (dozen -> 12, gross -> 144, else 1)."""
-    return _COUNT_UNITS.get((uom or "").strip().lower(), 1)
-
-
-def to_kg(quantity: Decimal | int | float | str, uom: str | None) -> Decimal:
-    """Quantity in `uom` -> kilograms, or 0 for a non-weight unit."""
-    factor = _WEIGHT_UNITS.get((uom or "").strip().lower())
-    if factor is None:
-        return _ZERO
-    q = quantity if isinstance(quantity, Decimal) else Decimal(str(quantity or 0))
-    return (q * factor).quantize(_Q3, rounding=ROUND_HALF_UP)
 
 
 @dataclass(frozen=True)

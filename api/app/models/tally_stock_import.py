@@ -14,7 +14,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from app.db import Base
-from app.models._mixins import ItemType, PkUuidMixin, RateMode
+from app.models._mixins import ItemType, PkUuidMixin
 
 try:  # pragma: no cover
     from sqlalchemy.dialects.postgresql import JSONB
@@ -45,9 +45,6 @@ class StagingTallyItem(PkUuidMixin, Base):
         String(10), default=ItemType.bulk, nullable=False
     )
     proposed_uom: Mapped[str | None] = mapped_column(String(20))
-    proposed_rate_mode: Mapped[RateMode] = mapped_column(
-        String(10), default=RateMode.piece, nullable=False
-    )
     parsed_metal: Mapped[str | None] = mapped_column(String(20))
     parsed_shape: Mapped[str | None] = mapped_column(String(24))
     parsed_grade: Mapped[str | None] = mapped_column(String(32))

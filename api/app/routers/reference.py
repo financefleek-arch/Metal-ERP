@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import func, or_, select
 
 from app.deps import CurrentUser, SessionDep
+from app.domain.units import all_uoms, primary_uoms
 from app.models import HsnCode
 from app.reference import STATE_CODES
 
@@ -16,17 +17,10 @@ router = APIRouter(prefix="/api/reference", tags=["reference"])
 # Small fixed vocabularies — code lists, not DB tables. The item form uses
 # these for its pickers; free text is still allowed on save.
 #
-# PRIMARY_UOMS is the strict set a shop bills in — pieces, weight, and the
-# two pack multiples (a dozen = 12 nos, a gross = 144 nos). The invoice line
-# unit and an item's *primary* unit are limited to these (the picker still
-# shows a legacy value already on the row so nothing flips silently).
-# UOMS is the wider list, kept for an item's secondary / purchase unit where
-# a supplier really may invoice in coils, sheets or running feet.
-PRIMARY_UOMS: list[str] = ["nos", "kg", "doz", "gross"]
-UOMS: list[str] = [
-    "kg", "mt", "quintal", "nos", "pcs", "set", "pair", "bundle",
-    "coil", "sheet", "length", "ft", "m", "sqft", "sqm", "ltr",
-]
+# UOMs come from the canonical table in `shared/units.json` via
+# `app.domain.units`: `primary_uoms()` is the strict billing set (invoice
+# line + an item's primary unit); `all_uoms()` is the wider list for an
+# item's secondary / purchase unit and legacy data.
 CATEGORIES: list[str] = [
     "Stainless flat", "Stainless long", "Stainless pipe",
     "MS flat", "MS long", "MS structural", "MS pipe",
@@ -58,13 +52,13 @@ def states() -> list[dict[str, str]]:
 
 @router.get("/uoms")
 def uoms() -> list[str]:
-    return UOMS
+    return all_uoms()
 
 
 @router.get("/uoms/primary")
 def uoms_primary() -> list[str]:
     """The strict billing set: nos / kg / doz / gross."""
-    return PRIMARY_UOMS
+    return primary_uoms()
 
 
 @router.get("/categories")

@@ -86,13 +86,6 @@ class ItemStatus(enum.StrEnum):
     archived = "archived"
 
 
-class RateMode(enum.StrEnum):
-    """How an item's rate is quoted: per piece, or per kg (weight goods)."""
-
-    piece = "piece"
-    kg = "kg"
-
-
 class AliasSource(enum.StrEnum):
     manual = "manual"
     # off a real inward document — never auto-retired

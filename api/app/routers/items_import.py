@@ -17,8 +17,9 @@ from sqlalchemy import delete, func, select
 from app.deps import SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.domain.product_parse import parse_product_line
+from app.domain.units import is_mrp_uom, normalize_uom
 from app.models import HsnCode, Item, ItemCategory, ProductGroup, StagingTallyItem
-from app.models._mixins import ItemSource, ItemStatus, ItemType, RateMode
+from app.models._mixins import ItemSource, ItemStatus, ItemType
 from app.services.catalogue.classify_apply import Classifier
 from app.services.item_resolution import resolve_group
 from tools.tally_import.item_match import match_stock_items_bulk
@@ -67,7 +68,6 @@ class StagedRowOut(BaseModel):
     gst_rate: str | None
     standard_rate: str | None
     item_type: ItemType
-    rate_mode: RateMode
     parsed: ParsedAttrs
     outcome: Outcome
     match_item_id: str | None
@@ -109,8 +109,6 @@ class CurrentBatchOut(BaseModel):
 # helpers
 # --------------------------------------------------------------------------
 
-_MRP_UNITS = {"nos", "pcs", "pc", "set", "no"}
-
 # staging_tally_item column widths for the heuristic parsed_* hints. product_parse
 # can return most of a long kitchenware name as "product"; these are advisory
 # only, so clip to fit rather than fail the whole import.
@@ -131,13 +129,13 @@ def _clip(value: str | None, field: str) -> str | None:
 
 
 def _map_uom(base_units: str | None) -> str | None:
-    u = (base_units or "").strip().lower()
-    return u[:20] or None
+    """Tally's base-units string -> a canonical unit (folds "Doz" -> "doz",
+    "PKT" -> "pkt", etc). An unknown unit passes through lowercased."""
+    return normalize_uom(base_units)[:20] or None
 
 
 def _proposed_type(base_units: str | None) -> ItemType:
-    u = (base_units or "").strip().lower()
-    return ItemType.mrp if u in _MRP_UNITS else ItemType.bulk
+    return ItemType.mrp if is_mrp_uom(base_units) else ItemType.bulk
 
 
 def _effective_type(row: StagingTallyItem) -> ItemType:
@@ -235,7 +233,6 @@ def _row_out(session: SessionDep, r: StagingTallyItem) -> StagedRowOut:
         gst_rate=str(r.gst_rate) if r.gst_rate is not None else None,
         standard_rate=str(r.standard_rate) if r.standard_rate is not None else None,
         item_type=_effective_type(r),
-        rate_mode=r.proposed_rate_mode,
         parsed=ParsedAttrs(
             metal=r.parsed_metal,
             shape=r.parsed_shape,
@@ -341,7 +338,6 @@ async def upload(
                 raw_xml=(si.raw_xml or "")[:_RAW_XML_KEEP] or None,
                 proposed_type=_proposed_type(si.base_units),
                 proposed_uom=_map_uom(si.base_units),
-                proposed_rate_mode=(p.rate_mode or RateMode.piece),
                 parsed_metal=_clip(p.brand, "parsed_metal"),
                 parsed_shape=_clip(p.product, "parsed_shape"),
                 parsed_grade=None,
@@ -418,7 +414,6 @@ def _resolve_or_create_group(
     group_name: str,
     synonyms: dict[str, str],
     item_type: ItemType,
-    rate_mode: RateMode,
     hsn: str | None,
     *,
     counter: list[int],
@@ -456,7 +451,6 @@ def _resolve_or_create_group(
         name_normalized=normalize_name(name, synonyms),
         category_id=category_id,
         item_type=item_type,
-        default_rate_mode=rate_mode,
         hsn_code=hsn,
     )
     session.add(grp)
@@ -579,7 +573,6 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 row.parent_group or "",
                 synonyms,
                 _effective_type(row),
-                row.proposed_rate_mode,
                 hsn,
                 counter=groups_created,
             )
@@ -606,7 +599,6 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 category_id=category_id,
                 uom=row.proposed_uom,
                 hsn_code=hsn,
-                rate_mode=row.proposed_rate_mode,
                 metal=row.parsed_metal,
                 shape=row.parsed_shape,
                 size_text=row.parsed_size_text,

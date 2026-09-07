@@ -20,7 +20,7 @@ def tenant(session):  # type: ignore[no-untyped-def]
 
 def _add_item(session, tenant_id: str, name: str, norm: str) -> Item:  # type: ignore[no-untyped-def]
     it = Item(
-        tenant_id=tenant_id, name=name, name_normalized=norm, rate_mode="piece"
+        tenant_id=tenant_id, name=name, name_normalized=norm
     )
     session.add(it)
     session.flush()

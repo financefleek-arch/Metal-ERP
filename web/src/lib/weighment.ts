@@ -6,8 +6,14 @@
  * operator-drawn weighment segments. No money here; tax.py / previewTotal.ts
  * own every rupee.
  *
- * Keep the unit table and the segment grouping identical to the Python side.
+ * The unit table lives in `units.generated.ts` (from `shared/units.json`,
+ * same source as the Python side); the segment grouping is what's mirrored
+ * here.
  */
+
+import { countMultiplier, isWeightUom, toKg } from "./units.generated";
+
+export { countMultiplier, isWeightUom, toKg };
 
 export interface MeasureLineInput {
   quantity: string | number;
@@ -34,52 +40,6 @@ export interface Measure {
   totalCount: number;
   segmentCount: number;
   segments: SegmentMeasure[];
-}
-
-/** uom (lower, trimmed) -> multiplier to kg. Absent => a piece unit. */
-const WEIGHT_UNITS: Record<string, number> = {
-  kg: 1,
-  kgs: 1,
-  kilogram: 1,
-  kilograms: 1,
-  g: 0.001,
-  gm: 0.001,
-  gms: 0.001,
-  gram: 0.001,
-  grams: 0.001,
-  quintal: 100,
-  qtl: 100,
-  ton: 1000,
-  tonne: 1000,
-  tonnes: 1000,
-  mt: 1000,
-};
-
-export function isWeightUom(uom: string | null | undefined): boolean {
-  return (uom ?? "").trim().toLowerCase() in WEIGHT_UNITS;
-}
-
-/** uom (lower, trimmed) -> individual pieces in one unit. Absent => 1. */
-const COUNT_UNITS: Record<string, number> = {
-  nos: 1,
-  no: 1,
-  pcs: 1,
-  pc: 1,
-  piece: 1,
-  pieces: 1,
-  each: 1,
-  unit: 1,
-  doz: 12,
-  dz: 12,
-  dozen: 12,
-  dozens: 12,
-  gross: 144,
-  grs: 144,
-  gro: 144,
-};
-
-export function countMultiplier(uom: string | null | undefined): number {
-  return COUNT_UNITS[(uom ?? "").trim().toLowerCase()] ?? 1;
 }
 
 function num(v: string | number | null | undefined): number {
@@ -124,9 +84,8 @@ export function computeMeasure(
       buckets.set(seg, b);
     }
     b.to = i;
-    const factor = WEIGHT_UNITS[(ln.uom ?? "").trim().toLowerCase()];
-    if (factor !== undefined) {
-      const kg = round3(num(ln.quantity) * factor);
+    if (isWeightUom(ln.uom)) {
+      const kg = round3(toKg(num(ln.quantity), ln.uom));
       b.w += kg;
       totalW += kg;
     } else {

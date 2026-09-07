@@ -9,7 +9,6 @@ from __future__ import annotations
 import pytest
 
 from app.domain.product_parse import generated_name, parse_product_line
-from app.models._mixins import RateMode
 from tests.fixtures.real_bill_lines import BRANDS, CORPUS, SYNONYMS
 
 
@@ -42,18 +41,18 @@ def test_empty_input() -> None:
 
 def test_decimal_qty_implies_kg() -> None:
     p = parse_product_line("Something 12.5 x 100", brands=[])
-    assert p.rate_mode is RateMode.kg
+    assert p.weight_priced is True
 
 
 def test_integer_qty_with_times_implies_piece() -> None:
     p = parse_product_line("Something 3 x 100", brands=[])
-    assert p.rate_mode is RateMode.piece
+    assert p.weight_priced is False
 
 
 def test_per_kgs_column_wins() -> None:
     p = parse_product_line("Thing 5 per KGS 200", brands=[])
     # "5" here has no PC/decimal signal but the column marker forces kg
-    assert p.rate_mode is RateMode.kg
+    assert p.weight_priced is True
 
 
 def test_nxn_size() -> None:
@@ -61,9 +60,9 @@ def test_nxn_size() -> None:
     assert p.size == "20x24" and p.size_kind == "nxn" and p.size_sort == 20.0
 
 
-def test_default_rate_mode_used_when_nothing_else() -> None:
-    p = parse_product_line("Mystery Widget", brands=[], default_rate_mode=RateMode.piece)
-    assert p.rate_mode is RateMode.piece
+def test_default_weight_priced_used_when_nothing_else() -> None:
+    p = parse_product_line("Mystery Widget", brands=[], default_weight_priced=False)
+    assert p.weight_priced is False
 
 
 # --------------------------------------------------------------------------

@@ -352,7 +352,7 @@ def _apply_group_inheritance(
     session: SessionDep, tenant_id: str, it: Item, set_fields: set[str]
 ) -> None:
     """When a leaf is put in a group, fill from the group any field the caller
-    did NOT explicitly set (rate_mode, category, hsn, uom, item_type).
+    did NOT explicitly set (category, hsn, uom, item_type).
     """
     if not it.group_id:
         return
@@ -363,8 +363,6 @@ def _apply_group_inheritance(
     )
     if grp is None:
         raise HTTPException(status_code=422, detail="Unknown product group")
-    if "rate_mode" not in set_fields:
-        it.rate_mode = grp.default_rate_mode
     if "category_id" not in set_fields and it.category_id is None:
         it.category_id = grp.category_id
     if "hsn_code" not in set_fields and not it.hsn_code:

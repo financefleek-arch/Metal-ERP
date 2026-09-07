@@ -124,7 +124,7 @@ def test_accretion_creates_unconfirmed_item(client: TestClient, session) -> None
     assert inv.lines[0].item_id == it.id
 
 
-def test_free_typed_kg_line_creates_item_with_kg_rate_mode(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+def test_free_typed_kg_line_creates_item_with_kg_uom(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
     h = _h(_register(client, "fin4b@x.example.com"))
     pid = _party(client, h)
     iid = _draft_with_lines(
@@ -135,7 +135,6 @@ def test_free_typed_kg_line_creates_item_with_kg_rate_mode(client: TestClient, s
     it = session.scalar(select(Item).where(Item.name == "MS Scrap Turnings"))
     assert it is not None
     assert it.uom == "kg"
-    assert it.rate_mode == "kg"
 
 
 def test_last_billed_unit_wins_on_existing_item(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
@@ -153,8 +152,16 @@ def test_last_billed_unit_wins_on_existing_item(client: TestClient, session) -> 
 
     session.expire_all()
     it = session.get(Item, item_id)
-    assert it.uom == "doz"          # follows the most recent invoice line
-    assert it.rate_mode == "piece"  # doz is a count unit, not weight
+    assert it.uom == "doz"  # follows the most recent invoice line
+
+    # legacy spelling on the line folds to canonical on the item
+    iid2 = _draft_with_lines(
+        client, h, pid,
+        [{"description": "Steel Tumbler", "quantity": "2", "unit_rate": "1000", "uom": "Doz"}],
+    )
+    assert client.post(f"/api/invoices/{iid2}/finalize", headers=h).status_code == 200
+    session.expire_all()
+    assert session.get(Item, item_id).uom == "doz"
 
 
 def test_existing_item_is_reused_and_bumped(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]

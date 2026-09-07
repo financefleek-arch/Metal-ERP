@@ -1,8 +1,8 @@
 """Product groups — the middle level of category → group → item.
 
 The table has existed since 0001 (dormant); this surfaces it. A group
-carries the shared attributes (category, HSN, UOM, item_type, default
-rate_mode); its leaves inherit unless they override.
+carries the shared attributes (category, HSN, UOM, item_type); its leaves
+inherit unless they override.
 """
 
 from __future__ import annotations
@@ -54,7 +54,6 @@ def _leaf_out(session: SessionDep, it: Item, group: ProductGroup) -> GroupLeaf:
         size_label=it.size_label,
         size_text=it.size_text,
         sku=it.sku,
-        rate_mode=it.rate_mode,
         weight_per_piece=it.weight_per_piece,
         default_rate=it.default_rate,
         last_rate=it.last_rate,
@@ -83,7 +82,6 @@ def _group_out(session: SessionDep, g: ProductGroup) -> GroupOut:
         hsn_code=g.hsn_code,
         uom=g.uom,
         item_type=g.item_type,
-        default_rate_mode=g.default_rate_mode,
         item_count=n or 0,
     )
 
@@ -127,7 +125,6 @@ def create_group(body: GroupIn, user: WriteUser, session: SessionDep) -> GroupDe
         hsn_code=body.hsn_code,
         uom=body.uom,
         item_type=body.item_type,
-        default_rate_mode=body.default_rate_mode,
     )
     session.add(g)
     session.flush()
@@ -169,7 +166,7 @@ def update_group(
             raise HTTPException(status_code=409, detail=f"A group '{clash.name}' already exists")
         g.name = patch["name"].strip()
         g.name_normalized = key
-    for field_ in ("category_id", "hsn_code", "uom", "item_type", "default_rate_mode"):
+    for field_ in ("category_id", "hsn_code", "uom", "item_type"):
         if field_ in patch:
             setattr(g, field_, patch[field_])
     session.flush()

@@ -22,16 +22,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
+from app.domain.units import is_mrp_uom
 from app.models import HsnCode
 from app.models._mixins import ItemSource, ItemStatus, ItemType, MatchMethod
 from app.services import llm
 from app.services.item_resolution import resolve_item
-
-# UOMs that mean "discrete unit" -> item_type = mrp; else bulk.
-_MRP_UOMS = {
-    "nos", "pcs", "pc", "set", "no", "each", "unit", "box", "btl", "bottle",
-    "doz", "dz", "dozen", "gross", "grs",
-}
 
 
 @dataclass
@@ -60,8 +55,7 @@ def _stage_new_item(
     synonyms: dict[str, str],
 ) -> tuple[dict[str, Any], str]:
     hsn_known = _hsn_known(session, hsn)
-    uom_l = (uom or "").strip().lower()
-    item_type = ItemType.mrp if uom_l in _MRP_UOMS else ItemType.bulk
+    item_type = ItemType.mrp if is_mrp_uom(uom) else ItemType.bulk
     staged = {
         "name": description,
         "name_normalized": normalize_name(description, synonyms),

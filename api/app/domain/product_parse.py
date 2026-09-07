@@ -3,7 +3,7 @@ billing type-ahead.
 
 `parse_product_line("Dhara Kettly 10cup 6PC -> 425")` ->
     ParsedLine(brand="Dhara Kettle", product="", sku=None, size="10cup",
-               size_kind="cup", size_sort=10.0, rate_mode="piece",
+               size_kind="cup", size_sort=10.0, weight_priced=False,
                qty=6.0, rate=425.0, confidence=0.9)
 
 Pure. No I/O. The caller passes the tenant's brand list (from item_category
@@ -15,8 +15,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-
-from app.models._mixins import RateMode
 
 # --------------------------------------------------------------------------
 # size grammar — first match wins
@@ -71,7 +69,9 @@ class ParsedLine:
     size: str | None = None
     size_kind: str | None = None  # cup | litre | nxn | no | gauge | mm | bare | None
     size_sort: float | None = None
-    rate_mode: RateMode | None = None
+    # True when the line reads as weighed goods (decimal qty, a "per kg"
+    # column marker, or an explicit KGS quantity). None = couldn't tell.
+    weight_priced: bool | None = None
     qty: float | None = None
     rate: float | None = None
     confidence: float = 0.0
@@ -123,7 +123,7 @@ def parse_product_line(
     *,
     brands: list[str] | None = None,
     synonyms: dict[str, str] | None = None,
-    default_rate_mode: RateMode | None = None,
+    default_weight_priced: bool | None = None,
 ) -> ParsedLine:
     brands = brands or []
     synonyms = synonyms or {}
@@ -137,7 +137,7 @@ def parse_product_line(
     # token-level synonym rewrites ("kettly" -> "kettle", "s s" -> "ss")
     text = " ".join(synonyms.get(t, t) for t in text.split(" "))
 
-    # --- rate mode column marker ---
+    # --- "per kg" column marker ---
     per_kg_col = bool(_PER_KG.search(text))
     text = _PER_KG.sub(" ", text).strip()
 
@@ -145,13 +145,13 @@ def parse_product_line(
     # explicit "N PC/NUG"
     if (m := _QTY_PIECE.search(text)) is not None:
         out.qty = float(m.group(1))
-        out.rate_mode = RateMode.piece
+        out.weight_priced = False
         text = (text[: m.start()] + " " + text[m.end():]).strip()
         conf += 0.15
     # "N KGS" (decimal weight)
     elif (m := _QTY_KG.search(text)) is not None:
         out.qty = float(m.group(1))
-        out.rate_mode = RateMode.kg
+        out.weight_priced = True
         text = (text[: m.start()] + " " + text[m.end():]).strip()
         conf += 0.15
 
@@ -164,10 +164,8 @@ def parse_product_line(
             out.rate = float(m.group(2))
             if out.qty is None:
                 out.qty = left
-                if out.rate_mode is None:
-                    out.rate_mode = (
-                        RateMode.kg if left != int(left) else RateMode.piece
-                    )
+                if out.weight_priced is None:
+                    out.weight_priced = left != int(left)
             text = (text[: m.start()] + " " + text[m.end():]).strip()
             conf += 0.15
 
@@ -183,17 +181,17 @@ def parse_product_line(
         text = text[: m.start()].strip()
         conf += 0.05
 
-    # --- rate-mode fallbacks ---
-    if out.rate_mode is None:
+    # --- weight-priced fallbacks ---
+    if out.weight_priced is None:
         if per_kg_col:
-            out.rate_mode = RateMode.kg
+            out.weight_priced = True
         elif out.qty is not None and out.qty != int(out.qty):
-            out.rate_mode = RateMode.kg  # a decimal quantity is a weight
+            out.weight_priced = True  # a decimal quantity is a weight
         elif out.qty is not None:
-            out.rate_mode = RateMode.piece
-        elif default_rate_mode is not None:
-            out.rate_mode = default_rate_mode
-            out.notes.append("rate_mode from group default")
+            out.weight_priced = False
+        elif default_weight_priced is not None:
+            out.weight_priced = default_weight_priced
+            out.notes.append("weight_priced from group default")
 
     # --- brand ---
     brand, text = _match_brand(text, brands)
