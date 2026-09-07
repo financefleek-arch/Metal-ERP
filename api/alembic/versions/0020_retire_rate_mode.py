@@ -2,7 +2,7 @@
 
 `rate_mode` (piece | kg) was a normalised weight-vs-piece flag that sat
 alongside the free-text `uom` string. Now that `uom` is drawn from a
-canonical table (`shared/units.json`) with an `is_weight_uom()` helper,
+canonical table (`api/app/domain/units.json`) with an `is_weight_uom()` helper,
 `rate_mode` carries no information `uom` doesn't — it was a derived shadow
 that could drift from its source. Every consumer now keys off `uom`.
 

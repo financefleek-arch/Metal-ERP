@@ -1,7 +1,8 @@
 # The fleek-stack SPA build (fleek-infra/metalerp/web.Dockerfile) uses this
-# repo ROOT as its Docker context so it can COPY shared/ alongside web/.
-# Keep the context to source only — none of the below is needed by the
-# `npm ci && npm run build` in that Dockerfile.
+# repo ROOT as its Docker context so it can COPY web/ plus the one file the
+# unit-table generator reads: api/app/domain/units.json. Keep the context
+# to source only — none of the below is needed by `npm ci && npm run build`.
+# NOTE: do NOT add `api/` wholesale here — units.json must stay reachable.
 
 # python / api build artefacts
 api/.venv/

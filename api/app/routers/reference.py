@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/reference", tags=["reference"])
 # Small fixed vocabularies — code lists, not DB tables. The item form uses
 # these for its pickers; free text is still allowed on save.
 #
-# UOMs come from the canonical table in `shared/units.json` via
+# UOMs come from the canonical table in `api/app/domain/units.json` via
 # `app.domain.units`: `primary_uoms()` is the strict billing set (invoice
 # line + an item's primary unit); `all_uoms()` is the wider list for an
 # item's secondary / purchase unit and legacy data.

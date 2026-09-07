@@ -43,6 +43,14 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["app*"]
 
+[tool.setuptools.package-data]
+# Non-.py files that must ship with the package: the canonical unit table
+# (app/domain/units.json) and the PDF templates (app/templates/*.html).
+# In the container the app runs from the source tree so these are on disk
+# regardless, but declaring them keeps an installed-package import correct.
+"app.domain" = ["units.json"]
+"app.templates" = ["*.html"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

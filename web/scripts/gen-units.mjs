@@ -1,14 +1,16 @@
-// Generates web/src/lib/units.generated.ts from shared/units.json.
+// Generates web/src/lib/units.generated.ts from the canonical unit table,
+// api/app/domain/units.json — the SAME file the API loads at runtime.
 //
-// Runs in web's prebuild (see package.json). The generated file is
-// COMMITTED so tsc works offline; a pytest (api/tests/test_units.py)
-// fails if it ever drifts from shared/units.json.
+// The generated file is COMMITTED so tsc/Vite work without running this,
+// and a pytest (api/tests/test_units.py) fails the build if it ever
+// drifts from units.json.
 //
-// The fleek-stack SPA build runs with the Metal-ERP repo ROOT as its
-// Docker context (fleek-infra/metalerp/web.Dockerfile does
-// `COPY shared/ /shared/`), so units.json is reachable at /shared/ there.
-// The two candidate paths cover: a normal repo checkout ("../../shared")
-// and that Docker layout ("/shared", i.e. "../.." from web/scripts).
+// The fleek-stack SPA build's Docker context is the Metal-ERP repo root
+// (fleek-infra/metalerp/web.Dockerfile: `COPY api/app/domain/units.json`
+// + `COPY web/ ./`), so api/app/domain/units.json is reachable from here.
+// If for any reason it isn't (e.g. a web-only context), fall back to the
+// committed output rather than fail the build — it's authoritative and
+// CI-verified.
 //
 //   node scripts/gen-units.mjs
 
@@ -20,14 +22,20 @@ const here = dirname(fileURLToPath(import.meta.url));
 const outPath = resolve(here, "../src/lib/units.generated.ts");
 
 const candidates = [
-  resolve(here, "../../shared/units.json"), // repo checkout, and the Docker /shared/ layout
-  resolve(here, "../shared/units.json"), // a copy dropped into web/, if ever needed
+  resolve(here, "../../api/app/domain/units.json"), // repo checkout / repo-root Docker context
+  resolve(here, "../api/app/domain/units.json"), // if web/ were the context and api/ copied in
 ];
 const srcPath = candidates.find(existsSync);
 
 if (!srcPath) {
+  if (existsSync(outPath)) {
+    console.log(
+      "gen-units: units.json not in this build context — keeping the committed units.generated.ts",
+    );
+    process.exit(0);
+  }
   console.error(
-    `gen-units: shared/units.json not found (looked in: ${candidates.join(", ")})`,
+    `gen-units: units.json not found (looked in: ${candidates.join(", ")}) and no committed output`,
   );
   process.exit(1);
 }
@@ -37,8 +45,8 @@ const raw = JSON.parse(readFileSync(srcPath, "utf-8"));
 /** @type {Array<Record<string, unknown>>} */
 const units = raw.units;
 
-const header = `// AUTO-GENERATED from shared/units.json by web/scripts/gen-units.mjs — do not edit.
-// Run \`node scripts/gen-units.mjs\` from web/ after changing shared/units.json.
+const header = `// AUTO-GENERATED from api/app/domain/units.json by web/scripts/gen-units.mjs — do not edit.
+// Run \`node scripts/gen-units.mjs\` from web/ after changing api/app/domain/units.json.
 `;
 
 const body = `

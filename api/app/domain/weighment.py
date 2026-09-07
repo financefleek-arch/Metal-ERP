@@ -6,13 +6,13 @@ the bottom: total weight of weight-priced goods, and a piece count of the
 rest, plus the operator-drawn weighment segments.
 
 A line is a *weight line* when its `uom` is a mass unit (kg / g / quintal /
-tonne family — see `shared/units.json`). Its `quantity` is converted to kg
+tonne family — see `api/app/domain/units.json`). Its `quantity` is converted to kg
 and added to the weight total. Every other line is a *piece line* — its
 `quantity` is multiplied out to individual pieces (a dozen = 12, a gross =
 144; anything else = 1) and added to the count (shown as a whole number).
 
 The unit table itself lives in `app.domain.units` (loaded from
-`shared/units.json`); the web mirror is generated from the same JSON.
+`api/app/domain/units.json`); the web mirror is generated from the same JSON.
 """
 
 from __future__ import annotations

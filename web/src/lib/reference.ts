@@ -37,7 +37,7 @@ export function useVocab(
 }
 
 // The canonical unit lists come from `units.generated.ts` (built from
-// `shared/units.json`, same source the API uses). Re-exported here so
+// `api/app/domain/units.json`, same source the API uses). Re-exported here so
 // existing importers of "../lib/reference" keep working.
 export { PRIMARY_UOMS, ALL_UOMS } from "./units.generated";
 

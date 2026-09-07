@@ -1,7 +1,7 @@
 """Canonical unit-of-measure table — the one place units are defined.
 
-Loads `shared/units.json` (repo root) at import. Every other module asks
-this one:
+Loads `units.json` (this same directory) at import. Every other module
+asks this one:
 
     normalize_uom("Doz")        -> "doz"
     is_weight_uom("kg")         -> True
@@ -14,9 +14,11 @@ this one:
 `weight_per_piece`-style pcs<->kg conversion is a separate item-level
 concern and lives with the item, not here.
 
-The web app gets the same table via `web/src/lib/units.generated.ts`,
-regenerated from the JSON by `web/scripts/gen-units.mjs`. A pytest
-(`test_units.py`) asserts the two never drift.
+`units.json` sits next to this module deliberately: the API Docker build
+context is `api/` only, so a repo-root file would not ship in the
+container (this bit us live 2026-09-07 — /shared/units.json FileNotFound,
+cascading 500s). The web app generates web/src/lib/units.generated.ts
+from this same file; `test_units.py` asserts the two never drift.
 """
 
 from __future__ import annotations
@@ -30,8 +32,7 @@ from pathlib import Path
 _Q3 = Decimal("0.001")
 _ZERO = Decimal("0")
 
-# api/app/domain/units.py -> repo root is three parents up from app/
-_JSON_PATH = Path(__file__).resolve().parents[3] / "shared" / "units.json"
+_JSON_PATH = Path(__file__).resolve().parent / "units.json"
 
 
 @dataclass(frozen=True)

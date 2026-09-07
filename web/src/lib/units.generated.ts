@@ -1,5 +1,5 @@
-// AUTO-GENERATED from shared/units.json by web/scripts/gen-units.mjs — do not edit.
-// Run `node scripts/gen-units.mjs` from web/ after changing shared/units.json.
+// AUTO-GENERATED from api/app/domain/units.json by web/scripts/gen-units.mjs — do not edit.
+// Run `node scripts/gen-units.mjs` from web/ after changing api/app/domain/units.json.
 
 export interface Unit {
   value: string;

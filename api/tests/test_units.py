@@ -1,7 +1,7 @@
-"""The canonical unit table (`shared/units.json`) and its two consumers.
+"""The canonical unit table (`api/app/domain/units.json`) and its two consumers.
 
-`app.domain.units` loads the JSON; `web/src/lib/units.generated.ts` is
-generated from the same file. This asserts:
+`app.domain.units` loads the JSON at runtime; `web/src/lib/units.generated.ts`
+is generated from the same file. This asserts:
   1. the Python surface behaves (normalise / weight / count / to_kg / mrp)
   2. the generated TS file is in lockstep with the JSON — if someone edits
      units.json and forgets `node scripts/gen-units.mjs`, this fails.
