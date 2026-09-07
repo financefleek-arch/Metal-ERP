@@ -17,8 +17,12 @@
     .muted { color: #555; font-size: 8pt; }
     .lines th { background: #eee; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.02em; }
     .lines td { font-size: 9pt; }
-    .totrow td { border: none; }
+    .totrow td { border: none; padding: 4pt 6pt; }
+    .totbox td.r { min-width: 78pt; }
+    .totbox tr.net td { font-weight: bold; border-top: 0.5pt solid #999; padding-top: 5pt; }
     .grand { font-weight: bold; font-size: 10.5pt; }
+    .grand td { border: none; border-top: 1pt solid #000; border-bottom: 2.5pt double #000; padding: 5pt 6pt; }
+    .lines tfoot .lines-foot td { background: #f6f6f6; }
     .foot { margin-top: 8pt; font-size: 8pt; }
     .sub-hdr td { font-weight: bold; background: #f6f6f6; }
     .wrow td { background: #f2f5f2; font-size: 8pt; }
@@ -90,9 +94,17 @@
         <td>{{ ln.description }}</td>
         <td class="c">{{ ln.hsn_code or "" }}</td>
         <td class="r">{{ "%.3f"|format(ln.quantity|float) }}</td>
-        <td>{{ ln.uom or "" }}</td>
+        <td>{{ ln.uom|uom if ln.uom else "" }}</td>
         <td class="r">{{ ln.unit_rate|money }}</td>
-        <td class="r">{{ (ln.discount|money) if (ln.discount and ln.discount|float) else "" }}</td>
+        <td class="r">
+          {%- if ln.discount and ln.discount|float -%}
+            {%- if ln.discount_pct is not none and ln.discount_pct|float -%}
+              {{ ln.discount_pct|float|round|int }}% ({{ ln.discount|money }})
+            {%- else -%}
+              {{ ln.discount|money }}
+            {%- endif -%}
+          {%- endif -%}
+        </td>
         <td class="r">{{ ln.line_total|money }}</td>
       </tr>
       {% if measure and measure.segment_count > 1 and ln.sl_no in seg_break_after %}
@@ -108,6 +120,15 @@
       {% endif %}
       {% endfor %}
     </tbody>
+    {% if invoice.discount_total and invoice.discount_total|float %}
+    <tfoot>
+      <tr class="lines-foot">
+        <td colspan="6" class="r b">Total &mdash; gross before discount</td>
+        <td class="r b">{{ invoice.discount_total|money }}</td>
+        <td class="r b">{{ ((invoice.subtotal or 0) + (invoice.discount_total or 0))|money }}</td>
+      </tr>
+    </tfoot>
+    {% endif %}
   </table>
 
   <table style="margin-top: 6pt;">
@@ -126,10 +147,15 @@
         {% if invoice.notes %}<div class="foot"><span class="b">Note:</span> {{ invoice.notes }}</div>{% endif %}
       </td>
       <td style="border: none; padding: 0;">
-        <table style="width: 100%;">
-          <tr class="totrow"><td>Subtotal</td><td class="r">{{ invoice.subtotal|money }}</td></tr>
-          {% if invoice.discount_total and invoice.discount_total|float %}
-          <tr class="totrow"><td>Discount</td><td class="r">- {{ invoice.discount_total|money }}</td></tr>
+        <table class="totbox" style="width: 100%;">
+          {% set _has_disc = invoice.discount_total and invoice.discount_total|float %}
+          {% set _net = invoice.taxable_total if invoice.taxable_total is not none else invoice.subtotal %}
+          {% if _has_disc %}
+          <tr class="totrow"><td>Gross Amount</td><td class="r">{{ ((invoice.subtotal or 0) + (invoice.discount_total or 0))|money }}</td></tr>
+          <tr class="totrow"><td>Less: Discount</td><td class="r">- {{ invoice.discount_total|money }}</td></tr>
+          <tr class="totrow net"><td>Net Amount</td><td class="r">{{ _net|money }}</td></tr>
+          {% else %}
+          <tr class="totrow"><td>Net Amount</td><td class="r">{{ _net|money }}</td></tr>
           {% endif %}
           <tr class="totrow"><td>Round Off</td><td class="r">{{ invoice.round_off|money }}</td></tr>
           <tr class="grand"><td>Grand Total</td><td class="r">{{ invoice.grand_total|money }}</td></tr>
@@ -163,8 +189,7 @@
   <div class="foot">{{ tenant.jurisdiction_text }}</div>
   {% endif %}
 
-  <div class="foot r" style="margin-top: 18pt;">for {{ tenant.trade_name or tenant.legal_name }}</div>
-  <div class="foot r" style="margin-top: 24pt;">Authorised Signatory</div>
+  <div class="foot r" style="margin-top: 42pt;">Authorised Signatory</div>
 
   <div class="cgi">This is a Computer Generated Invoice</div>
 </body>

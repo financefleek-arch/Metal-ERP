@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useVocab } from "../lib/reference";
+import { uomDisplay } from "../lib/uom";
 import type { Item, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
 
@@ -328,13 +329,19 @@ export function ItemForm({
       {/* Units & conversion */}
       <Section title="Units & conversion" note="the primary unit follows the most recent invoice this item appears on">
         <Field label="Bill in (UOM)">
-          <Select value={v.uom} onChange={(x) => patch({ uom: x })} options={uomsPrimary.data} />
+          <Select
+            value={v.uom}
+            onChange={(x) => patch({ uom: x })}
+            options={uomsPrimary.data}
+            display={uomDisplay}
+          />
         </Field>
         <Field label="Also counted in">
           <Select
             value={v.secondary_uom}
             onChange={(x) => patch({ secondary_uom: x })}
             options={uoms.data}
+            display={uomDisplay}
           />
         </Field>
         <Field label="Per secondary → primary">
@@ -359,6 +366,7 @@ export function ItemForm({
             value={v.purchase_uom}
             onChange={(x) => patch({ purchase_uom: x })}
             options={uoms.data}
+            display={uomDisplay}
           />
         </Field>
       </Section>
@@ -493,20 +501,27 @@ function Select({
   value,
   onChange,
   options,
+  display,
 }: {
   value: string;
   onChange: (v: string) => void;
   options: string[] | undefined;
+  /** Optional label transform — the stored value is unchanged, only the
+   *  text shown to the user differs (e.g. unit "nos" shown as "pcs"). */
+  display?: (v: string) => string;
 }) {
+  const label = display ?? ((v: string) => v);
   return (
     <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">—</option>
       {(options ?? []).map((o) => (
         <option key={o} value={o}>
-          {o}
+          {label(o)}
         </option>
       ))}
-      {value && !(options ?? []).includes(value) && <option value={value}>{value}</option>}
+      {value && !(options ?? []).includes(value) && (
+        <option value={value}>{label(value)}</option>
+      )}
     </select>
   );
 }

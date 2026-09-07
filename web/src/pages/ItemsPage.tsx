@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api, apiPage } from "../lib/api";
 import { useDebounced } from "../lib/useDebounced";
 import { useIsDesktop } from "../lib/useIsDesktop";
+import { uomDisplay } from "../lib/uom";
 import type { Item, ItemListItem } from "../lib/types";
 
 const PAGE_SIZE = 50;
@@ -348,7 +349,7 @@ export function ItemsPage() {
                           .filter(Boolean)
                           .join(" · ")}
                         {it.default_rate != null &&
-                          ` · ₹${it.default_rate}${it.uom ? `/${it.uom}` : ""}`}
+                          ` · ₹${it.default_rate}${it.uom ? `/${uomDisplay(it.uom)}` : ""}`}
                         {` · billed ${it.times_billed}×`}
                       </div>
                     </button>

@@ -5,7 +5,8 @@ Kept in one module for M1 — split per-domain when it grows.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
@@ -153,6 +154,9 @@ class PartyAddressOut(PartyAddressIn):
     id: str
 
 
+OpeningBalance = Annotated[Decimal, Field(max_digits=14, decimal_places=2)]
+
+
 class PartyBase(BaseModel):
     legal_name: LegalName
     phone: Phone = None
@@ -162,6 +166,11 @@ class PartyBase(BaseModel):
     default_state_code: StateCode = None
     gstin: Gstin = None
     whatsapp_optin: bool = False
+    # Manually-entered balance carried from before go-live (positive = party
+    # owes you, negative = customer advance). Editable only while the party
+    # has no ledger history — the router returns 409 otherwise.
+    opening_balance: OpeningBalance = Decimal("0.00")
+    opening_balance_as_of: date | None = None
 
 
 class PartyCreate(PartyBase):
@@ -178,6 +187,8 @@ class PartyUpdate(BaseModel):
     gstin: Gstin = None
     whatsapp_optin: bool | None = None
     status: PartyStatus | None = None
+    opening_balance: OpeningBalance | None = None
+    opening_balance_as_of: date | None = None
     addresses: list[PartyAddressIn] | None = None
 
 
@@ -198,6 +209,9 @@ class PartyOut(PartyBase):
     source: PartySource
     source_ref: str | None
     last_txn_at: datetime | None
+    # True once the party has a finalized invoice or any payment — the
+    # opening_balance fields are then read-only (server rejects a change).
+    opening_balance_locked: bool = False
     addresses: list[PartyAddressOut] = Field(default_factory=list)
     completeness: PartyCompleteness
     document_count: int
@@ -216,4 +230,6 @@ class PartyListItem(BaseModel):
     source: PartySource
     source_ref: str | None
     last_txn_at: datetime | None
+    opening_balance: OpeningBalance = Decimal("0.00")
+    opening_balance_locked: bool = False
     completeness: PartyCompleteness

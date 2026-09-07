@@ -21,6 +21,7 @@ shared webhook receiver.
 | PDFs | `metalerp_pdfs` named volume | WeasyPrint output; not object storage for M1 |
 | Inward files | `metalerp_inward` named volume (`INWARD_DIR=/data/inward`) | `ext_inward_import` only. Uploaded supplier PDFs at `/data/inward/pdf/<bill-id>.pdf`, **deleted once their Tally XML is built** (re-uploadable). Generated XML at `/data/inward/xml/inward-<bill-id>.xml` — the durable artefact, re-downloadable. A re-upload of the same invoice (same tenant + supplier GSTIN + bill no) folds into the existing row and discards stale XML. |
 | Secrets | Vault KV `secret/metalerp/core#jwt_secret` | `BREVO_API_KEY` shared; `METALERP_SENTRY_DSN` plain `.env` |
+| WhatsApp | `WHATSAPP_API_KEY` ← Vault `fleek-backend/core#whatsapp_api_key` (shared FleekWA System User token, `load-vault-secrets.sh` exports `METALERP_WHATSAPP_API_KEY`, compose maps it — **done**) | `WHATSAPP_APP_SECRET` ← same path `#whatsapp_app_secret` **not yet wired** for metalerp-api (webhook receipts only; sends work without it — see `docs/FEATURE-whatsapp.md` §9). `WHATSAPP_API_VERSION` omitted, `config.py` defaults `v25.0`. |
 
 The **infra-repo** side of the wiring lives in `fleek-infra`:
 `docker-compose.yml` (the `metalerp-api` service + the caddy volume mount),

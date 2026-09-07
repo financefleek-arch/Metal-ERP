@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
 import { useIsDesktop } from "../../lib/useIsDesktop";
+import { uomDisplay } from "../../lib/uom";
 import type { ApproveResult, InwardBill } from "../../lib/inward";
 
 function money(v: string | null): string {
@@ -283,7 +284,7 @@ export function InwardReviewPane({ billId }: { billId: string }) {
             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted">
               <span className="font-mono">HSN {ln.hsn ?? "—"}</span>
               <span>
-                {ln.quantity ?? "—"} {ln.uom ?? ""}
+                {ln.quantity ?? "—"} {ln.uom ? uomDisplay(ln.uom) : ""}
               </span>
               <span className="font-mono">@ {money(ln.unit_rate)}</span>
             </div>
@@ -329,7 +330,7 @@ export function InwardReviewPane({ billId }: { billId: string }) {
             <span className="truncate">{ln.description}</span>
             <span className="font-mono text-[10px] text-muted">{ln.hsn ?? "—"}</span>
             <span>{ln.quantity ?? "—"}</span>
-            <span>{ln.uom ?? "—"}</span>
+            <span>{ln.uom ? uomDisplay(ln.uom) : "—"}</span>
             <span className="font-mono">{money(ln.unit_rate)}</span>
             <span className="text-right font-mono">{money(ln.line_total)}</span>
             <span className="flex items-center truncate">

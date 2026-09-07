@@ -23,6 +23,8 @@ interface Fields {
   pan: string;
   gstin: string;
   default_state_code: string;
+  opening_balance: string;
+  opening_balance_as_of: string;
   addr_line1: string;
   addr_city: string;
   addr_state_code: string;
@@ -37,6 +39,8 @@ const EMPTY: Fields = {
   pan: "",
   gstin: "",
   default_state_code: "",
+  opening_balance: "",
+  opening_balance_as_of: "",
   addr_line1: "",
   addr_city: "",
   addr_state_code: "",
@@ -71,6 +75,8 @@ export function NewPartyForm({
           pan: v.pan.trim().toUpperCase() || null,
           gstin: v.gstin.trim().toUpperCase() || null,
           default_state_code: v.default_state_code || null,
+          opening_balance: v.opening_balance.trim() === "" ? "0" : v.opening_balance.trim(),
+          opening_balance_as_of: v.opening_balance_as_of || null,
           addresses: hasAddr
             ? [
                 {
@@ -203,6 +209,33 @@ export function NewPartyForm({
           <StateSelect
             value={v.default_state_code}
             onChange={(e) => setV({ ...v, default_state_code: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="label">Opening balance</label>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">
+              ₹
+            </span>
+            <input
+              className="field pl-7"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={v.opening_balance}
+              onChange={(e) => setV({ ...v, opening_balance: e.target.value })}
+            />
+          </div>
+          <p className="mt-1 text-[11px] text-muted">
+            What they owed you before you started billing here.
+          </p>
+        </div>
+        <div>
+          <label className="label">Opening balance as of</label>
+          <input
+            type="date"
+            className="field"
+            value={v.opening_balance_as_of}
+            onChange={(e) => setV({ ...v, opening_balance_as_of: e.target.value })}
           />
         </div>
       </div>

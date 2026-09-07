@@ -272,3 +272,49 @@ def test_dormant_window_is_tenant_configurable(client: TestClient, session) -> N
     tenant.dormant_party_days = 365
     session.commit()
     assert client.get("/api/parties?dormant=true", headers=h).json() == []
+
+
+# --------------------------------------------------------------------------
+# opening balance
+# --------------------------------------------------------------------------
+
+
+def test_opening_balance_round_trips_and_lists_unlocked(client: TestClient) -> None:
+    h = _auth(_register(client, "obc1@x.example.com"))
+    p = _mk(
+        client,
+        h,
+        "Opening Party",
+        opening_balance="12345.67",
+        opening_balance_as_of="2026-04-01",
+    )
+    assert p["opening_balance"] == "12345.67"
+    assert p["opening_balance_as_of"] == "2026-04-01"
+    assert p["opening_balance_locked"] is False
+
+    got = client.get(f"/api/parties/{p['id']}", headers=h).json()
+    assert got["opening_balance"] == "12345.67"
+
+    lst = client.get("/api/parties", headers=h).json()
+    row = next(r for r in lst if r["id"] == p["id"])
+    assert row["opening_balance"] == "12345.67"
+    assert row["opening_balance_locked"] is False
+
+
+def test_opening_balance_defaults_to_zero(client: TestClient) -> None:
+    h = _auth(_register(client, "obc2@x.example.com"))
+    p = _mk(client, h, "No Opening Party")
+    assert p["opening_balance"] == "0.00"
+    assert p["opening_balance_as_of"] is None
+
+
+def test_opening_balance_editable_via_patch_before_history(client: TestClient) -> None:
+    h = _auth(_register(client, "obc3@x.example.com"))
+    p = _mk(client, h, "Editable Party")
+    r = client.patch(
+        f"/api/parties/{p['id']}",
+        headers=h,
+        json={"opening_balance": "800.00", "opening_balance_as_of": "2026-04-01"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["opening_balance"] == "800.00"

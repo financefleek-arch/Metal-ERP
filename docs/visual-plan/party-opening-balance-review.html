@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Party Opening Balance — Visual Review</title>
+<style>
+  :root {
+    --ground: #f4f1ec;
+    --ink: #23201b;
+    --card: #ffffff;
+    --line: #e6e0d6;
+    --muted: #7c766a;
+    --accent: #2f6f89;
+    --accent-dark: #245771;
+    --accent-soft: #eef4f7;
+    --warn: #b5892f;
+    --ok: #4f8a5b;
+    --danger: #c0392b;
+    --serif: "Fraunces", Georgia, serif;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 32px 20px 96px; }
+  h1 { font-family: var(--serif); font-size: 26px; font-weight: 600; margin: 0 0 4px; }
+  h2 {
+    font-family: var(--serif); font-size: 19px; font-weight: 600;
+    margin: 44px 0 6px;
+  }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 8px; }
+  .banner {
+    background: #fff8e8; border: 1px solid var(--warn); color: #6b5416;
+    border-radius: 10px; padding: 12px 16px; font-size: 13px; margin: 16px 0 8px;
+  }
+  .banner b { color: var(--warn); }
+  .note {
+    font-size: 12.5px; color: var(--muted); margin: 10px 0 0;
+    padding-left: 14px; border-left: 2px solid var(--line);
+  }
+  .grid { display: grid; gap: 28px; grid-template-columns: 1fr; }
+  @media (min-width: 900px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+
+  /* ---- device frame ---- */
+  .frame {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .frame-cap {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--muted); background: var(--ground); padding: 7px 14px;
+    border-bottom: 1px solid var(--line);
+  }
+  .frame-body { padding: 18px; }
+  .phone { max-width: 390px; }
+
+  /* ---- app primitives (mirrors web/src/index.css) ---- */
+  .label {
+    display: block; margin-bottom: 4px; font-size: 11px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  }
+  .field {
+    height: 38px; width: 100%; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--card); padding: 0 12px; font-size: 14px; color: var(--ink);
+    font-family: var(--sans);
+  }
+  .field.disabled { background: var(--ground); color: var(--muted); cursor: not-allowed; }
+  .field.rupee { padding-left: 26px; }
+  .rupee-wrap { position: relative; }
+  .rupee-wrap::before {
+    content: "₹"; position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: var(--muted); font-size: 14px;
+  }
+  .card {
+    border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+  }
+  .btn-primary {
+    display: inline-flex; align-items: center; justify-content: center; height: 38px;
+    border-radius: 6px; padding: 0 16px; font-size: 14px; font-weight: 600;
+    background: var(--accent); color: #fff; border: 0; cursor: pointer;
+  }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .hint.lock::before { content: "🔒 "; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .mt3 { margin-top: 14px; }
+  .divider { border: 0; border-top: 1px solid var(--line); margin: 16px 0; }
+  .serif-h { font-family: var(--serif); font-size: 17px; font-weight: 600; margin: 0; }
+  .tag {
+    display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 7px;
+    border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .tag.cust { color: var(--accent); border-color: #bcd7e0; background: var(--accent-soft); }
+
+  /* ---- statement rows (mirrors PartyAccountTab) ---- */
+  .stmt { border-radius: 12px; border: 1px solid var(--line); overflow: hidden; }
+  .stmt-row { padding: 12px 14px; border-bottom: 1px solid #f3eee4; display: flex; gap: 10px; align-items: flex-start; }
+  .stmt-row:last-child { border-bottom: 0; }
+  .dot { margin-top: 6px; height: 8px; width: 8px; flex: none; border-radius: 999px; }
+  .dot.open { background: var(--muted); }
+  .dot.inv { background: var(--warn); }
+  .dot.pay { background: var(--ok); }
+  .stmt-main { min-width: 0; flex: 1; }
+  .stmt-lbl { font-size: 14px; font-weight: 600; }
+  .stmt-lbl.open { font-style: italic; color: var(--muted); }
+  .stmt-date { font-size: 11px; color: var(--muted); }
+  .stmt-amt { flex: none; text-align: right; }
+  .stmt-amt .amt { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stmt-amt .amt.inv { color: var(--danger); }
+  .stmt-amt .amt.pay { color: var(--ok); }
+  .stmt-amt .amt.open { color: var(--ink); }
+  .stmt-amt .bal { font-size: 10px; color: var(--muted); }
+
+  .balcard { padding: 16px; }
+  .balcard .k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: 2px; }
+  .balcard .v { font-family: var(--serif); font-size: 24px; font-weight: 600; }
+
+  /* ---- invoice editor "bill to" block ---- */
+  .billto-val {
+    height: 38px; display: flex; align-items: center; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--ground); padding: 0 12px; font-size: 14px;
+  }
+  .ob-line {
+    margin-top: 8px; display: flex; align-items: baseline; justify-content: space-between;
+    gap: 10px; padding: 8px 12px; border-radius: 8px; background: #fff8e8;
+    border: 1px solid #ecdcb3; font-size: 12.5px;
+  }
+  .ob-line .k { color: #6b5416; }
+  .ob-line .v { font-weight: 700; font-variant-numeric: tabular-nums; color: #6b5416; }
+  .ob-line.zero { background: var(--ground); border-color: var(--line); }
+  .ob-line.zero .k, .ob-line.zero .v { color: var(--muted); }
+  .ob-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .linkish { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+
+  ul.pts { font-size: 13px; color: #3a352d; padding-left: 20px; margin: 8px 0 0; }
+  ul.pts li { margin: 4px 0; }
+  code { background: var(--ground); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Party Opening Balance</h1>
+  <p class="sub">Visual review — mockups only, nothing built yet. Palette + primitives mirror <code>web/src/index.css</code>.</p>
+
+  <div class="banner" style="background:#eef3ee;border-color:var(--ok);color:#2f5d3a;">
+    <b>BUILT 2026-09-07 — uncommitted, not deployed.</b> Backend suite green (+7 tests), frontend tsc/eslint/build clean.
+    Migration <code>0021</code> applies on next <code>alembic upgrade head</code>. These panels are the design intent;
+    the shipped code matches them. Touch points: (1) Details form field, (2) Account-tab statement,
+    (3) invoice editor's "Bill&nbsp;to" block — <b>editable inline for a new client</b>, (4) the invoice picker's Quick-Create-Party dialog.
+    Rule: <b>editable only while the party has zero ledger history</b> (no finalized invoices, no payments); locks after the first transaction.
+  </div>
+  <p class="note">
+    <b>Guardrail:</b> any unit label shown to a user is <code>pcs</code>, never <code>nos</code> (canonical value stays <code>nos</code>,
+    display goes through <code>uomDisplay()</code>). This feature is all ₹ and shows no unit labels — noted so it isn't dropped if quantity text is added later.
+  </p>
+
+  <!-- ============================================================ -->
+  <h2>1 · Party Details form — the new field</h2>
+  <p class="sub">Added to <code>PartyForm.tsx</code>, in the identity grid under GSTIN / Default state. Autosaves like every other field.</p>
+
+  <div class="grid two">
+    <div class="frame">
+      <div class="frame-cap">Details tab · new party — EDITABLE</div>
+      <div class="frame-body">
+        <p class="serif-h">Rajesh Metals &amp; Alloys</p>
+        <p style="font-size:11px;color:var(--muted);margin:2px 0 14px;">added manually · <span style="color:var(--warn);">⚠ details pending</span></p>
+
+        <div class="row2">
+          <div>
+            <label class="label">GSTIN</label>
+            <input class="field" value="" placeholder="27AAAAA9999A1Z5" readonly />
+          </div>
+          <div>
+            <label class="label">Default state</label>
+            <input class="field" value="Rajasthan (08)" readonly />
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="row2">
+          <div>
+            <label class="label">Opening balance</label>
+            <div class="rupee-wrap">
+              <input class="field rupee" value="42,500.00" readonly />
+            </div>
+            <p class="hint">Amount this party owed you before you started billing here. Leave 0 if none.</p>
+          </div>
+          <div>
+            <label class="label">As of date</label>
+            <input class="field" value="01 Apr 2026" readonly />
+            <p class="hint">Optional — shows as the statement's first line.</p>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;">
+          <span style="height:6px;width:6px;border-radius:999px;background:var(--ok);display:inline-block;"></span> Saved
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap">Details tab · party with history — LOCKED</div>
+      <div class="frame-body">
+        <p class="serif-h">Sugal Foods Pvt Ltd</p>
+        <p style="font-size:11px;color:var(--muted);margin:2px 0 14px;">from Tally import · on 7 documents · <span style="color:var(--ok);">✓ complete</span></p>
+
+        <div class="row2">
+          <div>
+            <label class="label">GSTIN</label>
+            <input class="field" value="08ABCDE1234F1Z2" readonly />
+          </div>
+          <div>
+            <label class="label">Default state</label>
+            <input class="field" value="Rajasthan (08)" readonly />
+          </div>
+        </div>
+
+        <hr class="divider" />
+
+        <div class="row2">
+          <div>
+            <label class="label">Opening balance</label>
+            <div class="rupee-wrap">
+              <input class="field rupee disabled" value="0.00" disabled />
+            </div>
+            <p class="hint lock">Locked — this party already has invoices or payments.</p>
+          </div>
+          <div>
+            <label class="label">As of date</label>
+            <input class="field disabled" value="—" disabled />
+          </div>
+        </div>
+
+        <p class="note">
+          Server also enforces this: a <code>PATCH</code> that changes <code>opening_balance</code> once
+          <code>has_ledger_history()</code> is true returns <code>409</code>.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>2 · Account tab — opening balance as the statement's first line</h2>
+  <p class="sub">In <code>PartyAccountTab.tsx</code>. The balance card already reads <code>entries[0].running_balance</code>, so it picks up the opening figure for free once the ledger seeds it.</p>
+
+  <div class="grid two">
+    <div class="frame phone">
+      <div class="frame-cap">Account tab · new party, opening balance only</div>
+      <div class="frame-body">
+        <div class="card balcard" style="margin-bottom:16px;">
+          <div class="k">Outstanding balance</div>
+          <div class="v">₹42,500</div>
+          <button class="btn-primary" style="margin-top:12px;">+ Record payment</button>
+        </div>
+
+        <div class="label" style="margin-bottom:6px;">Statement</div>
+        <div class="stmt">
+          <div class="stmt-row">
+            <span class="dot open"></span>
+            <div class="stmt-main">
+              <div class="stmt-lbl open">Opening balance</div>
+              <div class="stmt-date">01 Apr 2026 · carried forward</div>
+            </div>
+            <div class="stmt-amt">
+              <div class="amt open">+ ₹42,500</div>
+              <div class="bal">bal ₹42,500</div>
+            </div>
+          </div>
+        </div>
+        <p class="ob-sub">No invoices or payments in the system yet.</p>
+      </div>
+    </div>
+
+    <div class="frame phone">
+      <div class="frame-cap">Account tab · opening + later activity</div>
+      <div class="frame-body">
+        <div class="card balcard" style="margin-bottom:16px;">
+          <div class="k">Outstanding balance</div>
+          <div class="v">₹57,200</div>
+          <button class="btn-primary" style="margin-top:12px;">+ Record payment</button>
+        </div>
+
+        <div class="label" style="margin-bottom:6px;">Statement</div>
+        <div class="stmt">
+          <div class="stmt-row">
+            <span class="dot inv"></span>
+            <div class="stmt-main">
+              <div class="stmt-lbl">INV #1042</div>
+              <div class="stmt-date">18 Aug 2026</div>
+            </div>
+            <div class="stmt-amt">
+              <div class="amt inv">+ ₹32,700</div>
+              <div class="bal">bal ₹57,200</div>
+            </div>
+          </div>
+          <div class="stmt-row">
+            <span class="dot pay"></span>
+            <div class="stmt-main">
+              <div class="stmt-lbl">PMT #77</div>
+              <div class="stmt-date">02 Aug 2026</div>
+            </div>
+            <div class="stmt-amt">
+              <div class="amt pay">− ₹18,000</div>
+              <div class="bal">bal ₹24,500</div>
+            </div>
+          </div>
+          <div class="stmt-row">
+            <span class="dot open"></span>
+            <div class="stmt-main">
+              <div class="stmt-lbl open">Opening balance</div>
+              <div class="stmt-date">01 Apr 2026 · carried forward</div>
+            </div>
+            <div class="stmt-amt">
+              <div class="amt open">+ ₹42,500</div>
+              <div class="bal">bal ₹42,500</div>
+            </div>
+          </div>
+        </div>
+        <p class="ob-sub">Newest-first, bank-statement order. Opening row has no <b>Reverse</b> action.</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    Sign convention matches the ledger: <b>positive = party owes you</b> (debit, red <code>+</code>).
+    A customer advance can be entered as a negative opening balance → shows as a credit, and the card flips to
+    “Credit balance” in green, exactly like an unapplied payment does today.
+  </p>
+
+  <!-- ============================================================ -->
+  <h2>3 · Invoice editor — "Bill to" block: editable for a new client, read-only once it locks</h2>
+  <p class="sub">In <code>InvoiceEditorPage.tsx</code>, right under the party picker. The field state keys off <code>opening_balance_locked</code> (true once the party has any finalized invoice or payment).</p>
+
+  <div class="grid two">
+    <div class="frame phone">
+      <div class="frame-cap">New client (unlocked) — EDITABLE inline</div>
+      <div class="frame-body">
+        <label class="label">Bill to (party)</label>
+        <div class="billto-val">Rajesh Metals &amp; Alloys &nbsp;<span class="tag cust" style="margin-left:auto;">customer</span></div>
+
+        <div style="margin-top:12px;">
+          <label class="label">Opening balance (before this bill)</label>
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <div class="rupee-wrap" style="flex:1;">
+              <input class="field rupee" value="42,500.00" readonly />
+            </div>
+            <input class="field" style="flex:1;" value="01 Apr 2026" readonly />
+          </div>
+          <p class="ob-sub" style="color:var(--ok);">↳ new client · no invoices yet — saved to the party on blur</p>
+        </div>
+
+        <div style="margin-top:18px;" class="label">Items</div>
+        <div class="card" style="padding:14px;color:var(--muted);font-size:13px;">＋ Add another item</div>
+      </div>
+    </div>
+
+    <div class="frame phone">
+      <div class="frame-cap">Party with running dues (locked) — READ-ONLY</div>
+      <div class="frame-body">
+        <label class="label">Bill to (party)</label>
+        <div class="billto-val">Sugal Foods Pvt Ltd &nbsp;<span class="tag cust" style="margin-left:auto;">customer</span></div>
+
+        <div class="ob-line">
+          <span class="k">Outstanding before this invoice</span>
+          <span class="v">₹57,200</span>
+        </div>
+        <p class="ob-sub">🔒 incl. ₹42,500 opening · 3 open invoices · <a class="linkish" href="#">view account</a></p>
+
+        <div style="margin-top:18px;" class="label">Items</div>
+        <div class="card" style="padding:14px;color:var(--muted);font-size:13px;">＋ Add another item</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid two" style="margin-top:20px;">
+    <div class="frame phone">
+      <div class="frame-cap">New client, opening left at 0 (unlocked)</div>
+      <div class="frame-body">
+        <label class="label">Bill to (party)</label>
+        <div class="billto-val">Naya Traders &nbsp;<span class="tag cust" style="margin-left:auto;">customer</span></div>
+        <div style="margin-top:12px;">
+          <label class="label">Opening balance (before this bill)</label>
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <div class="rupee-wrap" style="flex:1;">
+              <input class="field rupee" value="0.00" readonly />
+            </div>
+            <input class="field" style="flex:1;color:var(--muted);" value="as of…" readonly />
+          </div>
+          <p class="ob-sub">↳ new client · leave 0 if they owe nothing from before</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame phone">
+      <div class="frame-cap">Locked party, fully settled — READ-ONLY</div>
+      <div class="frame-body">
+        <label class="label">Bill to (party)</label>
+        <div class="billto-val">Kishan Traders &nbsp;<span class="tag cust" style="margin-left:auto;">customer</span></div>
+        <div class="ob-line zero">
+          <span class="k">Outstanding before this invoice</span>
+          <span class="v">₹0</span>
+        </div>
+        <p class="ob-sub">🔒 All settled · <a class="linkish" href="#">view account</a></p>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    Unlocked → the ₹ field <code>PATCH /parties/{id}</code>es the party on blur (debounced, same pattern as <code>PartyForm</code>);
+    a failed save shows inline and never blocks the invoice. Locked → reuse <code>GET /parties/{id}/ledger</code>
+    (already cached via <code>["party-ledger", id]</code>), read <code>entries[0].running_balance</code>. The picker's
+    <code>PartyListItem</code> carries <code>opening_balance</code> + <code>opening_balance_locked</code> so no extra fetch is needed to decide which mode to show.
+  </p>
+
+  <!-- ============================================================ -->
+  <h2>4 · Quick-Create-Party dialog — opening balance at creation time</h2>
+  <p class="sub">The "New party" mini-dialog that opens from the invoice picker's “+ Create … as a new party”. A brand-new party is always unlocked, so the fields just ride along in the <code>POST /parties</code> body.</p>
+
+  <div class="frame" style="max-width:420px;">
+    <div class="frame-cap">Invoice picker · + Create as a new party</div>
+    <div class="frame-body">
+      <p class="serif-h" style="font-size:14px;">New party</p>
+      <div style="margin-top:12px;">
+        <label class="label">Legal name</label>
+        <input class="field" value="Rajesh Metals &amp; Alloys" readonly />
+      </div>
+      <div style="margin-top:12px;">
+        <label class="label">Phone (optional)</label>
+        <input class="field" value="" readonly />
+      </div>
+      <div style="margin-top:12px;">
+        <label class="label">Opening balance (optional)</label>
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <div class="rupee-wrap" style="flex:1;">
+            <input class="field rupee" value="42,500" readonly />
+          </div>
+          <input class="field" style="flex:1;" value="01 Apr 2026" readonly />
+        </div>
+        <p class="hint">What they owed you before you started billing here.</p>
+      </div>
+      <div style="margin-top:16px;display:flex;gap:10px;">
+        <div style="flex:1;height:38px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;font-size:14px;color:var(--muted);">Cancel</div>
+        <div style="flex:1;height:38px;background:var(--accent);color:#fff;border-radius:6px;display:grid;place-items:center;font-size:14px;font-weight:600;">Create &amp; use</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>What changes</h2>
+  <ul class="pts">
+    <li><b>Migration 0021</b> — <code>party.opening_balance NUMERIC(14,2) NOT NULL DEFAULT 0</code>, <code>party.opening_balance_as_of DATE NULL</code>.</li>
+    <li><b>payments.py</b> — <code>has_ledger_history()</code> helper; <code>party_ledger()</code> seeds the running balance and prepends a synthetic <code>kind="opening"</code> entry; <code>outstanding_balance_for_party()</code> and the collections aggregate add the opening term.</li>
+    <li><b>parties.py</b> — <code>_out()</code> returns <code>opening_balance</code>, <code>opening_balance_as_of</code>, <code>opening_balance_locked</code>; <code>update_party()</code> returns <code>409</code> if a locked opening balance is changed.</li>
+    <li><b>Schemas</b> — fields on <code>PartyBase</code> / <code>PartyOut</code> / <code>PartyUpdate</code>; <code>"opening"</code> added to <code>PartyLedgerEntry.kind</code>.</li>
+    <li><b>Web</b> — <code>PartyForm</code> field (disabled when locked); <code>PartyAccountTab</code> renders the opening row; <code>InvoiceEditorPage</code> "Bill to" block: <b>editable ₹ field when the picked party is unlocked</b> (PATCH on blur), read-only balance line when locked; <code>QuickCreatePartyDialog</code> gets the ₹ + as-of fields; <code>PartyListItem</code> carries <code>opening_balance</code> + <code>opening_balance_locked</code>.</li>
+  </ul>
+
+</div>
+</body>
+</html>

@@ -11,7 +11,7 @@ automatically without deleting anything.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date
 from decimal import Decimal
 from typing import Literal
 
@@ -58,6 +58,25 @@ def invoice_payment_status(session: Session, invoice: Invoice) -> PaymentStatusL
     return "partial"
 
 
+def has_ledger_history(session: Session, party_id: str) -> bool:
+    """True once the party has anything that pins a ledger position: a
+    finalized invoice OR any payment row (posted or reversed — a reversed
+    payment still means the party was transacted). Draft/cancelled invoices
+    don't count. Gates whether `party.opening_balance` may still be edited.
+    """
+    has_invoice = session.scalar(
+        select(Invoice.id)
+        .where(Invoice.party_id == party_id, Invoice.status == InvoiceStatus.final)
+        .limit(1)
+    )
+    if has_invoice is not None:
+        return True
+    has_payment = session.scalar(
+        select(Payment.id).where(Payment.party_id == party_id).limit(1)
+    )
+    return has_payment is not None
+
+
 def on_account_balance_for_party(session: Session, party_id: str) -> Decimal:
     total = session.scalar(
         select(func.coalesce(func.sum(PaymentAllocation.amount), 0))
@@ -71,10 +90,16 @@ def on_account_balance_for_party(session: Session, party_id: str) -> Decimal:
     return Decimal(total or 0)
 
 
+def opening_balance_for_party(session: Session, party_id: str) -> Decimal:
+    party = session.get(Party, party_id)
+    return Decimal(party.opening_balance or 0) if party is not None else _ZERO
+
+
 def outstanding_balance_for_party(session: Session, party_id: str) -> Decimal:
-    """Sum of balance_due across the party's finalized invoices, minus any
-    on-account credit. Returned as a raw signed value (a net-credit party
-    comes back negative) — the caller/frontend decides how to display that.
+    """Party's opening balance plus balance_due across finalized invoices,
+    minus any on-account credit. Returned as a raw signed value (a net-credit
+    party comes back negative) — the caller/frontend decides how to display
+    that.
     """
     invoices = session.scalars(
         select(Invoice).where(
@@ -82,7 +107,11 @@ def outstanding_balance_for_party(session: Session, party_id: str) -> Decimal:
         )
     ).all()
     gross = sum((balance_due_for_invoice(session, inv) for inv in invoices), _ZERO)
-    return gross - on_account_balance_for_party(session, party_id)
+    return (
+        opening_balance_for_party(session, party_id)
+        + gross
+        - on_account_balance_for_party(session, party_id)
+    )
 
 
 def open_invoices_for_party(session: Session, party_id: str) -> list[Invoice]:
@@ -186,8 +215,13 @@ def collections_summary(
         .subquery()
     )
 
-    net_balance_expr = func.coalesce(inv_sq.c.gross_balance, 0) - func.coalesce(
-        credit_sq.c.credit, 0
+    # opening_balance is a plain column on Party (positive = owes us), folded
+    # in so a party whose ONLY balance is a pre-go-live opening figure still
+    # surfaces in the "outstanding" scope.
+    net_balance_expr = (
+        func.coalesce(Party.opening_balance, 0)
+        + func.coalesce(inv_sq.c.gross_balance, 0)
+        - func.coalesce(credit_sq.c.credit, 0)
     )
 
     # party-driven: LEFT JOIN both sides so a party with ONLY an on-account
@@ -251,7 +285,7 @@ def collections_summary(
 
 @dataclass
 class LedgerEntry:
-    kind: Literal["invoice", "payment"]
+    kind: Literal["invoice", "payment", "opening"]
     date: date
     ref_id: str
     ref_label: str
@@ -263,14 +297,18 @@ class LedgerEntry:
 
 
 def party_ledger(session: Session, party_id: str) -> list[LedgerEntry]:
-    """Chronological statement: finalized invoices (debit) + posted/reversed
-    payments (credit, 0 for reversed) interleaved by date.
+    """Chronological statement: an optional opening-balance line, then
+    finalized invoices (debit) + posted/reversed payments (credit, 0 for
+    reversed) interleaved by date.
 
     Running balance is computed walking oldest -> newest (the only order in
     which "running balance" is unambiguous), then the list is reversed for
     display (newest first, bank-statement convention) — comment kept next to
     the reverse() call below so the two don't drift apart.
     """
+    party = session.get(Party, party_id)
+    opening = Decimal(party.opening_balance or 0) if party is not None else _ZERO
+
     invoices = session.scalars(
         select(Invoice).where(
             Invoice.party_id == party_id, Invoice.status == InvoiceStatus.final
@@ -289,8 +327,25 @@ def party_ledger(session: Session, party_id: str) -> list[LedgerEntry]:
         events.append((pay.date, 1, pay.id, pay))
     events.sort(key=lambda e: (e[0], e[1], e[2]))
 
-    running = _ZERO
+    running = opening
     entries: list[LedgerEntry] = []
+    if opening != _ZERO:
+        as_of = party.opening_balance_as_of if party is not None else None
+        if as_of is None and party is not None:
+            created = getattr(party, "created_at", None)
+            as_of = created.date() if created is not None else date.today()
+        entries.append(
+            LedgerEntry(
+                kind="opening",
+                date=as_of or date.today(),
+                ref_id=party_id,
+                ref_label="Opening balance",
+                debit=opening if opening > _ZERO else _ZERO,
+                credit=-opening if opening < _ZERO else _ZERO,
+                running_balance=running,
+                status="opening",
+            )
+        )
     for _d, _tie, _id, obj in events:
         if isinstance(obj, Invoice):
             amt = obj.grand_total or _ZERO
@@ -381,7 +436,9 @@ __all__ = [
     "paid_amount_for_invoice",
     "balance_due_for_invoice",
     "invoice_payment_status",
+    "has_ledger_history",
     "on_account_balance_for_party",
+    "opening_balance_for_party",
     "outstanding_balance_for_party",
     "open_invoices_for_party",
     "collections_summary",

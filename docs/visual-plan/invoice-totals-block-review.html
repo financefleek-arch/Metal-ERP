@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice totals — visual review</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", Arial, sans-serif; margin: 0; background: #f4f5f7; color: #1a1a1a; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 32px 24px 80px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 28px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+  @media (max-width: 960px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: #fff; border: 1px solid #dcdfe4; border-radius: 8px; overflow: hidden; }
+  .card > h2 { margin: 0; padding: 12px 16px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+  .before > h2 { background: #fdecec; color: #a3261d; border-bottom: 1px solid #f4c7c3; }
+  .after  > h2 { background: #e9f6ec; color: #1e7a34; border-bottom: 1px solid #c3e6cd; }
+  .paper { padding: 20px; }
+
+  /* --- invoice-ish styling, mirrors the PDF template --- */
+  table.inv { border-collapse: collapse; width: 100%; font-size: 11px; }
+  table.inv td, table.inv th { border: .75px solid #000; padding: 3px 6px; vertical-align: top; }
+  table.inv th { background: #eee; font-size: 9.5px; text-transform: uppercase; letter-spacing: .02em; }
+  .r { text-align: right; } .c { text-align: center; } .b { font-weight: bold; }
+  .lines td { font-size: 11px; }
+
+  .totals-wrap { display: flex; margin-top: 10px; gap: 0; }
+  .words { flex: 1 1 58%; border: none; font-size: 11px; padding-right: 14px; }
+  .words .label { font-weight: bold; }
+  .mbox { display: inline-block; border: .75px solid #000; padding: 4px 8px; margin-top: 8px; font-size: 10px; }
+
+  /* BEFORE totals box */
+  table.tot-before { border-collapse: collapse; width: 300px; }
+  table.tot-before td { border: none; padding: 2px 6px; font-size: 11px; }
+  table.tot-before tr.grand td { font-weight: bold; font-size: 12.5px; border-top: 1.25px solid #000; padding-top: 4px; }
+
+  /* AFTER totals box */
+  table.tot-after { border-collapse: collapse; width: 320px; }
+  table.tot-after td { border: none; padding: 5px 8px; font-size: 11px; }
+  table.tot-after td.r { min-width: 96px; }
+  table.tot-after tr.rule td { border-top: .75px solid #999; padding-top: 6px; }
+  table.tot-after tr.net td { font-weight: bold; }
+  table.tot-after tr.grand td { font-weight: bold; font-size: 13px; border-top: 1.5px solid #000; border-bottom: 3px double #000; padding: 6px 8px; }
+  .disc-note { font-size: 10px; color: #333; }
+
+  .callout { margin: 10px 0 0; padding: 8px 12px; border-radius: 6px; font-size: 12px; line-height: 1.5; }
+  .callout.bad { background: #fdecec; border: 1px solid #f4c7c3; }
+  .callout.good { background: #e9f6ec; border: 1px solid #c3e6cd; }
+  mark.bad { background: #ffd7d3; padding: 0 2px; }
+  mark.good { background: #c8ecd0; padding: 0 2px; }
+
+  .notes { margin-top: 34px; background: #fff; border: 1px solid #dcdfe4; border-radius: 8px; padding: 18px 22px; font-size: 13px; line-height: 1.6; }
+  .notes h3 { margin: 0 0 8px; font-size: 14px; }
+  .notes code { background: #f0f1f3; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .notes ul { margin: 6px 0 14px; padding-left: 20px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: bold; padding: 1px 6px; border-radius: 4px; background: #eef; color: #339; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Invoice totals block — anomaly &amp; fix &nbsp;<span style="font-size:12px;background:#e9f6ec;color:#1e7a34;padding:2px 8px;border-radius:4px;">IMPLEMENTED</span></h1>
+  <div class="sub">Using the exact invoice in the screenshot (18 lines, 2 discounted lines @ 40% totalling 1,102.40). Display-only change — <code>tax.py</code> math is untouched. <b>Updated:</b> "Net Amount" label, per-line entered-% in brackets, footer row kept.</div>
+
+  <div class="grid">
+
+    <!-- ============ BEFORE ============ -->
+    <div class="card before">
+      <h2>Before — what prints today</h2>
+      <div class="paper">
+        <table class="inv lines">
+          <thead>
+            <tr><th style="width:22px">SL</th><th>Description</th><th style="width:52px">HSN</th><th class="r" style="width:48px">Qty</th><th style="width:34px">Unit</th><th class="r" style="width:52px">Rate</th><th class="r" style="width:56px">Disc.</th><th class="r" style="width:64px">Amount</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="c">15</td><td>BHOLA KNIFE 606</td><td></td><td class="r">1.000</td><td>doz</td><td class="r">160.00</td><td class="r"></td><td class="r">160.00</td></tr>
+            <tr><td class="c">16</td><td>Omega Jug</td><td></td><td class="r">1.000</td><td>nos</td><td class="r">330.00</td><td class="r"></td><td class="r">330.00</td></tr>
+            <tr><td class="c">17</td><td>Cello Cup</td><td></td><td class="r">1.000</td><td>nos</td><td class="r">359.00</td><td class="r">143.60</td><td class="r">215.40</td></tr>
+            <tr><td class="c">18</td><td>Cello Cup</td><td></td><td class="r">3.000</td><td>nos</td><td class="r">799.00</td><td class="r">958.80</td><td class="r">1,438.20</td></tr>
+          </tbody>
+        </table>
+
+        <div class="totals-wrap">
+          <div class="words">
+            <div class="label">Amount Chargeable (in words)</div>
+            <div>INR Ten Thousand Three Hundred Six Only</div>
+            <div class="mbox"><span class="b">Total weight</span> 27.855 kg &nbsp;·&nbsp; <span class="b">Count</span> 20 pcs &nbsp;·&nbsp; <span class="b">1</span> weighment</div>
+          </div>
+          <table class="tot-before">
+            <tr><td>Subtotal</td><td class="r"><mark class="bad">10,306.03</mark></td></tr>
+            <tr><td>Discount</td><td class="r"><mark class="bad">- 1,102.40</mark></td></tr>
+            <tr><td>Round Off</td><td class="r">-0.03</td></tr>
+            <tr class="grand"><td>Grand Total</td><td class="r"><mark class="bad">10,306.00</mark></td></tr>
+          </table>
+        </div>
+
+        <div class="callout bad">
+          <b>The anomaly:</b> <mark class="bad">Subtotal 10,306.03</mark> is <i>already net</i> of the two line discounts
+          (it equals the AMOUNT column sum). Then <mark class="bad">Discount −1,102.40</mark> appears to subtract
+          again — yet <mark class="bad">Grand Total 10,306.00</mark> barely moves. Two near-identical 10,306 figures
+          sit either side of a 1,102 discount that seems to do nothing. Reads as a bug to any customer.
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ AFTER ============ -->
+    <div class="card after">
+      <h2>After — proposed</h2>
+      <div class="paper">
+        <table class="inv lines">
+          <thead>
+            <tr><th style="width:22px">SL</th><th>Description</th><th style="width:52px">HSN</th><th class="r" style="width:48px">Qty</th><th style="width:34px">Unit</th><th class="r" style="width:52px">Rate</th><th class="r" style="width:56px">Disc.</th><th class="r" style="width:64px">Amount</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="c">15</td><td>BHOLA KNIFE 606</td><td></td><td class="r">1.000</td><td>doz</td><td class="r">160.00</td><td class="r"></td><td class="r">160.00</td></tr>
+            <tr><td class="c">16</td><td>Omega Jug</td><td></td><td class="r">1.000</td><td>nos</td><td class="r">330.00</td><td class="r"></td><td class="r">330.00</td></tr>
+            <tr><td class="c">17</td><td>Cello Cup</td><td></td><td class="r">1.000</td><td>nos</td><td class="r">359.00</td><td class="r">40% (143.60)</td><td class="r">215.40</td></tr>
+            <tr><td class="c">18</td><td>Cello Cup</td><td></td><td class="r">3.000</td><td>nos</td><td class="r">799.00</td><td class="r">40% (958.80)</td><td class="r">1,438.20</td></tr>
+            <tr class="b" style="background:#f6f6f6">
+              <td class="c"></td><td class="r" colspan="5">Total &nbsp; &mdash; &nbsp; gross before discount</td>
+              <td class="r">1,102.40</td><td class="r">11,408.43</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="totals-wrap">
+          <div class="words">
+            <div class="label">Amount Chargeable (in words)</div>
+            <div>INR Ten Thousand Three Hundred Six Only</div>
+            <div class="mbox"><span class="b">Total weight</span> 27.855 kg &nbsp;·&nbsp; <span class="b">Count</span> 20 pcs &nbsp;·&nbsp; <span class="b">1</span> weighment</div>
+          </div>
+          <table class="tot-after">
+            <tr><td>Gross Amount</td><td class="r">11,408.43</td></tr>
+            <tr><td>Less: Discount</td><td class="r"><mark class="good">- 1,102.40</mark></td></tr>
+            <tr class="rule net"><td>Net Amount</td><td class="r"><mark class="good">10,306.03</mark></td></tr>
+            <tr><td>Round Off</td><td class="r">- 0.03</td></tr>
+            <tr class="grand"><td>Grand Total</td><td class="r"><mark class="good">10,306.00</mark></td></tr>
+          </table>
+        </div>
+
+        <div class="callout good">
+          <b>Now the column adds up:</b> 11,408.43 <span class="disc-note">(gross)</span> − 1,102.40 = 10,306.03 − 0.03 =
+          <b>10,306.00</b>. Every row is a clean subtraction. The discount clearly comes <i>off</i> something bigger,
+          and it's echoed as a footer total in the <b>DISC. column</b> where it belongs — not orphaned under AMOUNT.
+          Rows are spaced (5px vs 2px), Grand Total gets a double underline.
+          <br><br>
+          <b>Per-line %:</b> the Disc. cell shows <code>discount_pct</code> as the operator entered it —
+          <code>40% (143.60)</code>. If the discount was typed as a ₹ figure (<code>discount_pct</code> is null),
+          the cell shows just the amount, no bracket. Nothing is recalculated.
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <h3>Decisions locked in</h3>
+    <ul>
+      <li>Middle line is called <b>Net Amount</b> (not "Taxable Value").</li>
+      <li><b>Keep the in-table footer total row.</b></li>
+      <li>Discount % in brackets = <b>the % the operator entered</b> (<code>discount_pct</code>), shown verbatim. If the discount was entered as a ₹ amount, <b>no %</b> — just the figure.</li>
+    </ul>
+
+    <h3>What changes <span class="tag">display only</span></h3>
+    <ul>
+      <li><b><code>invoice_v1_nongst.html</code> — Disc. cell (per line):</b> when <code>ln.discount_pct</code> is set, render <code>{{ ln.discount_pct|int }}% ({{ ln.discount|money }})</code>; when null, render just <code>{{ ln.discount|money }}</code> as today. <code>discount_pct</code> is already on <code>invoice_line</code> and already passed to the template via <code>invoice.lines</code>.</li>
+      <li><b><code>invoice_v1_nongst.html</code> — line table footer row:</b> one row after the last line — label <code>Total (gross before discount)</code>, the discount sum in the <b>Disc.</b> cell, gross (<code>subtotal + discount_total</code>) in the <b>Amount</b> cell. Rendered only when <code>discount_total &gt; 0</code>.</li>
+      <li><b><code>invoice_v1_nongst.html</code> — totals box:</b> relabel + reorder to a straight subtraction:
+        <br>&nbsp;&nbsp;&bull; <code>Gross Amount</code> = <code>subtotal + discount_total</code> &nbsp;(shown only if discount &gt; 0; else box starts at Net Amount)
+        <br>&nbsp;&nbsp;&bull; <code>Less: Discount</code> = <code>- discount_total</code>
+        <br>&nbsp;&nbsp;&bull; <code>Net Amount</code> = <code>subtotal - invoice_discount</code> &nbsp;(existing <code>taxable_total</code>)
+        <br>&nbsp;&nbsp;&bull; <code>Round Off</code> = <code>round_off</code>
+        <br>&nbsp;&nbsp;&bull; <code>Grand Total</code> = <code>grand_total</code></li>
+      <li><b>Spacing:</b> totals rows <code>padding: 2pt&nbsp;4pt &rarr; 4pt&nbsp;6pt</code>; rule above <code>Net Amount</code>; double bottom border on <code>Grand Total</code>; fixed <code>min-width</code> on the number column so figures align.</li>
+      <li><b>No-discount invoices:</b> box collapses to <code>Net Amount / Round Off / Grand Total</code>, no footer row — nothing new on the common case.</li>
+    </ul>
+
+    <h3>What does <u>not</u> change</h3>
+    <ul>
+      <li><code>api/app/domain/tax.py</code> — no new fields, no math change. <code>subtotal</code>, <code>discount_total</code>, <code>taxable_total</code>, <code>round_off</code>, <code>grand_total</code> already exist on <code>ComputedInvoice</code> / the <code>Invoice</code> model. "Gross Amount" is derived in the template.</li>
+      <li><code>pdf.py</code> — no new context needed; <code>discount_pct</code> rides along on each line object.</li>
+      <li>Web preview (<code>previewTotal.ts</code> / <code>InvoiceEditorPage</code>) — out of scope unless you want the on-screen preview to match too (small follow-up).</li>
+      <li>Stored/frozen invoice totals, number sequence, amount-in-words — untouched.</li>
+    </ul>
+
+    <h3>One thing to confirm</h3>
+    <ul>
+      <li><code>discount_pct</code> is a <b>"persisted UI hint only"</b> — it's saved when the operator uses the % toggle, left null when they type ₹. Existing invoices created before this habit, or any where ₹ was typed, will simply show the amount with no bracket. That's the intended behaviour, just flagging that older bills won't retroactively show a %.</li>
+      <li>Format: <code>40% (143.60)</code> &mdash; OK? Alternative: <code>143.60 (40%)</code> (amount first, matching the old cell).</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

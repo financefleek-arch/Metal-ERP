@@ -74,8 +74,18 @@ def _fmt_kg(value: object) -> str:
     return f"{_indian_group(whole)}.{frac:03d}"
 
 
+def _fmt_uom(value: object) -> str:
+    """Unit as a person expects to read it on a printed bill. Storage stays
+    canonical ("nos"); shops and their customers say "pcs"."""
+    from app.domain.units import normalize_uom
+
+    v = normalize_uom(str(value) if value is not None else "")
+    return "pcs" if v == "nos" else v
+
+
 _env.filters["money"] = _fmt_money
 _env.filters["kg"] = _fmt_kg
+_env.filters["uom"] = _fmt_uom
 
 
 def _addr_lines(addr: PartyAddress | None) -> list[str]:

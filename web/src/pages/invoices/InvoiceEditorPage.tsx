@@ -6,12 +6,15 @@ import { downloadFile } from "../../lib/download";
 import { computePreview, inr } from "../../lib/previewTotal";
 import { computeMeasure, kg } from "../../lib/weighment";
 import { PRIMARY_UOMS, isWeightUom, normalizeUom } from "../../lib/units.generated";
+import { uomDisplay } from "../../lib/uom";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import type {
   FinalizeResult,
   Invoice,
   InvoiceLineIn,
   ItemListItem,
+  Party,
+  PartyLedgerEntry,
   PartyListItem,
   PaymentCreate,
   PaymentOut,
@@ -47,6 +50,15 @@ interface Row {
  *  fixed widths. */
 const LINE_GRID =
   "grid-cols-[22px_minmax(180px,1.7fr)_76px_60px_58px_80px_112px_84px_24px]";
+
+/** one segment's physical contents as a short human string:
+ *  "128.500 kg", "3 pcs", "96.250 kg · 12 pcs", or "—" when empty. */
+function segMeasureText(weightKg: number, count: number): string {
+  const parts: string[] = [];
+  if (weightKg > 0) parts.push(kg(weightKg));
+  if (count > 0) parts.push(`${count} pcs`);
+  return parts.length ? parts.join(" · ") : "—";
+}
 
 let _rk = 0;
 function blankRow(segmentNo = 1): Row {
@@ -232,6 +244,9 @@ export function InvoiceEditorPage() {
 
   const [partyId, setPartyId] = useState("");
   const [partyLabel, setPartyLabel] = useState("");
+  // the picked party's opening-balance state, so the "Bill to" block can show
+  // it editable (new client) or as a read-only prior-balance line (locked).
+  const [partyOpeningLocked, setPartyOpeningLocked] = useState(false);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState("");
   const [invoiceDiscount, setInvoiceDiscount] = useState("");
@@ -281,6 +296,17 @@ export function InvoiceEditorPage() {
     setCurSeg(loaded.reduce((m, r) => Math.max(m, r.segmentNo || 1), 1));
     setDirty(false);
   }, [inv]);
+
+  // whenever a party is selected (from a loaded invoice or the picker), fetch
+  // its full record so the "Bill to" block knows locked vs. editable.
+  const partyRec = useQuery({
+    queryKey: ["party", partyId],
+    queryFn: () => api<Party>(`/parties/${partyId}`),
+    enabled: !!partyId && !readOnly,
+  });
+  useEffect(() => {
+    if (partyRec.data) setPartyOpeningLocked(partyRec.data.opening_balance_locked);
+  }, [partyRec.data]);
 
 
   // subtotal-only pass so a % invoice discount has a base to resolve against
@@ -349,7 +375,9 @@ export function InvoiceEditorPage() {
   );
   // the open segment = the highest segment number carried by a filled line
   const openSeg = filledRows.reduce((m, r) => Math.max(m, r.segmentNo || 1), 1);
-  const openSegWeight = measure.segments.find((s) => s.seg === openSeg)?.weightKg ?? 0;
+  const openSegMeasure = measure.segments.find((s) => s.seg === openSeg);
+  const openSegWeight = openSegMeasure?.weightKg ?? 0;
+  const openSegCount = openSegMeasure?.count ?? 0;
   const localBlockers: string[] = [];
   if (!partyId) localBlockers.push("select a party");
   if (!filledRows.length) localBlockers.push("add at least one line with an item");
@@ -695,7 +723,20 @@ export function InvoiceEditorPage() {
                   onPick={(p) => {
                     setPartyId(p.id);
                     setPartyLabel(p.legal_name);
+                    setPartyOpeningLocked(p.opening_balance_locked);
                     setDirty(true);
+                  }}
+                />
+              )}
+              {!readOnly && partyId && (
+                <PartyOpeningBlock
+                  partyId={partyId}
+                  locked={partyOpeningLocked}
+                  initialOpening={partyRec.data?.opening_balance ?? "0"}
+                  initialAsOf={partyRec.data?.opening_balance_as_of ?? ""}
+                  onSaved={() => {
+                    qc.invalidateQueries({ queryKey: ["party", partyId] });
+                    qc.invalidateQueries({ queryKey: ["party-ledger", partyId] });
                   }}
                 />
               )}
@@ -784,28 +825,32 @@ export function InvoiceEditorPage() {
 
             {/* running weight / count bar + Next segment */}
             {!readOnly && filledRows.length > 0 && (
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-accent-soft px-3 py-2 text-xs">
-                <div className="flex flex-wrap gap-x-4 gap-y-1">
-                  {openSeg > 1 && (
+              <div className="border-t border-line bg-accent-soft px-3 py-2 text-xs">
+                <div className="flex flex-col gap-1.5 md:flex-row md:flex-wrap md:items-center md:justify-between md:gap-2">
+                  <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:gap-x-4 md:gap-y-1">
+                    {openSeg > 1 && (
+                      <span className="text-muted">
+                        Weighment&nbsp;{openSeg} (open){" "}
+                        <b className="font-mono text-ink">
+                          {segMeasureText(openSegWeight, openSegCount)}
+                        </b>
+                      </span>
+                    )}
                     <span className="text-muted">
-                      Seg&nbsp;{openSeg}{" "}
-                      <b className="font-mono text-ink">{kg(openSegWeight)}</b>
+                      Bill so far{" "}
+                      <b className="font-mono text-ink">{kg(measure.totalWeightKg)}</b>
+                      {" · "}
+                      <b className="font-mono text-ink">{measure.totalCount} pcs</b>
                     </span>
-                  )}
-                  <span className="text-muted">
-                    Bill{" "}
-                    <b className="font-mono text-ink">{kg(measure.totalWeightKg)}</b>
-                    {" · "}
-                    <b className="font-mono text-ink">{measure.totalCount} pcs</b>
-                  </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="w-full rounded-md border border-ok px-3 py-2 text-xs font-semibold text-ok hover:bg-[#eef3ee] md:w-auto md:py-1"
+                    onClick={startNextSegment}
+                  >
+                    Next segment ›
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="rounded-md border border-ok px-3 py-1 text-xs font-semibold text-ok hover:bg-[#eef3ee]"
-                  onClick={startNextSegment}
-                >
-                  Next segment ›
-                </button>
               </div>
             )}
 
@@ -943,9 +988,9 @@ export function InvoiceEditorPage() {
                         Weighment {s.seg} · lines {s.lineFrom}–{s.lineTo}
                       </span>
                       <span className="font-mono">
-                        {kg(
-                          s.recordedKg != null ? s.recordedKg : s.weightKg,
-                        )}
+                        {s.recordedKg != null
+                          ? kg(s.recordedKg)
+                          : segMeasureText(s.weightKg, s.count)}
                       </span>
                     </div>
                   ))}
@@ -1014,6 +1059,7 @@ export function InvoiceEditorPage() {
         <CloseSegmentDialog
           seg={closingSeg}
           lineSumKg={openSegWeight}
+          lineCount={openSegCount}
           onCancel={() => setClosingSeg(null)}
           onConfirm={confirmSegment}
         />
@@ -1224,6 +1270,9 @@ function SlipDivider({
   const needsWeight = lineSumKg > 0;
   const recordedNum = parseFloat(recordedKg);
   const invalid = needsWeight && (!recordedKg.trim() || !isFinite(recordedNum) || recordedNum <= 0);
+  // a piece-only closed segment has no scale weight to record — show the
+  // piece count instead of a 0 kg field + a false "can't be blank" error
+  const pieceOnly = !needsWeight;
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-y border-[#c9ddc9] bg-[#eef3ee] px-3 py-1.5">
       <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ok">
@@ -1232,7 +1281,11 @@ function SlipDivider({
         </svg>
         Weighment {seg}
       </span>
-      {readOnly ? (
+      {pieceOnly ? (
+        <span className="font-mono text-xs font-semibold text-ink">
+          {count > 0 ? `${count} pcs` : "—"}
+        </span>
+      ) : readOnly ? (
         <span className="font-mono text-xs font-semibold text-ink">{kg(recordedKg)}</span>
       ) : (
         <span className="flex items-center gap-1">
@@ -1247,13 +1300,14 @@ function SlipDivider({
       )}
       <span className="text-[11px] text-muted">
         lines {lineFrom}–{lineTo}
-        {count > 0 && ` · ${count} pcs`}
+        {!pieceOnly && count > 0 && ` · ${count} pcs`}
       </span>
       {invalid ? (
         <span className="text-[10px] font-semibold text-danger">
           can't be blank/zero — this segment has weighed lines
         </span>
       ) : (
+        !pieceOnly &&
         Math.abs(drift) >= 0.005 && (
           <span className="text-[10px] text-warn">
             {drift > 0 ? "+" : "−"}
@@ -1277,11 +1331,13 @@ function SlipDivider({
 function CloseSegmentDialog({
   seg,
   lineSumKg,
+  lineCount,
   onCancel,
   onConfirm,
 }: {
   seg: number;
   lineSumKg: number;
+  lineCount: number;
   onCancel: () => void;
   onConfirm: (recordedKg: string) => void;
 }) {
@@ -1305,11 +1361,23 @@ function CloseSegmentDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-serif text-sm font-semibold">Close weighment {seg}</h3>
-        <p className="mt-1 text-xs text-muted">
-          Sum of line weights in this segment:{" "}
-          <b className="text-ink">{kg(lineSumKg)}</b>
-        </p>
-        <label className="label mt-3 block">Weight shown on the platform scale</label>
+        {needsWeight ? (
+          <p className="mt-1 text-xs text-muted">
+            Sum of line weights in this segment:{" "}
+            <b className="text-ink">{kg(lineSumKg)}</b>
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-muted">
+            In this weighment:{" "}
+            <b className="text-ink">{lineCount > 0 ? `${lineCount} pcs` : "no lines"}</b>{" "}
+            — no weighed lines, scale weight optional.
+          </p>
+        )}
+        <label className="label mt-3 block">
+          {needsWeight
+            ? "Weight shown on the platform scale"
+            : "Weight shown on the platform scale (optional)"}
+        </label>
         <input
           className={`field text-right font-mono ${invalid && touched ? "border-danger focus:border-danger" : ""}`}
           inputMode="decimal"
@@ -1361,6 +1429,131 @@ function Row2({ label, value, muted }: { label: string; value: string; muted?: b
     <div className="flex items-center justify-between">
       <span className="text-muted">{label}</span>
       <span className={muted ? "text-muted" : ""}>{value}</span>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// opening / prior balance block under "Bill to"
+//   - new client (unlocked): an editable ₹ field + as-of date, PATCHed onto
+//     the party on blur. A failed save shows inline and never blocks the
+//     invoice.
+//   - party with history (locked): a read-only "outstanding before this
+//     invoice" line, from the cached party ledger.
+// --------------------------------------------------------------------------
+
+function PartyOpeningBlock({
+  partyId,
+  locked,
+  initialOpening,
+  initialAsOf,
+  onSaved,
+}: {
+  partyId: string;
+  locked: boolean;
+  initialOpening: string;
+  initialAsOf: string;
+  onSaved: () => void;
+}) {
+  const [amt, setAmt] = useState(initialOpening);
+  const [asOf, setAsOf] = useState(initialAsOf);
+  const [err, setErr] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  // reset when a different party is picked
+  useEffect(() => {
+    setAmt(initialOpening);
+    setAsOf(initialAsOf);
+    setErr(null);
+    setSaved(false);
+  }, [partyId, initialOpening, initialAsOf]);
+
+  const ledger = useQuery({
+    queryKey: ["party-ledger", partyId],
+    queryFn: () => api<PartyLedgerEntry[]>(`/parties/${partyId}/ledger`),
+    enabled: locked,
+  });
+
+  const save = useMutation({
+    mutationFn: (body: { opening_balance: string; opening_balance_as_of: string | null }) =>
+      api<Party>(`/parties/${partyId}`, { method: "PATCH", body }),
+    onSuccess: () => {
+      setErr(null);
+      setSaved(true);
+      onSaved();
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not save opening balance"),
+  });
+
+  function commit() {
+    const norm = amt.trim() === "" ? "0" : amt.trim();
+    if (norm === (initialOpening || "0") && (asOf || "") === (initialAsOf || "")) return;
+    save.mutate({ opening_balance: norm, opening_balance_as_of: asOf || null });
+  }
+
+  if (locked) {
+    const entries = ledger.data ?? [];
+    const bal = Number(entries[0]?.running_balance ?? "0");
+    const opening = entries.find((e) => e.kind === "opening");
+    const openingAmt = opening ? Number(opening.debit) - Number(opening.credit) : 0;
+    const invCount = entries.filter((e) => e.kind === "invoice").length;
+    if (ledger.isLoading) return null;
+    return (
+      <p className="mt-2 rounded-md bg-ground px-3 py-2 text-xs text-muted">
+        {bal === 0 ? (
+          <>Outstanding before this invoice: <b className="text-ink">{inr(0)}</b> · all settled</>
+        ) : (
+          <>
+            Outstanding before this invoice:{" "}
+            <b className={bal > 0 ? "text-danger" : "text-ok"}>{inr(Math.abs(bal))}</b>
+            {bal < 0 && " credit"}
+            {openingAmt !== 0 && ` · incl. ${inr(Math.abs(openingAmt))} opening`}
+            {invCount > 0 && ` · ${invCount} invoice${invCount === 1 ? "" : "s"}`}
+          </>
+        )}
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-2 rounded-md border border-line bg-ground/60 p-3">
+      <label className="label mb-1">Opening balance (before this bill)</label>
+      <div className="flex flex-wrap items-start gap-2">
+        <div className="relative w-40">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">
+            ₹
+          </span>
+          <input
+            className="field pl-7"
+            inputMode="decimal"
+            placeholder="0.00"
+            value={amt}
+            onChange={(e) => {
+              setAmt(e.target.value);
+              setSaved(false);
+            }}
+            onBlur={commit}
+          />
+        </div>
+        <input
+          type="date"
+          className="field w-44"
+          value={asOf}
+          onChange={(e) => {
+            setAsOf(e.target.value);
+            setSaved(false);
+          }}
+          onBlur={commit}
+        />
+      </div>
+      {err ? (
+        <p className="err">{err}</p>
+      ) : saved ? (
+        <p className="mt-1 text-[11px] text-ok">Saved to the party</p>
+      ) : (
+        <p className="mt-1 text-[11px] text-muted">
+          ↳ new client · what they owed you before you started billing here. Leave 0 if none.
+        </p>
+      )}
     </div>
   );
 }
@@ -1466,6 +1659,8 @@ function QuickCreatePartyDialog({
 }) {
   const [name, setName] = useState(initialName);
   const [phone, setPhone] = useState("");
+  const [opening, setOpening] = useState("");
+  const [openingAsOf, setOpeningAsOf] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const create = useMutation({
     mutationFn: () =>
@@ -1475,6 +1670,8 @@ function QuickCreatePartyDialog({
           legal_name: name.trim(),
           phone: phone.trim() || null,
           role: "customer",
+          opening_balance: opening.trim() === "" ? "0" : opening.trim(),
+          opening_balance_as_of: openingAsOf || null,
         },
       }),
     onSuccess: onCreated,
@@ -1509,6 +1706,30 @@ function QuickCreatePartyDialog({
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
         />
+        <label className="label mt-3 block">Opening balance (optional)</label>
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">
+              ₹
+            </span>
+            <input
+              className="field pl-7"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={opening}
+              onChange={(e) => setOpening(e.target.value)}
+            />
+          </div>
+          <input
+            type="date"
+            className="field flex-1"
+            value={openingAsOf}
+            onChange={(e) => setOpeningAsOf(e.target.value)}
+          />
+        </div>
+        <p className="mt-1 text-[11px] text-muted">
+          What they owed you before you started billing here.
+        </p>
         <div className="mt-4 flex gap-2">
           <button className="btn-ghost h-9 flex-1 px-4 text-sm" onClick={onCancel}>
             Cancel
@@ -1663,8 +1884,10 @@ function LineRow({
   const blocked = problems.some((p) => p.block);
   const filled = row.description.trim().length > 0;
 
-  // the unit the line is priced in — for the "Rate ₹/<unit>" label
+  // the unit the line is priced in — canonical value (stored), plus its
+  // human-facing spelling for labels ("nos" -> "pcs").
   const unitLabel = normalizeUom(row.uom) || "nos";
+  const unitText = uomDisplay(unitLabel);
   // The strict billing set (nos / kg / doz / gross), plus the row's current
   // unit if it's a legacy value not in that set — so an old "bundle" line
   // stays selectable and never silently flips on open.
@@ -1684,7 +1907,7 @@ function LineRow({
   const discAmt = rowDiscountAmount(row);
   const workingBits: string[] = [];
   if (Number(row.quantity) && Number(row.unit_rate)) {
-    workingBits.push(`${row.quantity} ${unitLabel || ""}`.trim() + ` × ₹${row.unit_rate}`);
+    workingBits.push(`${row.quantity} ${unitText || ""}`.trim() + ` × ₹${row.unit_rate}`);
     if (discAmt > 0) workingBits.push(`− ₹${discAmt}`);
   }
   const working = workingBits.join(" ");
@@ -1910,12 +2133,14 @@ function LineRow({
             onChange={(e) => onPatch({ uom: e.target.value })}
           >
             {unitChoices.map((u) => (
-              <option key={u}>{u}</option>
+              <option key={u} value={u}>
+                {uomDisplay(u)}
+              </option>
             ))}
           </select>
         </div>
         <div>
-          <label className="fl-m">Rate ₹/{unitLabel}</label>
+          <label className="fl-m">Rate ₹/{unitText}</label>
           <input
             className={`field h-10 text-right ${fieldClass("rate")}`}
             inputMode="decimal"
@@ -2058,7 +2283,9 @@ function LineRow({
           onChange={(e) => onPatch({ uom: e.target.value })}
         >
           {unitChoices.map((u) => (
-            <option key={u}>{u}</option>
+            <option key={u} value={u}>
+              {uomDisplay(u)}
+            </option>
           ))}
         </select>
         <input

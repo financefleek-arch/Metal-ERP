@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -49,6 +50,16 @@ class Party(PkUuidMixin, TimestampMixin, Base):
     # Last transaction date (invoice finalize / inward approve). Forward-only.
     # Null = never billed. Powers the dormancy filter.
     last_txn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    # Opening balance carried from before go-live — a manually-entered figure,
+    # NOT imported from Tally. Sign matches the ledger: positive = party owes
+    # you, negative = customer advance. Editable in the UI only while the party
+    # has no ledger history (see router 409 guard); `_as_of` is an optional
+    # display date for the statement's first line.
+    opening_balance: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=Decimal("0"), nullable=False
+    )
+    opening_balance_as_of: Mapped[date | None] = mapped_column(Date)
 
     # Phase 2 — dormant.
     gstin: Mapped[str | None] = mapped_column(String(15))

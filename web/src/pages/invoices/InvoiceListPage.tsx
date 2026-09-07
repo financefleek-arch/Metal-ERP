@@ -65,12 +65,6 @@ export function InvoiceListPage() {
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Duplicate failed"),
   });
 
-  const cancel = useMutation({
-    mutationFn: (id: string) => api(`/invoices/${id}/cancel`, { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Cancel failed"),
-  });
-
   const del = useMutation({
     mutationFn: (id: string) => api(`/invoices/${id}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["invoices"] }),
@@ -195,17 +189,6 @@ export function InvoiceListPage() {
               >
                 Duplicate
               </button>
-              {iv.status === "final" && (
-                <button
-                  className="rounded-md border border-line px-2 py-1 text-[11px] text-danger hover:bg-ground"
-                  onClick={() => {
-                    if (confirm(`Cancel invoice #${iv.number}? The number is not reused.`))
-                      cancel.mutate(iv.id);
-                  }}
-                >
-                  Cancel
-                </button>
-              )}
               {canDelete(iv.status) && (
                 <button
                   className="rounded-md border border-line px-2 py-1 text-[11px] text-danger hover:bg-ground"

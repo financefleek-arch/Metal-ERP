@@ -372,9 +372,13 @@ def cancel_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> Inv
             status_code=status.HTTP_409_CONFLICT,
             detail="a draft has no number to cancel — delete it instead",
         )
-    inv.status = InvoiceStatus.cancelled
-    session.flush()
-    return _out(session, inv)
+    # A finalized invoice is permanent: its number is issued and it may already
+    # be in the customer's hands / a filed return. It cannot be cancelled or
+    # deleted — correct it with a credit note or a fresh invoice instead.
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="a finalized invoice cannot be cancelled — issue a credit note instead",
+    )
 
 
 @router.post("/{invoice_id}/duplicate", response_model=DuplicateOut, status_code=201)

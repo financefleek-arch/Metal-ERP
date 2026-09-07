@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import { useVocab } from "../../lib/reference";
+import { uomDisplay } from "../../lib/uom";
 import type {
   BulkDeleteResult,
   BulkField,
@@ -394,16 +395,18 @@ function FieldControl({
         ))}
       </select>
     );
-  // vocab: a select with free-text fallback
+  // vocab: a select with free-text fallback. Units are stored canonically
+  // ("nos") but shown to the user in the familiar spelling ("pcs").
+  const label = spec.vocab === "uoms" ? uomDisplay : (v: string) => v;
   return (
     <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">— pick —</option>
       {vocabList.map((o) => (
         <option key={o} value={o}>
-          {o}
+          {label(o)}
         </option>
       ))}
-      {value && !vocabList.includes(value) && <option value={value}>{value}</option>}
+      {value && !vocabList.includes(value) && <option value={value}>{label(value)}</option>}
     </select>
   );
 }

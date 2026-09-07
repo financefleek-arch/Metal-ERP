@@ -40,10 +40,12 @@ _TIMEOUT = 15  # seconds — Meta's Graph API is usually sub-second
 
 # Body-parameter order per template. The header (document) component is added
 # separately by the send call when there is a PDF to attach.
+# {{1}} = customer (party) name, {{2}} = invoice number, {{3}} = amount.
+# Approved invoice_ready body:
+#   "Hi {{1}}, your invoice {{2}} is ready. Amount: ₹{{3}}. The PDF is attached."
+# No firm/tenant name is ever put into a message — only the three values below.
 TEMPLATE_BODY_PARAMS: dict[str, tuple[str, ...]] = {
-    # "Hi {{1}}, your invoice {{2}} for {{3}} is ready."
     "invoice_ready": ("party_name", "invoice_number", "grand_total"),
-    # "Hi {{1}}, invoice {{2}} for {{3}} is due. Please arrange payment."
     "payment_reminder": ("party_name", "invoice_number", "grand_total"),
 }
 

@@ -34,7 +34,11 @@ from app.services.parties import (
     dormant_filter,
     is_incomplete,
 )
-from app.services.payments import balance_due_for_invoice, open_invoices_for_party
+from app.services.payments import (
+    balance_due_for_invoice,
+    has_ledger_history,
+    open_invoices_for_party,
+)
 
 router = APIRouter(prefix="/api/parties", tags=["parties"])
 
@@ -69,13 +73,16 @@ def _out(session: SessionDep, party: Party) -> PartyOut:
         source=party.source,
         source_ref=party.source_ref,
         last_txn_at=party.last_txn_at,
+        opening_balance=party.opening_balance,
+        opening_balance_as_of=party.opening_balance_as_of,
+        opening_balance_locked=has_ledger_history(session, party.id),
         addresses=party.addresses,
         completeness=completeness_for(party),
         document_count=document_count(session, party.id),
     )
 
 
-def _list_item(party: Party) -> PartyListItem:
+def _list_item(session: SessionDep, party: Party) -> PartyListItem:
     return PartyListItem(
         id=party.id,
         legal_name=party.legal_name,
@@ -87,6 +94,8 @@ def _list_item(party: Party) -> PartyListItem:
         source=party.source,
         source_ref=party.source_ref,
         last_txn_at=party.last_txn_at,
+        opening_balance=party.opening_balance,
+        opening_balance_locked=has_ledger_history(session, party.id),
         completeness=completeness_for(party),
     )
 
@@ -131,7 +140,7 @@ def list_parties(
         parties = list(session.scalars(stmt).unique().all())
         if completeness == "incomplete":
             parties = [p for p in parties if is_incomplete(p)]
-        return [_list_item(p) for p in parties]
+        return [_list_item(session, p) for p in parties]
 
     # `completeness=incomplete` is a post-query Python filter, so keyset
     # paging (page-then-filter) would give short/empty pages — fall back to
@@ -139,7 +148,7 @@ def list_parties(
     if completeness == "incomplete":
         stmt = stmt.order_by(func.lower(Party.legal_name))
         parties = [p for p in session.scalars(stmt).unique().all() if is_incomplete(p)]
-        return [_list_item(p) for p in parties]
+        return [_list_item(session, p) for p in parties]
 
     stmt, paginated = paginate(
         stmt,
@@ -156,7 +165,7 @@ def list_parties(
             key_of=lambda p: [p.legal_name.lower(), p.id],
             response=response,
         )
-    return [_list_item(p) for p in rows]
+    return [_list_item(session, p) for p in rows]
 
 
 @router.post("", response_model=PartyOut, status_code=status.HTTP_201_CREATED)
@@ -207,6 +216,21 @@ def update_party(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"A party named '{new_name}' already exists",
+            )
+
+    # Opening balance locks once the party has any finalized invoice or
+    # payment — a real change to it after that point is a 409. A no-op patch
+    # (same value) is allowed so a generic "save the whole form" still works.
+    ob_fields = {"opening_balance", "opening_balance_as_of"} & patch.keys()
+    if ob_fields and has_ledger_history(session, party.id):
+        changed = any(getattr(party, f) != patch[f] for f in ob_fields)
+        if changed:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Opening balance is locked once the party has invoices "
+                    "or payments."
+                ),
             )
 
     for field, value in patch.items():

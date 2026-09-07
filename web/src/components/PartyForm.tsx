@@ -24,6 +24,8 @@ interface Fields {
   pan: string;
   gstin: string;
   default_state_code: string;
+  opening_balance: string;
+  opening_balance_as_of: string;
   addr_line1: string;
   addr_city: string;
   addr_state_code: string;
@@ -40,6 +42,8 @@ function toFields(p: Party): Fields {
     pan: p.pan ?? "",
     gstin: p.gstin ?? "",
     default_state_code: p.default_state_code ?? "",
+    opening_balance: p.opening_balance ?? "0",
+    opening_balance_as_of: p.opening_balance_as_of ?? "",
     addr_line1: a?.line1 ?? "",
     addr_city: a?.city ?? "",
     addr_state_code: a?.state_code ?? "",
@@ -47,7 +51,7 @@ function toFields(p: Party): Fields {
   };
 }
 
-function toBody(v: Fields) {
+function toBody(v: Fields, includeOpening: boolean) {
   const hasAddr = v.addr_line1 || v.addr_city || v.addr_state_code || v.addr_pincode;
   return {
     legal_name: v.legal_name.trim(),
@@ -57,6 +61,13 @@ function toBody(v: Fields) {
     pan: v.pan.trim().toUpperCase() || null,
     gstin: v.gstin.trim().toUpperCase() || null,
     default_state_code: v.default_state_code || null,
+    // only sent while the party is unlocked — a locked party would 409
+    ...(includeOpening
+      ? {
+          opening_balance: v.opening_balance.trim() === "" ? "0" : v.opening_balance.trim(),
+          opening_balance_as_of: v.opening_balance_as_of || null,
+        }
+      : {}),
     addresses: hasAddr
       ? [
           {
@@ -173,7 +184,7 @@ export function PartyForm({
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       setSaveState("saving");
-      save.mutate(toBody(merged));
+      save.mutate(toBody(merged, !party.opening_balance_locked));
     }, 600);
   }
 
@@ -181,6 +192,7 @@ export function PartyForm({
 
   const missing = party.completeness.missing;
   const referenced = party.document_count > 0;
+  const openingLocked = party.opening_balance_locked;
 
   const saveHint = {
     clean: "No unsaved changes",
@@ -333,6 +345,46 @@ export function PartyForm({
             value={v.default_state_code}
             onChange={(e) => patch({ default_state_code: e.target.value })}
           />
+        </div>
+      </div>
+
+      <div className="border-t border-line pt-4">
+        <p className="label">Opening balance</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <div className="relative">
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted">
+                ₹
+              </span>
+              <input
+                className="field pl-7 disabled:bg-ground disabled:text-muted"
+                inputMode="decimal"
+                placeholder="0.00"
+                disabled={openingLocked}
+                value={v.opening_balance}
+                onChange={(e) => patch({ opening_balance: e.target.value })}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-muted">
+              {openingLocked
+                ? "🔒 Locked — this party already has invoices or payments."
+                : "What they owed you before you started billing here. Leave 0 if none."}
+            </p>
+          </div>
+          <div>
+            <input
+              type="date"
+              className="field disabled:bg-ground disabled:text-muted"
+              disabled={openingLocked}
+              value={v.opening_balance_as_of}
+              onChange={(e) => patch({ opening_balance_as_of: e.target.value })}
+            />
+            {!openingLocked && (
+              <p className="mt-1 text-[11px] text-muted">
+                As of date — optional, shows as the statement’s first line.
+              </p>
+            )}
+          </div>
         </div>
       </div>
 

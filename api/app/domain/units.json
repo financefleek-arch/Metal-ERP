@@ -13,7 +13,7 @@
   "units": [
     {
       "value": "nos",
-      "label": "Nos (pieces)",
+      "label": "Pcs",
       "kind": "count",
       "kg_factor": null,
       "piece_multiplier": 1,

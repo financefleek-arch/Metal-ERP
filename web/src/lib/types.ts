@@ -134,12 +134,18 @@ export interface PartyListItem {
   source: PartySource;
   source_ref: string | null;
   last_txn_at: string | null;
+  // Opening balance carried from before go-live (positive = party owes you).
+  // `locked` is true once the party has a finalized invoice or any payment —
+  // the field is then read-only (server rejects a change with 409).
+  opening_balance: string;
+  opening_balance_locked: boolean;
   completeness: PartyCompleteness;
 }
 
 export interface Party extends PartyListItem {
   email: string | null;
   pan: string | null;
+  opening_balance_as_of: string | null;
   addresses: PartyAddress[];
   document_count: number;
 }
@@ -662,7 +668,7 @@ export interface LedgerAllocation {
 /** One row in a party's running statement (Account tab) — newest first,
  *  running_balance computed server-side walking oldest-to-newest. */
 export interface PartyLedgerEntry {
-  kind: "invoice" | "payment";
+  kind: "invoice" | "payment" | "opening";
   date: string;
   ref_id: string;
   /** "INV #123" / "INV (draft)" / "PMT #45" */

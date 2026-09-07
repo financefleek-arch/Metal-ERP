@@ -15,7 +15,7 @@ export interface Unit {
 export const UNITS: Unit[] = [
   {
     "value": "nos",
-    "label": "Nos (pieces)",
+    "label": "Pcs",
     "kind": "count",
     "kgFactor": null,
     "pieceMultiplier": 1,

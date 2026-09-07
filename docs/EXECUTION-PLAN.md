@@ -183,7 +183,17 @@ def compute_invoice(inp: InvoiceInput) -> ComputedInvoice:
 
 ## 8. Invoice list + dashboard + wrap-up (½ week)
 
-**API:** `GET /api/invoices` (filters: status, date range, party), `POST /api/invoices/{id}/duplicate`, `POST /api/invoices/{id}/cancel`, `GET /api/invoices/{id}/pdf` (streams the file), `GET /api/dashboard/summary`, `GET /api/reports/invoice-register.csv`.
+**API:** `GET /api/invoices` (filters: status, date range, party), `POST /api/invoices/{id}/duplicate`, `POST /api/invoices/{id}/cancel`, `DELETE /api/invoices/{id}`, `GET /api/invoices/{id}/pdf` (streams the file), `GET /api/dashboard/summary`, `GET /api/reports/invoice-register.csv`.
+
+**Finalized invoice is immutable** (2026-09-07): once `invoice.status == final` the
+invoice can be **neither cancelled nor deleted**. `POST /invoices/{id}/cancel`
+returns 409 for a `final` invoice (`"issue a credit note instead"`) — it only ever
+acted on a `final` invoice before, so the endpoint is now effectively inert except
+as an idempotent no-op for legacy `cancelled` rows. `DELETE /invoices/{id}` still
+409s on `final`; because `final` can no longer transition to `cancelled`, the old
+cancel-then-delete path is closed. `CANCELLED` status, its delete path, and the
+"Cancelled" list filter remain only for invoices cancelled before this change.
+Corrections to a finalized invoice are made with a credit note or a fresh invoice.
 
 **PDF download name** (2026-09-03): `GET /api/invoices/{id}/pdf` streams with a
 human-readable `Content-Disposition` filename — `_download_name(inv)` in
@@ -198,11 +208,11 @@ bearer, parse the header filename, synthetic `<a download>`); the old
 `window.open(URL.createObjectURL(blob))` drops the server filename.
 
 **UI**
-- **`InvoicesPage`** — table: number, date, party, amount, status badge. Filter bar (status / date / party). Row → finalized view; DRAFT rows → back into the editor. Per-row actions: **Download PDF**, **Duplicate** (→ new draft, opens editor), **Cancel** (confirm → status CANCELLED, number *not* reused).
+- **`InvoicesPage`** — table: number, date, party, amount, status badge. Filter bar (status / date / party). Row → finalized view; DRAFT rows → back into the editor. Per-row actions: **Edit/View**, **Download PDF** (final), **Duplicate** (→ new draft, opens editor), **Delete** (draft + legacy-cancelled only). No **Cancel** action — a finalized invoice is permanent (see "Finalized invoice is immutable" above).
 - **`DashboardPage`** — tiles: sales this month, invoices raised, new/unconfirmed items; a "recent invoices" list; an "items to review" count linking to the Items page filtered to `Unconfirmed`.
 - **CSV export** button on the invoices page (invoice register).
 
-**Exit:** the shop can find, reopen, re-print, duplicate and cancel invoices; the dashboard shows the month at a glance.
+**Exit:** the shop can find, reopen, re-print and duplicate invoices, and delete drafts; a finalized invoice is permanent (correct it via a credit note / fresh invoice); the dashboard shows the month at a glance.
 
 ---
 
@@ -246,7 +256,7 @@ Only if the shop wants their existing catalogue loaded before bill #1.
 | 5 Invoice editor + preview | 1.5 wk | ⬜ | **critical path** — ItemCombobox, line grid, live totals, A4 preview |
 | 6 Finalize + numbering + accretion | 1 wk | ⬜ | finalize txn, gap-free number, item auto-create, finalized view |
 | 7 PDF rendering (WeasyPrint) | 1.5 wk | ⬜ | critical path; can start the template in parallel |
-| 8 Invoice list + dashboard | 0.5 wk | ⬜ | InvoicesPage, DashboardPage, duplicate/cancel, CSV |
+| 8 Invoice list + dashboard | 0.5 wk | ⬜ | InvoicesPage, DashboardPage, duplicate, delete-draft (finalized = immutable), CSV |
 | 10 Hardening + go-live | 0.5 wk | ⬜ | prod seed, per-DB backup, runbook, bill #1 walkthrough |
 | **Remaining critical path** | **~5 wk** | | invoice editor → finalize → PDF → list/dashboard → go-live |
 

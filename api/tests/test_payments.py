@@ -222,12 +222,18 @@ def test_allocation_against_draft_invoice_rejected(client: TestClient) -> None:
     assert r.status_code == 422, r.text
 
 
-def test_allocation_against_cancelled_invoice_rejected(client: TestClient) -> None:
+def test_allocation_against_cancelled_invoice_rejected(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
     h = _h(_register(client, "p8@x.example.com"))
     pid = _party(client, h)
     inv = _finalized_invoice(client, h, pid, "1000.00")
-    r = client.post(f"/api/invoices/{inv['id']}/cancel", headers=h)
-    assert r.status_code == 200, r.text
+    # a finalized invoice can no longer be cancelled via the API; force the
+    # legacy `cancelled` state directly to exercise the allocation guard.
+    from app.models import Invoice
+    from app.models._mixins import InvoiceStatus
+
+    row = session.get(Invoice, inv["id"])
+    row.status = InvoiceStatus.cancelled
+    session.commit()
 
     r = client.post(
         "/api/payments",
@@ -449,12 +455,10 @@ def test_open_invoices_and_ledger_endpoints(client: TestClient) -> None:
     assert kinds.count("payment") == 1
 
 
-def test_invoice_with_payment_cannot_be_deleted(client: TestClient) -> None:
-    """payment_allocation.invoice_id has no ON DELETE rule on purpose
-    (allocations are an audit trail) — deleting the invoice must be blocked
-    with a clean 409, not surface as a raw FK-violation error. Cancel first
-    (a finalized invoice can't be deleted directly either way) then confirm
-    delete is still refused while the payment stands.
+def test_finalized_invoice_with_payment_cannot_be_deleted(client: TestClient) -> None:
+    """A finalized invoice is permanent — it can be neither cancelled nor
+    deleted, whether or not a payment stands against it, and reversing the
+    payment does not open a delete path.
     """
     h = _h(_register(client, "p14@x.example.com"))
     pid = _party(client, h)
@@ -473,18 +477,108 @@ def test_invoice_with_payment_cannot_be_deleted(client: TestClient) -> None:
         },
     ).json()
 
-    r = client.post(f"/api/invoices/{inv['id']}/cancel", headers=h)
-    assert r.status_code == 200, r.text
+    assert client.post(f"/api/invoices/{inv['id']}/cancel", headers=h).status_code == 409
+    assert client.delete(f"/api/invoices/{inv['id']}", headers=h).status_code == 409
 
-    r2 = client.delete(f"/api/invoices/{inv['id']}", headers=h)
-    assert r2.status_code == 409, r2.text
-    assert "payment" in r2.json()["detail"].lower()
-
-    # reversing the payment (the delete error's own advice) clears the way
+    # reversing the payment still does not make a finalized invoice deletable
     r3 = client.post(
         f"/api/payments/{pay['id']}/reverse", headers=h, json={"reason": "test cleanup"}
     )
     assert r3.status_code == 200, r3.text
 
-    r4 = client.delete(f"/api/invoices/{inv['id']}", headers=h)
-    assert r4.status_code == 204, r4.text
+    assert client.delete(f"/api/invoices/{inv['id']}", headers=h).status_code == 409
+
+
+# --------------------------------------------------------------------------
+# opening balance
+# --------------------------------------------------------------------------
+
+
+def test_ledger_seeds_opening_balance_line(client: TestClient) -> None:
+    h = _h(_register(client, "ob1@x.example.com"))
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={
+            "legal_name": "Opening Co",
+            "opening_balance": "42500.00",
+            "opening_balance_as_of": "2026-04-01",
+        },
+    )
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    assert r.json()["opening_balance_locked"] is False
+
+    led = client.get(f"/api/parties/{pid}/ledger", headers=h).json()
+    assert len(led) == 1
+    assert led[0]["kind"] == "opening"
+    assert led[0]["debit"] == "42500.00"
+    assert led[0]["running_balance"] == "42500.00"
+
+    # opening carries into the collections outstanding scope
+    coll = client.get("/api/collections", headers=h, params={"scope": "outstanding"}).json()
+    assert any(row["party_id"] == pid and row["outstanding_balance"] == "42500.00" for row in coll)
+
+
+def test_opening_balance_folds_into_running_balance(client: TestClient) -> None:
+    h = _h(_register(client, "ob2@x.example.com"))
+    pid = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Running Co", "opening_balance": "10000.00"},
+    ).json()["id"]
+    _finalized_invoice(client, h, pid, "5000.00")
+
+    led = client.get(f"/api/parties/{pid}/ledger", headers=h).json()
+    # newest-first: invoice row on top, opening row last
+    assert led[0]["kind"] == "invoice"
+    assert led[0]["running_balance"] == "15000.00"
+    assert led[-1]["kind"] == "opening"
+
+
+def test_negative_opening_balance_is_a_credit(client: TestClient) -> None:
+    h = _h(_register(client, "ob3@x.example.com"))
+    pid = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Advance Co", "opening_balance": "-3000.00"},
+    ).json()["id"]
+
+    led = client.get(f"/api/parties/{pid}/ledger", headers=h).json()
+    assert led[0]["kind"] == "opening"
+    assert led[0]["credit"] == "3000.00"
+    assert led[0]["running_balance"] == "-3000.00"
+
+
+def test_opening_balance_locks_after_first_invoice(client: TestClient) -> None:
+    h = _h(_register(client, "ob4@x.example.com"))
+    pid = client.post(
+        "/api/parties", headers=h, json={"legal_name": "Locks Co"}
+    ).json()["id"]
+
+    # editable while there's no history
+    assert (
+        client.patch(
+            f"/api/parties/{pid}", headers=h, json={"opening_balance": "500.00"}
+        ).status_code
+        == 200
+    )
+
+    _finalized_invoice(client, h, pid, "100.00")
+
+    got = client.get(f"/api/parties/{pid}", headers=h).json()
+    assert got["opening_balance_locked"] is True
+
+    # a real change is now a 409
+    r = client.patch(
+        f"/api/parties/{pid}", headers=h, json={"opening_balance": "999.00"}
+    )
+    assert r.status_code == 409, r.text
+
+    # a no-op patch (same value) still goes through
+    assert (
+        client.patch(
+            f"/api/parties/{pid}", headers=h, json={"opening_balance": "500.00"}
+        ).status_code
+        == 200
+    )

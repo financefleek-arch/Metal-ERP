@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useVocab } from "../lib/reference";
+import { uomDisplay } from "../lib/uom";
 import type { GroupOut, Item, ItemCategoryRow, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
 
@@ -167,7 +168,9 @@ export function NewItemForm({
           <select className="field" value={uom} onChange={(e) => setUom(e.target.value)}>
             <option value="">—</option>
             {(uoms.data ?? []).map((u) => (
-              <option key={u}>{u}</option>
+              <option key={u} value={u}>
+                {uomDisplay(u)}
+              </option>
             ))}
           </select>
         </div>

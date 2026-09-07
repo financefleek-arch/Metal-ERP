@@ -77,28 +77,41 @@ export function PartyAccountTab({ party }: { party: Party }) {
           </div>
         )}
         {entries.map((e) => {
+          const isOpening = e.kind === "opening";
           const isPayment = e.kind === "payment";
           const isReversed = isPayment && e.status === "reversed";
           const hasAllocations = isPayment && (e.allocations?.length ?? 0) > 0;
+          // an opening credit (customer advance) reads like a payment; an
+          // opening debit reads like an invoice.
+          const openingIsCredit = isOpening && Number(e.credit) > 0;
           return (
             <div key={e.ref_id} className="px-3.5 py-3">
               <div className="flex items-start gap-2.5">
                 <span
                   className={`mt-1.5 h-2 w-2 flex-none rounded-full ${
-                    isReversed ? "bg-line" : isPayment ? "bg-ok" : "bg-warn"
+                    isOpening
+                      ? "bg-line"
+                      : isReversed
+                        ? "bg-line"
+                        : isPayment
+                          ? "bg-ok"
+                          : "bg-warn"
                   }`}
                 />
                 <div className="min-w-0 flex-1">
                   <button
                     className={`block text-left text-sm font-semibold ${
                       isReversed ? "text-muted line-through" : ""
-                    } ${hasAllocations ? "hover:underline" : ""}`}
+                    } ${isOpening ? "italic text-muted" : ""} ${
+                      hasAllocations ? "hover:underline" : ""
+                    }`}
                     onClick={() => hasAllocations && setOpenAlloc((k) => (k === e.ref_id ? null : e.ref_id))}
                   >
                     {e.ref_label}
                   </button>
                   <div className="text-[11px] text-muted">
                     {new Date(e.date).toLocaleDateString()}
+                    {isOpening && " · carried forward"}
                     {isReversed && " · reversed"}
                   </div>
                   {hasAllocations && openAlloc === e.ref_id && (
@@ -119,11 +132,15 @@ export function PartyAccountTab({ party }: { party: Party }) {
                 <div className="flex-none text-right">
                   <div
                     className={`text-sm font-semibold tabular-nums ${
-                      isReversed ? "text-muted" : isPayment ? "text-ok" : "text-danger"
+                      isReversed
+                        ? "text-muted"
+                        : isPayment || openingIsCredit
+                          ? "text-ok"
+                          : "text-danger"
                     }`}
                   >
-                    {isPayment ? "− " : "+ "}
-                    {inr(isPayment ? e.credit : e.debit)}
+                    {isPayment || openingIsCredit ? "− " : "+ "}
+                    {inr(isPayment || openingIsCredit ? e.credit : e.debit)}
                   </div>
                   <div className="text-[10px] text-muted">bal {inr(e.running_balance)}</div>
                   {isPayment && !isReversed && (

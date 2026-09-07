@@ -114,7 +114,7 @@ class OpenInvoiceForAllocation(BaseModel):
 
 
 class PartyLedgerEntry(BaseModel):
-    kind: Literal["invoice", "payment"]
+    kind: Literal["invoice", "payment", "opening"]
     date: date_t
     ref_id: str
     ref_label: str

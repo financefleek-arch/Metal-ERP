@@ -234,19 +234,22 @@ def test_refinalize_is_conflict(client: TestClient) -> None:
     assert "already finalized" in " ".join(r.json()["detail"])
 
 
-def test_cancel_keeps_number(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+def test_finalized_invoice_cannot_be_cancelled_or_deleted(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
     h = _h(_register(client, "fin9@x.example.com"))
     pid = _party(client, h)
     iid = _draft_with_lines(
         client, h, pid, [{"description": "MS Angle", "quantity": "5", "unit_rate": "58"}]
     )
     client.post(f"/api/invoices/{iid}/finalize", headers=h)
-    r = client.post(f"/api/invoices/{iid}/cancel", headers=h)
-    assert r.status_code == 200
-    assert r.json()["status"] == "cancelled"
-    assert r.json()["number"] == 1
 
-    # the next finalize still takes 2, not 1 — number not reused
+    # a finalized invoice is permanent — no cancel, no delete
+    r = client.post(f"/api/invoices/{iid}/cancel", headers=h)
+    assert r.status_code == 409
+    assert "credit note" in r.json()["detail"]
+    assert client.delete(f"/api/invoices/{iid}", headers=h).status_code == 409
+
+    # it is untouched and the number is not freed
+    assert client.get(f"/api/invoices/{iid}", headers=h).json()["status"] == "final"
     iid2 = _draft_with_lines(
         client, h, pid, [{"description": "MS Angle", "quantity": "5", "unit_rate": "58"}]
     )

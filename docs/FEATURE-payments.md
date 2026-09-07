@@ -91,6 +91,12 @@ locked" below), not an oversight to revisit.
   `0019`) specifically so the delete can go through once only reversed
   allocations remain — the payment record itself (reversed status
   included) is never touched by deleting its invoice.
+  **NOTE (2026-09-07): this `posted`/`reversed` distinction now only
+  matters for a *draft* or a legacy *cancelled* invoice. A `final`
+  invoice can no longer be cancelled or deleted at all (see the invoice
+  feature notes / EXECUTION-PLAN §8), so "reverse the payment then delete
+  the invoice" is no longer a path for a numbered invoice — the delete
+  still 409s on `status == final` regardless of payment state.**
 
 ## What's built
 
@@ -176,6 +182,14 @@ Frontend (`web/`):
   from day one) — deferred per the locked decision above. Data model
   already supports it (on_account allocation type exists); needs its own
   entry point when prioritized.
+- **Party opening balance** (a balance carried from before go-live) — the
+  ledger and every balance-computing query start at zero and see only
+  in-system invoices/payments, so a pre-existing balance is invisible.
+  Design agreed 2026-09-07 (editable manual figure on `party`, locks once
+  the party has any invoice/payment) but **nothing built** — full plan in
+  `docs/FEATURE-party-opening-balance.md`, visual review in
+  `docs/visual-plan/party-opening-balance-review.html`. This is what makes
+  "show the party's balance when creating a new invoice" actually correct.
 - **Tally export** — schema is shaped for it, no export code exists.
 - **Payment editing** — a wrong payment is reversed (status flip; the
   frontend action IS built now, see "What's built"), never edited in
