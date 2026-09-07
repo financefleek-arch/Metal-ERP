@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -22,6 +23,24 @@ def financial_year(d: date) -> str:
     """Indian FY label for a date. Apr-Mar; `2026-04-01` -> "2026-27"."""
     start = d.year if d.month >= 4 else d.year - 1
     return f"{start}-{str(start + 1)[-2:]}"
+
+
+def download_name(inv: Invoice) -> str:
+    """User-facing PDF filename: "<Party name> <YYYY-MM-DD> <total>.pdf".
+
+    The single source of truth for how a rendered invoice PDF is named to
+    the outside world — the browser download (routers/invoices.py) and the
+    WhatsApp document attachment (services/whatsapp.py) both use this so a
+    customer sees the same filename whichever way they get it. The on-disk
+    file stays keyed by invoice id; party name is slugified to a safe token
+    and the amount is the frozen grand total with no separators.
+    """
+    party = inv.party.legal_name if inv.party else "Party"
+    slug = re.sub(r"[^\w]+", " ", party, flags=re.UNICODE).strip().replace(" ", "-")
+    slug = slug[:60] or "Party"
+    date_part = inv.date.isoformat() if inv.date else "nodate"
+    total = inv.grand_total if inv.grand_total is not None else Decimal("0")
+    return f"{slug} {date_part} {total:.2f}.pdf"
 
 
 def totals_for(inv: Invoice) -> InvoiceTotals:

@@ -1036,7 +1036,8 @@ export function InvoiceEditorPage() {
         <WhatsappSendDialog
           invoiceId={inv.id}
           invoiceNumber={inv.number}
-          defaultPhone={inv.party?.phone ?? ""}
+          partyName={inv.party?.legal_name ?? null}
+          partyPhone={inv.party?.phone ?? null}
           onClose={() => setWaOpen(false)}
         />
       )}
@@ -1045,43 +1046,67 @@ export function InvoiceEditorPage() {
 }
 
 // --------------------------------------------------------------------------
-// send the finalized invoice PDF on WhatsApp (invoice_ready template)
+// send the finalized invoice PDF on WhatsApp (invoice_ready template).
+// Two independent targets: the party's own number (when it has one) and/or
+// any other number typed in. Either or both.
 // --------------------------------------------------------------------------
 
 function WhatsappSendDialog({
   invoiceId,
   invoiceNumber,
-  defaultPhone,
+  partyName,
+  partyPhone,
   onClose,
 }: {
   invoiceId: string;
   invoiceNumber: number | null;
-  defaultPhone: string;
+  partyName: string | null;
+  partyPhone: string | null;
   onClose: () => void;
 }) {
-  const [phone, setPhone] = useState(defaultPhone);
-  const [done, setDone] = useState<string | null>(null);
+  const [toParty, setToParty] = useState(!!partyPhone);
+  const [otherPhone, setOtherPhone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState<{ label: string; ok: boolean; msg: string }[]>([]);
 
-  const send = useMutation({
-    mutationFn: () =>
-      api<{ status: string; wa_message_id: string | null; error: string | null }>(
-        `/invoices/${invoiceId}/whatsapp`,
-        { method: "POST", body: { to_phone: phone.trim() } },
-      ),
-    onMutate: () => setDone(null),
-    onSuccess: (r) =>
-      setDone(
-        r.wa_message_id
-          ? `Sent — the customer will get the invoice PDF shortly.`
-          : `Sent (status "${r.status}").`,
-      ),
-    onError: (e) =>
-      setDone(e instanceof ApiError ? `Failed: ${e.message}` : "Send failed"),
-  });
+  const sendOne = (toPhone: string) =>
+    api<{ status: string; wa_message_id: string | null; error: string | null }>(
+      `/invoices/${invoiceId}/whatsapp`,
+      { method: "POST", body: { to_phone: toPhone } },
+    );
 
-  const digits = phone.replace(/\D/g, "");
-  const canSend = digits.length >= 10 && !send.isPending;
-  const ok = done?.startsWith("Sent");
+  const otherDigits = otherPhone.replace(/\D/g, "");
+  const otherValid = otherDigits.length >= 10;
+  const targets: { label: string; phone: string }[] = [];
+  if (toParty && partyPhone) targets.push({ label: partyName ?? "Party", phone: partyPhone });
+  if (otherValid) targets.push({ label: "Other number", phone: otherPhone.trim() });
+
+  const canSend = targets.length > 0 && !busy;
+  const allDone = results.length > 0 && results.every((r) => r.ok);
+
+  async function run() {
+    setBusy(true);
+    setResults([]);
+    const out: { label: string; ok: boolean; msg: string }[] = [];
+    for (const t of targets) {
+      try {
+        const r = await sendOne(t.phone);
+        out.push({
+          label: t.label,
+          ok: true,
+          msg: r.wa_message_id ? "sent" : `sent (status "${r.status}")`,
+        });
+      } catch (e) {
+        out.push({
+          label: t.label,
+          ok: false,
+          msg: e instanceof ApiError ? e.message : "send failed",
+        });
+      }
+      setResults([...out]);
+    }
+    setBusy(false);
+  }
 
   return (
     <div
@@ -1100,37 +1125,64 @@ function WhatsappSendDialog({
           from this firm's WhatsApp number.
         </p>
 
-        <label className="label mt-4">Recipient WhatsApp number</label>
+        {partyPhone && (
+          <label className="mt-4 flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={toParty}
+              onChange={(e) => setToParty(e.target.checked)}
+            />
+            <span>
+              Send to {partyName ?? "the party"}{" "}
+              <span className="text-muted">({partyPhone})</span>
+            </span>
+          </label>
+        )}
+
+        <label className="label mt-4">
+          {partyPhone ? "Also send to another number" : "Recipient WhatsApp number"}
+        </label>
         <input
           className="field"
-          autoFocus
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
+          autoFocus={!partyPhone}
+          value={otherPhone}
+          onChange={(e) => setOtherPhone(e.target.value)}
           placeholder="9198xxxxxxxx"
           inputMode="tel"
         />
         <p className="mt-1 text-[11px] text-muted">
           Include the country code. A bare 10-digit number is treated as India
-          (+91).
+          (+91). Leave blank to skip.
         </p>
 
-        {done && (
-          <p className={`mt-3 text-xs ${ok ? "text-[#3f7a4f]" : "text-danger"}`}>
-            {done}
-          </p>
+        {results.length > 0 && (
+          <ul className="mt-3 space-y-1 text-xs">
+            {results.map((r, i) => (
+              <li
+                key={i}
+                className={r.ok ? "text-[#3f7a4f]" : "text-danger"}
+              >
+                {r.label}: {r.msg}
+              </li>
+            ))}
+          </ul>
         )}
 
         <div className="mt-5 flex justify-end gap-2">
           <button className="btn-ghost h-9 px-4 text-sm" onClick={onClose}>
-            {ok ? "Close" : "Cancel"}
+            {allDone ? "Close" : "Cancel"}
           </button>
-          {!ok && (
+          {!allDone && (
             <button
               className="btn-primary h-9 px-4 text-sm"
               disabled={!canSend}
-              onClick={() => send.mutate()}
+              onClick={run}
             >
-              {send.isPending ? "Sending…" : "Send"}
+              {busy
+                ? "Sending…"
+                : targets.length > 1
+                  ? `Send to ${targets.length}`
+                  : "Send"}
             </button>
           )}
         </div>

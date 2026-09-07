@@ -329,11 +329,6 @@ def _phone_e164(raw: str) -> str:
     return digits
 
 
-def _pdf_filename(invoice: Invoice) -> str:
-    num = invoice.number or "draft"
-    return f"Invoice-{num}.pdf"
-
-
 def send_invoice(
     session: Session,
     invoice: Invoice,
@@ -405,8 +400,10 @@ def send_invoice(
     session.add(msg)
     session.flush()
 
+    from app.services.invoices.common import download_name
+
     media_id: str | None = None
-    filename = _pdf_filename(invoice)
+    filename = download_name(invoice)
     try:
         if invoice.pdf_path and Path(invoice.pdf_path).exists():
             media_id = upload_media(cfg, invoice.pdf_path, filename=filename)
