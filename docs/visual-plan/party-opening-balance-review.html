@@ -148,13 +148,14 @@
 <div class="wrap">
 
   <h1>Party Opening Balance</h1>
-  <p class="sub">Visual review — mockups only, nothing built yet. Palette + primitives mirror <code>web/src/index.css</code>.</p>
+  <p class="sub">Design review. Palette + primitives mirror <code>web/src/index.css</code>. Not a live page — don't open in a browser as a build.</p>
 
   <div class="banner" style="background:#eef3ee;border-color:var(--ok);color:#2f5d3a;">
-    <b>BUILT 2026-09-07 — uncommitted, not deployed.</b> Backend suite green (+7 tests), frontend tsc/eslint/build clean.
-    Migration <code>0021</code> applies on next <code>alembic upgrade head</code>. These panels are the design intent;
-    the shipped code matches them. Touch points: (1) Details form field, (2) Account-tab statement,
-    (3) invoice editor's "Bill&nbsp;to" block — <b>editable inline for a new client</b>, (4) the invoice picker's Quick-Create-Party dialog.
+    <b>BUILT 2026-09-07 — uncommitted, not deployed.</b> Full backend suite green (374 passed / 1 skip, +10 tests),
+    frontend tsc/eslint/build clean. Migration <code>0021</code> applies on next <code>alembic upgrade head</code>.
+    These panels are the design intent; the shipped code matches them. Touch points: (1) Details form field,
+    (2) Account-tab statement, (3) invoice editor's "Bill&nbsp;to" block — <b>editable inline for a new client</b>,
+    (4) the invoice picker's Quick-Create-Party dialog, (5) the invoice PDF's "previous outstanding" block.
     Rule: <b>editable only while the party has zero ledger history</b> (no finalized invoices, no payments); locks after the first transaction.
   </div>
   <p class="note">
@@ -455,13 +456,40 @@
   </div>
 
   <!-- ============================================================ -->
+  <h2>5 · Invoice PDF — the "previous outstanding" block</h2>
+  <p class="sub">Added after the first review. On a finalized invoice's PDF, below Grand Total, whenever the party owes anything else (opening balance and/or other unpaid invoices). Omitted entirely when that's ₹0.</p>
+
+  <div class="frame" style="max-width:460px;">
+    <div class="frame-cap">invoice_v1_nongst.html · totals box (tail)</div>
+    <div class="frame-body">
+      <table style="width:100%;font-size:13px;border-collapse:collapse;">
+        <tr><td style="padding:3px 0;">Net Amount</td><td style="text-align:right;">8,918.75</td></tr>
+        <tr><td style="padding:3px 0;">Round Off</td><td style="text-align:right;">0.25</td></tr>
+        <tr style="font-weight:700;border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);">
+          <td style="padding:5px 0;">Grand Total</td><td style="text-align:right;">8,919.00</td></tr>
+        <tr><td style="padding:3px 0;">Previous outstanding (before this bill)</td><td style="text-align:right;">10,000.00</td></tr>
+        <tr><td style="padding:3px 0;">Add: This invoice</td><td style="text-align:right;">8,919.00</td></tr>
+        <tr style="font-weight:700;border-top:2px solid var(--ink);border-bottom:3px double var(--ink);">
+          <td style="padding:5px 0;">Total amount due</td><td style="text-align:right;">18,919.00</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <p class="note">
+    <code>previous_outstanding_for_party(party_id, exclude_invoice_id=this)</code> = opening balance + Σ <code>balance_due</code>
+    of the party's <b>other</b> finalized invoices − on-account credit. Uses each other invoice's <b>live</b> balance,
+    so a later payment on an earlier bill lowers this figure on a re-render. Net-credit party → shows negative.
+  </p>
+
+  <!-- ============================================================ -->
   <h2>What changes</h2>
   <ul class="pts">
     <li><b>Migration 0021</b> — <code>party.opening_balance NUMERIC(14,2) NOT NULL DEFAULT 0</code>, <code>party.opening_balance_as_of DATE NULL</code>.</li>
-    <li><b>payments.py</b> — <code>has_ledger_history()</code> helper; <code>party_ledger()</code> seeds the running balance and prepends a synthetic <code>kind="opening"</code> entry; <code>outstanding_balance_for_party()</code> and the collections aggregate add the opening term.</li>
+    <li><b>payments.py</b> — <code>has_ledger_history()</code> helper; <code>party_ledger()</code> seeds the running balance and prepends a synthetic <code>kind="opening"</code> entry; <code>outstanding_balance_for_party()</code> and the collections aggregate add the opening term; <code>previous_outstanding_for_party(..., exclude_invoice_id=)</code> for the PDF.</li>
     <li><b>parties.py</b> — <code>_out()</code> returns <code>opening_balance</code>, <code>opening_balance_as_of</code>, <code>opening_balance_locked</code>; <code>update_party()</code> returns <code>409</code> if a locked opening balance is changed.</li>
     <li><b>Schemas</b> — fields on <code>PartyBase</code> / <code>PartyOut</code> / <code>PartyUpdate</code>; <code>"opening"</code> added to <code>PartyLedgerEntry.kind</code>.</li>
-    <li><b>Web</b> — <code>PartyForm</code> field (disabled when locked); <code>PartyAccountTab</code> renders the opening row; <code>InvoiceEditorPage</code> "Bill to" block: <b>editable ₹ field when the picked party is unlocked</b> (PATCH on blur), read-only balance line when locked; <code>QuickCreatePartyDialog</code> gets the ₹ + as-of fields; <code>PartyListItem</code> carries <code>opening_balance</code> + <code>opening_balance_locked</code>.</li>
+    <li><b>Web</b> — <code>PartyForm</code> + <code>NewPartyForm</code> fields (disabled when locked); <code>PartyAccountTab</code> renders the opening row; <code>InvoiceEditorPage</code> "Bill to" block: <b>editable ₹ field when the picked party is unlocked</b> (PATCH on blur), read-only balance line when locked; <code>QuickCreatePartyDialog</code> gets the ₹ + as-of fields; <code>PartyListItem</code> carries <code>opening_balance</code> + <code>opening_balance_locked</code>.</li>
+    <li><b>PDF</b> — <code>services/invoices/pdf.py</code> + <code>invoice_v1_nongst.html</code>: previous-outstanding / total-amount-due block below Grand Total.</li>
   </ul>
 
 </div>

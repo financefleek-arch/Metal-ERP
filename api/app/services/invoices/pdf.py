@@ -26,7 +26,11 @@ from app.config import get_settings
 from app.models import Invoice, Party, PartyAddress, Tenant
 from app.models._mixins import InvoiceStatus, PdfStatus
 from app.services.invoices.common import measure_for
-from app.services.payments import balance_due_for_invoice, paid_amount_for_invoice
+from app.services.payments import (
+    balance_due_for_invoice,
+    paid_amount_for_invoice,
+    previous_outstanding_for_party,
+)
 
 _TEMPLATE_DIR = Path(__file__).resolve().parents[2] / "templates"
 _env = Environment(
@@ -123,9 +127,22 @@ def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
     # rather than printing a redundant "Balance due: 0.00".
     paid_amount = None
     balance_due = None
+    # Previous outstanding = everything the party owed us NOT counting this
+    # bill (opening balance + other finalized invoices' balance_due − credit).
+    # Printed as: "Previous outstanding" + "Grand Total (this invoice)" =
+    # "Total amount due". Shown only when it's non-zero.
+    previous_outstanding = None
+    total_amount_due = None
     if invoice.status == InvoiceStatus.final:
         paid_amount = paid_amount_for_invoice(session, invoice.id)
         balance_due = balance_due_for_invoice(session, invoice)
+        if invoice.party_id:
+            prev = previous_outstanding_for_party(
+                session, invoice.party_id, exclude_invoice_id=invoice.id
+            )
+            if prev != 0:
+                previous_outstanding = prev
+                total_amount_due = prev + (invoice.grand_total or 0)
 
     html = _env.get_template("invoice_v1_nongst.html").render(
         doc_label=(tenant.document_label if tenant else "Invoice"),
@@ -140,6 +157,8 @@ def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
         seg_break_after={s.line_to: s for s in measure.segments},
         paid_amount=paid_amount,
         balance_due=balance_due,
+        previous_outstanding=previous_outstanding,
+        total_amount_due=total_amount_due,
     )
 
     out_dir = Path(settings.pdf_dir)

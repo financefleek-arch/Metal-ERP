@@ -209,3 +209,93 @@ def test_reversed_payment_does_not_count_on_pdf(client: TestClient, session: Ses
     assert paid == Decimal("0.00")
     assert balance == Decimal("300.00")
     assert _render_totals_block(paid, balance).strip() == ""
+
+
+# --------------------------------------------------------------------------
+# previous outstanding block
+# --------------------------------------------------------------------------
+
+from app.services.payments import previous_outstanding_for_party  # noqa: E402
+
+
+def _render_prev_block(previous_outstanding, this_invoice, total_amount_due) -> str:
+    tmpl = _env.from_string(
+        """
+        {% if previous_outstanding is not none %}
+        Previous outstanding (before this bill): {{ previous_outstanding|money }}
+        Add: This invoice: {{ this_invoice|money }}
+        Total amount due: {{ total_amount_due|money }}
+        {% endif %}
+        """
+    )
+    return tmpl.render(
+        previous_outstanding=previous_outstanding,
+        this_invoice=this_invoice,
+        total_amount_due=total_amount_due,
+    )
+
+
+def _prev_context(session: Session, invoice: Invoice):
+    """Mirrors render_invoice_pdf's previous-outstanding gating."""
+    if invoice.status != InvoiceStatus.final or not invoice.party_id:
+        return None, None
+    prev = previous_outstanding_for_party(
+        session, invoice.party_id, exclude_invoice_id=invoice.id
+    )
+    if prev == 0:
+        return None, None
+    return prev, prev + (invoice.grand_total or 0)
+
+
+def test_previous_outstanding_from_opening_balance(client: TestClient, session: Session) -> None:
+    """A new client with an opening balance and one fresh invoice: the PDF
+    shows 'previous outstanding' = the opening balance, and 'total amount
+    due' = opening + this invoice's grand total."""
+    h = _h(_register(client, "pdf5@x.example.com"))
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Opening PDF Co", "opening_balance": "10000.00"},
+    )
+    pid = r.json()["id"]
+    inv = _finalized_invoice(client, h, pid, "8919.00")
+
+    invoice = session.get(Invoice, inv["id"])
+    prev, total = _prev_context(session, invoice)
+    assert prev == Decimal("10000.00")
+    assert total == prev + Decimal(invoice.grand_total)
+
+    block = _render_prev_block(prev, invoice.grand_total, total)
+    assert "Previous outstanding (before this bill): 10,000.00" in block
+    assert "Add: This invoice: 8,919.00" in block
+    assert "Total amount due: 18,919.00" in block
+
+
+def test_previous_outstanding_omitted_when_zero(client: TestClient, session: Session) -> None:
+    """A party with no opening balance and no other bills: the block is
+    omitted entirely, not printed as 0.00."""
+    h = _h(_register(client, "pdf6@x.example.com"))
+    pid = _party(client, h)
+    inv = _finalized_invoice(client, h, pid, "500.00")
+
+    invoice = session.get(Invoice, inv["id"])
+    prev, total = _prev_context(session, invoice)
+    assert prev is None and total is None
+    assert _render_prev_block(prev, invoice.grand_total, total).strip() == ""
+
+
+def test_previous_outstanding_counts_other_invoices_not_this_one(
+    client: TestClient, session: Session
+) -> None:
+    """Two finalized invoices for the same party: on the second bill, the
+    'previous outstanding' is the first bill's balance only — never double
+    counting the bill the PDF is for."""
+    h = _h(_register(client, "pdf7@x.example.com"))
+    pid = _party(client, h)
+    inv1 = _finalized_invoice(client, h, pid, "1000.00")
+    inv2 = _finalized_invoice(client, h, pid, "2000.00")
+
+    invoice2 = session.get(Invoice, inv2["id"])
+    prev, total = _prev_context(session, invoice2)
+    assert prev == Decimal(session.get(Invoice, inv1["id"]).grand_total)
+    assert total == prev + Decimal(invoice2.grand_total)

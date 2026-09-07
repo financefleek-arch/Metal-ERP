@@ -114,6 +114,33 @@ def outstanding_balance_for_party(session: Session, party_id: str) -> Decimal:
     )
 
 
+def previous_outstanding_for_party(
+    session: Session, party_id: str, *, exclude_invoice_id: str
+) -> Decimal:
+    """The party's outstanding balance NOT counting one invoice — used on that
+    invoice's PDF as "previous outstanding before this bill". It's the opening
+    balance plus the balance_due of every *other* finalized invoice, minus
+    on-account credit. Signed (a net-credit party is negative).
+
+    Note this uses each other invoice's *live* balance_due, so a payment later
+    made against an earlier bill correctly reduces the "previous" figure on a
+    re-render.
+    """
+    invoices = session.scalars(
+        select(Invoice).where(
+            Invoice.party_id == party_id,
+            Invoice.status == InvoiceStatus.final,
+            Invoice.id != exclude_invoice_id,
+        )
+    ).all()
+    gross = sum((balance_due_for_invoice(session, inv) for inv in invoices), _ZERO)
+    return (
+        opening_balance_for_party(session, party_id)
+        + gross
+        - on_account_balance_for_party(session, party_id)
+    )
+
+
 def open_invoices_for_party(session: Session, party_id: str) -> list[Invoice]:
     """Finalized invoices for this party with balance_due > 0, oldest first
     (matches invoice numbering order) — feeds the FIFO-default allocation
@@ -440,6 +467,7 @@ __all__ = [
     "on_account_balance_for_party",
     "opening_balance_for_party",
     "outstanding_balance_for_party",
+    "previous_outstanding_for_party",
     "open_invoices_for_party",
     "collections_summary",
     "CollectionsSummaryRow",

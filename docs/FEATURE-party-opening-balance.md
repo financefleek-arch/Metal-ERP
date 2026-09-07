@@ -1,10 +1,30 @@
 # Party opening balance — editable, history-gated
 
 Status: **BUILT 2026-09-07, uncommitted.** Full backend suite green
-(4 new payments tests + 3 new parties-CRUD tests); frontend `tsc`, eslint,
-`npm run build` all clean. NOT deployed, NOT committed (user does check-ins).
-Migration `0021` applies on the next `alembic upgrade head`. Visual review:
+(374 passed / 1 skip); +4 payments tests, +3 parties-CRUD tests,
++3 PDF-context tests. Frontend `tsc`, eslint, `npm run build` all clean.
+NOT deployed, NOT committed (user does check-ins). Migration `0021` applies
+on the next `alembic upgrade head`. Visual review:
 `docs/visual-plan/party-opening-balance-review.html`.
+
+**Invoice PDF — "previous outstanding" block (added after first review):**
+a finalized invoice's PDF now prints, below Grand Total, when the party
+owes anything else:
+
+```
+Previous outstanding (before this bill)   10,000.00
+Add: This invoice                          8,919.00
+Total amount due                          18,919.00
+```
+
+`previous_outstanding_for_party(session, party_id, exclude_invoice_id=...)`
+= opening balance + Σ balance_due of the party's *other* finalized invoices
+− on-account credit. Omitted entirely when that is 0 (never printed as
+"0.00"). Uses each other invoice's *live* balance_due so a later payment on
+an earlier bill reduces the figure on a re-render. Sign follows the ledger
+(a net-credit party shows negative). Wired in `services/invoices/pdf.py`
++ `templates/invoice_v1_nongst.html`; the editor has no A4 preview so no FE
+change there.
 
 Editable from invoice entry for a new client via **both** entry points —
 (a) fields in the invoice picker's Quick-Create-Party dialog, and (b) an
@@ -183,9 +203,21 @@ Collections aggregate have the same blind spot.
 - Visual review done before UI coding; not committed / not pushed — user
   does check-ins.
 
+## Sign convention — for the reviewer
+
+**Positive = the party owes you.** An opening balance of ₹10,000 = "they
+owed us ₹10,000 before this system started." It adds to what invoices then
+pile on, so on the Account tab: opening `+₹10,000` → INV `+₹8,919` →
+outstanding **₹18,919**. You enter a **negative** opening balance only for
+a customer advance (you owe them) — it then shows as a green credit row.
+This matches how invoice amounts add up; no double meaning.
+
 ## Not doing
 
 - Tally import of opening balances (explicit: it does not come from Tally).
 - Any "edit the opening balance later, with an audit trail" flow — once
   locked it's locked; a correction goes through a payment/adjustment
   entry instead (same philosophy as payment reversal, not editing).
+- A live "previous outstanding" line in the on-screen invoice editor —
+  there's no A4 preview component; the party's current balance is already
+  shown by `PartyOpeningBlock` under "Bill to". The PDF block is enough.

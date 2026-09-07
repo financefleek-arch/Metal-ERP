@@ -163,6 +163,11 @@
           <tr class="totrow"><td>Amount Received</td><td class="r">{{ paid_amount|money }}</td></tr>
           <tr class="totrow b"><td>Balance Due</td><td class="r">{{ balance_due|money }}</td></tr>
           {% endif %}
+          {% if previous_outstanding is not none %}
+          <tr class="totrow"><td>Previous outstanding (before this bill)</td><td class="r">{{ previous_outstanding|money }}</td></tr>
+          <tr class="totrow"><td>Add: This invoice</td><td class="r">{{ invoice.grand_total|money }}</td></tr>
+          <tr class="grand"><td>Total amount due</td><td class="r">{{ total_amount_due|money }}</td></tr>
+          {% endif %}
         </table>
       </td>
     </tr>
