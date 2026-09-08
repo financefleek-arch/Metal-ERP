@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
 
@@ -233,3 +233,46 @@ class PartyListItem(BaseModel):
     opening_balance: OpeningBalance = Decimal("0.00")
     opening_balance_locked: bool = False
     completeness: PartyCompleteness
+
+
+# --------------------------------------------------------------------------
+# de-duplication — resolve_party result + the structured 409 body
+# --------------------------------------------------------------------------
+
+
+class PartyMatchRef(BaseModel):
+    """One existing party surfaced by resolve_party — enough for the operator
+    to recognise it and pick it instead of creating a duplicate.
+    """
+
+    id: str
+    legal_name: str
+    gstin: str | None = None
+    phone: str | None = None
+    city: str | None = None
+    last_txn_at: datetime | None = None
+    status: str
+    score: float | None = None
+
+
+class PartyDuplicate409(BaseModel):
+    """`detail` payload of the 409 create/rename returns on a likely duplicate.
+
+    - `party_exists`   — GSTIN / phone / exact-name hit. `match` is set.
+                         Not bypassable (`?force=true` is ignored for these).
+    - `party_maybe_exists` — fuzzy / ambiguous. `candidates` is set. The client
+                         may re-send with `?force=true` after the operator
+                         confirms it is genuinely new.
+    """
+
+    code: Literal["party_exists", "party_maybe_exists"]
+    message: str
+    match: PartyMatchRef | None = None
+    candidates: list[PartyMatchRef] = Field(default_factory=list)
+
+
+class PartyResolveResult(BaseModel):
+    method: str | None
+    confidence: float | None
+    weak: bool
+    candidates: list[PartyMatchRef] = Field(default_factory=list)

@@ -29,6 +29,9 @@ class StagingTallyItem(PkUuidMixin, Base):
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
     batch_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    # Set when the batch was produced by a Tally Connector pull (F1a); null
+    # for a plain file-upload batch.
+    sync_job_id: Mapped[str | None] = mapped_column(String(36))
 
     # --- from the XML ---
     tally_guid: Mapped[str | None] = mapped_column(String(64))

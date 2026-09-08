@@ -26,6 +26,7 @@ from app.models.item_classify_rule import ItemClassifyRule
 from app.models.party import Party, PartyAddress
 from app.models.payment import Payment, PaymentAllocation
 from app.models.tally_agent import AgentOutboxItem, BackupShop, BackupUpload
+from app.models.tally_connector import TallyCompany, TallyLink, TallySyncJob
 from app.models.tally_import import StagingTallyParty
 from app.models.tally_stock_import import StagingTallyItem
 from app.models.tenant import Tenant, User
@@ -58,6 +59,9 @@ __all__ = [
     "PaymentAllocation",
     "StagingTallyItem",
     "StagingTallyParty",
+    "TallyCompany",
+    "TallyLink",
+    "TallySyncJob",
     "Tenant",
     "TenantWhatsappConfig",
     "User",

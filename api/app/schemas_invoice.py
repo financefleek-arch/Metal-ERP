@@ -18,6 +18,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models._mixins import InvoiceStatus, PdfStatus
 
 PaymentStatusLabel = Literal["unpaid", "partial", "paid"]
+# pending/sent/delivered/read/failed from whatsapp_message.status; the list
+# row carries only the latest one, or None when nothing was ever sent.
+WhatsappStatusLabel = Literal["pending", "sent", "delivered", "read", "failed"]
 
 Money = Annotated[Decimal, Field(max_digits=15, decimal_places=2)]
 Qty = Annotated[Decimal, Field(max_digits=15, decimal_places=3)]
@@ -208,6 +211,25 @@ class InvoiceListItem(BaseModel):
     grand_total: Money | None
     pdf_status: PdfStatus
     payment_status: PaymentStatusLabel | None = None
+    # Latest whatsapp_message.status for this invoice, None if never sent.
+    whatsapp_status: WhatsappStatusLabel | None = None
+
+
+class InvoiceWhatsappMessageOut(BaseModel):
+    """One row of the per-invoice WhatsApp send log."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    to_phone: str
+    template_name: str
+    status: WhatsappStatusLabel
+    error: str | None = None
+    wa_message_id: str | None = None
+    sent_at: datetime_t | None = None
+    delivered_at: datetime_t | None = None
+    read_at: datetime_t | None = None
+    created_at: datetime_t
 
 
 class FinalizeOut(BaseModel):

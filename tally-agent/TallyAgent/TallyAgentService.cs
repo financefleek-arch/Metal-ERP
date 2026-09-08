@@ -63,10 +63,12 @@ public sealed class TallyAgentService(
 
             if (now - lastCheckin >= CheckinInterval)
             {
-                await backend.CheckinAsync(
+                var resp = await backend.CheckinAsync(
                     ctx.ModuleStatusSnapshot.ToDictionary(kv => kv.Key, kv => kv.Value),
                     ctx.LastErrorSnapshot,
                     stoppingToken);
+                // Hand this round's outbox to modules for the next round.
+                ctx.SetPendingOutbox(resp?.Outbox ?? new List<Backend.OutboxItem>());
                 lastCheckin = now;
             }
 

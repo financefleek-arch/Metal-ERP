@@ -318,3 +318,103 @@ def test_opening_balance_editable_via_patch_before_history(client: TestClient) -
     )
     assert r.status_code == 200, r.text
     assert r.json()["opening_balance"] == "800.00"
+
+
+# --------------------------------------------------------------------------
+# de-duplication gate — structured 409 (party_exists / party_maybe_exists)
+# --------------------------------------------------------------------------
+
+_PG_ONLY = pytest.mark.skipif(
+    "sqlite" in __import__("os").environ.get("DATABASE_URL", "sqlite"),
+    reason="trigram fuzzy rung is Postgres-only",
+)
+
+
+def test_create_exact_key_variant_returns_structured_409(client: TestClient) -> None:
+    h = _auth(_register(client, "dup1@x.example.com"))
+    made = _mk(client, h, "Steel Traders Pvt Ltd")
+    # double space + different suffix spelling -> same normalized key
+    r = client.post(
+        "/api/parties", headers=h, json={"legal_name": "STEEL  TRADERS PRIVATE LIMITED"}
+    )
+    assert r.status_code == 409, r.text
+    d = r.json()["detail"]
+    assert d["code"] == "party_exists"
+    assert d["match"]["id"] == made["id"]
+    assert d["candidates"] == []
+
+
+def test_create_gstin_clash_different_name_409(client: TestClient) -> None:
+    h = _auth(_register(client, "dup2@x.example.com"))
+    made = _mk(client, h, "Alpha Metals", gstin="19BHBPK1450P1Z3")
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Completely Other Name", "gstin": "19BHBPK1450P1Z3"},
+    )
+    assert r.status_code == 409, r.text
+    d = r.json()["detail"]
+    assert d["code"] == "party_exists"
+    assert "GSTIN" in d["message"]
+    assert d["match"]["id"] == made["id"]
+
+
+def test_create_phone_clash_409(client: TestClient) -> None:
+    h = _auth(_register(client, "dup3@x.example.com"))
+    made = _mk(client, h, "Beta Steel", phone="9812345678")
+    r = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Another Firm", "phone": "+91 98123-45678"},
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "party_exists"
+    assert r.json()["detail"]["match"]["id"] == made["id"]
+
+
+def test_force_does_not_bypass_exact_key(client: TestClient) -> None:
+    h = _auth(_register(client, "dup4@x.example.com"))
+    _mk(client, h, "Steel Traders")
+    r = client.post(
+        "/api/parties?force=true", headers=h, json={"legal_name": "steel traders"}
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "party_exists"
+
+
+def test_create_clean_new_name_persists_key(client: TestClient) -> None:
+    h = _auth(_register(client, "dup5@x.example.com"))
+    p = _mk(client, h, "Fresh Unique Traders")
+    # resolve should now find it by exact key
+    r = client.post(
+        "/api/parties/resolve?name=fresh%20%20unique%20traders", headers=h
+    )
+    assert r.json()["method"] == "exact"
+    assert r.json()["candidates"][0]["id"] == p["id"]
+
+
+def test_patch_rename_onto_existing_key_structured_409(client: TestClient) -> None:
+    h = _auth(_register(client, "dup6@x.example.com"))
+    _mk(client, h, "Alpha Traders")
+    b = _mk(client, h, "Beta Traders")
+    r = client.patch(
+        f"/api/parties/{b['id']}", headers=h, json={"legal_name": "ALPHA  TRADERS"}
+    )
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "party_exists"
+
+
+@_PG_ONLY
+def test_create_fuzzy_similar_warns_then_force(client: TestClient) -> None:
+    h = _auth(_register(client, "dup7@x.example.com"))
+    _mk(client, h, "Steel Traders")
+    r = client.post("/api/parties", headers=h, json={"legal_name": "Steel Tradrs"})
+    assert r.status_code == 409
+    d = r.json()["detail"]
+    assert d["code"] == "party_maybe_exists"
+    assert len(d["candidates"]) >= 1
+    # operator confirms it is genuinely new
+    ok = client.post(
+        "/api/parties?force=true", headers=h, json={"legal_name": "Steel Tradrs"}
+    )
+    assert ok.status_code == 201

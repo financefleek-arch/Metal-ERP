@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Invoice list — streamline + WhatsApp tracking</title>
+<style>
+  :root{
+    --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a;
+    --accent:#2f6f89; --accent-dark:#245771; --accent-soft:#eef4f7;
+    --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b;
+    --wa:#25a566;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif;padding:32px 20px 80px}
+  h1{font-family:"Fraunces",Georgia,serif;font-size:24px;margin:0 0 4px}
+  h2{font-family:"Fraunces",Georgia,serif;font-size:17px;margin:36px 0 6px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px;max-width:70ch}
+  .wrap{max-width:1040px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .note{background:#fbf8f2;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    font-size:12.5px;color:var(--muted);margin:10px 0}
+  .note b{color:var(--ink)}
+  code{background:#efeae0;border-radius:3px;padding:1px 4px;font-size:12px}
+
+  /* ---- shared badge styles ---- */
+  .badge{display:inline-flex;align-items:center;gap:3px;border-radius:3px;
+    padding:1px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;white-space:nowrap}
+  .b-final{background:#e3efe6;color:#3f7a4f}
+  .b-draft{background:#f1e7d6;color:var(--warn)}
+  .b-cancel{background:#f1e0e0;color:var(--danger)}
+  .b-paid{background:var(--accent-soft);color:var(--accent)}
+  .b-partial{background:#f1e7d6;color:var(--warn)}
+  .b-unpaid{background:#f1e0e0;color:var(--danger)}
+
+  /* ---- CURRENT layout ---- */
+  .cur-head,.cur-row{display:grid;grid-template-columns:56px 84px 1fr 116px 84px 236px;gap:8px;
+    align-items:center;padding:10px 14px}
+  .cur-head{background:var(--ground);font-size:10px;font-weight:700;text-transform:uppercase;
+    color:var(--muted);letter-spacing:.04em;border-bottom:1px solid var(--line)}
+  .cur-row{border-bottom:1px solid #f3eee4;font-size:13.5px}
+  .cur-row:last-child{border-bottom:0}
+  .num{font-family:ui-monospace,monospace;font-weight:600;color:var(--accent)}
+  .amt{text-align:right;font-family:ui-monospace,monospace}
+  .statuses{display:flex;flex-wrap:wrap;gap:4px}
+  .acts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px}
+  .btn{border:1px solid var(--line);background:var(--card);border-radius:6px;
+    padding:4px 9px;font-size:11px;color:var(--ink);cursor:pointer}
+  .btn.danger{color:var(--danger)}
+  .btn.mini{padding:3px 7px;font-size:10.5px}
+
+  /* ---- NEW layout ---- */
+  .new-head,.new-row{display:grid;grid-template-columns:48px minmax(200px,1fr) 128px 140px 40px;gap:12px;
+    align-items:center;padding:12px 14px}
+  .new-head{background:var(--ground);font-size:10px;font-weight:700;text-transform:uppercase;
+    color:var(--muted);letter-spacing:.04em;border-bottom:1px solid var(--line)}
+  .new-row{border-bottom:1px solid #f3eee4}
+  .new-row:last-child{border-bottom:0}
+  .new-row:hover{background:#fcfbf8}
+  .party{font-weight:600;font-size:14px}
+  .meta{color:var(--muted);font-size:11.5px;margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .amt-cell{text-align:right}
+  .amt-big{font-family:ui-monospace,monospace;font-size:14px;font-weight:600}
+  .amt-sub{font-size:11px;margin-top:2px}
+  .pay-dot{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600}
+  .dot{width:7px;height:7px;border-radius:50%}
+  .d-paid{background:var(--ok)} .d-partial{background:var(--warn)} .d-unpaid{background:var(--danger)}
+  .state{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+  .s-final{color:#3f7a4f} .s-draft{color:var(--warn)} .s-cancel{color:var(--danger)}
+
+  /* whatsapp chip */
+  .wa{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;white-space:nowrap}
+  .wa svg{width:13px;height:13px;flex:0 0 auto}
+  .wa-none{color:#b7b1a4}
+  .wa-sent{color:var(--muted)}
+  .wa-delivered{color:var(--wa)}
+  .wa-read{color:var(--wa)}
+  .wa-failed{color:var(--danger)}
+  .ticks{letter-spacing:-2px;font-size:12px}
+
+  /* kebab */
+  .kebab{border:0;background:transparent;font-size:18px;line-height:1;color:var(--muted);
+    cursor:pointer;padding:4px 8px;border-radius:6px}
+  .kebab:hover{background:var(--ground)}
+
+  .menu{position:relative}
+  /* mock: menus are hidden until their row's kebab is clicked (tiny script at end) */
+  .menu-pop{display:none;position:absolute;right:0;top:110%;background:var(--card);border:1px solid var(--line);
+    border-radius:8px;box-shadow:0 6px 24px rgba(0,0,0,.14);padding:4px;min-width:170px;z-index:20}
+  .menu.open .menu-pop{display:block}
+  .menu.open .kebab{background:var(--ground)}
+  .menu-pop button{display:block;width:100%;text-align:left;border:0;background:transparent;
+    padding:7px 10px;font-size:12.5px;border-radius:5px;cursor:pointer;color:var(--ink)}
+  .menu-pop button:hover{background:var(--ground)}
+  .menu-pop button.danger{color:var(--danger)}
+  .menu-pop hr{border:0;border-top:1px solid var(--line);margin:4px 0}
+
+  /* mobile card */
+  .mcard{border:1px solid var(--line);border-radius:10px;background:var(--card);padding:12px 14px;max-width:400px}
+  .mrow{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .mrow + .mrow{margin-top:8px}
+
+  /* detail-panel mock */
+  .panel{max-width:520px;border:1px solid var(--line);border-radius:10px;background:var(--card);padding:16px}
+  .panel h3{margin:0 0 2px;font-family:"Fraunces",serif;font-size:15px}
+  .log-line{display:grid;grid-template-columns:1fr auto;gap:8px;padding:8px 0;border-bottom:1px solid #f3eee4;font-size:12.5px}
+  .log-line:last-child{border-bottom:0}
+  .log-sub{color:var(--muted);font-size:11px;margin-top:2px}
+  .pill-btn{border:1px solid var(--line);background:var(--card);border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer}
+
+  .legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--muted);margin:8px 0 0}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Invoice list — streamline before adding WhatsApp tracking</h1>
+  <p class="sub">
+    <b>BUILT 2026-09-08</b> (uncommitted). Decisions locked: WhatsApp column =
+    <b>glyph + word</b> (§2); <b>PDF stays a visible row button</b>, everything
+    else in the ⋯ menu; payment = <b>dot + word in the meta line</b> (§2);
+    <b>"FINAL" dropped</b> — only Draft / Cancelled get a coloured word.
+    §3 (glyph-only) and the "keep the pill" variants were not taken.
+  </p>
+
+  <!-- ============================================================= -->
+  <h2>1 · Where we are today</h2>
+  <p class="sub">
+    Two stacked status badges (<code>FINAL</code> over <code>UNPAID</code>) +
+    three-to-four always-visible action buttons per row. Dense, repetitive,
+    and there is nowhere left to put a WhatsApp indicator without a third badge stack.
+  </p>
+
+  <div class="card">
+    <div class="cur-head">
+      <span>No.</span><span>Date</span><span>Party</span>
+      <span style="text-align:right">Amount</span><span>Status</span>
+      <span style="text-align:right">Actions</span>
+    </div>
+    <div class="cur-row">
+      <span class="num">—</span><span style="color:var(--muted)">05 Sep 26</span>
+      <span>NILESH GHOSH</span><span class="amt">—</span>
+      <span class="statuses"><span class="badge b-draft">Draft</span></span>
+      <span class="acts">
+        <button class="btn">Edit</button><button class="btn">Duplicate</button>
+        <button class="btn danger">Delete</button>
+      </span>
+    </div>
+    <div class="cur-row">
+      <span class="num">28</span><span style="color:var(--muted)">08 Sep 26</span>
+      <span>Jorerhang Metal</span><span class="amt">₹ 82,554.00</span>
+      <span class="statuses"><span class="badge b-final">Final</span><span class="badge b-unpaid">Unpaid</span></span>
+      <span class="acts">
+        <button class="btn">View</button><button class="btn">PDF</button><button class="btn">Duplicate</button>
+      </span>
+    </div>
+    <div class="cur-row">
+      <span class="num">27</span><span style="color:var(--muted)">08 Sep 26</span>
+      <span>Omiyo</span><span class="amt">₹ 10,395.00</span>
+      <span class="statuses"><span class="badge b-final">Final</span><span class="badge b-paid">Paid</span></span>
+      <span class="acts">
+        <button class="btn">View</button><button class="btn">PDF</button><button class="btn">Duplicate</button>
+      </span>
+    </div>
+    <div class="cur-row">
+      <span class="num">24</span><span style="color:var(--muted)">07 Sep 26</span>
+      <span>S Taluk Da</span><span class="amt">₹ 10,306.00</span>
+      <span class="statuses"><span class="badge b-final">Final</span><span class="badge b-partial">Partial</span></span>
+      <span class="acts">
+        <button class="btn">View</button><button class="btn">PDF</button><button class="btn">Duplicate</button>
+      </span>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Problems.</b> (1) <code>FINAL</code> repeats on every numbered row — it is
+    implied by having a number. (2) Payment state is the <i>useful</i> signal but
+    it is the second, smaller badge. (3) Four buttons wide; "Duplicate" and
+    "Delete" are rare. (4) No room for WhatsApp / email / print status without a
+    third stacked badge.
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>2 · Streamlined row (proposed)</h2>
+  <p class="sub">
+    Number + party lead. State becomes one quiet word, not a badge. Payment
+    becomes a coloured dot + word in the amount cell (where money belongs).
+    Primary action is the whole row (opens the invoice); everything else collapses
+    into one <b>⋯</b> menu. A single WhatsApp column shows send status at a glance.
+  </p>
+
+  <div class="card">
+    <div class="new-head">
+      <span>No.</span><span>Party</span><span style="text-align:right">Amount</span>
+      <span>WhatsApp</span><span></span>
+    </div>
+
+    <!-- draft -->
+    <div class="new-row">
+      <span class="num">—</span>
+      <span>
+        <div class="party" style="font-style:italic;color:var(--muted)">NILESH GHOSH</div>
+        <div class="meta"><span class="state s-draft">Draft</span><span>05 Sep 26</span></div>
+      </span>
+      <span class="amt-cell"><div class="amt-big" style="color:var(--muted)">—</div></span>
+      <span class="wa wa-none">—</span>
+      <span class="menu">
+        <button class="kebab">⋯</button>
+        <div class="menu-pop">
+          <button>Open / edit</button>
+          <button>Duplicate</button>
+          <hr>
+          <button class="danger">Delete draft</button>
+        </div>
+      </span>
+    </div>
+
+    <!-- final, unpaid, WA delivered -->
+    <div class="new-row">
+      <span class="num">28</span>
+      <span>
+        <div class="party">Jorerhang Metal</div>
+        <div class="meta">
+          <span class="state s-final">Final</span><span>08 Sep 26</span>
+          <span class="pay-dot"><span class="dot d-unpaid"></span>Unpaid</span>
+        </div>
+      </span>
+      <span class="amt-cell"><div class="amt-big">₹ 82,554.00</div></span>
+      <span class="wa wa-delivered" title="Sent to +91 98xxxxxx02 · delivered 14:03">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.7 15l-1.2 4.4 4.5-1.2A10 10 0 1 0 12 2Zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.7.7.7-2.6-.2-.3A8 8 0 1 1 12 20Zm4.4-6c-.2-.1-1.4-.7-1.6-.8s-.4-.1-.5.1-.6.8-.8 1-.3.2-.5.1a6.5 6.5 0 0 1-1.9-1.2 7.2 7.2 0 0 1-1.4-1.7c-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.2-.5s0-.3-.1-.4l-.7-1.7c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.7.3A2.8 2.8 0 0 0 6 9.3a4.8 4.8 0 0 0 1 2.6 11 11 0 0 0 4.3 3.8c2.5 1 2.5.7 3 .6a2.4 2.4 0 0 0 1.6-1.1 2 2 0 0 0 .1-1.1c0-.1-.2-.2-.4-.3Z"/></svg>
+        <span class="ticks">✓✓</span> Delivered
+      </span>
+      <span class="menu">
+        <button class="kebab">⋯</button>
+        <div class="menu-pop">
+          <button>Open</button>
+          <button>Download PDF</button>
+          <button>Send on WhatsApp</button>
+          <button>Record payment</button>
+          <hr>
+          <button>Duplicate</button>
+        </div>
+      </span>
+    </div>
+
+    <!-- final, paid, WA read -->
+    <div class="new-row">
+      <span class="num">27</span>
+      <span>
+        <div class="party">Omiyo</div>
+        <div class="meta">
+          <span class="state s-final">Final</span><span>08 Sep 26</span>
+          <span class="pay-dot"><span class="dot d-paid"></span>Paid</span>
+        </div>
+      </span>
+      <span class="amt-cell"><div class="amt-big">₹ 10,395.00</div></span>
+      <span class="wa wa-read" title="Read 16:41">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.7 15l-1.2 4.4 4.5-1.2A10 10 0 1 0 12 2Zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.7.7.7-2.6-.2-.3A8 8 0 1 1 12 20Zm4.4-6c-.2-.1-1.4-.7-1.6-.8s-.4-.1-.5.1-.6.8-.8 1-.3.2-.5.1a6.5 6.5 0 0 1-1.9-1.2 7.2 7.2 0 0 1-1.4-1.7c-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.2-.5s0-.3-.1-.4l-.7-1.7c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.7.3A2.8 2.8 0 0 0 6 9.3a4.8 4.8 0 0 0 1 2.6 11 11 0 0 0 4.3 3.8c2.5 1 2.5.7 3 .6a2.4 2.4 0 0 0 1.6-1.1 2 2 0 0 0 .1-1.1c0-.1-.2-.2-.4-.3Z"/></svg>
+        <span class="ticks">✓✓</span> Read
+      </span>
+      <span class="menu">
+        <button class="kebab">⋯</button>
+        <div class="menu-pop"><button>Open</button><button>Download PDF</button><button>Send again on WhatsApp</button><hr><button>Duplicate</button></div>
+      </span>
+    </div>
+
+    <!-- final, partial, WA not sent -->
+    <div class="new-row">
+      <span class="num">24</span>
+      <span>
+        <div class="party">S Taluk Da</div>
+        <div class="meta">
+          <span class="state s-final">Final</span><span>07 Sep 26</span>
+          <span class="pay-dot"><span class="dot d-partial"></span>Partial · ₹5,000 due</span>
+        </div>
+      </span>
+      <span class="amt-cell"><div class="amt-big">₹ 10,306.00</div></span>
+      <span class="wa wa-none" title="Not sent yet">
+        <svg viewBox="0 0 24 24" fill="currentColor" opacity=".45"><path d="M12 2a10 10 0 0 0-8.7 15l-1.2 4.4 4.5-1.2A10 10 0 1 0 12 2Zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.7.7.7-2.6-.2-.3A8 8 0 1 1 12 20Z"/></svg>
+        Not sent
+      </span>
+      <span class="menu">
+        <button class="kebab">⋯</button>
+        <div class="menu-pop"><button>Open</button><button>Download PDF</button><button>Send on WhatsApp</button><button>Record payment</button><hr><button>Duplicate</button></div>
+      </span>
+    </div>
+
+    <!-- final, unpaid, WA FAILED -->
+    <div class="new-row">
+      <span class="num">23</span>
+      <span>
+        <div class="party">Jain Metal Store</div>
+        <div class="meta">
+          <span class="state s-final">Final</span><span>07 Sep 26</span>
+          <span class="pay-dot"><span class="dot d-unpaid"></span>Unpaid</span>
+        </div>
+      </span>
+      <span class="amt-cell"><div class="amt-big">₹ 16,966.00</div></span>
+      <span class="wa wa-failed" title="Failed: Message undeliverable (code 131026) — Receiver is not a valid WhatsApp user">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-2h2Zm0-4h-2V7h2Z"/></svg>
+        Failed
+      </span>
+      <span class="menu">
+        <button class="kebab">⋯</button>
+        <div class="menu-pop"><button>Open</button><button>Download PDF</button><button>Retry WhatsApp</button><button>Record payment</button><hr><button>Duplicate</button></div>
+      </span>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="wa wa-none" style="gap:3px"><span class="ticks">·</span></span> not sent</span>
+    <span><span class="wa wa-sent">✓ sent</span></span>
+    <span><span class="wa wa-delivered">✓✓ delivered</span></span>
+    <span><span class="wa wa-read">✓✓ read</span> (green)</span>
+    <span><span class="wa wa-failed">⚠ failed</span> — hover / tap shows Meta's reason</span>
+  </div>
+
+  <div class="note">
+    <b>What changed.</b>
+    · <code>FINAL</code> badge → plain word "Final" in the meta line (grey).
+    · Payment → colour dot + word, in the meta line, with the ₹ due amount when partial.
+    · Date moves under the party (it is reference info, not a column worth 84px).
+    · Actions → one <b>⋯</b> menu. The row itself opens the invoice; that covers 90% of clicks.
+    · New <b>WhatsApp</b> column: one glyph + word, colour-coded, tooltip carries recipient + timestamp + failure reason.
+    · Grid goes from 6 columns to 5 and is visually quieter despite carrying <i>more</i> information.
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>3 · Even leaner option — status glyph only</h2>
+  <p class="sub">If the word feels heavy, the WhatsApp column can be just the ticks, coloured, with the label in the tooltip.</p>
+  <div class="card">
+    <div class="new-row" style="grid-template-columns:52px 1fr 132px 60px 44px">
+      <span class="num">28</span>
+      <span><div class="party">Jorerhang Metal</div>
+        <div class="meta"><span class="state s-final">Final</span><span>08 Sep</span><span class="pay-dot"><span class="dot d-unpaid"></span>Unpaid</span></div></span>
+      <span class="amt-cell"><div class="amt-big">₹ 82,554.00</div></span>
+      <span class="wa wa-delivered" style="justify-content:center" title="WhatsApp delivered 14:03"><span class="ticks" style="font-size:15px">✓✓</span></span>
+      <span class="menu"><button class="kebab">⋯</button></span>
+    </div>
+    <div class="new-row" style="grid-template-columns:52px 1fr 132px 60px 44px">
+      <span class="num">23</span>
+      <span><div class="party">Jain Metal Store</div>
+        <div class="meta"><span class="state s-final">Final</span><span>07 Sep</span><span class="pay-dot"><span class="dot d-unpaid"></span>Unpaid</span></div></span>
+      <span class="amt-cell"><div class="amt-big">₹ 16,966.00</div></span>
+      <span class="wa wa-failed" style="justify-content:center" title="WhatsApp failed — not a valid WhatsApp number"><span style="font-size:14px">⚠</span></span>
+      <span class="menu"><button class="kebab">⋯</button></span>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>4 · Mobile card (proposed)</h2>
+  <p class="sub">Same information, stacked. Tap the card to open; ⋯ for the rest.</p>
+  <div class="mcard">
+    <div class="mrow">
+      <div>
+        <div class="party">Jorerhang Metal</div>
+        <div class="meta"><span class="state s-final">Final</span><span>Inv 28 · 08 Sep 26</span></div>
+      </div>
+      <button class="kebab">⋯</button>
+    </div>
+    <div class="mrow">
+      <span class="pay-dot"><span class="dot d-unpaid"></span>Unpaid</span>
+      <span class="amt-big">₹ 82,554.00</span>
+    </div>
+    <div class="mrow">
+      <span class="wa wa-delivered">
+        <svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px"><path d="M12 2a10 10 0 0 0-8.7 15l-1.2 4.4 4.5-1.2A10 10 0 1 0 12 2Z"/></svg>
+        <span class="ticks">✓✓</span> WhatsApp delivered · 14:03
+      </span>
+      <span></span>
+    </div>
+  </div>
+
+  <!-- ============================================================= -->
+  <h2>5 · Full history — on the invoice detail, not the list</h2>
+  <p class="sub">
+    The list shows the <i>latest</i> status. Every send attempt + its timeline
+    lives on the invoice detail page, in a small card below the header, with a
+    Resend button. The list column and this card read the same
+    <code>GET /api/invoices/{id}/whatsapp</code>.
+  </p>
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <h3>WhatsApp</h3>
+      <button class="pill-btn">Send again</button>
+    </div>
+    <div class="log-line">
+      <div>+91 98xxxxxx02 <span style="color:var(--muted)">· Jorerhang Metal</span>
+        <div class="log-sub">Sent 14:02 · Delivered 14:03 · Read 16:41</div></div>
+      <div class="wa wa-read"><span class="ticks">✓✓</span> Read</div>
+    </div>
+    <div class="log-line">
+      <div>+91 90000 11111 <span style="color:var(--muted)">· other number</span>
+        <div class="log-sub">09:11 — Message undeliverable (code 131026) — Receiver is not a valid WhatsApp user</div></div>
+      <div class="wa wa-failed">⚠ Failed</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Backend needed.</b> One read route:
+    <code>GET /api/invoices/{id}/whatsapp → [{to_phone, status, sent_at, delivered_at, read_at, error, wa_message_id}]</code>
+    (the <code>whatsapp_message</code> rows already exist and are already updated by the webhook fan-in).
+    List serializer also gains a single <code>whatsapp_status</code> string = latest row's status,
+    so the list column needs no per-row fetch. Poll while any row is <code>pending</code>/<code>sent</code>.
+  </div>
+
+  <h2>Open questions for you</h2>
+  <ul class="sub" style="max-width:75ch">
+    <li>WhatsApp column: <b>glyph + word</b> (§2) or <b>glyph only</b> (§3)?</li>
+    <li>Keep a visible <b>PDF</b> button on the row, or is it fine inside ⋯? (Traders download PDFs a lot.)</li>
+    <li>Payment as <b>dot + word in meta line</b> (proposed) vs keeping the coloured pill?</li>
+    <li>Does "Final" need to appear at all on a numbered row, or is the number enough and we only label Draft / Cancelled?</li>
+  </ul>
+
+</div>
+
+<script>
+  // Mock only: click a ⋯ to open that one menu; click elsewhere to close.
+  document.addEventListener('click', function (e) {
+    var kebab = e.target.closest('.kebab');
+    var open = document.querySelector('.menu.open');
+    if (open && (!kebab || open !== kebab.closest('.menu'))) open.classList.remove('open');
+    if (kebab) { e.stopPropagation(); kebab.closest('.menu').classList.toggle('open'); }
+  });
+</script>
+</body>
+</html>

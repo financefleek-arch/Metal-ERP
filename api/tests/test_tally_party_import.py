@@ -271,6 +271,40 @@ def test_commit_dedupes_same_name_within_file(client: TestClient) -> None:
     assert names.count("Balaji Traders") == 1
 
 
+def test_commit_dedupes_spelling_variant_within_file(client: TestClient) -> None:
+    """Two ledgers for the same firm written with different whitespace /
+    company-suffix spelling collapse to one party via the shared
+    normalize_name key (not just byte-equal names).
+    """
+    h = _h(_token(client, "imp-dedup2@x.example.com"))
+    raw = (
+        FIXTURE.read_bytes()
+        .replace(b"Metro Steel Corp", b"Balaji  Traders  Pvt Ltd")
+        .replace(b"<PARTYGSTIN>19AABCM4521Q1Z3</PARTYGSTIN>", b"")
+        .replace(b"Balaji Traders", b"BALAJI TRADERS PRIVATE LIMITED")
+    )
+    r = client.post(
+        "/api/parties/import",
+        headers=h,
+        files={"file": ("masters.xml", raw, "text/xml")},
+    )
+    assert r.status_code == 201, r.text
+    batch = r.json()["batch_id"]
+    out = client.post(f"/api/parties/import/{batch}/commit", headers=h).json()
+    assert out["created"] == 2
+    assert out["updated"] == 1
+    # and the created parties carry a non-empty normalized key
+    from app.db import SessionLocal
+    from app.models import Party
+
+    with SessionLocal() as s:
+        keys = [
+            p.legal_name_normalized
+            for p in s.query(Party).all()
+        ]
+    assert all(k for k in keys)
+
+
 def test_discard_batch(client: TestClient) -> None:
     h = _h(_token(client, "imp-7@x.example.com"))
     batch = _upload(client, h).json()["batch_id"]

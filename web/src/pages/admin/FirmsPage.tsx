@@ -8,6 +8,7 @@ import type {
   FirmWhatsapp,
 } from "../../lib/types";
 import { adminApi } from "./api";
+import { TallyPanel } from "./TallyPanel";
 
 const ROLES: AssignableRole[] = ["accountant", "owner", "viewer"];
 
@@ -177,6 +178,7 @@ function FirmDetailPane({ firmId }: { firmId: string }) {
     <div>
       <FirmFields firm={firm.data} onSaved={refresh} />
       <WhatsappPanel firmId={firm.data.id} />
+      <TallyPanel firmId={firm.data.id} />
       <UsersTable firm={firm.data} onChanged={refresh} />
     </div>
   );

@@ -14,12 +14,13 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Invoice, InvoiceLine, Party, Payment, PaymentAllocation
 from app.models._mixins import AllocationType, DocType, InvoiceStatus, PaymentStatus, PdfStatus
+from app.models.whatsapp import WhatsappMessage
 from app.schemas_invoice import (
     DuplicateOut,
     FinalizeOut,
@@ -28,6 +29,7 @@ from app.schemas_invoice import (
     InvoiceListItem,
     InvoiceOut,
     InvoiceUpdate,
+    InvoiceWhatsappMessageOut,
     PartyBrief,
 )
 from app.services.invoices.common import (
@@ -178,10 +180,45 @@ def list_invoices(
         .subquery()
     )
 
+    # One WhatsApp status per invoice for the list column, in one round trip.
+    # Pick the newest send; when two rows share a timestamp (a "send to two
+    # numbers" batch), the more-advanced status wins so the column never
+    # under-reports (failed/read > delivered > sent > pending).
+    wa_rank = case(
+        (WhatsappMessage.status == "failed", 4),
+        (WhatsappMessage.status == "read", 3),
+        (WhatsappMessage.status == "delivered", 2),
+        (WhatsappMessage.status == "sent", 1),
+        else_=0,
+    )
+    wa_rn = func.row_number().over(
+        partition_by=WhatsappMessage.invoice_id,
+        order_by=(
+            WhatsappMessage.created_at.desc(),
+            wa_rank.desc(),
+            WhatsappMessage.id.desc(),
+        ),
+    )
+    wa_ranked = (
+        select(
+            WhatsappMessage.invoice_id.label("invoice_id"),
+            WhatsappMessage.status.label("wa_status"),
+            wa_rn.label("rn"),
+        )
+        .where(WhatsappMessage.invoice_id.is_not(None))
+        .subquery()
+    )
+    wa_sq = (
+        select(wa_ranked.c.invoice_id, wa_ranked.c.wa_status)
+        .where(wa_ranked.c.rn == 1)
+        .subquery()
+    )
+
     stmt = (
-        select(Invoice, Party.legal_name, paid_sq.c.paid)
+        select(Invoice, Party.legal_name, paid_sq.c.paid, wa_sq.c.wa_status)
         .outerjoin(Party, Party.id == Invoice.party_id)
         .outerjoin(paid_sq, paid_sq.c.invoice_id == Invoice.id)
+        .outerjoin(wa_sq, wa_sq.c.invoice_id == Invoice.id)
         .where(Invoice.tenant_id == user.tenant_id)
     )
     if status_ is not None:
@@ -225,8 +262,9 @@ def list_invoices(
             grand_total=inv.grand_total,
             pdf_status=inv.pdf_status,
             payment_status=_payment_status(inv, paid),
+            whatsapp_status=wa_status,
         )
-        for inv, name, paid in rows
+        for inv, name, paid, wa_status in rows
     ]
 
 
@@ -264,6 +302,26 @@ def create_invoice(body: InvoiceCreate, user: WriteUser, session: SessionDep) ->
 @router.get("/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(invoice_id: str, user: CurrentUser, session: SessionDep) -> InvoiceOut:
     return _out(session, _load(session, user.tenant_id, invoice_id))
+
+
+@router.get(
+    "/{invoice_id}/whatsapp",
+    response_model=list[InvoiceWhatsappMessageOut],
+    tags=["whatsapp"],
+)
+def list_invoice_whatsapp(
+    invoice_id: str, user: CurrentUser, session: SessionDep
+) -> list[WhatsappMessage]:
+    """Every WhatsApp send attempt for this invoice, newest first. Statuses
+    move on their own as Meta delivery/read/failed webhooks arrive."""
+    _load(session, user.tenant_id, invoice_id)  # 404s if not the caller's
+    return list(
+        session.scalars(
+            select(WhatsappMessage)
+            .where(WhatsappMessage.invoice_id == invoice_id)
+            .order_by(WhatsappMessage.created_at.desc(), WhatsappMessage.id.desc())
+        )
+    )
 
 
 @router.put("/{invoice_id}", response_model=InvoiceOut)

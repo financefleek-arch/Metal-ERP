@@ -20,7 +20,8 @@ from sqlalchemy import func, select
 
 from app.backup_storage import R2NotConfigured, presigned_put_url
 from app.deps import PlatformAdmin, SessionDep, ShopAuth
-from app.models import AgentOutboxItem, BackupShop, BackupUpload
+from app.models import AgentOutboxItem, BackupShop, BackupUpload, TallyCompany, TallySyncJob
+from app.schemas_tally import JobResultIn, JobStatusPingIn, TallySyncJobOut
 from app.schemas_tally_agent import (
     OutboxItemOut,
     ShopCheckinIn,
@@ -31,6 +32,8 @@ from app.schemas_tally_agent import (
     UploadRequestIn,
     UploadRequestOut,
 )
+from app.services.tally.jobs import mark_job_sent, record_agent_status
+from app.services.tally.pull import process_pull_result
 
 router = APIRouter(prefix="/api/tally-agent", tags=["tally-agent"])
 
@@ -56,11 +59,74 @@ def checkin(body: ShopCheckinIn, shop: ShopAuth, session: SessionDep) -> ShopChe
             .order_by(AgentOutboxItem.created_at)
         ).all()
     )
+    # `tally` items are dispatched once: flip them to `sent` here and advance
+    # the paired sync job queued -> sent. Other modules' items keep their
+    # existing (pre-F1a) behaviour of staying `queued` until that module
+    # gains its own drain-confirm.
+    for item in outbox:
+        if item.module != "tally":
+            continue
+        item.status = "sent"
+        job = session.scalar(
+            select(TallySyncJob).where(TallySyncJob.outbox_item_id == item.id)
+        )
+        if job is not None:
+            mark_job_sent(session, job)
+    session.flush()
+
     return ShopCheckinOut(
         shop_id=shop.id,
         checked_in_at=now,
         outbox=[OutboxItemOut.model_validate(o) for o in outbox],
     )
+
+
+@router.post("/jobs/{job_id}/result", response_model=TallySyncJobOut)
+def job_result(
+    job_id: str, body: JobResultIn, shop: ShopAuth, session: SessionDep
+) -> TallySyncJob:
+    """Agent -> backend: a `tally_sync_job` finished on the shop side.
+
+    For `pull_masters`, `status='ok'` carries the R2 key of the uploaded
+    masters XML; the backend downloads + parses + stages it. Never 500s —
+    a bad payload becomes a job `error`.
+    """
+    job = _job_for_shop(session, job_id, shop.id)
+    process_pull_result(
+        session,
+        job,
+        ok=(body.status == "ok"),
+        r2_key=body.r2_key,
+        agent_error=body.error,
+    )
+    return job
+
+
+def _job_for_shop(session: SessionDep, job_id: str, shop_id: str) -> TallySyncJob:
+    job = session.scalar(select(TallySyncJob).where(TallySyncJob.id == job_id))
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+    company = session.get(TallyCompany, job.company_id)
+    if company is None or company.shop_id != shop_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This job is not served by this shop.",
+        )
+    return job
+
+
+@router.post("/jobs/{job_id}/status", response_model=TallySyncJobOut)
+def job_status_ping(
+    job_id: str, body: JobStatusPingIn, shop: ShopAuth, session: SessionDep
+) -> TallySyncJob:
+    """Agent -> backend: a 'not ready' reason (Tally closed / no company
+    open) instead of a real result. Records it so the Pull step indicator
+    can show "Waiting on Tally" and the lazy auto-cancel has something to
+    key on. The job stays non-terminal — a later poll retries.
+    """
+    job = _job_for_shop(session, job_id, shop.id)
+    record_agent_status(session, job, body.agent_status)
+    return job
 
 
 @router.post("/upload-request", response_model=UploadRequestOut)

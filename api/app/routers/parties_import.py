@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 
 from app.deps import SessionDep, WriteUser
+from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import Party, PartyAddress, StagingTallyParty
 from app.models._mixins import PartyRole, PartySource, PartyStatus
 from app.reference import (
@@ -23,9 +24,8 @@ from app.reference import (
     validate_pan,
     validate_phone,
 )
-from tools.tally_import.groups import GroupTree
-from tools.tally_import.match import match_ledgers_bulk
-from tools.tally_import.parser import TallyLedger, parse_masters
+from app.services.tally.jobs import assert_no_pull_in_flight
+from app.services.tally.staging import NoLedgersError, stage_masters_xml
 
 router = APIRouter(prefix="/api/parties/import", tags=["parties-import"])
 
@@ -154,108 +154,28 @@ async def upload(
             status_code=413,
             detail=f"File is larger than {_MAX_BYTES // (1024 * 1024)} MB",
         )
-    try:
-        masters = parse_masters(raw)
-    except Exception as e:  # noqa: BLE001 - surface any XML problem as a 422
-        raise HTTPException(status_code=422, detail=f"Could not parse the Tally XML: {e}") from e
+    assert_no_pull_in_flight(session, user.tenant_id)
 
-    if not masters.ledgers:
-        raise HTTPException(status_code=422, detail="No ledgers found in the file")
-
-    # One in-flight import per tenant: clear any earlier batch that was never
-    # committed (an abandoned upload, or one that failed mid-commit). Committed
-    # rows are kept as an audit trail.
-    session.execute(
-        delete(StagingTallyParty).where(
-            StagingTallyParty.tenant_id == user.tenant_id,
-            StagingTallyParty.committed_as.is_(None),
-        )
-    )
-
-    tree = GroupTree(masters.groups)
     batch_id = str(uuid.uuid4())
-
-    # Group summary for the scope picker.
-    grp_counts: dict[str, int] = {}
-    grp_role: dict[str, PartyRole | None] = {}
-    for led in masters.ledgers:
-        top = tree.top_group(led.parent) or (led.parent or "").strip().lower() or "(ungrouped)"
-        grp_counts[top] = grp_counts.get(top, 0) + 1
-        grp_role.setdefault(top, tree.role_for(led.parent))
-
-    # Stage every ledger whose lineage resolves to a role (Debtors/Creditors).
-    # Others are parsed into the group list but not staged unless re-uploaded
-    # with an explicit scope (kept simple for this slice: role-bearing only).
-    gstins_in_file: dict[str, int] = {}
-    for led in masters.ledgers:
-        if led.gstin:
-            try:
-                g = validate_gstin(led.gstin)
-                if g:
-                    gstins_in_file[g] = gstins_in_file.get(g, 0) + 1
-            except ValueError:
-                pass
-
-    # Resolve role + dual-lineage per ledger, then match the whole file in one
-    # pass (a single party prefetch instead of up to three queries per ledger).
-    to_stage: list[tuple[TallyLedger, PartyRole, bool]] = []
-    for led in masters.ledgers:
-        role = tree.role_for(led.parent)
-        if role is None:
-            continue
-        anc = tree.roots_of(led.parent)
-        dual = bool(anc & {"sundry debtors"}) and bool(anc & {"sundry creditors"})
-        to_stage.append((led, role, dual))
-
-    matches = match_ledgers_bulk(
-        session,
-        user.tenant_id,
-        to_stage,
-        gstins_in_file=gstins_in_file,
-    )
-
-    # A LEDGER node is mostly unused address / GST boilerplate; nothing reads
-    # raw_xml back, so keep only a debugging prefix rather than staging tens of
-    # MB for a full "All Masters" import. Mirrors the items importer.
-    _RAW_XML_KEEP = 2000
-
-    staged = 0
-    for (led, _role, _dual), mr in zip(to_stage, matches, strict=True):
-        session.add(
-            StagingTallyParty(
-                tenant_id=user.tenant_id,
-                batch_id=batch_id,
-                tally_guid=led.guid,
-                ledger_name=led.name,
-                parent_group=led.parent,
-                gstin=led.gstin,
-                pan=led.pan,
-                state_name=led.state_name,
-                phone=led.phone,
-                email=led.email,
-                address_lines_json=led.address_lines or None,
-                pincode=led.pincode,
-                raw_xml=(led.raw_xml or "")[:_RAW_XML_KEEP] or None,
-                proposed_role=mr.proposed_role,
-                match_method=mr.method,
-                match_party_id=mr.party_id,
-                flags_json=mr.flags or None,
-            )
+    try:
+        summary = stage_masters_xml(
+            session, user.tenant_id, raw, batch_id=batch_id
         )
-        staged += 1
-
-    session.flush()
+    except NoLedgersError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except ValueError as e:  # parse failure
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     groups = [
         ImportGroup(
-            name=name,
-            ledger_count=cnt,
-            always=name in _ALWAYS_GROUPS,
-            implied_role=grp_role.get(name),
+            name=g.name,
+            ledger_count=g.ledger_count,
+            always=g.name in _ALWAYS_GROUPS,
+            implied_role=g.implied_role,
         )
-        for name, cnt in sorted(grp_counts.items(), key=lambda kv: -kv[1])
+        for g in summary.groups
     ]
-    return ImportBatchOut(batch_id=batch_id, total=staged, groups=groups)
+    return ImportBatchOut(batch_id=summary.batch_id, total=summary.total, groups=groups)
 
 
 class CurrentBatchOut(BaseModel):
@@ -413,8 +333,12 @@ def patch_row(
     )
 
 
-def _norm_name(s: str) -> str:
-    return " ".join((s or "").lower().split())
+def _name_key(s: str, syn: dict[str, str]) -> str:
+    """The de-dup key — same `normalize_name` pipeline (+ tenant synonyms) as
+    `party.legal_name_normalized` and `resolve_party`, so an in-file / against-
+    DB name clash here matches what the rest of the app considers a duplicate.
+    """
+    return normalize_name(s or "", syn)
 
 
 def _fit_source_ref(guid: str | None) -> str | None:
@@ -445,6 +369,7 @@ def _clean_phone(raw: str | None) -> str | None:
 def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     rows = _rows(session, user.tenant_id, batch_id)
     created = updated = skipped = still_flagged = 0
+    syn = load_synonym_map(session, user.tenant_id)
 
     # --- identity pre-pass: one query for the tenant's existing parties, so a
     # created row that clashes with one already in the DB (or with an earlier
@@ -465,7 +390,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         if p:
             by_pan.setdefault(p.strip().upper(), pid)
         if ln:
-            by_name.setdefault(_norm_name(ln), pid)
+            by_name.setdefault(_name_key(ln, syn), pid)
 
     new_parties: list[Party] = []
     # New parties created in this same commit are not yet flushed, so they have
@@ -545,7 +470,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
 
         # A "new" row — but a party with this GSTIN / PAN / name may already
         # exist (in the DB or created earlier in this same file). Link to it.
-        name_key = _norm_name(_effective_name(row))
+        name_key = _name_key(_effective_name(row), syn)
         clash_id = (
             (gstin and by_gstin.get(gstin.strip().upper()))
             or (not gstin and pan and by_pan.get(pan.strip().upper()))
@@ -563,6 +488,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             id=str(uuid.uuid4()),
             tenant_id=user.tenant_id,
             legal_name=_effective_name(row)[:200],
+            legal_name_normalized=name_key,
             role=role,
             gstin=gstin,
             pan=pan,

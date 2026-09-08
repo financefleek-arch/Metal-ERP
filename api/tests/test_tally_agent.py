@@ -214,3 +214,89 @@ def test_inactive_shop_key_rejected(client: TestClient, session: Session) -> Non
 
     r = client.post("/api/tally-agent/checkin", headers={"X-Shop-Key": key}, json={})
     assert r.status_code == 401
+
+
+# --------------------------------------------------------------------------
+# firm-scoped agent provisioning (Ops console)
+# --------------------------------------------------------------------------
+
+
+def _make_firm(client: TestClient, tok: str, name: str = "Sitha Steels") -> str:
+    r = client.post("/api/admin/firms", headers=_auth(tok), json={"legal_name": name})
+    assert r.status_code in (200, 201), r.text
+    return r.json()["id"]
+
+
+def test_provision_firm_agent_returns_key_once(client: TestClient) -> None:
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+
+    # none yet
+    r = client.get(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
+    assert r.status_code == 200
+    assert r.json()["provisioned"] is False
+
+    # provision -> key returned once
+    r = client.post(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["api_key"] and body["shop_id"]
+    shop_id, key = body["shop_id"], body["api_key"]
+
+    # status now shows provisioned, no key
+    r = client.get(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
+    assert r.json() == {
+        "provisioned": True,
+        "shop_id": shop_id,
+        "is_active": True,
+        "last_checkin_at": None,
+        "last_upload_at": None,
+    }
+
+    # the key actually works for the agent auth
+    r = client.post(
+        "/api/tally-agent/checkin", headers={"X-Shop-Key": key}, json={}
+    )
+    assert r.status_code == 200
+
+    # second provision -> 409, rotate instead
+    r = client.post(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
+    assert r.status_code == 409
+
+
+def test_rotate_firm_agent_key_invalidates_old(client: TestClient) -> None:
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+    old_key = client.post(
+        f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok)
+    ).json()["api_key"]
+
+    r = client.post(
+        f"/api/admin/firms/{firm_id}/tally-shop/rotate-key", headers=_auth(tok)
+    )
+    assert r.status_code == 200
+    new_key = r.json()["api_key"]
+    assert new_key != old_key
+
+    # old key dead, new key works
+    assert (
+        client.post(
+            "/api/tally-agent/checkin", headers={"X-Shop-Key": old_key}, json={}
+        ).status_code
+        == 401
+    )
+    assert (
+        client.post(
+            "/api/tally-agent/checkin", headers={"X-Shop-Key": new_key}, json={}
+        ).status_code
+        == 200
+    )
+
+
+def test_rotate_without_agent_is_404(client: TestClient) -> None:
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+    r = client.post(
+        f"/api/admin/firms/{firm_id}/tally-shop/rotate-key", headers=_auth(tok)
+    )
+    assert r.status_code == 404

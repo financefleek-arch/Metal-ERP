@@ -67,3 +67,22 @@ public sealed class UploadConfirmRequest
     [JsonPropertyName("status")]
     public string Status { get; set; } = "confirmed";
 }
+
+public sealed class JobResultRequest
+{
+    [JsonPropertyName("status")]
+    public string Status { get; set; } = "ok";  // "ok" | "error"
+
+    [JsonPropertyName("r2_key")]
+    public string? R2Key { get; set; }
+
+    [JsonPropertyName("error")]
+    public string? Error { get; set; }
+}
+
+public sealed class JobStatusPingRequest
+{
+    // "no_company_loaded" | "tally_unavailable"
+    [JsonPropertyName("agent_status")]
+    public string AgentStatus { get; set; } = "";
+}

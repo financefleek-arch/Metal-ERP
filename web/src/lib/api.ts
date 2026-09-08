@@ -25,9 +25,14 @@ export function setToken(token: string | null): void {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Raw `detail` from the response body — a string for most errors, but an
+   *  object for structured 409s (e.g. the party-dedupe `{code, message,
+   *  match, candidates}` payload). Callers that need the structure read this. */
+  detail: unknown;
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -36,6 +41,22 @@ type Options = {
   body?: unknown;
   auth?: boolean;
 };
+
+/** Turn a FastAPI error body into (human message, raw detail). `detail` may be
+ *  a string, a validation-error array, or a structured object (e.g. the
+ *  party-dedupe 409). The message is always a string; the object is preserved
+ *  on `ApiError.detail` for callers that need `code` / `candidates`. */
+function parseError(data: unknown, fallback: string): { message: string; detail: unknown } {
+  const d = (data as { detail?: unknown } | undefined)?.detail;
+  if (typeof d === "string") return { message: d, detail: d };
+  if (Array.isArray(d))
+    return { message: d.map((x: { msg?: string }) => x?.msg).filter(Boolean).join("; "), detail: d };
+  if (d && typeof d === "object") {
+    const msg = (d as { message?: string }).message;
+    return { message: typeof msg === "string" ? msg : fallback, detail: d };
+  }
+  return { message: fallback, detail: undefined };
+}
 
 export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   const { method = "GET", body, auth = true } = opts;
@@ -59,13 +80,8 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
 
   if (!res.ok) {
     if (res.status === 401) setToken(null);
-    const detail =
-      data?.detail && typeof data.detail === "string"
-        ? data.detail
-        : Array.isArray(data?.detail)
-          ? data.detail.map((d: { msg?: string }) => d.msg).join("; ")
-          : res.statusText;
-    throw new ApiError(res.status, detail);
+    const { message, detail } = parseError(data, res.statusText);
+    throw new ApiError(res.status, message, detail);
   }
   return data as T;
 }
@@ -96,13 +112,8 @@ export async function apiPage<T>(path: string, opts: Options = {}): Promise<Page
   const data = text ? JSON.parse(text) : undefined;
   if (!res.ok) {
     if (res.status === 401) setToken(null);
-    const detail =
-      data?.detail && typeof data.detail === "string"
-        ? data.detail
-        : Array.isArray(data?.detail)
-          ? data.detail.map((d: { msg?: string }) => d.msg).join("; ")
-          : res.statusText;
-    throw new ApiError(res.status, detail);
+    const { message, detail } = parseError(data, res.statusText);
+    throw new ApiError(res.status, message, detail);
   }
   return { data: data as T, nextCursor: res.headers.get("X-Next-Cursor") };
 }
@@ -120,13 +131,8 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
   const data = text ? JSON.parse(text) : undefined;
   if (!res.ok) {
     if (res.status === 401) setToken(null);
-    const detail =
-      data?.detail && typeof data.detail === "string"
-        ? data.detail
-        : Array.isArray(data?.detail)
-          ? data.detail.map((d: { msg?: string }) => d.msg).join("; ")
-          : res.statusText;
-    throw new ApiError(res.status, detail);
+    const { message, detail } = parseError(data, res.statusText);
+    throw new ApiError(res.status, message, detail);
   }
   return data as T;
 }

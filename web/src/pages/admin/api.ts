@@ -4,9 +4,15 @@ import type {
   AssignableRole,
   FirmDetail,
   FirmListItem,
+  FirmTallyShop,
+  FirmTallyShopKey,
   FirmWhatsapp,
   FirmWhatsappTestResult,
   FirmWhatsappUpsert,
+  LedgerMapPatch,
+  TallyCompany,
+  TallyCompanyUpsert,
+  TallySyncJob,
 } from "../../lib/types";
 
 export const adminApi = {
@@ -58,4 +64,51 @@ export const adminApi = {
       method: "POST",
       body,
     }),
+
+  // ---- companion agent (per firm) ----
+
+  getFirmAgent: (firmId: string) =>
+    api<FirmTallyShop>(`/admin/firms/${firmId}/tally-shop`),
+
+  provisionFirmAgent: (firmId: string) =>
+    api<FirmTallyShopKey>(`/admin/firms/${firmId}/tally-shop`, { method: "POST" }),
+
+  rotateFirmAgentKey: (firmId: string) =>
+    api<FirmTallyShopKey>(`/admin/firms/${firmId}/tally-shop/rotate-key`, {
+      method: "POST",
+    }),
+
+  // ---- Tally Connector (F1a) ----
+
+  getTallyCompany: (firmId: string) =>
+    api<TallyCompany>(`/admin/firms/${firmId}/tally/company`),
+
+  upsertTallyCompany: (firmId: string, body: TallyCompanyUpsert) =>
+    api<TallyCompany>(`/admin/firms/${firmId}/tally/company`, {
+      method: "POST",
+      body,
+    }),
+
+  putTallyLedgerMap: (firmId: string, body: LedgerMapPatch) =>
+    api<TallyCompany>(`/admin/firms/${firmId}/tally/company/ledger-map`, {
+      method: "PUT",
+      body,
+    }),
+
+  pullTallyMasters: (firmId: string) =>
+    api<TallySyncJob>(`/admin/firms/${firmId}/tally/pull-masters`, {
+      method: "POST",
+    }),
+
+  listTallySyncJobs: (firmId: string) =>
+    api<TallySyncJob[]>(`/admin/firms/${firmId}/tally/sync-jobs`),
+
+  getTallySyncJob: (firmId: string, jobId: string) =>
+    api<TallySyncJob>(`/admin/firms/${firmId}/tally/sync-jobs/${jobId}`),
+
+  retryTallySyncJob: (firmId: string, jobId: string) =>
+    api<TallySyncJob>(
+      `/admin/firms/${firmId}/tally/sync-jobs/${jobId}/retry`,
+      { method: "POST" },
+    ),
 };

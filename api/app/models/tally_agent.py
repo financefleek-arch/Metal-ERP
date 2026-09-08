@@ -23,7 +23,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -32,12 +42,25 @@ from app.models._mixins import PkUuidMixin, TimestampMixin
 
 class BackupShop(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "backup_shop"
+    __table_args__ = (
+        # One companion-agent install per firm (0024). Partial so legacy
+        # CLI-created shops with a null tenant_id don't collide.
+        Index(
+            "uq_backup_shop_tenant",
+            "tenant_id",
+            unique=True,
+            postgresql_where=text("tenant_id IS NOT NULL"),
+            sqlite_where=text("tenant_id IS NOT NULL"),
+        ),
+    )
 
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     api_key_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
-    # Optional soft link — informational only, see module docstring.
+    # Real link now: the Ops console provisions the agent from the firm's
+    # page, so a firm has exactly one agent. Still nullable for legacy CLI
+    # rows.
     tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenant.id"), index=True)
 
     last_checkin_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -8,15 +8,21 @@ import { computeMeasure, kg } from "../../lib/weighment";
 import { PRIMARY_UOMS, isWeightUom, normalizeUom } from "../../lib/units.generated";
 import { uomDisplay } from "../../lib/uom";
 import { normalizePhone, phoneError } from "../../lib/reference";
+import { lastSeenLabel } from "../../lib/format";
 import { PaymentDialog } from "../../components/PaymentDialog";
+import { WhatsappLog } from "../../components/WhatsappStatus";
+import { SimilarParties } from "../../components/SimilarParties";
+import { isDup409 } from "../../lib/types";
 import type {
   FinalizeResult,
   Invoice,
   InvoiceLineIn,
   ItemListItem,
   Party,
+  PartyDuplicate409,
   PartyLedgerEntry,
   PartyListItem,
+  PartyMatchRef,
   PaymentCreate,
   PaymentOut,
   ResolveResult,
@@ -709,6 +715,10 @@ export function InvoiceEditorPage() {
         </p>
       )}
 
+      {finalized && inv && (
+        <WhatsappLog invoiceId={inv.id} onResend={() => setWaOpen(true)} />
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         {/* left: header fields + lines */}
         <div className="flex flex-col gap-4">
@@ -1117,6 +1127,7 @@ function WhatsappSendDialog({
   onClose: () => void;
   onPartyPhoneSaved?: () => void;
 }) {
+  const qc = useQueryClient();
   const [toParty, setToParty] = useState(!!partyPhone);
   const [otherPhone, setOtherPhone] = useState("");
   const [otherTouched, setOtherTouched] = useState(false);
@@ -1186,6 +1197,10 @@ function WhatsappSendDialog({
       setResults([...out]);
     }
     setBusy(false);
+    if (out.some((r) => r.ok)) {
+      qc.invalidateQueries({ queryKey: ["invoice-whatsapp", invoiceId] });
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+    }
   }
 
   return (
@@ -1639,13 +1654,21 @@ function PartyPicker({
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const debQ = useDebounced(q.trim(), 250);
+  // No role filter: a firm already on file as a *supplier* must surface here
+  // so the operator picks it instead of making a customer-role duplicate.
   const results = useQuery({
-    queryKey: ["party-search", q],
-    queryFn: () => api<PartyListItem[]>(`/parties?q=${encodeURIComponent(q)}&role=customer`),
-    enabled: open && q.trim().length >= 1,
+    queryKey: ["party-search", debQ],
+    queryFn: () => api<PartyListItem[]>(`/parties?q=${encodeURIComponent(debQ)}`),
+    enabled: open && debQ.length >= 2,
   });
 
   function handlePick(p: PartyListItem) {
+    // A supplier-only row picked as a customer is widened to "both" so the
+    // next lookup finds it either way (fire-and-forget).
+    if (p.role === "supplier") {
+      api(`/parties/${p.id}`, { method: "PATCH", body: { role: "both" } }).catch(() => {});
+    }
     onPick(p);
     setOpen(false);
     setQ("");
@@ -1673,22 +1696,27 @@ function PartyPicker({
               onMouseDown={() => handlePick(p)}
             >
               <span className="font-medium">{p.legal_name}</span>
-              {p.default_state_code && (
-                <span className="ml-2 text-[11px] text-muted">{p.default_state_code}</span>
+              {p.role === "supplier" && (
+                <span className="ml-2 rounded-sm bg-[#f1e7d6] px-1 text-[9px] font-bold uppercase text-warn">
+                  supplier
+                </span>
               )}
+              <span className="ml-2 text-[11px] text-muted">
+                {[p.default_state_code, lastSeenLabel(p.last_txn_at)].filter(Boolean).join(" · ")}
+              </span>
             </button>
           ))}
           {q.trim() && (
             <button
-              className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
+              className="block w-full px-3 py-2 text-left text-[13px] text-muted hover:bg-accent-soft"
               onMouseDown={() => setCreating(true)}
             >
-              + Create “{q.trim()}” as a new party
+              None of these — add “{q.trim()}” as new
             </button>
           )}
         </div>
       )}
-      {open && q.trim() && !results.isFetching && (results.data?.length ?? 0) === 0 && (
+      {open && debQ.length >= 2 && !results.isFetching && (results.data?.length ?? 0) === 0 && (
         <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-line bg-card shadow-lg">
           <div className="px-3 py-2 text-[11px] text-muted">No matching party.</div>
           <button
@@ -1727,9 +1755,18 @@ function QuickCreatePartyDialog({
   const [opening, setOpening] = useState("");
   const [openingAsOf, setOpeningAsOf] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const create = useMutation({
-    mutationFn: () =>
-      api<PartyListItem>("/parties", {
+  const [dupWarn, setDupWarn] = useState<PartyDuplicate409 | null>(null);
+
+  const debName = useDebounced(name.trim(), 300);
+  const debPhone = useDebounced(phone.trim(), 400);
+
+  function pickExisting(p: PartyMatchRef) {
+    api<Party>(`/parties/${p.id}`).then(onCreated);
+  }
+
+  const create = useMutation<PartyListItem, unknown, boolean>({
+    mutationFn: (force) =>
+      api<PartyListItem>(`/parties${force ? "?force=true" : ""}`, {
         method: "POST",
         body: {
           legal_name: name.trim(),
@@ -1740,8 +1777,18 @@ function QuickCreatePartyDialog({
         },
       }),
     onSuccess: onCreated,
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not create party"),
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409 && isDup409(e.detail)) {
+        setDupWarn(e.detail);
+        setErr(null);
+      } else {
+        setDupWarn(null);
+        setErr(e instanceof ApiError ? e.message : "Could not create party");
+      }
+    },
   });
+
+  const blockedByDup = dupWarn?.code === "party_maybe_exists";
 
   return (
     <div
@@ -1759,11 +1806,19 @@ function QuickCreatePartyDialog({
           className="field"
           autoFocus
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setDupWarn(null);
+            setName(e.target.value);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && name.trim()) create.mutate();
+            if (e.key === "Enter" && name.trim() && !blockedByDup) create.mutate(false);
           }}
         />
+        {!dupWarn && (
+          <div className="mt-2">
+            <SimilarParties name={debName} phone={debPhone} onUse={pickExisting} />
+          </div>
+        )}
         <label className="label mt-3 block">Phone (optional)</label>
         <input
           className="field"
@@ -1802,14 +1857,52 @@ function QuickCreatePartyDialog({
         <p className="mt-1 text-[11px] text-muted">
           What they owed you before you started billing here.
         </p>
+
+        {dupWarn && (
+          <div className="mt-3 rounded-md border border-line bg-[#f1e7d6] p-3">
+            <p className="text-[13px] font-medium text-warn">⚠ {dupWarn.message}</p>
+            <ul className="mt-2 divide-y divide-line/70">
+              {(dupWarn.match ? [dupWarn.match] : dupWarn.candidates).map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-3 py-1.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-ink">{p.legal_name}</p>
+                    <p className="truncate text-[11px] text-muted">
+                      {[p.city, p.gstin].filter(Boolean).join(" · ") || "—"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-ghost h-7 shrink-0 px-2 text-xs"
+                    onClick={() => pickExisting(p)}
+                  >
+                    Use this
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {dupWarn.code === "party_maybe_exists" && (
+              <button
+                type="button"
+                className="mt-2 text-xs font-medium text-accent underline"
+                onClick={() => {
+                  setDupWarn(null);
+                  create.mutate(true);
+                }}
+              >
+                None of these — create “{name.trim()}” as new
+              </button>
+            )}
+          </div>
+        )}
+
         <div className="mt-4 flex gap-2">
           <button className="btn-ghost h-9 flex-1 px-4 text-sm" onClick={onCancel}>
             Cancel
           </button>
           <button
             className="btn-primary h-9 flex-1 px-4 text-sm"
-            disabled={!name.trim() || create.isPending}
-            onClick={() => create.mutate()}
+            disabled={!name.trim() || create.isPending || blockedByDup}
+            onClick={() => create.mutate(false)}
           >
             {create.isPending ? "Creating…" : "Create & use"}
           </button>

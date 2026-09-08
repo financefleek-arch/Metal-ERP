@@ -33,6 +33,11 @@ class TallyLedger:
     email: str | None = None
     address_lines: list[str] = field(default_factory=list)
     pincode: str | None = None
+    # Signed opening balance as Tally reports it: Dr positive (party owes
+    # us), Cr negative. `None` when the ledger has no opening balance node.
+    # Consumed by the Tally Connector (F1a) masters-in pull, gated on the
+    # party having no ledger history; the manual importer ignores it.
+    opening_balance: float | None = None
     raw_xml: str | None = None
 
 
@@ -163,11 +168,39 @@ def parse_masters(raw: bytes) -> TallyMasters:
                 email=_first(led, "EMAIL", "LEDGEREMAIL"),
                 address_lines=_address_lines(led),
                 pincode=_first(led, "PINCODE", "LEDPINCODE", "LEDGERPINCODE"),
+                opening_balance=_opening_balance(led),
                 raw_xml=etree.tostring(led, encoding="unicode"),
             )
         )
 
     return TallyMasters(ledgers=ledgers, groups=groups)
+
+
+def _opening_balance(led: etree._Element) -> float | None:
+    """Signed ledger opening balance: Dr positive, Cr negative.
+
+    Tally writes the amount in <OPENINGBALANCE> with the sign baked into the
+    text ("-15000.00" or "15000.00 Cr" / "15000.00 Dr" depending on export
+    settings). Some exports carry the sign in a sibling <ISDEEMEDPOSITIVE>
+    (Yes = Dr). We normalise to: negative == the party is in credit (we owe
+    them / customer advance), positive == the party owes us.
+    """
+    raw = _t(led, "OPENINGBALANCE")
+    if raw is None:
+        return None
+    val = _num(raw)
+    if val is None:
+        return None
+    lo = raw.strip().lower()
+    if "cr" in lo and val > 0:
+        val = -val
+    elif "dr" in lo and val < 0:
+        val = -val
+    else:
+        pos = _t(led, "ISDEEMEDPOSITIVE")
+        if pos is not None and pos.strip().lower() in ("no", "false") and val > 0:
+            val = -val
+    return val
 
 
 def _num(v: str | None) -> float | None:

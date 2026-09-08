@@ -76,6 +76,18 @@ def _digits(s: str) -> str:
     return re.sub(r"\D", "", s)
 
 
+def phone_digits_col(col: ColumnElement[str] | None = None) -> ColumnElement[str]:
+    """A SQL expression that strips `+`, `-`, spaces and brackets from a stored
+    phone, leaving digits only. Shared by `apply_search` (substring match) and
+    `party_resolution` (exact identity match) so both compare the same shape.
+    """
+    target = Party.phone if col is None else col
+    stripped = func.coalesce(target, "")
+    for ch in ("+", "-", " ", "(", ")"):
+        stripped = func.replace(stripped, ch, "")
+    return stripped
+
+
 def apply_search(stmt: Select, session: Session, q: str) -> Select:
     """Widen `stmt` with an OR across name (fuzzy) / address / phone (substring),
     and order by name-similarity then recency. `stmt` must already select Party.
@@ -104,24 +116,7 @@ def apply_search(stmt: Select, session: Session, q: str) -> Select:
     conds = [func.lower(Party.legal_name).like(like), addr_match]
     if phone_digits:
         # strip non-digits from the stored phone, then substring match
-        stripped = func.replace(
-            func.replace(
-                func.replace(
-                    func.replace(
-                        func.replace(func.coalesce(Party.phone, ""), "+", ""),
-                        "-",
-                        "",
-                    ),
-                    " ",
-                    "",
-                ),
-                "(",
-                "",
-            ),
-            ")",
-            "",
-        )
-        conds.append(stripped.like(f"%{phone_digits}%"))
+        conds.append(phone_digits_col().like(f"%{phone_digits}%"))
 
     if is_pg:
         conds.append(func.similarity(Party.legal_name, q) > _NAME_SIMILARITY_FLOOR)

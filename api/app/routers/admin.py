@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 
 from app.deps import SessionDep, require_platform_admin
-from app.models import Tenant, TenantWhatsappConfig, User
+from app.models import BackupShop, BackupUpload, Tenant, TenantWhatsappConfig, User
 from app.models._mixins import UserRole
 from app.schemas_admin import (
     ASSIGNABLE_ROLES,
@@ -28,6 +28,8 @@ from app.schemas_admin import (
     FirmDetail,
     FirmListItem,
     FirmPatch,
+    FirmTallyShopOut,
+    FirmTallyShopProvisionResult,
     FirmWhatsappOut,
     FirmWhatsappTestIn,
     FirmWhatsappTestOut,
@@ -250,6 +252,102 @@ def test_firm_whatsapp(
             status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
         ) from exc
     return FirmWhatsappTestOut.model_validate(msg)
+
+
+# --------------------------------------------------------------------------
+# firm companion agent (the Windows tally-agent install at the shop)
+#
+# One agent per firm. The key it authenticates with (`X-Shop-Key`) is
+# generated here and shown exactly once — same contract as a user password.
+# `tally_company.shop_id` and every future shop-side capability route to
+# this row; the firm's staff never see it.
+# --------------------------------------------------------------------------
+
+
+def _shop_out(session: SessionDep, shop: BackupShop | None) -> FirmTallyShopOut:
+    if shop is None:
+        return FirmTallyShopOut(provisioned=False)
+    last_upload = session.scalar(
+        select(func.max(BackupUpload.uploaded_at)).where(
+            BackupUpload.shop_id == shop.id, BackupUpload.status == "confirmed"
+        )
+    )
+    return FirmTallyShopOut(
+        provisioned=True,
+        shop_id=shop.id,
+        is_active=shop.is_active,
+        last_checkin_at=shop.last_checkin_at,
+        last_upload_at=last_upload,
+    )
+
+
+@router.get("/firms/{firm_id}/tally-shop", response_model=FirmTallyShopOut)
+def get_firm_tally_shop(firm_id: str, session: SessionDep) -> FirmTallyShopOut:
+    _load_firm(session, firm_id)
+    shop = session.scalar(
+        select(BackupShop).where(BackupShop.tenant_id == firm_id)
+    )
+    return _shop_out(session, shop)
+
+
+@router.post(
+    "/firms/{firm_id}/tally-shop",
+    response_model=FirmTallyShopProvisionResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def provision_firm_tally_shop(
+    firm_id: str, session: SessionDep
+) -> FirmTallyShopProvisionResult:
+    """Create this firm's companion-agent identity + first key. 409 if one
+    already exists (rotate the key instead of re-provisioning)."""
+    from tools.make_backup_shop import run as make_shop
+
+    firm = _load_firm(session, firm_id)
+    existing = session.scalar(
+        select(BackupShop).where(BackupShop.tenant_id == firm_id)
+    )
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This firm already has an agent. Rotate its key instead.",
+        )
+    # Name the shop after the firm; `make_shop` keys on name, so a stale
+    # same-named unlinked row would be reused — guard by also checking name.
+    name = firm.legal_name
+    if session.scalar(select(BackupShop).where(BackupShop.name == name)) is not None:
+        name = f"{firm.legal_name} ({firm.id[:8]})"
+    shop_id, key, created = make_shop(
+        session, name=name, tenant_id=firm_id, rotate_key=False
+    )
+    assert key is not None
+    return FirmTallyShopProvisionResult(shop_id=shop_id, api_key=key, created=created)
+
+
+@router.post(
+    "/firms/{firm_id}/tally-shop/rotate-key",
+    response_model=FirmTallyShopProvisionResult,
+)
+def rotate_firm_tally_shop_key(
+    firm_id: str, session: SessionDep
+) -> FirmTallyShopProvisionResult:
+    """Issue a new key, invalidating the old one. The shop's install is
+    offline until its appsettings.json is updated."""
+    from tools.make_backup_shop import run as make_shop
+
+    _load_firm(session, firm_id)
+    shop = session.scalar(
+        select(BackupShop).where(BackupShop.tenant_id == firm_id)
+    )
+    if shop is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This firm has no agent yet.",
+        )
+    _sid, key, _created = make_shop(
+        session, name=shop.name, tenant_id=firm_id, rotate_key=True
+    )
+    assert key is not None
+    return FirmTallyShopProvisionResult(shop_id=shop.id, api_key=key, created=False)
 
 
 # --------------------------------------------------------------------------

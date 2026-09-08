@@ -13,6 +13,7 @@ public sealed class AgentOptions
     public BackupSyncOptions? BackupSync { get; set; }
     public BackupHealthMonitorOptions? BackupHealthMonitor { get; set; }
     public WhatsAppDeliveryOptions? WhatsAppDelivery { get; set; }
+    public TallyMastersOptions? TallyMasters { get; set; }
 }
 
 public sealed class BackupSyncOptions
@@ -42,4 +43,20 @@ public sealed class WhatsAppDeliveryOptions
     public bool Enabled { get; set; } = false;
     public int PollIntervalMinutes { get; set; } = 5;
     public string TallyGatewayBaseUrl { get; set; } = "http://localhost:9000";
+}
+
+public sealed class TallyMastersOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Tally Prime's HTTP XML gateway. Needs "TallyPrime acts as
+    /// Server" enabled in F1 > Settings > Connectivity (port 9000 default).</summary>
+    public string GatewayUrl { get; set; } = "http://localhost:9000";
+
+    /// <summary>Optional fallback: a folder the shop's accountant exports
+    /// "All Masters" XML into. Used only when the gateway is unreachable.
+    /// Blank = no fallback (gateway is required).</summary>
+    public string ExportDir { get; set; } = "";
+
+    public int PollIntervalMinutes { get; set; } = 1;
 }

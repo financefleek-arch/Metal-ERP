@@ -44,3 +44,26 @@ def presigned_put_url(r2_key: str) -> tuple[str, int]:
         ExpiresIn=_PUT_URL_EXPIRY_SECONDS,
     )
     return url, _PUT_URL_EXPIRY_SECONDS
+
+
+# 64 MB — matches the Tally-import upload ceiling; a full "All Masters"
+# export is well under this.
+_MAX_FETCH_BYTES = 64 * 1024 * 1024
+
+
+def get_object(r2_key: str) -> bytes:
+    """Download an object the agent uploaded (the Tally masters XML the
+    connector pull needs to parse). Raises `R2NotConfigured` if credentials
+    are missing, `ValueError` if the object is larger than `_MAX_FETCH_BYTES`.
+    """
+    resp = _client().get_object(Bucket=_settings.tally_r2_bucket, Key=r2_key)
+    size = int(resp.get("ContentLength") or 0)
+    if size > _MAX_FETCH_BYTES:
+        raise ValueError(
+            f"R2 object {r2_key} is {size} bytes, over the "
+            f"{_MAX_FETCH_BYTES // (1024 * 1024)} MB limit"
+        )
+    body = resp["Body"].read(_MAX_FETCH_BYTES + 1)
+    if len(body) > _MAX_FETCH_BYTES:
+        raise ValueError(f"R2 object {r2_key} exceeds the size limit")
+    return body

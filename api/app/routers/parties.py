@@ -14,13 +14,17 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
+from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import Party, PartyAddress, Tenant
 from app.models._mixins import PartyRole, PartyStatus
 from app.schemas import (
     PartyAddressIn,
     PartyCreate,
+    PartyDuplicate409,
     PartyListItem,
+    PartyMatchRef,
     PartyOut,
+    PartyResolveResult,
     PartyUpdate,
 )
 from app.schemas_payments import OpenInvoiceForAllocation
@@ -34,6 +38,7 @@ from app.services.parties import (
     dormant_filter,
     is_incomplete,
 )
+from app.services.party_resolution import PartyMatch, _reason, resolve_party
 from app.services.payments import (
     balance_due_for_invoice,
     has_ledger_history,
@@ -56,6 +61,56 @@ def _apply_addresses(party: Party, addresses: list[PartyAddressIn]) -> None:
     party.addresses.clear()
     for a in addresses:
         party.addresses.append(PartyAddress(**a.model_dump()))
+
+
+def _match_ref_for_party(session: SessionDep, party_id: str, score: float | None) -> PartyMatchRef:
+    p = session.get(Party, party_id)
+    addr = (
+        next((a for a in p.addresses if a.is_default), p.addresses[0])
+        if p and p.addresses
+        else None
+    )
+    return PartyMatchRef(
+        id=p.id,
+        legal_name=p.legal_name,
+        gstin=p.gstin,
+        phone=p.phone,
+        city=addr.city if addr else None,
+        last_txn_at=p.last_txn_at,
+        status=str(p.status.value if hasattr(p.status, "value") else p.status),
+        score=score,
+    )
+
+
+def _dup_409(session: SessionDep, match: PartyMatch, name: str) -> HTTPException:
+    """Build the structured 409 for a likely-duplicate create / rename."""
+    if match.method in ("gstin", "phone", "exact"):
+        body = PartyDuplicate409(
+            code="party_exists",
+            message=_reason(match, name),
+            match=_match_ref_for_party(session, match.party_id, match.confidence),
+        )
+    else:
+        body = PartyDuplicate409(
+            code="party_maybe_exists",
+            message=_reason(match, name),
+            candidates=[
+                PartyMatchRef(
+                    id=c.party_id,
+                    legal_name=c.legal_name,
+                    gstin=c.gstin,
+                    phone=c.phone,
+                    city=c.city,
+                    last_txn_at=c.last_txn_at,
+                    status=c.status,
+                    score=c.score,
+                )
+                for c in match.candidates
+            ],
+        )
+    return HTTPException(
+        status_code=status.HTTP_409_CONFLICT, detail=body.model_dump(mode="json")
+    )
 
 
 def _out(session: SessionDep, party: Party) -> PartyOut:
@@ -168,26 +223,87 @@ def list_parties(
     return [_list_item(session, p) for p in rows]
 
 
-@router.post("", response_model=PartyOut, status_code=status.HTTP_201_CREATED)
-def create_party(body: PartyCreate, user: WriteUser, session: SessionDep) -> PartyOut:
-    dupe = session.scalar(
-        select(Party).where(
-            Party.tenant_id == user.tenant_id,
-            func.lower(Party.legal_name) == body.legal_name.lower().strip(),
-        )
+@router.post(
+    "",
+    response_model=PartyOut,
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"model": PartyDuplicate409}},
+)
+def create_party(
+    body: PartyCreate,
+    user: WriteUser,
+    session: SessionDep,
+    force: bool = Query(
+        default=False,
+        description=(
+            "proceed past a *fuzzy* 'similar party exists' warning; ignored "
+            "for exact-name / GSTIN / phone matches"
+        ),
+    ),
+) -> PartyOut:
+    syn = load_synonym_map(session, user.tenant_id)
+    key = normalize_name(body.legal_name, syn)
+    if not key:
+        raise HTTPException(status_code=422, detail="Party name normalises to nothing")
+
+    match = resolve_party(
+        session,
+        user.tenant_id,
+        body.legal_name,
+        gstin=body.gstin,
+        phone=body.phone,
+        synonyms=syn,
     )
-    if dupe is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"A party named '{body.legal_name}' already exists",
-        )
+    if match.method in ("gstin", "phone", "exact"):
+        raise _dup_409(session, match, body.legal_name)
+    if match.candidates and not force:
+        raise _dup_409(session, match, body.legal_name)
 
     data = body.model_dump(exclude={"addresses"})
-    party = Party(tenant_id=user.tenant_id, **data)
+    party = Party(tenant_id=user.tenant_id, legal_name_normalized=key, **data)
     _apply_addresses(party, body.addresses)
     session.add(party)
     session.flush()
     return _out(session, party)
+
+
+@router.post("/resolve", response_model=PartyResolveResult)
+def resolve_party_endpoint(
+    user: CurrentUser,
+    session: SessionDep,
+    name: str = Query(..., min_length=1, description="free-text party name"),
+    gstin: str | None = Query(default=None),
+    phone: str | None = Query(default=None),
+) -> PartyResolveResult:
+    """Type-ahead / pre-flight helper: what would this name (+ GSTIN / phone)
+    match? Same ladder as the create gate, no side effects. On an exact / hard-
+    key hit the one matched party comes back as the sole candidate; on a fuzzy
+    pass the ranked candidates come back with their trigram score. SQLite (no
+    pg_trgm): a non-exact, non-key query returns `method=None, candidates=[]`.
+    """
+    match = resolve_party(session, user.tenant_id, name, gstin=gstin, phone=phone)
+    if match.party_id is not None and not match.candidates:
+        refs = [_match_ref_for_party(session, match.party_id, match.confidence)]
+    else:
+        refs = [
+            PartyMatchRef(
+                id=c.party_id,
+                legal_name=c.legal_name,
+                gstin=c.gstin,
+                phone=c.phone,
+                city=c.city,
+                last_txn_at=c.last_txn_at,
+                status=c.status,
+                score=c.score,
+            )
+            for c in match.candidates[:5]
+        ]
+    return PartyResolveResult(
+        method=match.method,
+        confidence=match.confidence,
+        weak=match.weak,
+        candidates=refs,
+    )
 
 
 @router.get("/{party_id}", response_model=PartyOut)
@@ -195,9 +311,19 @@ def get_party(party_id: str, user: CurrentUser, session: SessionDep) -> PartyOut
     return _out(session, _get_owned(session, user.tenant_id, party_id))
 
 
-@router.patch("/{party_id}", response_model=PartyOut)
+@router.patch(
+    "/{party_id}",
+    response_model=PartyOut,
+    responses={409: {"model": PartyDuplicate409}},
+)
 def update_party(
-    party_id: str, body: PartyUpdate, user: WriteUser, session: SessionDep
+    party_id: str,
+    body: PartyUpdate,
+    user: WriteUser,
+    session: SessionDep,
+    force: bool = Query(
+        default=False, description="proceed past a *fuzzy* rename duplicate warning"
+    ),
 ) -> PartyOut:
     party = _get_owned(session, user.tenant_id, party_id)
     patch = body.model_dump(exclude_unset=True)
@@ -205,18 +331,27 @@ def update_party(
 
     if "legal_name" in patch:
         new_name = patch["legal_name"].strip()
-        clash = session.scalar(
-            select(Party).where(
-                Party.tenant_id == user.tenant_id,
-                Party.id != party.id,
-                func.lower(Party.legal_name) == new_name.lower(),
-            )
-        )
-        if clash is not None:
+        syn = load_synonym_map(session, user.tenant_id)
+        key = normalize_name(new_name, syn)
+        if not key:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"A party named '{new_name}' already exists",
+                status_code=422, detail="Party name normalises to nothing"
             )
+        match = resolve_party(
+            session,
+            user.tenant_id,
+            new_name,
+            gstin=patch.get("gstin", party.gstin),
+            phone=patch.get("phone", party.phone),
+            exclude_id=party.id,
+            synonyms=syn,
+        )
+        if match.method in ("gstin", "phone", "exact"):
+            raise _dup_409(session, match, new_name)
+        if match.candidates and not force:
+            raise _dup_409(session, match, new_name)
+        patch["legal_name"] = new_name
+        party.legal_name_normalized = key
 
     # Opening balance locks once the party has any finalized invoice or
     # payment — a real change to it after that point is a 409. A no-op patch

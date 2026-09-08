@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
+import { useDebounced } from "../lib/useDebounced";
+import { SimilarParties } from "./SimilarParties";
+import { isDup409, type PartyDuplicate409, type PartyMatchRef } from "../lib/types";
 import {
   MAXLEN,
   addressLineError,
@@ -62,11 +65,18 @@ export function NewPartyForm({
   const qc = useQueryClient();
   const [v, setV] = useState<Fields>(EMPTY);
   const [serverError, setServerError] = useState<string | null>(null);
+  // Set from a `party_maybe_exists` 409 — the operator must then either pick a
+  // candidate or press "Create new anyway", which re-POSTs with ?force=true.
+  const [dupWarn, setDupWarn] = useState<PartyDuplicate409 | null>(null);
 
-  const create = useMutation({
-    mutationFn: () => {
+  const debName = useDebounced(v.legal_name, 300);
+  const debGstin = useDebounced(v.gstin, 400);
+  const debPhone = useDebounced(v.phone, 400);
+
+  const create = useMutation<Party, unknown, boolean>({
+    mutationFn: (force) => {
       const hasAddr = v.addr_line1 || v.addr_city || v.addr_state_code || v.addr_pincode;
-      return api<Party>("/parties", {
+      return api<Party>(`/parties${force ? "?force=true" : ""}`, {
         method: "POST",
         body: {
           legal_name: v.legal_name.trim(),
@@ -99,7 +109,15 @@ export function NewPartyForm({
       qc.invalidateQueries({ queryKey: ["parties"] });
       onCreated(p);
     },
-    onError: (e) => setServerError(e instanceof ApiError ? e.message : "Create failed"),
+    onError: (e) => {
+      if (e instanceof ApiError && e.status === 409 && isDup409(e.detail)) {
+        setDupWarn(e.detail);
+        setServerError(null);
+      } else {
+        setDupWarn(null);
+        setServerError(e instanceof ApiError ? e.message : "Create failed");
+      }
+    },
   });
 
   const errs = {
@@ -114,6 +132,18 @@ export function NewPartyForm({
   };
   const canCreate =
     !!v.legal_name.trim() && !Object.values(errs).some(Boolean) && !create.isPending;
+  // A `party_maybe_exists` warning must be dismissed by an explicit choice.
+  const blockedByDup = dupWarn?.code === "party_maybe_exists";
+
+  function pickExisting(p: PartyMatchRef) {
+    // Hydrate the picked row into a full Party via GET, then hand it up.
+    api<Party>(`/parties/${p.id}`)
+      .then((full) => {
+        qc.invalidateQueries({ queryKey: ["parties"] });
+        onCreated(full);
+      })
+      .catch((e) => setServerError(e instanceof ApiError ? e.message : "Could not open party"));
+  }
 
   return (
     <form
@@ -121,7 +151,7 @@ export function NewPartyForm({
       onSubmit={(e) => {
         e.preventDefault();
         setServerError(null);
-        if (canCreate) create.mutate();
+        if (canCreate && !blockedByDup) create.mutate(false);
       }}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -130,7 +160,7 @@ export function NewPartyForm({
           <button type="button" className="btn-ghost" onClick={onCancel}>
             Cancel
           </button>
-          <button type="submit" className="btn-primary" disabled={!canCreate}>
+          <button type="submit" className="btn-primary" disabled={!canCreate || blockedByDup}>
             {create.isPending ? "Creating…" : "Create"}
           </button>
         </div>
@@ -145,9 +175,23 @@ export function NewPartyForm({
             placeholder="Type the party name…"
             maxLength={MAXLEN.legalName}
             value={v.legal_name}
-            onChange={(e) => setV({ ...v, legal_name: e.target.value })}
+            onChange={(e) => {
+              setDupWarn(null);
+              setV({ ...v, legal_name: e.target.value });
+            }}
           />
           {v.legal_name.trim() && errs.legal_name && <p className="err">{errs.legal_name}</p>}
+          {/* live "did you mean" — a matched candidate short-circuits create */}
+          {!dupWarn && (
+            <div className="mt-2">
+              <SimilarParties
+                name={debName}
+                gstin={debGstin}
+                phone={debPhone}
+                onUse={pickExisting}
+              />
+            </div>
+          )}
         </div>
         <div>
           <label className="label">Role</label>
@@ -289,6 +333,44 @@ export function NewPartyForm({
       </div>
 
       {serverError && <p className="err">{serverError}</p>}
+
+      {dupWarn && (
+        <div className="rounded-md border border-line bg-[#f1e7d6] p-3">
+          <p className="text-[13px] font-medium text-warn">⚠ {dupWarn.message}</p>
+          <ul className="mt-2 divide-y divide-line/70">
+            {(dupWarn.match ? [dupWarn.match] : dupWarn.candidates).map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-3 py-1.5">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-ink">{p.legal_name}</p>
+                  <p className="truncate text-[11px] text-muted">
+                    {[p.city, p.gstin].filter(Boolean).join(" · ") || "—"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-ghost h-7 shrink-0 px-2 text-xs"
+                  onClick={() => pickExisting(p)}
+                >
+                  Use this
+                </button>
+              </li>
+            ))}
+          </ul>
+          {dupWarn.code === "party_maybe_exists" && (
+            <button
+              type="button"
+              className="mt-2 text-xs font-medium text-accent underline"
+              onClick={() => {
+                setDupWarn(null);
+                create.mutate(true);
+              }}
+            >
+              None of these — create “{v.legal_name.trim()}” as new
+            </button>
+          )}
+        </div>
+      )}
+
       <p className="text-[11px] text-muted">Nothing is saved until you press Create.</p>
     </form>
   );

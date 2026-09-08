@@ -26,6 +26,7 @@ from app.routers import (
     parties_import,
     payments,
     reference,
+    tally,
     tally_agent,
     tenant,
     whatsapp,
@@ -67,6 +68,7 @@ app.include_router(payments.collections_router)
 app.include_router(payments.ledger_router)
 app.include_router(whatsapp.router)
 app.include_router(whatsapp.invoice_router)
+app.include_router(tally.router)
 app.include_router(tally_agent.router)
 app.include_router(inward.router)
 if not settings.is_production:

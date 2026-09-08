@@ -12,6 +12,8 @@ firehose to us, so a status for an unknown wamid must be ignored, and a
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -192,3 +194,84 @@ def test_status_webhook_failed_records_readable_error(client: TestClient, sessio
     assert "131026" in msg.error
     assert "valid WhatsApp user" in msg.error
     assert "{" not in msg.error  # not a raw dict dump
+
+
+# --------------------------------------------------------------------------
+# per-invoice message log + list column
+# --------------------------------------------------------------------------
+
+
+def _add_msg(session, inv, *, wamid: str, status: str, created=None) -> WhatsappMessage:  # type: ignore[no-untyped-def]
+    m = WhatsappMessage(
+        tenant_id=inv.tenant_id,
+        invoice_id=inv.id,
+        template_name="invoice_ready",
+        to_phone="919876543210",
+        wa_message_id=wamid,
+        status=status,
+    )
+    session.add(m)
+    session.flush()
+    if created is not None:  # rows created microseconds apart share a timestamp
+        m.created_at = created
+        session.flush()
+    return m
+
+
+def test_invoice_whatsapp_log_endpoint(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    h = _h(_register(client, "wa-log@x.example.com"))
+    pid = _party(client, h, phone="98765 43210")
+    iid = _final_invoice(client, h, pid)
+    inv = session.scalar(select(Invoice).where(Invoice.id == iid))
+
+    t0 = datetime.now(UTC)
+    _add_msg(session, inv, wamid="wamid.A", status="sent", created=t0)
+    _add_msg(
+        session, inv, wamid="wamid.B", status="failed", created=t0 + timedelta(minutes=5)
+    )
+    session.commit()
+
+    r = client.get(f"/api/invoices/{iid}/whatsapp", headers=h)
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert [x["wa_message_id"] for x in rows] == ["wamid.B", "wamid.A"]  # newest first
+    assert {x["status"] for x in rows} == {"sent", "failed"}
+
+    # empty for an invoice that was never sent
+    iid2 = _final_invoice(client, h, pid)
+    r2 = client.get(f"/api/invoices/{iid2}/whatsapp", headers=h)
+    assert r2.status_code == 200 and r2.json() == []
+
+
+def test_invoice_whatsapp_log_is_tenant_scoped(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    h1 = _h(_register(client, "wa-t1@x.example.com"))
+    pid = _party(client, h1, phone="98765 43210")
+    iid = _final_invoice(client, h1, pid)
+
+    h2 = _h(_register(client, "wa-t2@x.example.com"))
+    assert client.get(f"/api/invoices/{iid}/whatsapp", headers=h2).status_code == 404
+
+
+def test_invoice_list_carries_latest_whatsapp_status(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    h = _h(_register(client, "wa-listcol@x.example.com"))
+    pid = _party(client, h, phone="98765 43210")
+    iid = _final_invoice(client, h, pid)
+    inv = session.scalar(select(Invoice).where(Invoice.id == iid))
+
+    # never sent -> null
+    row = next(x for x in client.get("/api/invoices", headers=h).json() if x["id"] == iid)
+    assert row["whatsapp_status"] is None
+
+    t0 = datetime.now(UTC)
+    _add_msg(session, inv, wamid="wamid.OLD", status="sent", created=t0)
+    _add_msg(
+        session,
+        inv,
+        wamid="wamid.NEW",
+        status="delivered",
+        created=t0 + timedelta(minutes=5),
+    )
+    session.commit()
+
+    row = next(x for x in client.get("/api/invoices", headers=h).json() if x["id"] == iid)
+    assert row["whatsapp_status"] == "delivered"  # latest row wins

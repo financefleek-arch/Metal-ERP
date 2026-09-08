@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tally Connector — F1a Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<style>
+  :root {
+    --ground: #f4f1ec;
+    --ink: #23201b;
+    --card: #ffffff;
+    --card-2: #faf8f4;
+    --line: #e6e0d6;
+    --line-strong: #d8d0c2;
+    --muted: #7c766a;
+    --accent: #2f6f89;
+    --accent-dark: #245771;
+    --accent-soft: #eef4f7;
+    --ok: #4f8a5b;
+    --ok-soft: #edf5ee;
+    --warn: #b5892f;
+    --warn-soft: #fbf3e2;
+    --danger: #c0392b;
+    --danger-soft: #f8ecea;
+    --ops: #1a2b33;
+    --serif: "Fraunces", Georgia, serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #1a1613;
+      --ink: #ece6db;
+      --card: #23201a;
+      --card-2: #1f1c16;
+      --line: #37322a;
+      --line-strong: #453f34;
+      --muted: #9c9585;
+      --accent: #5da2c1;
+      --accent-dark: #7bb8d3;
+      --accent-soft: #1e2c33;
+      --ok: #79b487;
+      --ok-soft: #1c2a20;
+      --warn: #d6a860;
+      --warn-soft: #2c2413;
+      --danger: #d98a80;
+      --danger-soft: #2c1c1a;
+      --ops: #101c22;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #1a1613;
+    --ink: #ece6db;
+    --card: #23201a;
+    --card-2: #1f1c16;
+    --line: #37322a;
+    --line-strong: #453f34;
+    --muted: #9c9585;
+    --accent: #5da2c1;
+    --accent-dark: #7bb8d3;
+    --accent-soft: #1e2c33;
+    --ok: #79b487;
+    --ok-soft: #1c2a20;
+    --warn: #d6a860;
+    --warn-soft: #2c2413;
+    --danger: #d98a80;
+    --danger-soft: #2c1c1a;
+    --ops: #101c22;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased; line-height: 1.55;
+  }
+  .wrap { max-width: 1140px; margin: 0 auto; padding: 40px 22px 120px; }
+
+  .eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 8px;
+  }
+  h1 {
+    font-family: var(--serif); font-size: 30px; font-weight: 600;
+    margin: 0 0 6px; letter-spacing: -.01em; text-wrap: balance;
+  }
+  .lede { color: var(--muted); font-size: 14.5px; max-width: 66ch; margin: 0; }
+
+  h2 {
+    font-family: var(--serif); font-size: 20px; font-weight: 600;
+    margin: 54px 0 4px; letter-spacing: -.01em;
+  }
+  h2 .n {
+    font-family: var(--mono); font-size: 13px; font-weight: 500;
+    color: var(--accent); margin-right: 10px;
+  }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; max-width: 72ch; }
+
+  .status-banner {
+    display: flex; gap: 14px; flex-wrap: wrap;
+    background: var(--card); border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px; padding: 14px 18px; margin: 22px 0 6px; font-size: 13px;
+  }
+  .status-banner div { flex: 1 1 190px; }
+  .status-banner b { display: block; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 3px; }
+  .tag {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 9px;
+    border-radius: 999px;
+  }
+  .tag.done { background: var(--ok-soft); color: var(--ok); }
+  .tag.pend { background: var(--warn-soft); color: var(--warn); }
+
+  .split { display: grid; gap: 26px; grid-template-columns: 1fr; align-items: start; }
+  @media (min-width: 980px) { .split { grid-template-columns: 1fr 300px; } }
+
+  /* ---- Ops-console frame ---- */
+  .frame {
+    background: var(--card); border: 1px solid var(--line-strong);
+    border-radius: 14px; overflow: hidden;
+  }
+  .frame-cap {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); background: var(--card-2); padding: 8px 15px;
+    border-bottom: 1px solid var(--line);
+  }
+  .ops-bar {
+    background: var(--ops); color: #cfe0e6; font-size: 12.5px; font-weight: 600;
+    padding: 9px 16px;
+  }
+  .ops-bar .op-accent { color: #6fb2c9; }
+  .pane {
+    display: grid; grid-template-columns: 190px 1fr; min-height: 260px;
+  }
+  .pane-list {
+    background: var(--card-2); border-right: 1px solid var(--line); padding: 12px;
+  }
+  .pane-list .fld {
+    height: 32px; border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--card); font-size: 12px; color: var(--muted);
+    display: flex; align-items: center; padding: 0 9px; margin-bottom: 10px;
+  }
+  .pane-list ul { list-style: none; margin: 0; padding: 0; }
+  .pane-list li {
+    font-size: 12.5px; padding: 7px 9px; border-radius: 6px; color: var(--muted);
+  }
+  .pane-list li.on { background: var(--accent); color: #fff; font-weight: 600; }
+  .pane-body { padding: 20px 22px; }
+
+  /* ---- app section idiom (mirrors FirmsPage.tsx panels) ---- */
+  .fsection { border-bottom: 1px solid var(--line); padding: 18px 0; }
+  .fsection:first-child { padding-top: 4px; }
+  .fsection:last-child { border-bottom: none; }
+  .fsection-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  }
+  .fsection-head h3 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); margin: 0;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+  .fld-group { display: flex; flex-direction: column; }
+  .label {
+    font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); margin-bottom: 4px;
+  }
+  .field {
+    height: 38px; border-radius: 6px; border: 1px solid var(--line-strong);
+    background: var(--card); color: var(--ink); padding: 0 11px; font: inherit;
+    font-size: 13px;
+  }
+  select.field { appearance: none; padding-right: 26px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+      linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 15px) 16px, calc(100% - 10px) 16px;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+  }
+  .w64 { width: 260px; } .w56 { width: 224px; } .w44 { width: 176px; } .w80 { width: 320px; }
+  .field.ghost { color: var(--muted); }
+  .btn {
+    height: 36px; padding: 0 15px; border-radius: 6px; font: inherit;
+    font-weight: 600; font-size: 13px; cursor: pointer; border: 1px solid transparent;
+  }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
+  .btn.ghost { background: transparent; color: var(--accent); border-color: var(--line-strong); }
+  .btn.small { height: 28px; padding: 0 10px; font-size: 11.5px; }
+  .btn.danger { background: transparent; color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .helptext { font-size: 12px; color: var(--muted); margin: 11px 0 0; max-width: 64ch; }
+
+  /* status pill (mirrors StatusPill in FirmsPage) */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px;
+    font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+  .pill.ok { color: var(--ok); background: var(--ok-soft); }
+  .pill.off { color: var(--muted); background: var(--card-2); border: 1px solid var(--line); }
+
+  /* pull status chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid var(--line-strong); color: var(--muted);
+  }
+  .chip .dot { width: 7px; height: 7px; border-radius: 999px; background: currentColor; }
+  .chip.running { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+  .chip.wait { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+  .chip.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .chip.err { color: var(--danger); background: var(--danger-soft); border-color: transparent; }
+
+  /* sync-job table */
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 580px; }
+  thead th {
+    text-align: left; font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); font-weight: 600; padding: 9px 13px;
+    background: var(--card-2); border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: 10px 13px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num { font-variant-numeric: tabular-nums; color: var(--muted); }
+  td.when { color: var(--muted); white-space: nowrap; }
+
+  /* side note rail */
+  .note {
+    font-size: 12.5px; color: var(--muted); line-height: 1.6;
+    border-left: 2px solid var(--line-strong); padding: 2px 0 2px 15px;
+  }
+  .note h4 {
+    font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink); margin: 0 0 6px; font-weight: 600;
+  }
+  .note + .note { margin-top: 18px; }
+  .note code, .sub code, footer code {
+    font-family: var(--mono); font-size: 11.5px; background: var(--card-2);
+    padding: 1px 4px; border-radius: 4px; border: 1px solid var(--line);
+  }
+  .note ul { margin: 6px 0 0; padding-left: 16px; }
+  .note li { margin: 3px 0; }
+  .q {
+    background: var(--warn-soft); border: 1px solid var(--warn);
+    border-radius: 8px; padding: 10px 13px; font-size: 12.5px; color: var(--ink);
+    margin-top: 14px;
+  }
+  .q b { color: var(--warn); }
+
+  .flow {
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    counter-reset: step; margin-top: 4px;
+  }
+  .flow > div {
+    padding: 13px 16px 13px 46px; position: relative; font-size: 13px;
+    border-bottom: 1px solid var(--line); background: var(--card);
+  }
+  .flow > div:last-child { border-bottom: none; }
+  .flow > div::before {
+    counter-increment: step; content: counter(step);
+    position: absolute; left: 14px; top: 13px;
+    width: 20px; height: 20px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    display: grid; place-items: center;
+  }
+  .flow .who {
+    font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); display: block; margin-bottom: 1px;
+  }
+  .flow b { font-weight: 600; }
+
+  footer {
+    margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--line);
+    font-size: 12px; color: var(--muted);
+  }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Metal ERP · Operations console · Feature F1a</p>
+    <h1>Tally Connector — pull masters</h1>
+    <p class="lede">
+      A new <b>Tally</b> section on the firm-detail pane of the operator
+      console — stacked below the existing WhatsApp section, same panel idiom
+      (bordered section, uppercase heading, status pill). Only a Fleek
+      platform-admin sees this; the tenant app is unchanged. Backend and the
+      companion-agent module are built; this is the screen review.
+    </p>
+  </header>
+
+  <div class="status-banner">
+    <div><b>Backend</b><span class="tag done">built · 398 tests</span></div>
+    <div><b>Companion agent</b><span class="tag done">built · verified live</span></div>
+    <div><b>Cloud storage wiring</b><span class="tag pend">infra pending</span></div>
+    <div><b>This UI</b><span class="tag pend">review, then build</span></div>
+  </div>
+
+  <!-- 1. WHERE IT LIVES -->
+  <h2><span class="n">1</span>Where it lives</h2>
+  <p class="sub">
+    Operations console → <b>Client firms</b> → pick a firm → the detail pane.
+    Today that pane stacks: firm fields, then a WhatsApp section. F1a adds a
+    third section, <b>Tally</b>, below it. No tabs — the admin pane has never
+    had them, and this keeps that.
+  </p>
+  <div class="frame">
+    <div class="ops-bar">Metal ERP <span class="op-accent">· Operations</span></div>
+    <div class="pane">
+      <div class="pane-list">
+        <div class="fld">Search firms…</div>
+        <ul>
+          <li class="on">Sitha Steels &amp; Utensils</li>
+          <li>Balaji Metal Mart</li>
+          <li>New Anand Traders</li>
+          <li>Shree Hardware</li>
+        </ul>
+      </div>
+      <div class="pane-body">
+        <div class="fsection" style="opacity:.5">
+          <div class="fsection-head"><h3>Firm details</h3></div>
+          <p class="helptext" style="margin-top:8px">Legal name · GSTIN · address · city — (unchanged)</p>
+        </div>
+        <div class="fsection" style="opacity:.5">
+          <div class="fsection-head"><h3>WhatsApp</h3><span class="pill ok"><span class="dot"></span>Active</span></div>
+          <p class="helptext" style="margin-top:8px">Phone number ID · WABA ID · display number — (unchanged)</p>
+        </div>
+        <div class="fsection">
+          <div class="fsection-head">
+            <h3 style="color:var(--accent)">Tally</h3>
+            <span class="pill ok"><span class="dot"></span>Linked · pulled 2h ago</span>
+          </div>
+          <p class="helptext" style="margin-top:8px">← the new section, expanded below</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. CONNECTION -->
+  <h2><span class="n">2</span>Connection</h2>
+  <div class="split">
+    <div class="frame">
+      <div class="frame-cap">Tally section · connection</div>
+      <div style="padding:20px 22px;background:var(--card)">
+        <div class="fsection" style="border:none;padding:0">
+          <div class="fsection-head">
+            <h3>Tally</h3>
+            <span class="pill ok"><span class="dot"></span>Linked · agent checked in 40s ago</span>
+          </div>
+          <div class="row">
+            <div class="fld-group">
+              <span class="label">Company name in Tally</span>
+              <input class="field w64" value="Sitha Steels" />
+            </div>
+            <div class="fld-group">
+              <span class="label">Companion agent (shop PC)</span>
+              <select class="field w80">
+                <option>Sitha Steels — Siliguri  ·  checked in 40s ago</option>
+                <option>— not linked —</option>
+              </select>
+            </div>
+          </div>
+          <p class="helptext">
+            The agent reads masters straight from Tally's local gateway — no
+            file, no export step. Tally must be running with a company open on
+            that PC when a pull runs.
+          </p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="note">
+        <h4>Two fields</h4>
+        <b>Company name</b> targets the right company on a multi-company Tally
+        (blank → whatever's open). <b>Agent</b> is chosen from the shops
+        already checking in — same list the backup console uses.
+      </div>
+      <div class="note">
+        <h4>No export-folder field</h4>
+        Gateway on <code>localhost:9000</code> is the transport. A folder
+        fallback exists in the agent's own config for a shop that won't run
+        Tally as a server — not surfaced here.
+      </div>
+      <div class="note">
+        <h4>Save</h4>
+        Autosaves on blur, like the WhatsApp section. No Save button.
+      </div>
+      <div class="q">
+        <b>Q1.</b> The status pill: show live agent reachability
+        (<i>checked in 40s ago</i> / <i>no check-in for 3 days</i>) here, or
+        keep reachability to the backup console and show only
+        <i>Linked / Not linked</i>?
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. LEDGER MAP -->
+  <h2><span class="n">3</span>Ledger map <span style="font-family:var(--sans);font-size:13px;font-weight:400;color:var(--muted)">— collapsed by default</span></h2>
+  <div class="split">
+    <div class="frame">
+      <div class="frame-cap">Tally section · ledger map (expanded)</div>
+      <div style="padding:20px 22px;background:var(--card)">
+        <div class="fsection" style="border:none;padding:0">
+          <div class="fsection-head"><h3>Invoice-push ledgers</h3></div>
+          <p class="helptext" style="margin:6px 0 0">
+            Which Tally ledgers to use when Metal ERP pushes sales back
+            (next slice, F1b). Not used by the masters pull. Options load from
+            the first pull.
+          </p>
+          <div class="row">
+            <div class="fld-group">
+              <span class="label">Debtors group</span>
+              <select class="field w56"><option>Sundry Debtors</option></select>
+            </div>
+            <div class="fld-group">
+              <span class="label">Creditors group</span>
+              <select class="field w56"><option>Sundry Creditors</option></select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="fld-group">
+              <span class="label">Sales ledger</span>
+              <select class="field w56"><option>Sales @ 18%</option></select>
+            </div>
+            <div class="fld-group">
+              <span class="label">Round-off ledger</span>
+              <select class="field w56"><option>Round Off</option></select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="fld-group">
+              <span class="label">CGST ledger</span>
+              <select class="field w56 ghost"><option>— pick —</option></select>
+            </div>
+            <div class="fld-group">
+              <span class="label">SGST ledger</span>
+              <select class="field w56 ghost"><option>— pick —</option></select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="note">
+        <h4>Why it's here now, but collapsed</h4>
+        F1a doesn't touch the tax ledgers. Collecting the names during F1a
+        means F1b is pure backend — no return trip to the operator. But the
+        section renders <b>collapsed</b> ("Set up invoice-push ledgers →")
+        so the F1a working surface is just Connection + Pull.
+      </div>
+      <div class="note">
+        <h4>Options source</h4>
+        Every <code>&lt;LEDGER&gt;</code> / <code>&lt;GROUP&gt;</code> name
+        in the pulled XML is stored as <code>known_ledgers</code>. Before a
+        first pull the dropdowns show "run a pull to load ledger names" and
+        are disabled.
+      </div>
+      <div class="note">
+        <h4>Save</h4>
+        Per-field; clearing to blank un-sets that slot; an unknown slot name
+        is rejected server-side.
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. PULL -->
+  <h2><span class="n">4</span>Pull masters</h2>
+  <p class="sub">
+    The one control that does the work. It makes a job; the agent picks it up
+    on its next check-in (~1 min), exports from Tally, uploads, and the backend
+    stages the rows. The section polls the job while it runs.
+  </p>
+  <div class="split">
+    <div class="frame">
+      <div class="frame-cap">Tally section · pull — idle</div>
+      <div style="padding:20px 22px;background:var(--card)">
+        <div class="fsection" style="border:none;padding:0">
+          <div class="fsection-head"><h3>Pull masters from Tally</h3></div>
+          <p class="helptext" style="margin:6px 0 12px">
+            Parties (Sundry Debtors &amp; Creditors) and stock items land in a
+            review batch. Nothing is written until you commit it.
+          </p>
+          <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+            <button class="btn primary">Pull masters now</button>
+            <span style="font-size:12px;color:var(--muted)">
+              last pull 2h ago · 214 parties, 1,880 items
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="note">
+        <h4>Chip, over the pull's life</h4>
+        <div class="chips">
+          <span class="chip"><span class="dot"></span>Queued</span>
+          <span class="chip running"><span class="dot"></span>Running</span>
+          <span class="chip wait"><span class="dot"></span>Waiting on Tally</span>
+          <span class="chip ok"><span class="dot"></span>Ready to review</span>
+          <span class="chip err"><span class="dot"></span>Failed</span>
+        </div>
+        <ul>
+          <li><b>Queued</b> — job made, agent hasn't checked in.</li>
+          <li><b>Running</b> — agent has it; exporting / uploading / parsing.</li>
+          <li><b>Waiting on Tally</b> — agent says Tally is closed or no
+            company open. Not an error; retries each check-in.</li>
+          <li><b>Ready to review</b> — rows staged; shows a
+            "Review 214 parties + 1,880 items →" link.</li>
+          <li><b>Failed</b> — bad XML / upload / storage. Shows the message
+            + Retry.</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h4>Button disabled while a pull is live</h4>
+        A pull <i>queued / running</i>, or <i>ready</i> but not yet reviewed,
+        blocks a second (409). Caption: "a pull is already waiting for review —
+        commit or discard it first."
+      </div>
+      <div class="q">
+        <b>Q2.</b> Poll interval while <i>Running</i> — agent check-in is
+        ~60 s, so 3 s polls mostly return the same state. 5 s flat, or a slow
+        (15 s) poll while <i>Queued/Waiting</i> and faster only once
+        <i>Running</i>?
+      </div>
+      <div class="q">
+        <b>Q3.</b> A <i>Waiting on Tally</i> job never times out today — it
+        stays queued forever. Add <b>auto-cancel after N check-ins</b>
+        (backend change), or a manual <b>Cancel</b> button next to the chip?
+      </div>
+    </div>
+  </div>
+
+  <div class="frame" style="margin-top:20px">
+    <div class="frame-cap">Tally section · pull — running, then done</div>
+    <div style="padding:20px 22px;background:var(--card);display:grid;gap:16px">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn primary" disabled>Pull masters now</button>
+        <span class="chip running"><span class="dot"></span>Running — agent is exporting from Tally</span>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">
+        <button class="btn primary" disabled>Pull masters now</button>
+        <span class="chip ok"><span class="dot"></span>Ready to review</span>
+        <a href="#" style="font-size:13px;font-weight:600">Review 214 parties + 1,880 items →</a>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:16px">
+        <button class="btn primary">Pull masters now</button>
+        <span class="chip err"><span class="dot"></span>Failed</span>
+        <span style="font-size:12.5px;color:var(--danger)">could not download masters XML: storage timeout</span>
+        <button class="btn ghost small">Retry</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. HISTORY -->
+  <h2><span class="n">5</span>Recent pulls</h2>
+  <p class="sub">A short history under the pull control — for support and to see why one failed. Newest first.</p>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>When</th><th>Status</th><th>Parties</th><th>Items</th><th>Detail</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="when">2 hours ago</td>
+          <td><span class="chip ok"><span class="dot"></span>OK</span></td>
+          <td class="num">214</td><td class="num">1,880</td>
+          <td class="num">committed</td><td></td>
+        </tr>
+        <tr>
+          <td class="when">yesterday 18:40</td>
+          <td><span class="chip err"><span class="dot"></span>Failed</span></td>
+          <td class="num">—</td><td class="num">—</td>
+          <td style="color:var(--danger)">could not download masters XML: storage timeout</td>
+          <td><button class="btn ghost small">Retry</button></td>
+        </tr>
+        <tr>
+          <td class="when">yesterday 18:31</td>
+          <td><span class="chip wait"><span class="dot"></span>Cancelled</span></td>
+          <td class="num">—</td><td class="num">—</td>
+          <td class="num">Tally was closed — retried, then cancelled</td><td></td>
+        </tr>
+        <tr>
+          <td class="when">3 days ago</td>
+          <td><span class="chip ok"><span class="dot"></span>OK</span></td>
+          <td class="num">211</td><td class="num">1,874</td>
+          <td class="num">committed</td><td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note" style="margin-top:16px">
+    <h4>Open questions</h4>
+    <ul>
+      <li><b>Q4.</b> Row count kept — last 10 or last 20?</li>
+      <li><b>Q5.</b> Per-row error/raw-XML drawer for support, or is the
+        message column enough for F1a?</li>
+    </ul>
+  </div>
+
+  <!-- 6. FLOW -->
+  <h2><span class="n">6</span>End-to-end, once the operator clicks Pull</h2>
+  <div class="flow">
+    <div><span class="who">Operator · Ops console</span>
+      Clicks <b>Pull masters now</b>. A job is created; the button disables, chip → <b>Queued</b>.</div>
+    <div><span class="who">Companion agent · shop PC</span>
+      Next check-in (~1 min) it takes the job and asks Tally for an <b>All Masters</b> export over the local gateway.</div>
+    <div><span class="who">Tally Prime · shop PC</span>
+      Returns the masters XML. (Closed / no company open → agent reports it, chip → <b>Waiting on Tally</b>, retries.)</div>
+    <div><span class="who">Companion agent</span>
+      Uploads the XML to cloud storage; tells the backend the job is done.</div>
+    <div><span class="who">Backend</span>
+      Downloads, parses, <b>stages</b> parties + stock items into a review batch. Chip → <b>Ready to review</b>.</div>
+    <div><span class="who">Operator</span>
+      Opens the existing import review screen, checks the matches, clicks <b>Commit</b>. Parties + items now exist for the firm.</div>
+  </div>
+  <div class="split" style="margin-top:20px">
+    <div class="note">
+      <h4>The review screen is not new</h4>
+      Commit runs through the <i>same</i> import review UI the manual
+      "upload a Tally XML" flow already uses — same match rules, same
+      per-row create / link / skip, same commit. The pull fills that screen
+      instead of a file upload. F1a adds no review UI.
+    </div>
+    <div class="note">
+      <h4>What gets created</h4>
+      <ul>
+        <li><b>Parties</b> — Sundry Debtors → customers, Sundry Creditors →
+          suppliers. Blank fields filled; nothing overwritten.</li>
+        <li><b>Stock items</b> + their product groups.</li>
+        <li><b>Opening balances</b> — only for a party with no
+          invoices/payments yet, flagged in the review screen.</li>
+        <li>Sales / tax / cash ledger <i>names</i> → remembered for the
+          ledger map; no records created for them.</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    Companion doc <code>docs/EXECUTION-PLAN-F1a-tally-masters-in.md</code> ·
+    Portfolio <code>docs/MASTER-tally-complement-saas.md</code> §F1 ·
+    Idiom mirrored from <code>web/src/pages/admin/FirmsPage.tsx</code>. Review only — not part of the build.
+  </footer>
+
+</div>
+</body>
+</html>

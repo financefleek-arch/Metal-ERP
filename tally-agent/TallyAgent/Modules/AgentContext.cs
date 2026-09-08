@@ -21,6 +21,17 @@ public sealed class AgentContext(
     private readonly Dictionary<string, string> _moduleStatus = new();
     private string? _lastError;
 
+    // The outbox from the most recent checkin response. The host calls
+    // checkin AFTER the module round, so a module sees the previous round's
+    // outbox — one poll of latency, acceptable at the 1-minute checkin
+    // cadence (and the tally module's not-ready states retry anyway).
+    private IReadOnlyList<OutboxItem> _pendingOutbox = Array.Empty<OutboxItem>();
+
+    public IReadOnlyList<OutboxItem> PendingOutbox => _pendingOutbox;
+
+    public void SetPendingOutbox(IReadOnlyList<OutboxItem> outbox) =>
+        _pendingOutbox = outbox ?? Array.Empty<OutboxItem>();
+
     public ILogger CreateLogger(string category) => loggerFactory.CreateLogger(category);
 
     /// <summary>Records this module's outcome for the next checkin call.</summary>

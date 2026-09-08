@@ -78,6 +78,88 @@ export interface FirmWhatsappTestResult {
   error: string | null;
 }
 
+// -------------------------------------------------------------------------
+// Tally Connector (F1a) — /api/admin/firms/{id}/tally/*
+// -------------------------------------------------------------------------
+
+/** This firm's companion-agent identity (GET /admin/firms/{id}/tally-shop).
+ *  One per firm; the key it authenticates with is shown only at
+ *  provision / rotate time, never here. */
+export interface FirmTallyShop {
+  provisioned: boolean;
+  shop_id: string | null;
+  is_active: boolean;
+  last_checkin_at: string | null;
+  last_upload_at: string | null;
+}
+
+/** Response of provision / rotate-key — `api_key` is plaintext, shown once. */
+export interface FirmTallyShopKey {
+  shop_id: string;
+  api_key: string;
+  created: boolean;
+}
+
+export interface KnownLedger {
+  name: string;
+  parent: string | null;
+  kind: "ledger" | "group";
+}
+
+export interface TallyCompany {
+  id: string;
+  tenant_id: string;
+  company_name: string;
+  base_currency: string;
+  transport: string;
+  shop_id: string | null;
+  ledger_map: Record<string, string>;
+  known_ledgers: KnownLedger[] | null;
+  last_masters_pull_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TallyCompanyUpsert {
+  company_name: string;
+}
+
+/** Only the keys present are written; "" clears that slot. */
+export type LedgerMapPatch = Partial<
+  Record<
+    | "sales_ledger"
+    | "cash_ledger"
+    | "bank_ledger"
+    | "round_off_ledger"
+    | "cgst_ledger"
+    | "sgst_ledger"
+    | "igst_ledger"
+    | "debtors_parent"
+    | "creditors_parent",
+    string
+  >
+>;
+
+export interface TallySyncJob {
+  id: string;
+  direction: string;
+  kind: string;
+  status: "queued" | "sent" | "running" | "ok" | "error";
+  r2_key: string | null;
+  batch_id: string | null;
+  counts: {
+    ledgers?: number;
+    items?: number;
+    dummies_skipped?: number;
+  } | null;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+  // present on the detail endpoint; drives the "Waiting on Tally" step
+  last_agent_status?: "no_company_loaded" | "tally_unavailable" | null;
+  last_agent_status_at?: string | null;
+}
+
 export interface Tenant {
   id: string;
   legal_name: string;
@@ -148,6 +230,50 @@ export interface Party extends PartyListItem {
   opening_balance_as_of: string | null;
   addresses: PartyAddress[];
   document_count: number;
+}
+
+// --- de-duplication: POST /api/parties/resolve + the structured 409 ---
+
+export type PartyResolveMethod = "gstin" | "phone" | "exact" | "fuzzy" | null;
+
+export interface PartyMatchRef {
+  id: string;
+  legal_name: string;
+  gstin: string | null;
+  phone: string | null;
+  city: string | null;
+  last_txn_at: string | null;
+  status: string;
+  score: number | null;
+}
+
+export interface PartyResolveResult {
+  method: PartyResolveMethod;
+  confidence: number | null;
+  weak: boolean;
+  candidates: PartyMatchRef[];
+}
+
+/** `detail` of the 409 that POST/PATCH /api/parties returns on a likely dup.
+ *  - `party_exists`       GSTIN / phone / exact-name hit; `match` is set;
+ *                         NOT bypassable (?force=true is ignored).
+ *  - `party_maybe_exists` fuzzy / ambiguous; `candidates` set; re-send with
+ *                         ?force=true after the operator confirms "new". */
+export interface PartyDuplicate409 {
+  code: "party_exists" | "party_maybe_exists";
+  message: string;
+  match: PartyMatchRef | null;
+  candidates: PartyMatchRef[];
+}
+
+/** Narrow an `ApiError.detail` to a party-dedupe 409 body. */
+export function isDup409(d: unknown): d is PartyDuplicate409 {
+  return (
+    !!d &&
+    typeof d === "object" &&
+    ((d as PartyDuplicate409).code === "party_exists" ||
+      (d as PartyDuplicate409).code === "party_maybe_exists")
+  );
 }
 
 // --- Tally party import ---
@@ -561,6 +687,8 @@ export interface Invoice {
   payment_status: InvoicePaymentStatus | null;
 }
 
+export type WhatsappStatus = "pending" | "sent" | "delivered" | "read" | "failed";
+
 export interface InvoiceListItem {
   id: string;
   number: number | null;
@@ -573,6 +701,21 @@ export interface InvoiceListItem {
   pdf_status: PdfStatus;
   /** Only set once status === "final"; null on draft/cancelled. */
   payment_status: InvoicePaymentStatus | null;
+  /** Latest whatsapp_message.status for this invoice; null if never sent. */
+  whatsapp_status: WhatsappStatus | null;
+}
+
+export interface InvoiceWhatsappMessage {
+  id: string;
+  to_phone: string;
+  template_name: string;
+  status: WhatsappStatus;
+  error: string | null;
+  wa_message_id: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  created_at: string;
 }
 
 export interface FinalizeResult {

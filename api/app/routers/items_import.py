@@ -16,14 +16,12 @@ from sqlalchemy import delete, func, select
 
 from app.deps import SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
-from app.domain.product_parse import parse_product_line
-from app.domain.units import is_mrp_uom, normalize_uom
 from app.models import HsnCode, Item, ItemCategory, ProductGroup, StagingTallyItem
 from app.models._mixins import ItemSource, ItemStatus, ItemType
 from app.services.catalogue.classify_apply import Classifier
 from app.services.item_resolution import resolve_group
-from tools.tally_import.item_match import match_stock_items_bulk
-from tools.tally_import.parser import is_zero_history_dummy, parse_stock_items
+from app.services.tally.jobs import assert_no_pull_in_flight
+from app.services.tally.staging import NoStockItemsError, stage_stock_items_xml
 
 router = APIRouter(prefix="/api/items/import", tags=["items-import"])
 
@@ -108,34 +106,9 @@ class CurrentBatchOut(BaseModel):
 # --------------------------------------------------------------------------
 # helpers
 # --------------------------------------------------------------------------
-
-# staging_tally_item column widths for the heuristic parsed_* hints. product_parse
-# can return most of a long kitchenware name as "product"; these are advisory
-# only, so clip to fit rather than fail the whole import.
-_PARSED_LIMITS = {
-    "parsed_metal": 20,
-    "parsed_shape": 24,
-    "parsed_grade": 32,
-    "parsed_size_text": 60,
-    "parsed_sku": 64,
-    "proposed_uom": 20,
-}
-
-
-def _clip(value: str | None, field: str) -> str | None:
-    if not value:
-        return None
-    return value[: _PARSED_LIMITS[field]]
-
-
-def _map_uom(base_units: str | None) -> str | None:
-    """Tally's base-units string -> a canonical unit (folds "Doz" -> "doz",
-    "PKT" -> "pkt", etc). An unknown unit passes through lowercased."""
-    return normalize_uom(base_units)[:20] or None
-
-
-def _proposed_type(base_units: str | None) -> ItemType:
-    return ItemType.mrp if is_mrp_uom(base_units) else ItemType.bulk
+# (Parse -> match -> stage now lives in app/services/tally/staging.py so the
+# Tally Connector pull stages rows identically; the review/commit helpers
+# below are unchanged.)
 
 
 def _effective_type(row: StagingTallyItem) -> ItemType:
@@ -273,92 +246,30 @@ async def upload(
         raise HTTPException(
             status_code=413, detail=f"File is larger than {_MAX_BYTES // (1024 * 1024)} MB"
         )
-    try:
-        stock = parse_stock_items(raw)
-    except Exception as e:  # noqa: BLE001
-        raise HTTPException(status_code=422, detail=f"Could not parse the Tally XML: {e}") from e
-    if not stock.items:
-        raise HTTPException(status_code=422, detail="No stock items found in the file")
-
-    # One in-flight import per tenant: clear any earlier batch that was never
-    # committed (an abandoned upload, or one that failed mid-commit). Committed
-    # rows are kept as an audit trail.
-    session.execute(
-        delete(StagingTallyItem).where(
-            StagingTallyItem.tenant_id == user.tenant_id,
-            StagingTallyItem.committed_as.is_(None),
-        )
-    )
-
-    synonyms = load_synonym_map(session, user.tenant_id)
-    brands = [
-        c.name
-        for c in session.scalars(
-            select(ItemCategory).where(ItemCategory.tenant_id == user.tenant_id)
-        ).all()
-    ]
-
-    guids_in_file: dict[str, int] = {}
-    for si in stock.items:
-        if si.guid:
-            guids_in_file[si.guid] = guids_in_file.get(si.guid, 0) + 1
+    assert_no_pull_in_flight(session, user.tenant_id)
 
     batch_id = str(uuid.uuid4())
-    grp_counts: dict[str, int] = {}
-    staged = 0
-
-    kept = [si for si in stock.items if not is_zero_history_dummy(si)]
-    dummies = len(stock.items) - len(kept)
-
-    # A TallyPrime STOCKITEM node is ~7 KB of mostly-unused tax boilerplate;
-    # nothing reads raw_xml back, so keep only a debugging prefix rather than
-    # staging ~16 MB for a full-catalogue import.
-    _RAW_XML_KEEP = 2000
-
-    matches = match_stock_items_bulk(
-        session, user.tenant_id, kept, guids_in_file=guids_in_file, synonyms=synonyms
-    )
-
-    for si, mr in zip(kept, matches, strict=True):
-        top = (si.parent or "(ungrouped)").strip() or "(ungrouped)"
-        grp_counts[top] = grp_counts.get(top, 0) + 1
-
-        p = parse_product_line(si.name, brands=brands, synonyms=synonyms)
-        session.add(
-            StagingTallyItem(
-                tenant_id=user.tenant_id,
-                batch_id=batch_id,
-                tally_guid=si.guid,
-                stock_name=si.name,
-                parent_group=si.parent,
-                base_units=si.base_units,
-                hsn=si.hsn,
-                gst_rate=si.gst_rate,
-                standard_rate=si.standard_rate,
-                raw_xml=(si.raw_xml or "")[:_RAW_XML_KEEP] or None,
-                proposed_type=_proposed_type(si.base_units),
-                proposed_uom=_map_uom(si.base_units),
-                parsed_metal=_clip(p.brand, "parsed_metal"),
-                parsed_shape=_clip(p.product, "parsed_shape"),
-                parsed_grade=None,
-                parsed_size_text=_clip(p.size, "parsed_size_text"),
-                parsed_sku=_clip(p.sku, "parsed_sku"),
-                match_method=mr.method,
-                match_item_id=mr.item_id,
-                guid_fillable=mr.fillable,
-                flags_json=mr.flags or None,
-                seed_hsn=bool(seed_all_hsn and si.hsn and si.hsn.strip()),
-            )
+    try:
+        summary = stage_stock_items_xml(
+            session,
+            user.tenant_id,
+            raw,
+            batch_id=batch_id,
+            seed_all_hsn=seed_all_hsn,
         )
-        staged += 1
+    except NoStockItemsError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except ValueError as e:  # parse failure
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
-    session.flush()
     groups = [
-        StockGroupCount(name=n, item_count=c)
-        for n, c in sorted(grp_counts.items(), key=lambda kv: -kv[1])
+        StockGroupCount(name=g.name, item_count=g.item_count) for g in summary.groups
     ]
     return ImportBatchOut(
-        batch_id=batch_id, total=staged, dummies_skipped=dummies, groups=groups
+        batch_id=summary.batch_id,
+        total=summary.total,
+        dummies_skipped=summary.dummies_skipped,
+        groups=groups,
     )
 
 

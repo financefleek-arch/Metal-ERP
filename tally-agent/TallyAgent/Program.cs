@@ -32,6 +32,7 @@ builder.Services.AddHttpClient<TallyGatewayClient>();
 builder.Services.AddSingleton<IAgentModule, BackupSyncModule>();
 builder.Services.AddSingleton<IAgentModule, BackupHealthMonitorModule>();
 builder.Services.AddSingleton<IAgentModule, WhatsAppDeliveryModule>();
+builder.Services.AddSingleton<IAgentModule, TallyMastersModule>();
 
 builder.Services.AddHostedService<TallyAgentService>();
 

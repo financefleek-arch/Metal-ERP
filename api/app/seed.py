@@ -147,7 +147,24 @@ BARTAN_SYNONYMS: list[tuple[str, str]] = [
     ("dz", "dozen"),
 ]
 
-SYNONYMS = SYNONYMS + BARTAN_SYNONYMS
+# --- party legal-suffix noise ---
+# Party names are re-typed constantly with the company form spelled every
+# which way ("Pvt Ltd" / "Pvt. Ltd." / "Private Limited"). These collapse the
+# form words to nothing so "Steel Traders Pvt Ltd" and "STEEL TRADERS PRIVATE
+# LIMITED" share a de-dup key. Kept deliberately TINY — party matching leans on
+# the trigram rung + GSTIN/phone hard keys, not aggressive token rewriting
+# (two real businesses can be "X Steel" vs "X Iron"). Do NOT add trade words
+# (steel/iron/ss/ms) here — those are item vocabulary.
+PARTY_SUFFIX_SYNONYMS: list[tuple[str, str]] = [
+    ("pvt", ""),
+    ("private", ""),
+    ("ltd", ""),
+    ("limited", ""),
+    ("llp", ""),
+    ("and", ""),
+]
+
+SYNONYMS = SYNONYMS + BARTAN_SYNONYMS + PARTY_SUFFIX_SYNONYMS
 
 
 def seed_hsn(session) -> int:  # type: ignore[no-untyped-def]

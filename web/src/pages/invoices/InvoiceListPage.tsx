@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { inr } from "../../lib/previewTotal";
+import { WhatsappBadge } from "../../components/WhatsappStatus";
 import type { InvoiceListItem, InvoicePaymentStatus, InvoiceStatus } from "../../lib/types";
 
 type Scope = "" | InvoiceStatus;
@@ -15,28 +16,23 @@ const FILTERS: { key: Scope; label: string }[] = [
   { key: "cancelled", label: "Cancelled" },
 ];
 
-function statusBadge(s: InvoiceStatus) {
-  const cls =
-    s === "final"
-      ? "bg-[#e3efe6] text-[#3f7a4f]"
-      : s === "cancelled"
-        ? "bg-[#f1e0e0] text-danger"
-        : "bg-[#f1e7d6] text-warn";
-  return (
-    <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase ${cls}`}>{s}</span>
-  );
+/** A row with a number is final; only the exceptions get a coloured word. */
+function stateLabel(s: InvoiceStatus): { text: string; cls: string } | null {
+  if (s === "draft") return { text: "Draft", cls: "text-warn" };
+  if (s === "cancelled") return { text: "Cancelled", cls: "text-danger" };
+  return null;
 }
 
-function paymentPill(s: InvoicePaymentStatus | null) {
+function PaymentDot({ s }: { s: InvoicePaymentStatus | null }) {
   if (!s) return null;
   const cls =
-    s === "paid"
-      ? "bg-accent-soft text-accent"
-      : s === "partial"
-        ? "bg-[#f1e7d6] text-warn"
-        : "bg-[#f1e0e0] text-danger";
+    s === "paid" ? "bg-ok" : s === "partial" ? "bg-warn" : "bg-danger";
+  const word = s === "paid" ? "Paid" : s === "partial" ? "Partial" : "Unpaid";
   return (
-    <span className={`rounded-sm px-1.5 py-0.5 text-[10px] font-bold uppercase ${cls}`}>{s}</span>
+    <span className="inline-flex items-center gap-1.5 font-semibold">
+      <span className={`h-[7px] w-[7px] rounded-full ${cls}`} />
+      {word}
+    </span>
   );
 }
 
@@ -118,13 +114,12 @@ export function InvoiceListPage() {
 
       {err && <p className="err">{err}</p>}
 
-      <div className="card overflow-hidden">
-        <div className="hidden grid-cols-[64px_92px_1fr_120px_88px_232px] gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted md:grid">
+      <div className="card overflow-visible">
+        <div className="hidden grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] gap-3 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted md:grid">
           <span>No.</span>
-          <span>Date</span>
           <span>Party</span>
           <span className="text-right">Amount</span>
-          <span>Status</span>
+          <span>WhatsApp</span>
           <span className="text-right">Actions</span>
         </div>
 
@@ -135,78 +130,186 @@ export function InvoiceListPage() {
           </div>
         )}
 
-        {list.data?.map((iv) => (
-          <div
-            key={iv.id}
-            className="grid grid-cols-2 gap-2 border-b border-[#f3eee4] px-3 py-3 text-sm md:grid-cols-[64px_92px_1fr_120px_88px_232px] md:items-center md:py-2"
-          >
-            <button
-              className="text-left font-mono font-semibold text-accent hover:underline"
-              onClick={() => nav(`/invoices/${iv.id}`)}
+        {list.data?.map((iv) => {
+          const st = stateLabel(iv.status);
+          const dateStr = new Date(iv.date).toLocaleDateString("en-IN", {
+            day: "2-digit",
+            month: "short",
+            year: "2-digit",
+          });
+          return (
+            <div
+              key={iv.id}
+              className="grid grid-cols-[36px_1fr_auto] items-start gap-x-3 gap-y-2 border-b border-[#f3eee4] px-3 py-3 text-sm last:border-0 hover:bg-[#fcfbf8] md:grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] md:items-center md:py-2.5"
             >
-              {iv.number ?? "—"}
-            </button>
-            <span className="text-xs text-muted md:text-sm">
-              {new Date(iv.date).toLocaleDateString("en-IN", {
-                day: "2-digit",
-                month: "short",
-                year: "2-digit",
-              })}
-            </span>
-            <button
-              className={`col-span-2 truncate text-left hover:underline md:col-span-1 ${
-                iv.party_id ? "" : "italic text-muted"
-              }`}
-              onClick={() => nav(`/invoices/${iv.id}`)}
-            >
-              {iv.party_name}
-            </button>
-            <span className="text-right font-mono">
-              {iv.grand_total ? inr(iv.grand_total) : "—"}
-            </span>
-            <span className="flex flex-wrap gap-1">
-              {statusBadge(iv.status)}
-              {paymentPill(iv.payment_status)}
-            </span>
-            <div className="col-span-2 flex flex-wrap justify-end gap-1.5 md:col-span-1">
+              {/* number */}
               <button
-                className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
+                className="text-left font-mono font-semibold text-accent hover:underline"
                 onClick={() => nav(`/invoices/${iv.id}`)}
               >
-                {iv.status === "draft" ? "Edit" : "View"}
+                {iv.number ?? "—"}
               </button>
-              {iv.status === "final" && (
-                <button
-                  className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
-                  onClick={() => openPdf(iv.id)}
-                >
-                  PDF
-                </button>
-              )}
+
+              {/* party + meta line */}
               <button
-                className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
-                onClick={() => dup.mutate(iv.id)}
+                className="col-start-2 min-w-0 text-left"
+                onClick={() => nav(`/invoices/${iv.id}`)}
               >
-                Duplicate
-              </button>
-              {canDelete(iv.status) && (
-                <button
-                  className="rounded-md border border-line px-2 py-1 text-[11px] text-danger hover:bg-ground"
-                  onClick={() => {
-                    const msg =
-                      iv.status === "draft"
-                        ? "Delete this draft?"
-                        : `Delete cancelled invoice #${iv.number} permanently?`;
-                    if (confirm(msg)) del.mutate(iv.id);
-                  }}
+                <div
+                  className={`truncate font-semibold hover:underline ${
+                    iv.party_id ? "" : "italic text-muted"
+                  }`}
                 >
-                  Delete
-                </button>
-              )}
+                  {iv.party_name}
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
+                  {st && (
+                    <span className={`font-semibold uppercase tracking-wide ${st.cls}`}>
+                      {st.text}
+                    </span>
+                  )}
+                  <span>{dateStr}</span>
+                  <PaymentDot s={iv.payment_status} />
+                </div>
+              </button>
+
+              {/* amount */}
+              <span className="col-start-3 row-start-1 text-right font-mono font-semibold md:col-start-auto md:row-start-auto">
+                {iv.grand_total ? inr(iv.grand_total) : "—"}
+              </span>
+
+              {/* whatsapp — only meaningful once final */}
+              <span className="col-start-2 md:col-start-auto">
+                {iv.status === "final" ? (
+                  <WhatsappBadge status={iv.whatsapp_status} />
+                ) : (
+                  <span className="hidden md:inline text-[11px] text-[#b7b1a4]">—</span>
+                )}
+              </span>
+
+              {/* actions: PDF stays one tap, everything else in the menu */}
+              <div className="col-start-3 row-start-1 flex items-center justify-end gap-1 md:col-start-auto md:row-start-auto">
+                {iv.status === "final" && (
+                  <button
+                    className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
+                    onClick={() => openPdf(iv.id)}
+                  >
+                    PDF
+                  </button>
+                )}
+                <RowMenu
+                  iv={iv}
+                  onOpen={() => nav(`/invoices/${iv.id}`)}
+                  onPdf={() => openPdf(iv.id)}
+                  onDuplicate={() => dup.mutate(iv.id)}
+                  onDelete={
+                    canDelete(iv.status)
+                      ? () => {
+                          const msg =
+                            iv.status === "draft"
+                              ? "Delete this draft?"
+                              : `Delete cancelled invoice #${iv.number} permanently?`;
+                          if (confirm(msg)) del.mutate(iv.id);
+                        }
+                      : undefined
+                  }
+                />
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+// per-row overflow menu
+// --------------------------------------------------------------------------
+
+function RowMenu({
+  iv,
+  onOpen,
+  onPdf,
+  onDuplicate,
+  onDelete,
+}: {
+  iv: InvoiceListItem;
+  onOpen: () => void;
+  onPdf: () => void;
+  onDuplicate: () => void;
+  onDelete?: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const item = "block w-full rounded px-2.5 py-1.5 text-left text-xs hover:bg-ground";
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        className="rounded-md px-2 py-1 text-base leading-none text-muted hover:bg-ground"
+        aria-label="More actions"
+        onClick={() => setOpen((v) => !v)}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div className="absolute right-0 top-[110%] z-20 min-w-[170px] rounded-lg border border-line bg-card p-1 shadow-xl">
+          <button
+            className={item}
+            onClick={() => {
+              setOpen(false);
+              onOpen();
+            }}
+          >
+            {iv.status === "draft" ? "Open / edit" : "Open"}
+          </button>
+          {iv.status === "final" && (
+            <button
+              className={item}
+              onClick={() => {
+                setOpen(false);
+                onPdf();
+              }}
+            >
+              Download PDF
+            </button>
+          )}
+          <button
+            className={item}
+            onClick={() => {
+              setOpen(false);
+              onDuplicate();
+            }}
+          >
+            Duplicate
+          </button>
+          {onDelete && (
+            <>
+              <hr className="my-1 border-line" />
+              <button
+                className={`${item} text-danger`}
+                onClick={() => {
+                  setOpen(false);
+                  onDelete();
+                }}
+              >
+                {iv.status === "draft" ? "Delete draft" : "Delete permanently"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

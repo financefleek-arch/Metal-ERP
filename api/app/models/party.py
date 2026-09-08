@@ -24,6 +24,17 @@ class Party(PkUuidMixin, TimestampMixin, Base):
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
     legal_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # The dedupe key — normalize_name(legal_name, tenant synonym map). Mirrors
+    # item.name_normalized: the create / rename routes maintain it, resolve_party
+    # matches on it, and the 0023 migration + tools/backfill_party_namekey.py
+    # populate it for existing rows. Not unique at the DB level on purpose —
+    # the router owns the "looks like an existing party" decision (structured
+    # 409 + candidate picker), same as items.
+    legal_name_normalized: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", server_default=""
+    )
+
     phone: Mapped[str | None] = mapped_column(String(20))
     email: Mapped[str | None] = mapped_column(String(200))
     pan: Mapped[str | None] = mapped_column(String(10))
