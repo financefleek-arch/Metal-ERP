@@ -8,6 +8,7 @@ import {
   emailError,
   gstinError,
   legalNameError,
+  normalizePhone,
   panError,
   phoneError,
   pincodeError,
@@ -303,6 +304,10 @@ export function PartyForm({
             maxLength={MAXLEN.phone}
             value={v.phone}
             onChange={(e) => patch({ phone: e.target.value })}
+            onBlur={(e) => {
+              const norm = normalizePhone(e.target.value);
+              if (norm && norm !== e.target.value) patch({ phone: norm });
+            }}
           />
           {errs.phone && <p className="err">{errs.phone}</p>}
         </div>

@@ -7,6 +7,7 @@ import { computePreview, inr } from "../../lib/previewTotal";
 import { computeMeasure, kg } from "../../lib/weighment";
 import { PRIMARY_UOMS, isWeightUom, normalizeUom } from "../../lib/units.generated";
 import { uomDisplay } from "../../lib/uom";
+import { normalizePhone, phoneError } from "../../lib/reference";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import type {
   FinalizeResult,
@@ -1082,9 +1083,11 @@ export function InvoiceEditorPage() {
         <WhatsappSendDialog
           invoiceId={inv.id}
           invoiceNumber={inv.number}
+          partyId={inv.party?.id ?? null}
           partyName={inv.party?.legal_name ?? null}
           partyPhone={inv.party?.phone ?? null}
           onClose={() => setWaOpen(false)}
+          onPartyPhoneSaved={() => detail.refetch()}
         />
       )}
     </div>
@@ -1100,20 +1103,26 @@ export function InvoiceEditorPage() {
 function WhatsappSendDialog({
   invoiceId,
   invoiceNumber,
+  partyId,
   partyName,
   partyPhone,
   onClose,
+  onPartyPhoneSaved,
 }: {
   invoiceId: string;
   invoiceNumber: number | null;
+  partyId: string | null;
   partyName: string | null;
   partyPhone: string | null;
   onClose: () => void;
+  onPartyPhoneSaved?: () => void;
 }) {
   const [toParty, setToParty] = useState(!!partyPhone);
   const [otherPhone, setOtherPhone] = useState("");
+  const [otherTouched, setOtherTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<{ label: string; ok: boolean; msg: string }[]>([]);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
 
   const sendOne = (toPhone: string) =>
     api<{ status: string; wa_message_id: string | null; error: string | null }>(
@@ -1121,14 +1130,39 @@ function WhatsappSendDialog({
       { method: "POST", body: { to_phone: toPhone } },
     );
 
-  const otherDigits = otherPhone.replace(/\D/g, "");
-  const otherValid = otherDigits.length >= 10;
+  const otherNorm = normalizePhone(otherPhone); // string | null
+  const otherValid = otherNorm !== null;
   const targets: { label: string; phone: string }[] = [];
   if (toParty && partyPhone) targets.push({ label: partyName ?? "Party", phone: partyPhone });
-  if (otherValid) targets.push({ label: "Other number", phone: otherPhone.trim() });
+  if (otherValid) targets.push({ label: "Other number", phone: otherNorm });
 
   const canSend = targets.length > 0 && !busy;
   const allDone = results.length > 0 && results.every((r) => r.ok);
+
+  // After a good send to a typed number, offer to keep it on the party —
+  // only when it differs from what the party already has.
+  const otherSentOk =
+    otherValid && results.some((r) => r.label === "Other number" && r.ok);
+  const offerSave =
+    !!partyId &&
+    otherSentOk &&
+    saveState !== "saved" &&
+    normalizePhone(partyPhone ?? "") !== otherNorm;
+
+  async function saveToParty() {
+    if (!partyId || !otherNorm) return;
+    setSaveState("saving");
+    try {
+      await api(`/parties/${partyId}`, {
+        method: "PATCH",
+        body: { phone: otherNorm },
+      });
+      setSaveState("saved");
+      onPartyPhoneSaved?.();
+    } catch {
+      setSaveState("idle");
+    }
+  }
 
   async function run() {
     setBusy(true);
@@ -1193,13 +1227,23 @@ function WhatsappSendDialog({
           autoFocus={!partyPhone}
           value={otherPhone}
           onChange={(e) => setOtherPhone(e.target.value)}
-          placeholder="9198xxxxxxxx"
+          onBlur={() => {
+            setOtherTouched(true);
+            if (otherNorm && otherNorm !== otherPhone) setOtherPhone(otherNorm);
+          }}
+          placeholder="98765 43210"
           inputMode="tel"
         />
-        <p className="mt-1 text-[11px] text-muted">
-          Include the country code. A bare 10-digit number is treated as India
-          (+91). Leave blank to skip.
-        </p>
+        {otherTouched && otherPhone.trim() && !otherValid ? (
+          <p className="err mt-1">
+            Enter a 10-digit mobile, or +&lt;country code&gt;&lt;number&gt;.
+          </p>
+        ) : (
+          <p className="mt-1 text-[11px] text-muted">
+            Paste a number from Contacts — a leading +91 or spaces are fine.
+            Leave blank to skip.
+          </p>
+        )}
 
         {results.length > 0 && (
           <ul className="mt-3 space-y-1 text-xs">
@@ -1212,6 +1256,27 @@ function WhatsappSendDialog({
               </li>
             ))}
           </ul>
+        )}
+
+        {offerSave && (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-md bg-[#f0f6f8] px-3 py-2 text-xs">
+            <span>
+              Save <span className="font-medium">{otherNorm}</span> to{" "}
+              {partyName ?? "this party"}?
+            </span>
+            <button
+              className="btn-ghost h-7 shrink-0 px-3 text-xs"
+              disabled={saveState === "saving"}
+              onClick={saveToParty}
+            >
+              {saveState === "saving" ? "Saving…" : "Save"}
+            </button>
+          </div>
+        )}
+        {saveState === "saved" && (
+          <p className="mt-2 text-xs text-[#3f7a4f]">
+            Saved to {partyName ?? "the party"}.
+          </p>
         )}
 
         <div className="mt-5 flex justify-end gap-2">
@@ -1668,7 +1733,7 @@ function QuickCreatePartyDialog({
         method: "POST",
         body: {
           legal_name: name.trim(),
-          phone: phone.trim() || null,
+          phone: phone.trim() ? (normalizePhone(phone) ?? phone.trim()) : null,
           role: "customer",
           opening_balance: opening.trim() === "" ? "0" : opening.trim(),
           opening_balance_as_of: openingAsOf || null,
@@ -1705,7 +1770,14 @@ function QuickCreatePartyDialog({
           inputMode="tel"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
+          onBlur={(e) => {
+            const norm = normalizePhone(e.target.value);
+            if (norm && norm !== e.target.value) setPhone(norm);
+          }}
         />
+        {phone.trim() && phoneError(phone) && (
+          <p className="err mt-1">{phoneError(phone)}</p>
+        )}
         <label className="label mt-3 block">Opening balance (optional)</label>
         <div className="flex gap-2">
           <div className="relative flex-1">

@@ -30,8 +30,9 @@ class Party(PkUuidMixin, TimestampMixin, Base):
     role: Mapped[PartyRole] = mapped_column(String(10), default=PartyRole.customer, nullable=False)
     default_state_code: Mapped[str | None] = mapped_column(String(2))
 
-    # Opt-in for WhatsApp messages (invoice-ready, payment reminders). Off by
-    # default; a send is refused unless this is true AND `phone` is set.
+    # Legacy WhatsApp opt-in flag. No longer read (2026-09-08): a send to a
+    # party now needs only `phone`. Kept as a column to avoid a migration and
+    # in case a real consent workflow is added later.
     whatsapp_optin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Lifecycle: archived parties drop out of the default list and every picker,

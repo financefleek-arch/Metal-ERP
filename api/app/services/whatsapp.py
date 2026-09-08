@@ -341,12 +341,13 @@ def send_invoice(
     """Send `invoice` (as `template_name`, with its PDF attached) over WhatsApp.
 
     `to_phone` given  → send to that number, an explicit operator choice; the
-                        party's `whatsapp_optin` flag and stored phone are
-                        not consulted. `party_name` in the message still
-                        comes from the invoice's party (or "Customer" if the
-                        invoice has none).
+                        party's stored phone is not consulted. `party_name` in
+                        the message still comes from the invoice's party (or
+                        "Customer" if the invoice has none).
     `to_phone` omitted → send to the invoice's party: requires the party to
-                        exist, have `whatsapp_optin=True`, and have a phone.
+                        exist and have a phone on file. (There is no separate
+                        opt-in flag — an invoice the shop chose to send is the
+                        consent.)
 
     Guards (raise WhatsappError, nothing sent): unknown template, invoice not
     finalized, no usable recipient, firm has no active WhatsApp config.
@@ -371,8 +372,6 @@ def send_invoice(
     else:
         if party is None:
             raise WhatsappError("invoice has no party")
-        if not party.whatsapp_optin:
-            raise WhatsappError("party has not opted in to WhatsApp messages")
         if not party.phone:
             raise WhatsappError("party has no phone number")
         recipient = _phone_e164(party.phone)
@@ -450,10 +449,25 @@ def verify_webhook_challenge(params: dict) -> str | None:
     return None
 
 
+def _fmt_wa_error(err: dict) -> str:
+    """Meta's status error dict -> a short operator-readable line."""
+    code = err.get("code")
+    title = err.get("title") or err.get("message") or "delivery failed"
+    detail = (err.get("error_data") or {}).get("details")
+    parts = [str(title)]
+    if code is not None:
+        parts.append(f"(code {code})")
+    if detail and detail != title:
+        parts.append(f"- {detail}")
+    return " ".join(parts)[:1000]
+
+
 def handle_status_webhook(session: Session, payload: dict) -> None:
     """POST body. Walk entry[].changes[].value.statuses[] and move the
     matching `whatsapp_message` row along delivered/read/failed. Rows are
-    matched by `wa_message_id`; a status for an unknown id is ignored."""
+    matched by `wa_message_id`; a status for an unknown id is ignored — most
+    callbacks on the shared FleekWA app belong to other apps (fan-in from
+    fleek-backend)."""
     now = datetime.now(UTC)
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -482,5 +496,5 @@ def handle_status_webhook(session: Session, payload: dict) -> None:
                     msg.status = "failed"
                     errors = st.get("errors") or []
                     if errors:
-                        msg.error = str(errors[0])[:1000]
+                        msg.error = _fmt_wa_error(errors[0])
     session.flush()

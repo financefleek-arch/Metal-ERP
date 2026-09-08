@@ -111,8 +111,8 @@ class InvoiceWhatsappSend(BaseModel):
         default=None,
         max_length=20,
         description="explicit recipient; digits, country code ok, no +. "
-        "When given, the party's opt-in flag and stored phone are not used. "
-        "When omitted, sends to the invoice's opted-in party.",
+        "When given, the party's stored phone is not used. "
+        "When omitted, sends to the invoice's party, which must have a phone.",
     )
 
 

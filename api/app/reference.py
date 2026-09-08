@@ -90,7 +90,10 @@ GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 PINCODE_RE = re.compile(r"^[1-9][0-9]{5}$")
 
 # Phone: an optional leading +, then 7-15 digits once separators are stripped.
+# `_PHONE_JUNK` also covers NBSP and the zero-width / BOM code points that
+# ride along when a contact is pasted from WhatsApp or a browser.
 _PHONE_STRIP_RE = re.compile(r"[\s\-().]+")
+_PHONE_JUNK = dict.fromkeys([0x00A0, 0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF], None)
 _PHONE_SHAPE_RE = re.compile(r"^\+?[0-9]{7,15}$")
 
 # Legal name: at least one letter; letters, digits, spaces and a small set of
@@ -179,18 +182,31 @@ def validate_state_code(value: str | None) -> str | None:
 def validate_phone(value: str | None) -> str | None:
     if value is None:
         return None
-    raw = value.strip()
+    raw = value.translate(_PHONE_JUNK).strip()
     if raw == "":
         return None
     cleaned = _PHONE_STRIP_RE.sub("", raw)
+
+    # Collapse the shapes that a WhatsApp / phonebook copy of an Indian number
+    # produces to a bare 10-digit national number, before the shape check:
+    #   "+91XXXXXXXXXX" / "91XXXXXXXXXX"  -> a 12-char string opening "91"
+    #   "0XXXXXXXXXX"                     -> STD trunk-0 prefix
+    # A genuine "+91 9..." where 9 is itself a country code does not exist, so
+    # a 12-digit "91"-prefixed value is always India.
+    has_plus = cleaned.startswith("+")
+    body = cleaned.lstrip("+")
+    if len(body) == 12 and body.startswith("91"):
+        cleaned, has_plus, body = body[2:], False, body[2:]
+    elif not has_plus and len(body) == 11 and body.startswith("0"):
+        cleaned, body = body[1:], body[1:]
+
     if not _PHONE_SHAPE_RE.match(cleaned):
         raise ValueError(
             "Phone must be 7-15 digits (an optional leading + for a country code)"
         )
-    digits = cleaned.lstrip("+")
-    # Normalise a bare 10-digit Indian mobile to +91 form.
-    if len(digits) == 10 and not cleaned.startswith("+"):
-        return f"+91{digits}"
+    # A bare 10-digit national number is stored in +91 form.
+    if len(body) == 10 and not has_plus:
+        return f"+91{body}"
     return cleaned
 
 

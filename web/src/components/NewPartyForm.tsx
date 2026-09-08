@@ -8,6 +8,7 @@ import {
   emailError,
   gstinError,
   legalNameError,
+  normalizePhone,
   panError,
   phoneError,
   pincodeError,
@@ -168,6 +169,10 @@ export function NewPartyForm({
             maxLength={MAXLEN.phone}
             value={v.phone}
             onChange={(e) => setV({ ...v, phone: e.target.value })}
+            onBlur={(e) => {
+              const norm = normalizePhone(e.target.value);
+              if (norm && norm !== e.target.value) setV({ ...v, phone: norm });
+            }}
           />
           {errs.phone && <p className="err">{errs.phone}</p>}
         </div>

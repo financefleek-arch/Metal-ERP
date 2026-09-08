@@ -88,12 +88,57 @@ export function gstinError(v: string): string | undefined {
   return undefined;
 }
 
+// Whitespace + phone punctuation to drop from a pasted number.
+const PHONE_SEP_RE = /[\s\-().]+/g;
+// NBSP + zero-width / word-joiner / BOM code points that ride along when a
+// contact is copied from WhatsApp or a browser. Listed one per code point so
+// no "joined character sequence" lint fires on a character class.
+const PHONE_INVISIBLE = [0xa0, 0x200b, 0x200c, 0x200d, 0x2060, 0xfeff].map((c) =>
+  String.fromCharCode(c),
+);
+
+function stripPhoneJunk(raw: string): string {
+  let out = raw.replace(PHONE_SEP_RE, "");
+  for (const ch of PHONE_INVISIBLE) out = out.split(ch).join("");
+  return out;
+}
+
+/** Normalise a pasted phone to its canonical stored form, or null if it
+ *  cannot be made valid. Mirrors `validate_phone` in api/app/reference.py
+ *  — keep the two in lockstep.
+ *
+ *  - "+91XXXXXXXXXX" / "91XXXXXXXXXX" (12 digits, "91"-prefixed) -> "+91" + last 10
+ *    (a WhatsApp / phonebook copy of an Indian number; "+91 9..." with 9
+ *    itself a country code does not exist)
+ *  - "0XXXXXXXXXX" (STD trunk-0)  -> "+91" + last 10
+ *  - bare 10 digits             -> "+91XXXXXXXXXX"
+ *  - other "+<cc>..." 7-15 digits -> "+<digits>" (left alone)
+ */
+export function normalizePhone(raw: string): string | null {
+  if (!raw) return null;
+  let cleaned = stripPhoneJunk(raw);
+  let hasPlus = cleaned.startsWith("+");
+  let body = cleaned.replace(/^\++/, "");
+
+  if (body.length === 12 && body.startsWith("91")) {
+    body = body.slice(2);
+    cleaned = body;
+    hasPlus = false;
+  } else if (!hasPlus && body.length === 11 && body.startsWith("0")) {
+    body = body.slice(1);
+    cleaned = body;
+  }
+
+  if (!PHONE_SHAPE_RE.test(cleaned)) return null;
+  if (body.length === 10 && !hasPlus) return `+91${body}`;
+  return cleaned;
+}
+
 export function phoneError(v: string): string | undefined {
   if (!v) return undefined;
-  const cleaned = v.replace(/[\s\-().]+/g, "");
-  return PHONE_SHAPE_RE.test(cleaned)
+  return normalizePhone(v)
     ? undefined
-    : "Phone must be 7–15 digits (a leading + is allowed)";
+    : "Enter a valid phone (10-digit mobile, or +<country code><number>)";
 }
 
 export function pincodeError(v: string): string | undefined {

@@ -71,6 +71,38 @@ def test_phone_keeps_country_code_form(client: TestClient) -> None:
     assert r.json()["phone"] == "+913322557788"
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "+91 98765 43210",  # WhatsApp contact copy, spaces
+        "919876543210",  # 91-prefixed, no +
+        "+919876543210",  # already E.164
+        "09876543210",  # STD trunk-0 prefix
+        "98765 43210",  # bare national with a space
+        " +91 9876543210 ",  # NBSP from a browser copy
+    ],
+)
+def test_phone_collapses_indian_paste_shapes(client: TestClient, raw: str) -> None:
+    h = _h(_token(client, f"ph-in-{abs(hash(raw))}@x.example.com"))
+    r = _post(client, h, phone=raw)
+    assert r.status_code == 201, r.text
+    assert r.json()["phone"] == "+919876543210"
+
+
+def test_phone_foreign_number_left_alone(client: TestClient) -> None:
+    h = _h(_token(client, "ph-us@x.example.com"))
+    r = _post(client, h, phone="+1 415 555 0100")
+    assert r.status_code == 201
+    assert r.json()["phone"] == "+14155550100"
+
+
+def test_phone_name_prefix_still_rejected(client: TestClient) -> None:
+    h = _h(_token(client, "ph-name@x.example.com"))
+    r = _post(client, h, phone="Ramesh 9876543210")
+    assert r.status_code == 422
+    assert "phone" in r.text.lower()
+
+
 # --------------------------------------------------------------------------
 # PAN
 # --------------------------------------------------------------------------
