@@ -25,6 +25,11 @@ export interface InwardBillListItem {
   extraction_method: ExtractionMethod | null;
   extraction_confidence: string | null;
   created_at: string;
+  // Collapsed from the latest tally_sync_job (F5d): null = never
+  // attempted (no Tally company, or strict-mode blockers not cleared —
+  // the common case), 'pending' = queued/sent/running, 'synced' = ok,
+  // 'error' = failed.
+  tally_sync_status: "pending" | "synced" | "error" | null;
 }
 
 export interface InwardLine {

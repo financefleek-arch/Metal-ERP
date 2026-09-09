@@ -719,7 +719,14 @@ export function InvoiceEditorPage() {
       {finalized && inv && (
         <WhatsappLog invoiceId={inv.id} onResend={() => setWaOpen(true)} />
       )}
-      {finalized && inv && <TallyPushPanel invoiceId={inv.id} />}
+      {finalized && inv && (
+        <TallyPushPanel
+          statusUrl={`/tally/invoices/${inv.id}/push-status`}
+          pushUrl={`/tally/invoices/${inv.id}/push`}
+          queryKey={["invoice-tally-push-status", inv.id]}
+          autoPushHint="Ready to sync. This usually happens automatically when the invoice is finalized — use the button if it didn't."
+        />
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         {/* left: header fields + lines */}

@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
 import { useIsDesktop } from "../../lib/useIsDesktop";
 import type { InwardBillListItem, InwardStatus } from "../../lib/inward";
+import { TallySyncBadge } from "../../components/TallySyncStatus";
 import { InwardReviewPane } from "./InwardReviewPane";
 
 const STATUS_LABEL: Record<InwardStatus, string> = {
@@ -160,6 +161,11 @@ export function InwardListPage() {
                 </span>
                 <span className="font-mono">{b.grand_total ?? ""}</span>
               </div>
+              {b.status === "approved" && (
+                <div className="mt-0.5">
+                  <TallySyncBadge status={b.tally_sync_status} />
+                </div>
+              )}
             </NavLink>
           ))}
         </div>

@@ -1,8 +1,12 @@
-/** Tally push-status UI (F1b-1): a compact badge for the invoice list row,
- *  and a status-plus-push panel for the invoice detail page. Mirrors
- *  WhatsappStatus.tsx's split (list badge / detail panel).
+/** Tally push-status UI: a compact badge for a list row, and a status-plus-
+ *  push panel for a detail page. Mirrors WhatsappStatus.tsx's split (list
+ *  badge / detail panel). Shared between invoices (F1b-1) and inward bills
+ *  (F5d) — both entities expose the same shape (`tally_sync_status` on the
+ *  list row, `GET .../push-status` + `POST .../push` on the detail route),
+ *  so `TallyPushPanel` takes the two URLs directly rather than hardcoding
+ *  an entity type.
  *
- *  The list badge reads the invoice's own `tally_sync_status` field
+ *  The list badge reads the entity's own `tally_sync_status` field
  *  (collapsed server-side from the latest tally_sync_job — no extra
  *  request per row). The detail panel calls the live push-status endpoint
  *  directly, since it needs the specific blocker reasons the list's
@@ -37,24 +41,40 @@ export function TallySyncBadge({ status }: { status: ListStatus | null }) {
 }
 
 /** Detail-page panel: current status + a manual "Push to Tally" button
- *  when the invoice is pushable but hasn't been pushed automatically
- *  (finalize's best-effort enqueue missed it — Tally was closed, the
- *  party/item got linked after the fact, etc). Renders nothing if the
+ *  when the entity is pushable but hasn't been pushed automatically
+ *  (finalize/approve's best-effort enqueue missed it — Tally was closed,
+ *  the party/item got linked after the fact, etc). Renders nothing if the
  *  firm has no Tally company linked at all (the overwhelmingly common
  *  case) — only shows up once a push is either done, in flight, failed,
- *  or genuinely one click away. */
-export function TallyPushPanel({ invoiceId }: { invoiceId: string }) {
+ *  or genuinely one click away.
+ *
+ *  `queryKey` must be unique per entity (e.g.
+ *  `["invoice-tally-push-status", id]` /
+ *  `["inward-bill-tally-push-status", id]`) so two panels on different
+ *  pages don't share a cache entry. */
+export function TallyPushPanel({
+  statusUrl,
+  pushUrl,
+  queryKey,
+  autoPushHint = "Ready to sync. This usually happens automatically — use the button if it didn't.",
+}: {
+  statusUrl: string;
+  pushUrl: string;
+  queryKey: unknown[];
+  /** Shown when pushable but not yet pushed — phrase the "usually
+   *  automatic" moment for the caller's own entity (finalize vs. approve). */
+  autoPushHint?: string;
+}) {
   const qc = useQueryClient();
-  const statusKey = ["invoice-tally-push-status", invoiceId];
 
   const pushStatus = useQuery({
-    queryKey: statusKey,
-    queryFn: () => api<TallyPushBlockers>(`/tally/invoices/${invoiceId}/push-status`),
+    queryKey,
+    queryFn: () => api<TallyPushBlockers>(statusUrl),
   });
 
   const push = useMutation({
-    mutationFn: () => api<TallySyncJob>(`/tally/invoices/${invoiceId}/push`, { method: "POST" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: statusKey }),
+    mutationFn: () => api<TallySyncJob>(pushUrl, { method: "POST" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey }),
   });
 
   // No Tally company for this firm at all — the overwhelmingly common
@@ -98,10 +118,7 @@ export function TallyPushPanel({ invoiceId }: { invoiceId: string }) {
       )}
 
       {pushable && !push.isSuccess && (
-        <p className="mt-2 text-xs text-muted">
-          Ready to sync. This usually happens automatically when the invoice is
-          finalized — use the button if it didn't.
-        </p>
+        <p className="mt-2 text-xs text-muted">{autoPushHint}</p>
       )}
     </div>
   );
