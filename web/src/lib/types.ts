@@ -95,6 +95,7 @@ export interface FirmTallyShop {
   is_active: boolean;
   last_checkin_at: string | null;
   last_upload_at: string | null;
+  upload_count: number;
   installer_ready: boolean;
   agent_online: boolean;
   tally_status: TallyReachabilityStatus;

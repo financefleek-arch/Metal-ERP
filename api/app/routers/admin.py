@@ -275,17 +275,18 @@ def _shop_out(session: SessionDep, shop: BackupShop | None) -> FirmTallyShopOut:
         return FirmTallyShopOut(provisioned=False)
     from app.services.tally.agent_health import agent_online
 
-    last_upload = session.scalar(
-        select(func.max(BackupUpload.uploaded_at)).where(
+    last_upload, upload_count = session.execute(
+        select(func.max(BackupUpload.uploaded_at), func.count()).where(
             BackupUpload.shop_id == shop.id, BackupUpload.status == "confirmed"
         )
-    )
+    ).one()
     return FirmTallyShopOut(
         provisioned=True,
         shop_id=shop.id,
         is_active=shop.is_active,
         last_checkin_at=shop.last_checkin_at,
         last_upload_at=last_upload,
+        upload_count=upload_count,
         installer_ready=shop.installer_r2_key is not None,
         agent_online=agent_online(shop),
         tally_status=shop.last_tally_status,

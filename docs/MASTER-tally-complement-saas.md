@@ -3,13 +3,17 @@
 Status: **living roadmap. S1 DEPLOYED 2026‑09‑09 (`caaf389` + `982a738`,
 migrations `0022`–`0024`, party + bartan backfills run). S2 = F3a + F3b BUILT
 2026‑09‑09, uncommitted (migration `0025`, 443 tests green). Parallel to S2:
-**Tally Agent seamless onboarding BUILT 2026‑09‑09, uncommitted** (migration
-`0026`, 452 tests green) — provisioning now builds + caches the per‑shop
-installer zip in R2 and adds a second checkin signal (`tally_reachable`) so
-the console can tell "agent installed" from "Tally is actually reachable".
-F1a deployed but not yet validated live; F2 delivery‑tracking deployed, e2e
-vs Meta unconfirmed.** See §1 for the per‑feature status table and §4/§6 for
-the running build log.
+**Tally Agent seamless onboarding BUILT + DEPLOYED + LIVE E2E CONFIRMED
+2026‑09‑09** (migration `0026`, 452 tests green, commits `ca742b8`/`9e6c80d`
++ one more) — provisioning bakes the key into a cached installer zip in R2,
+`install.ps1` self‑elevates + runs with zero arguments, checkin carries a
+second signal (`tally_reachable`) distinguishing "agent installed" from
+"Tally is actually reachable". **F1a is now validated live end‑to‑end**: a
+real firm was provisioned, its installer downloaded and run on a real
+Windows box already running TallyPrime as server, the agent checked in,
+Tally reachability showed connected, and a real masters‑XML pull + import
+succeeded. F2 delivery‑tracking deployed, e2e vs Meta still unconfirmed.**
+See §1 for the per‑feature status table and §4/§6 for the running build log.
 
 Owner: Fleek. Target market: Indian SMB traders (metal / bartan / utensils
 first), currently on **Tally Prime**, accountant‑operated, desktop‑bound.
@@ -55,7 +59,7 @@ Last status pass: **2026‑09‑09** (after commits `caaf389`, `982a738` — now
 
 | # | Feature | Tier | Status | Depends on |
 |---|---|---|---|---|
-| F1 | **Tally Connector** — masters in, vouchers out | Platform | 🟢 **F1a (masters‑in) built + committed + DEPLOYED** `982a738`, migrations `0022`/`0024` applied on prod, agent `TallyMastersModule`, Ops `TallyPanel`. **Infra wiring done; one live e2e run still pending — F1a not yet validated live.** 🟢 **Seamless onboarding BUILT 2026‑09‑09, uncommitted** (migration `0026`): provisioning now bakes the key into a cached installer zip (no hand‑assembly, no key ever shown to a human), `install.ps1` self‑elevates + runs with zero arguments, checkin gained a second signal (`tally_reachable`) distinguishing "agent installed" from "Tally is reachable", shop self‑serve download card on the firm's own dashboard. **Needs a real agent build published to `tally_agent_build_dir` before any provision will succeed — currently the one hard blocker on the live e2e run.** F1b (voucher‑out) ⬜ | Companion agent (F10) |
+| F1 | **Tally Connector** — masters in, vouchers out | Platform | ✅ **F1a (masters‑in) built + committed + DEPLOYED + LIVE E2E CONFIRMED 2026‑09‑09** — migrations `0022`/`0024`/`0026` applied on prod, agent `TallyMastersModule`, Ops `TallyPanel`. Seamless onboarding (provisioning bakes the key into a cached installer zip in R2, `install.ps1` self‑elevates + runs zero‑argument, checkin's second signal `tally_reachable` distinguishes "agent installed" from "Tally reachable", shop self‑serve download card). **A real firm's agent checked in, showed Tally connected, and a real masters‑XML pull + import succeeded** — closes the one open item F1a carried since it was built. F1b (voucher‑out) ⬜ next | Companion agent (F10) |
 | F2 | **WhatsApp Invoicing** — send PDF, delivery receipts, per‑firm number | 1 | 🟢 send + phone‑normalise + opt‑in‑drop + "save number" + **delivery‑tracking fan‑in all DEPLOYED** 2026‑09‑09 (fleek‑infra + fleek‑backend + Metal ERP, in order). **e2e vs Meta (real send → delivered/read webhook advances the row) still unconfirmed.** | — |
 | F3 | **Collections & Reminders** — ageing, auto WhatsApp nudges, statements | 1 | 🟡 **F3a (ageing dashboard) + F3b (statement→WhatsApp) BUILT 2026‑09‑09, uncommitted** — migration `0025` (`tenant.default_credit_days`), `ageing_summary()` + `GET /api/collections/ageing`, `services/statements.py` + `statement_v1.html` + `POST /api/parties/{id}/statement/whatsapp`, `account_statement` Meta template (**submit day‑1**), `CollectionsPage` rewrite + `StatementSendDialog`. 443 tests green. **F3c (reminder scheduler) ⬜ — the one real infra piece.** F3d (promise‑to‑pay) ⬜. | F2 |
 | F4 | **Mobile Owner‑Operated Billing** — layman invoice + Collections, syncs to Tally | 1 | 🟡 editor/payments/opening‑bal all exist; F4 == "enqueue Tally push + sync chip". **Recommend folding into F1b, not a standalone slice.** | F1b |
@@ -712,7 +716,7 @@ F12 Type-ahead (built) — standalone
 
 ## 6. Build log
 
-### 2026‑09‑09 — Tally Agent seamless onboarding BUILT (uncommitted)
+### 2026‑09‑09 — Tally Agent seamless onboarding BUILT + DEPLOYED + LIVE E2E CONFIRMED
 
 `docs/EXECUTION-PLAN-tally-agent-seamless-onboarding.md`. Visual review
 `docs/visual-plan/tally-agent-onboarding-review.html` → goal: **provisioning
@@ -779,13 +783,42 @@ a zip by hand; the backend does it in‑process at provision/rotate time.
 **Suite: 452 passed / 2 skipped** (up from 424 at F1a's own commit — +28
 tests: new `test_tally_agent_installer.py`, new `test_tally_self_serve.py`,
 additions to `test_tally_connector.py` / `test_tally_agent.py` for the
-reachability gate + checkin signal). `alembic heads` → `0026`. Nothing
-committed.
+reachability gate + checkin signal). `alembic heads` → `0026`.
 
-**Still blocking a live e2e run:** no real agent build has been published to
-`tally_agent_build_dir` in any environment (dev included) — provisioning
-will 503 until one is dropped there. `settings.base_url` needs confirming
-for prod. See the execution‑plan doc's "Not yet done, next session" list.
+**Deployed same day, then live‑e2e'd — and four real bugs surfaced that no
+unit test could catch** (each needs a real container filesystem, a real
+Cloudflare account, or a real elevated Windows relaunch to reproduce). Full
+debugging narrative in the execution‑plan doc's "Post‑build live‑e2e
+debugging" section; summary:
+
+1. `install.ps1` path lookup assumed a dev‑only sibling‑directory layout
+   that doesn't exist in the prod container (Dockerfile builds from `api/`
+   alone) → 503 even with a real build correctly mounted. Fixed: fall back
+   to looking *inside* `tally_agent_build_dir` itself (the one path a
+   single‑directory compose volume actually guarantees is visible).
+2. The `metalerp-tally` R2 bucket had never been created — one‑time manual
+   Cloudflare step, not code.
+3. Checkin/build failure logging was too thin to debug with — added real
+   status/body logging server‑ and agent‑side.
+4. **The actual root cause of "install.ps1 does nothing":**
+   `[string]$SourceDir = (Join-Path $PSScriptRoot "publish")` as a
+   **param‑block default** — `$PSScriptRoot` isn't reliably populated that
+   early for every invocation style, and the elevated self‑relaunch hit
+   exactly that gap. `Join-Path` threw on a null path *before any script
+   code ran*, so the window closed silently in under a second, every time,
+   with zero trace — explaining every failed reinstall attempt that day.
+   Fixed: resolve `$SourceDir` in the script body with fallbacks; also
+   added a `Start-Transcript` log + an end‑of‑run `Read-Host` pause so this
+   class of failure can never hide again.
+
+**Confirmed live, same day:** a real firm was provisioned through the Ops
+console → real installer downloaded → `install.ps1` ran successfully on a
+real Windows box already running TallyPrime as server → agent checked in
+with the correct key → Tally gateway probe succeeded → console showed
+**Agent → Fleek: Online** + **Agent → TallyPrime: Connected** → **a real
+"Pull masters" ran and imported the masters XML successfully.** This closes
+F1a's own open item from when it was first built. All fixes committed
+(`ca742b8`, `9e6c80d`, + the `install.ps1` root‑cause fix). Deployed.
 
 ### 2026‑09‑09 — S2 = F3a + F3b BUILT (uncommitted)
 
@@ -919,17 +952,19 @@ migrations on PG). Nothing committed.
 
 ## 7. Next step
 
-S1 shipped + deployed 2026‑09‑09. Two validation tasks remain before new
-feature work is fully de‑risked:
+S1 shipped + deployed 2026‑09‑09. S2 (F3a+F3b) built same day. **F1a live e2e
+— DONE 2026‑09‑09** (Tally Agent seamless onboarding slice, §6): a real firm
+provisioned, installer downloaded and run, agent checked in, Tally
+reachability confirmed connected, a real masters pull + import succeeded.
+That was the gate on F1b/F4 — **now unblocked.**
 
-- **F1a live e2e** — provision an agent, point it at a real Tally (dev box has
-  TallyPrime, Gateway on 9000, company `100000`), pull masters through it. This
-  is the gate on F1b/F4.
+One validation task remains before new feature work is fully de‑risked:
+
 - **F2 e2e vs Meta** — send a real invoice on WhatsApp, confirm the
   delivered/read webhook fans in from fleek‑backend and advances the row.
 
-Then the build resumes at **S2 = F3a ageing dashboard** — no Tally dependency,
-~70% primitives already exist (`SCOPE-F3-F4…` Part A); the one new moving part
-is a reminder scheduler, which F3c needs anyway. In parallel, **F1b
-(sales‑voucher‑out, file transport)** becomes unblocked the moment F1a e2e
-passes.
+**F1b (sales‑voucher‑out, file transport)** is now the next Tally‑side slice
+— unblocked. S2 (F3a ageing dashboard, F3b statement‑to‑WhatsApp) is already
+built, uncommitted, no Tally dependency. Pick either next; F1b keeps the
+Tally‑complement critical path (F10 → F1a/F1b → F4) moving, F3c (reminder
+policy + scheduler) extends the already‑built F3a/F3b.

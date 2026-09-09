@@ -158,6 +158,7 @@ class FirmTallyShopOut(BaseModel):
     is_active: bool = False
     last_checkin_at: datetime | None = None
     last_upload_at: datetime | None = None
+    upload_count: int = 0
 
     # Seamless-onboarding fields.
     installer_ready: bool = False

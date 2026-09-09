@@ -82,6 +82,21 @@ function agentAge(lastCheckin: string | null): {
   return { label: `no check-in for ${Math.round(hr / 24)}d`, tone: "bad" };
 }
 
+function backupHealth(
+  lastUploadAt: string | null,
+  uploadCount: number,
+): { label: string; tone: "ok" | "warn" | "bad" } {
+  if (!lastUploadAt) {
+    return uploadCount === 0
+      ? { label: "no backup uploaded yet", tone: "warn" }
+      : { label: "no backup uploaded yet", tone: "bad" };
+  }
+  const hr = (Date.now() - new Date(lastUploadAt).getTime()) / 3_600_000;
+  // Mirrors BackupHealthMonitorModule's own ExpectedIntervalHours default (26h).
+  if (hr < 26) return { label: `last backup ${timeAgo(lastUploadAt)}`, tone: "ok" };
+  return { label: `no backup since ${timeAgo(lastUploadAt)} — check Tally's scheduled backup`, tone: "bad" };
+}
+
 function tallyStatusLabel(status: FirmTallyShop["tally_status"]): {
   label: string;
   tone: "ok" | "warn" | "bad";
@@ -149,6 +164,9 @@ function AgentSection({
   const provisioned = !!agent?.provisioned;
   const checkin = provisioned ? agentAge(agent!.last_checkin_at) : null;
   const tally = provisioned ? tallyStatusLabel(agent!.tally_status) : null;
+  const backup = provisioned
+    ? backupHealth(agent!.last_upload_at, agent!.upload_count)
+    : null;
 
   return (
     <div className="border-b border-line py-5">
@@ -221,7 +239,7 @@ function AgentSection({
             <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
               Live health
             </p>
-            <div className="mt-2 grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-3 gap-2">
               <div className="rounded-lg border border-line bg-ground/40 p-2.5">
                 <p className="text-[10px] uppercase tracking-[0.05em] text-muted">
                   Agent → Fleek
@@ -249,6 +267,23 @@ function AgentSection({
                   {tally?.tone === "ok" ? "Connected" : "Not reachable"}
                 </p>
                 <p className="mt-0.5 text-[11px] text-muted">{tally?.label}</p>
+              </div>
+              <div className="rounded-lg border border-line bg-ground/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-[0.05em] text-muted">
+                  Cloud backup
+                </p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      backup?.tone === "ok" ? "bg-ok" : backup?.tone === "warn" ? "bg-warn" : "bg-danger"
+                    }`}
+                  />
+                  {backup?.tone === "ok" ? "Up to date" : "Attention"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted">
+                  {backup?.label}
+                  {agent!.upload_count > 0 && ` · ${agent!.upload_count} total`}
+                </p>
               </div>
             </div>
           </div>

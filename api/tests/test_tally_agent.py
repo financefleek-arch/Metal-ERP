@@ -315,6 +315,7 @@ def test_provision_firm_agent_returns_key_once(client: TestClient) -> None:
         "is_active": True,
         "last_checkin_at": None,
         "last_upload_at": None,
+        "upload_count": 0,
         "installer_ready": True,
         "agent_online": False,
         "tally_status": None,

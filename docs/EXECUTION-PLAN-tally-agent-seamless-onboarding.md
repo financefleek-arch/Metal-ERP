@@ -1,19 +1,23 @@
 # EXECUTION PLAN — Tally Agent: seamless shop onboarding + health reporting
 
-Status: **BUILT 2026-09-09, NOT committed / NOT deployed** (user does
-check-ins). Visual review: `docs/visual-plan/tally-agent-onboarding-review.html`.
-Builds on the deployed F1a slice (`EXECUTION-PLAN-F1a-tally-masters-in.md`) +
-the F10 companion-agent platform (`tally-agent-backup-slice`).
+Status: **BUILT + DEPLOYED + LIVE E2E CONFIRMED 2026-09-09.** Visual review:
+`docs/visual-plan/tally-agent-onboarding-review.html`. Builds on the deployed
+F1a slice (`EXECUTION-PLAN-F1a-tally-masters-in.md`) + the F10 companion-agent
+platform (`tally-agent-backup-slice`).
+
+**This closes F1a's own long-standing open item** ("one live e2e run — NOT
+done") — a real firm was provisioned through the Ops console, downloaded a
+real installer, ran it on a real Windows box already running TallyPrime as
+server, the agent checked in successfully, reported Tally as reachable, and
+a real masters-XML pull + import ran end to end. F1b (voucher-out) is next.
 
 Backend (452 tests pass, 2 skip — up from 424 at F1a's commit), .NET agent
 (`dotnet build` clean, no test project — matches F1a's own verification
-level), and web (`tsc`/`eslint`/`vite build` all clean) are done per the
-build order below. **Gaps before this works live:** (1) the prod
-`tally_agent_build_dir` volume needs a real `dotnet publish -r win-x64
---self-contained` drop — nothing has been published yet; (2) `settings.base_url`
-needs confirming/fixing for prod in `fleek-infra` (push infra first if wrong);
-(3) no live end-to-end run — same gap F1a itself still has, now compounded
-with "does the zip actually install and phone home on a real Windows box".
+level), and web (`tsc`/`eslint`/`vite build` all clean) per the build order
+below, **plus four real bugs found and fixed during the live e2e attempt
+itself** — see "Post-build live-e2e debugging" below. All fixes committed;
+`install.ps1`'s final fix (the actual root cause) was committed just after
+the others once found.
 
 ## Goal (locked in the review)
 
@@ -357,18 +361,78 @@ at F1a's own commit — +28 tests across `test_tally_agent_installer.py` (new),
 `test_tally_agent.py`); `alembic heads` confirms `0026` chains cleanly off
 `0025`; `Base.metadata.create_all` matches the migration's columns; `dotnet
 build TallyAgent.slnx` 0 warnings/0 errors; web `tsc --noEmit`, `eslint`,
-`vite build` all clean. **No live e2e run** — that remains the single biggest
-gap, same as F1a's own unresolved item, now stacked with "does a real shop PC
-actually install and phone home from this zip".
+`vite build` all clean.
 
-**Not yet done, next session:**
-1. Publish a real `dotnet publish -r win-x64 --self-contained` build to
-   `tally_agent_build_dir` in every environment that needs to provision an
-   agent (dev box included, to do the live e2e run at all).
-2. Confirm/fix `settings.base_url` for prod in `fleek-infra` — push infra
-   first if it needs to change.
-3. Provision a real firm, download the real zip, run `install.ps1` on an
-   actual Windows box (ideally the dev box's existing TallyPrime install),
-   confirm the checkin flips green and — with "acts as Server" on —
-   `tally_status` flips to `connected` within a minute.
-4. Commit + deploy (`alembic upgrade head` runs `0026`).
+---
+
+## Post-build live-e2e debugging — 2026-09-09 (same day, after deploy)
+
+The build-time verification above was clean, but the actual live e2e run
+surfaced **four real bugs** none of the unit tests could catch (each one
+either needs a real container filesystem, a real Cloudflare account, or a
+real elevated Windows relaunch to reproduce). Found and fixed in sequence —
+each bug's fix exposed the next symptom:
+
+1. **`install.ps1` path resolution assumed the wrong container layout.**
+   `tally_agent_installer.py::_install_script_path()` looked for
+   `tally-agent/install.ps1` as a sibling of the `api/` checkout (true in
+   dev) — but `fleek-infra`'s Dockerfile builds the image from `api/` alone,
+   so that path never exists in prod. Every provision/rotate 503'd with
+   "agent build hasn't been published" even once a real `.exe` build was
+   correctly mounted. **Fix:** fall back to looking *inside*
+   `tally_agent_build_dir` itself — the one path a single-directory
+   `docker-compose.yml` volume entry actually guarantees is visible (its
+   *parent* is not, which a first attempt at this fix wrongly assumed).
+2. **The `metalerp-tally` R2 bucket was never created.** Once (1) was fixed,
+   provisioning got past the install-script check and failed on
+   `botocore.errorfactory.NoSuchBucket` during the R2 upload. One-time
+   manual step in the Cloudflare dashboard — not a code issue.
+3. **Checkin/build logging was too thin to debug with.** The 503 detail was
+   a fixed generic string (threw away `BuildNotAvailable`'s actual message,
+   which had the real path); the agent's `BackendClient.CheckinAsync` logged
+   only `"checkin failed"` on any exception, no status code or response
+   body. Added `log.warning(...)` + the real exception text into the 503
+   detail server-side, and structured status/body logging + an explicit
+   success line (`checkin ok - shop <id>, N outbox item(s)`) client-side.
+4. **The actual root cause of "install.ps1 does nothing when run."** Even
+   after (1)-(3), reinstalling on the real test machine (TallyPrime + agent
+   on the same box) silently did nothing — the elevated relaunch window
+   would flash and close instantly, no visible error, nothing in any log.
+   Root cause: `[string]$SourceDir = (Join-Path $PSScriptRoot "publish")` as
+   a **param-block default value** — `$PSScriptRoot` is not reliably
+   populated that early for every invocation style, and the elevated
+   self-relaunch (`powershell.exe -File "<path>"`) hit exactly that gap.
+   `Join-Path` threw on a null path *before a single line of the script body
+   ran* — before `$ErrorActionPreference`, before anything — so the window
+   closed with zero trace. Confirmed by direct reproduction (isolating the
+   exact `Start-Process` call the script makes; the child process exited
+   with code 1 in under a second every time). **Fix:** resolve `$SourceDir`
+   inside the script body instead of the param default, with fallbacks
+   (`$PSScriptRoot` → `$MyInvocation.MyCommand.Path` → current directory).
+   Also added, so this class of failure can never hide again: a
+   `Start-Transcript` to `C:\ProgramData\TallyAgent\logs\install-transcript.log`
+   (survives regardless of which window anyone is watching) and a
+   `Read-Host` pause at the very end of the elevated run (success or caught
+   failure) so the window can't vanish before anyone reads it.
+
+**Confirmed live, end to end, same day:** real firm provisioned through the
+Ops console → real installer downloaded → `install.ps1` ran successfully on
+a real Windows box (already running TallyPrime as server) → service
+installed with the correct baked-in key → checkin logged
+`checkin ok - shop <id>` for the *correct* shop → Tally gateway probe against
+`localhost:9000` returned 200 → Ops console showed **Agent → Fleek: Online**
++ **Agent → TallyPrime: Connected** → **a real "Pull masters" ran and
+imported the masters XML successfully.**
+
+All fixes committed (`ca742b8`, `9e6c80d`, and the `install.ps1`
+root-cause fix committed same session). Deployed.
+
+**Remaining, not urgent:**
+- The two zips still floating around on that test machine
+  (`C:\tmp\tally-agent-Fleek-Operations`, `Downloads\tally-agent-*.zip`) hold
+  the *old*, pre-fix `install.ps1` — harmless now that the fixed version is
+  what actually got run, but worth a mental note that any zip downloaded
+  before this fix landed on the server needs a fresh download to get the
+  fix, not a re-run of what's already unzipped locally.
+- F1b (sales-voucher-out) is the next slice on the F1 critical path — see
+  the master doc §4 (S4).
