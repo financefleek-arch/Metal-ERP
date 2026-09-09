@@ -174,7 +174,7 @@ export function InvoiceListPage() {
               </button>
 
               {/* amount */}
-              <span className="col-start-3 row-start-1 text-right font-mono font-semibold md:col-start-auto md:row-start-auto">
+              <span className="col-start-3 row-start-1 self-center text-right font-mono font-semibold md:col-start-auto">
                 {iv.grand_total ? inr(iv.grand_total) : "—"}
               </span>
 
@@ -188,7 +188,7 @@ export function InvoiceListPage() {
               </span>
 
               {/* actions: PDF stays one tap, everything else in the menu */}
-              <div className="col-start-3 row-start-1 flex items-center justify-end gap-1 md:col-start-auto md:row-start-auto">
+              <div className="col-start-3 row-start-2 flex items-center justify-end gap-1 md:col-start-auto md:row-start-auto">
                 {iv.status === "final" && (
                   <button
                     className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
