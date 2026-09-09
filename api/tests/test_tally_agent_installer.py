@@ -92,9 +92,11 @@ def test_install_script_falls_back_to_prod_layout(
     lands on the container filesystem root, not a repo checkout. This test
     forces that lookup to miss (as it does for real in the container) by
     monkeypatching Module.__file__'s resolution point, and confirms
-    install.ps1 is still found one level above `tally_agent_build_dir` —
-    where a `dotnet publish` + install.ps1 are dropped together on the
-    bind-mounted host path.
+    install.ps1 is still found **inside** `tally_agent_build_dir` itself —
+    not one level above it, which turned out to not be reliably bind-mounted
+    (a `docker-compose.yml` volume entry for `tally-agent-build` alone
+    doesn't expose its parent directory to the container; only the build
+    dir itself is guaranteed visible).
     """
     # Simulate "the dev-sibling directory doesn't exist" without relying on
     # this checkout's own layout (which always has a real tally-agent/ four
@@ -104,24 +106,28 @@ def test_install_script_falls_back_to_prod_layout(
     fake_module_file.write_text("# stand-in for __file__\n")
     monkeypatch.setattr(installer, "__file__", str(fake_module_file))
 
-    build_dir = tmp_path / "agent-build" / "publish"
+    build_dir = tmp_path / "agent-build"
     build_dir.mkdir(parents=True)
     (build_dir / "TallyAgent.exe").write_bytes(b"fake-exe-bytes")
     monkeypatch.setattr(installer._settings, "tally_agent_build_dir", str(build_dir))
 
-    # No tally-agent/install.ps1 anywhere above the fake module path -> dev
-    # lookup misses, exactly like the real container.
+    # No tally-agent/install.ps1 anywhere above the fake module path, and
+    # none inside build_dir yet -> dev lookup misses, exactly like the real
+    # container before install.ps1 is dropped.
     with pytest.raises(installer.BuildNotAvailable):
         installer.build_installer_zip(
             shop_api_key="sk_test_123", backend_base_url="https://api.example.com"
         )
 
-    # Drop install.ps1 alongside the build (one level up), as the prod
-    # publish step is expected to.
-    (build_dir.parent / "install.ps1").write_text("# fake install script\n")
+    # Drop install.ps1 INSIDE the build dir, next to the .exe — the layout
+    # that's actually guaranteed to be bind-mounted.
+    (build_dir / "install.ps1").write_text("# fake install script\n")
 
     blob = installer.build_installer_zip(
         shop_api_key="sk_test_123", backend_base_url="https://api.example.com"
     )
     with zipfile.ZipFile(BytesIO(blob)) as zf:
-        assert "install.ps1" in zf.namelist()
+        names = zf.namelist()
+        assert "install.ps1" in names
+        # not duplicated into publish/ from the wholesale build_dir copy
+        assert "publish/install.ps1" not in names

@@ -13,6 +13,8 @@ plaintext password back.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy import func, select
@@ -46,6 +48,8 @@ router = APIRouter(
     tags=["admin"],
     dependencies=[Depends(require_platform_admin)],
 )
+
+log = logging.getLogger(__name__)
 
 
 def _load_firm(session: SessionDep, firm_id: str) -> Tenant:
@@ -303,15 +307,17 @@ def _cache_installer_or_503(session: SessionDep, shop: BackupShop, key: str) -> 
         build_and_cache_installer(session, shop, plaintext_key=key)
         return True
     except BuildNotAvailable as exc:
+        log.warning("tally-agent installer build unavailable for shop %s: %s", shop.id, exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
                 "The agent build hasn't been published to this environment yet. "
                 "The firm's agent identity was created — retry the download once "
-                "platform ops publishes the build."
+                f"platform ops publishes the build. ({exc})"
             ),
         ) from exc
     except R2NotConfigured as exc:
+        log.warning("R2 not configured while caching tally-agent installer for shop %s", shop.id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Cloud storage is not configured — cannot cache the installer.",

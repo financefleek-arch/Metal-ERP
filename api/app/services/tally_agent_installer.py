@@ -59,8 +59,11 @@ def build_installer_zip(
 
     # The build dir carries its own template appsettings.json (and dev
     # variant) — skip both so the per-shop one written below is the only
-    # copy in the zip, not a silently-shadowed duplicate entry.
-    _skip = {"appsettings.json", "appsettings.development.json"}
+    # copy in the zip, not a silently-shadowed duplicate entry. install.ps1
+    # may also live inside build_dir now (the prod layout) — it's written
+    # once at the zip's top level below, so skip a second copy under
+    # publish/ too.
+    _skip = {"appsettings.json", "appsettings.development.json", "install.ps1"}
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -84,10 +87,12 @@ def _install_script_path() -> Path:
     2. **Prod container** — the Docker build context is `api/` alone
        (see fleek-infra's metalerp Dockerfile), so `tally-agent/` is never
        copied into the image; layout 1's path doesn't exist there. Instead
-       `install.ps1` is expected to sit alongside the published agent build
-       at `settings.tally_agent_build_dir/../install.ps1` — i.e. dropped
-       into the same bind-mounted directory tree as the `dotnet publish`
-       output, one level up from it, by whoever publishes the build.
+       `install.ps1` is expected to sit INSIDE `settings.tally_agent_build_dir`
+       itself, alongside the published `.exe`/`.dll`s — that directory is
+       the only one guaranteed to be bind-mounted into the container (its
+       parent generally isn't; a single-directory `docker-compose.yml`
+       mount doesn't expose anything above it), so this is the one prod
+       location that's actually visible.
 
     Read once per request rather than embedding a copy in this module, so
     editing install.ps1 doesn't require a code change.
@@ -96,13 +101,13 @@ def _install_script_path() -> Path:
     if dev_candidate.is_file():
         return dev_candidate
 
-    prod_candidate = Path(_settings.tally_agent_build_dir).parent / "install.ps1"
+    prod_candidate = Path(_settings.tally_agent_build_dir) / "install.ps1"
     if prod_candidate.is_file():
         return prod_candidate
 
     raise BuildNotAvailable(
         f"install.ps1 not found at {dev_candidate} or {prod_candidate} — "
-        "drop it alongside the published build "
+        "drop it directly inside the published build directory "
         f"({_settings.tally_agent_build_dir})"
     )
 
