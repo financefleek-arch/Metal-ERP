@@ -52,7 +52,7 @@ def build_installer_zip(
             "(dotnet publish -r win-x64 --self-contained)"
         )
 
-    install_script = _install_script_path()
+    install_script = _install_script_path().read_text(encoding="utf-8-sig")
     appsettings = _generate_appsettings(
         shop_api_key=shop_api_key, backend_base_url=backend_base_url, watch_folder=watch_folder
     )
@@ -74,14 +74,37 @@ def build_installer_zip(
     return buf.getvalue()
 
 
-def _install_script_path() -> str:
-    # tally-agent/install.ps1 lives two levels above api/, at the repo root's
-    # tally-agent/ folder — read once per request rather than embedding a
-    # copy in this module, so editing install.ps1 doesn't require a code change.
-    candidate = Path(__file__).resolve().parents[3] / "tally-agent" / "install.ps1"
-    if not candidate.is_file():
-        raise BuildNotAvailable(f"install.ps1 not found at {candidate}")
-    return candidate.read_text(encoding="utf-8-sig")
+def _install_script_path() -> Path:
+    """Locate install.ps1. Two layouts are supported:
+
+    1. **Dev monorepo** — this file lives at `api/app/services/…`, and
+       `tally-agent/` is a sibling of `api/` four levels up
+       (`app/services/tally_agent_installer.py` -> `services` -> `app` ->
+       `api` -> repo root -> `tally-agent/`).
+    2. **Prod container** — the Docker build context is `api/` alone
+       (see fleek-infra's metalerp Dockerfile), so `tally-agent/` is never
+       copied into the image; layout 1's path doesn't exist there. Instead
+       `install.ps1` is expected to sit alongside the published agent build
+       at `settings.tally_agent_build_dir/../install.ps1` — i.e. dropped
+       into the same bind-mounted directory tree as the `dotnet publish`
+       output, one level up from it, by whoever publishes the build.
+
+    Read once per request rather than embedding a copy in this module, so
+    editing install.ps1 doesn't require a code change.
+    """
+    dev_candidate = Path(__file__).resolve().parents[3] / "tally-agent" / "install.ps1"
+    if dev_candidate.is_file():
+        return dev_candidate
+
+    prod_candidate = Path(_settings.tally_agent_build_dir).parent / "install.ps1"
+    if prod_candidate.is_file():
+        return prod_candidate
+
+    raise BuildNotAvailable(
+        f"install.ps1 not found at {dev_candidate} or {prod_candidate} — "
+        "drop it alongside the published build "
+        f"({_settings.tally_agent_build_dir})"
+    )
 
 
 def _generate_appsettings(*, shop_api_key: str, backend_base_url: str, watch_folder: str) -> str:
