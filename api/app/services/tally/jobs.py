@@ -34,6 +34,7 @@ from app.models import (
     AgentOutboxItem,
     Invoice,
     InwardBill,
+    Item,
     Party,
     StagingTallyItem,
     StagingTallyParty,
@@ -416,13 +417,28 @@ def enqueue_push_purchase(
     session: Session, company: TallyCompany, bill: InwardBill
 ) -> TallySyncJob:
     """Create the job + paired outbox item for a Purchase-voucher push —
-    mirrors `enqueue_push_sales` exactly (see its docstring for the shared
-    shape: XML built at enqueue time and stashed in the outbox payload,
-    idempotent on an unchanged already-linked bill). The caller has
-    already run `push_readiness.purchase_push_blockers()` (empty) and
+    mirrors `enqueue_push_sales` in shape (XML built at enqueue time and
+    stashed in the outbox payload, idempotent on an unchanged
+    already-linked bill). The caller has already run
+    `push_readiness.purchase_push_blockers()` (`is_pushable()` true) and
     `assert_no_purchase_push_in_flight`.
+
+    F5-e — auto-create: unlike sales, this does NOT require the supplier
+    and every item to already carry a `tally_guid`. Whatever
+    `pending_master_creates()` reports as missing gets passed to
+    `build_xml_bytes` as `new_supplier_name`/`new_item_names`, so Tally
+    creates those masters in the SAME envelope as the voucher (the
+    existing file-export path has always done this; this just also does
+    it over live HTTP). Real limitation, not glossed over: Tally's
+    Import-Data response doesn't hand back a per-master GUID we can trust
+    immediately, so `party.tally_guid`/`item.tally_guid` on our side stay
+    unset even after a successful auto-create push — a later masters pull
+    is what actually reconciles the link. The push panel surfaces this
+    explicitly (see `TallyPushBlockers`/`pending_master_creates` on the
+    frontend) rather than silently implying the link exists.
     """
     from app.services.inward.tally_xml import LedgerConfig, build_xml_bytes
+    from app.services.tally.push_readiness import pending_master_creates
 
     checksum = bill_checksum(bill)
     existing_link = session.scalar(
@@ -448,13 +464,29 @@ def enqueue_push_purchase(
             return prior
 
     party = session.get(Party, bill.matched_party_id) if bill.matched_party_id else None
-    if party is None:
+    pending = pending_master_creates(session, bill)
+    if party is None and pending.supplier_name is None:
         # purchase_push_blockers() should have caught this already
-        # (party_not_linked); defensive, not expected to be reached.
+        # (nothing resolved at all); defensive, not expected to be reached.
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Bill has no linked supplier.",
+            detail="Bill has no linked or nameable supplier.",
         )
+    # party_name: prefer the linked Party's own name (works whether or not
+    # it's Tally-linked yet); fall back to the pending-create name for the
+    # rare case there's genuinely no Party row at all (shouldn't happen
+    # post-approve, see the check above).
+    party_name = party.legal_name if party is not None else pending.supplier_name
+
+    # Build the per-line name map from the actually-linked Items (source
+    # of truth) — see the tally_xml.py docstring on why this must match
+    # the name used in the new_item_names create-trigger set exactly.
+    line_item_names: dict[str, str] = {}
+    for ln in bill.lines:
+        if ln.matched_item_id is not None:
+            item = session.get(Item, ln.matched_item_id)
+            if item is not None:
+                line_item_names[ln.id] = item.name
 
     ledger_map = company.ledger_map or {}
     cfg = LedgerConfig(
@@ -470,7 +502,17 @@ def enqueue_push_purchase(
         # fresh, only for the live-push call.
         xml_encoding="UTF-8",
     )
-    voucher_xml = build_xml_bytes(bill, cfg, party_name=party.legal_name)
+    voucher_xml = build_xml_bytes(
+        bill,
+        cfg,
+        party_name=party_name,
+        # F5-e: only set when that master is actually missing in Tally —
+        # an already-linked supplier/item passes through untouched, same
+        # envelope shape as before this change.
+        new_supplier_name=pending.supplier_name,
+        new_item_names=pending.item_names,
+        line_item_names=line_item_names,
+    )
 
     job = TallySyncJob(
         tenant_id=company.tenant_id,

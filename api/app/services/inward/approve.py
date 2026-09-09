@@ -312,20 +312,24 @@ def approve_bill(
 
 
 def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
-    """F5d — same non-blocking pattern as
+    """F5d + F5-e — same non-blocking pattern as
     `services/invoices/finalize.py::_enqueue_tally_push_best_effort`
-    (F1b-1): silently no-ops on any blocker (the common case — most bills,
-    most firms, especially a bill with a staged-new supplier/item, per the
-    F5d plan's scope decision) or on any Tally-side problem (not
-    reachable, push already in flight). Approve must succeed regardless of
-    Tally state.
+    (F1b-1): silently no-ops on any hard blocker (no Tally company, ledger
+    map incomplete) or on any Tally-side problem (not reachable, push
+    already in flight). Approve must succeed regardless of Tally state.
+    An unlinked-but-nameable supplier/item is no longer a reason to skip
+    (F5-e auto-create) — `enqueue_push_purchase` handles that case itself.
     """
     try:
         from app.services.tally.agent_health import assert_tally_reachable
         from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
-        from app.services.tally.push_readiness import get_tally_company, purchase_push_blockers
+        from app.services.tally.push_readiness import (
+            get_tally_company,
+            is_pushable,
+            purchase_push_blockers,
+        )
 
-        if purchase_push_blockers(session, bill):
+        if not is_pushable(purchase_push_blockers(session, bill)):
             return
         company = get_tally_company(session, bill.tenant_id)
         if company is None:

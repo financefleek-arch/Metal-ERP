@@ -44,7 +44,11 @@ from app.services.inward.approve import ApproveError, approve_bill, approve_gate
 from app.services.inward.run_extraction import run_extraction
 from app.services.tally.agent_health import assert_tally_reachable
 from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
-from app.services.tally.push_readiness import get_tally_company, purchase_push_blockers
+from app.services.tally.push_readiness import (
+    get_tally_company,
+    is_pushable,
+    purchase_push_blockers,
+)
 
 router = APIRouter(prefix="/api/inward-bills", tags=["inward"])
 
@@ -536,7 +540,7 @@ def get_tally_push_status(
     bill = _get_owned(session, user.tenant_id, bill_id)
     blockers = purchase_push_blockers(session, bill)
     return TallyPushBlockersOut(
-        pushable=not blockers,
+        pushable=is_pushable(blockers),
         blockers=[{"code": b.code, "message": b.message} for b in blockers],
     )
 
@@ -551,7 +555,7 @@ def push_bill_to_tally(
 ) -> TallySyncJob:
     bill = _get_owned(session, user.tenant_id, bill_id)
     blockers = purchase_push_blockers(session, bill)
-    if blockers:
+    if not is_pushable(blockers):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="; ".join(b.message for b in blockers),

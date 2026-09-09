@@ -24,7 +24,7 @@ from app.main import app
 from app.models import BackupShop, InwardBill, Item, Party, TallySyncJob
 from app.services.tally.jobs import enqueue_push_purchase
 from app.services.tally.push import process_push_result
-from app.services.tally.push_readiness import purchase_push_blockers
+from app.services.tally.push_readiness import is_pushable, purchase_push_blockers
 from tests.inward.conftest import SUGAL_PDF
 from tools.make_platform_admin import run as make_admin
 
@@ -210,10 +210,15 @@ def test_blockers_ledger_map_incomplete(client: TestClient) -> None:
     assert "ledger_map_incomplete" in codes
 
 
-def test_blockers_party_and_item_not_linked_strict_mode(client: TestClient) -> None:
-    """The Sugal Foods bill's supplier + all 12 items are staged-NEW at
-    approve time (empty catalogue) — strict mode means they're unpushable
-    until a masters pull (or manual linking) brings them into Tally.
+def test_blockers_party_and_item_unlinked_are_pending_create_not_blocking(
+    client: TestClient,
+) -> None:
+    """F5-e (2026-09-09): the Sugal Foods bill's supplier + all 12 items
+    are staged-NEW at approve time (empty catalogue) — this is no longer
+    a hard block. It surfaces as informational `pending_master_create`
+    entries (so the UI can say "will create N new masters") and the bill
+    stays pushable — confirmed live to be the *expected common case* for
+    a first-time vendor, not a rare edge case worth blocking on.
     """
     tok, tenant_id = _register_firm(client, "pb3@x.example.com")
     _enable_inward(client, tok, tenant_id)
@@ -227,9 +232,12 @@ def test_blockers_party_and_item_not_linked_strict_mode(client: TestClient) -> N
     with SessionLocal() as s:
         bill = s.get(InwardBill, bill_id)
         blockers = purchase_push_blockers(s, bill)
+    assert is_pushable(blockers)
     codes = {b.code for b in blockers}
-    assert "party_not_linked" in codes
-    assert "item_not_linked" in codes
+    assert codes == {"pending_master_create"}
+    messages = " ".join(b.message for b in blockers)
+    assert "SUGAL FOODS" in messages
+    assert "Monin" in messages
 
 
 def test_blockers_not_approved(client: TestClient) -> None:
@@ -488,11 +496,16 @@ def test_push_route_404_for_other_tenant(client: TestClient) -> None:
 # --------------------------------------------------------------------------
 
 
-def test_approve_auto_enqueues_push_when_everything_pre_linked(client: TestClient) -> None:
-    """Unlike the strict-mode common case, simulate a bill whose supplier
-    and items were already Tally-linked *before* approve runs (e.g. a
-    repeat vendor already pulled from Tally) — approve itself should then
-    auto-enqueue a push, same best-effort pattern as finalize_invoice.
+def test_approve_auto_enqueues_push_with_auto_create_for_new_supplier_and_items(
+    client: TestClient,
+) -> None:
+    """F5-e (2026-09-09): a brand-new-vendor bill (Sugal Foods — nothing
+    pre-existing in Tally, matching the real bill that surfaced this gap)
+    now auto-enqueues a push on approve, same as a fully-pre-linked bill
+    would — the auto-create trigger set gets passed to the serializer, and
+    the outbox payload's voucher XML contains real LEDGER/STOCKITEM
+    ACTION="Create" blocks for the supplier + all 12 items alongside the
+    voucher, in one envelope.
     """
     tok, tenant_id = _register_firm(client, "pa1@x.example.com")
     _enable_inward(client, tok, tenant_id)
@@ -511,44 +524,9 @@ def test_approve_auto_enqueues_push_when_everything_pre_linked(client: TestClien
     )
     _mark_agent_online_and_connected(shop_id)
 
-    # Pre-seed a matching party so approve links to it (not staged-new),
-    # already Tally-linked.
-    from app.models._mixins import PartyRole, PartyStatus
-
-    with SessionLocal() as s:
-        party = Party(
-            tenant_id=tenant_id,
-            legal_name="SUGAL FOODS",
-            gstin="19BHBPK1450P1Z3",
-            role=PartyRole.supplier,
-            status=PartyStatus.active,
-            tally_guid="party-guid-precreated",
-        )
-        s.add(party)
-        s.commit()
-
-    r = client.post(
-        "/api/inward-bills",
-        headers=_h(tok),
-        files={
-            "files": (
-                "sugal-foods-INV2526-5667.pdf",
-                SUGAL_PDF.read_bytes(),
-                "application/pdf",
-            )
-        },
-    )
-    bill_id = r.json()[0]["id"]
-
-    # Items are still staged-new (empty catalogue) — link them to Tally
-    # AFTER upload but BEFORE approve is impossible from the API surface,
-    # since items are created at approve time. So this test only proves
-    # the party half auto-links; item_not_linked still blocks the
-    # auto-enqueue — confirms the best-effort hook correctly no-ops rather
-    # than partially pushing. A fully-pre-linked-bill push is covered by
-    # test_push_route_creates_job above (manual push, both linked after).
-    r = client.post(f"/api/inward-bills/{bill_id}/approve", headers=_h(tok))
-    assert r.status_code == 200, r.text
+    bill_id = _upload_and_approve_sugal(client, _h(tok))
+    # no _link_bill_masters() — supplier + all 12 items are staged-new,
+    # exactly the real-world case that surfaced this gap.
 
     with SessionLocal() as s:
         job = s.scalar(
@@ -556,10 +534,22 @@ def test_approve_auto_enqueues_push_when_everything_pre_linked(client: TestClien
                 TallySyncJob.entity_type == "inward_bill", TallySyncJob.entity_id == bill_id
             )
         )
-        # items aren't linked yet -> purchase_push_blockers non-empty ->
-        # best-effort hook silently no-ops, approve still succeeded (200
-        # above already proves that)
-        assert job is None
+        assert job is not None
+        assert job.kind == "push_purchase"
+        assert job.status == "queued"
+
+        from app.models import AgentOutboxItem
+
+        outbox = s.scalar(select(AgentOutboxItem).where(AgentOutboxItem.id == job.outbox_item_id))
+        assert outbox is not None
+        voucher_xml = outbox.payload["voucher_xml"]
+        assert 'LEDGER NAME="SUGAL FOODS" ACTION="Create"' in voucher_xml
+        # 1 supplier LEDGER + 12 item STOCKITEM creates + the voucher's own
+        # ACTION="Create" = 14 ACTION="Create" occurrences total.
+        assert voucher_xml.count('STOCKITEM NAME=') == 12
+        assert voucher_xml.count('ACTION="Create"') == 14
+        assert "Monin Mojito Mint Syrup" in voucher_xml
+        assert 'VCHTYPE="Purchase"' in voucher_xml
 
 
 def test_approve_does_not_fail_when_tally_unreachable(client: TestClient) -> None:

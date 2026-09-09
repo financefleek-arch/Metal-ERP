@@ -71,6 +71,23 @@ def test_parser_strips_illegal_control_entities() -> None:
     assert "Sevoke Road" in bal.address_lines[0]
 
 
+def test_parser_strips_raw_unescaped_control_bytes() -> None:
+    """A real masters export from a live TallyPrime install (2026-09-09,
+    the F1a/F5d live-e2e run) contained a literal 0x05 byte inside a
+    voucher-class name (`Default\\x05Voucher\\x05Class`) — Tally uses
+    0x04/0x05 internally as compound-unit/rate separators and its own
+    export doesn't always escape them as `&#5;` entities the way
+    `test_parser_strips_illegal_control_entities` covers; here the byte
+    is raw, unescaped, straight in the text content. lxml correctly
+    rejects XML 1.0's Char production for this ("PCDATA invalid Char
+    value 5") unless `_decode()` strips it first.
+    """
+    raw = FIXTURE.read_bytes().replace(b"Sevoke Road", b"Sevoke\x05 Road")
+    m = parse_masters(raw)
+    bal = next(led for led in m.ledgers if led.name == "Balaji Traders")
+    assert "Sevoke Road" in bal.address_lines[0]
+
+
 # --------------------------------------------------------------------------
 # group -> role
 # --------------------------------------------------------------------------

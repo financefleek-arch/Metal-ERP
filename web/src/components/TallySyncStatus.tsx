@@ -40,6 +40,13 @@ export function TallySyncBadge({ status }: { status: ListStatus | null }) {
   );
 }
 
+// Blocker codes that are informational, not blocking — mirrors the
+// backend's `_INFO_ONLY_CODES` (push_readiness.py). A bill can be
+// `pushable: true` and still carry one of these (F5-e auto-create: "this
+// supplier/item isn't in Tally yet, will be created when this pushes") —
+// shown as a note under the button, not as a reason nothing can happen.
+const INFO_ONLY_CODES = new Set(["pending_master_create"]);
+
 /** Detail-page panel: current status + a manual "Push to Tally" button
  *  when the entity is pushable but hasn't been pushed automatically
  *  (finalize/approve's best-effort enqueue missed it — Tally was closed,
@@ -86,6 +93,8 @@ export function TallyPushPanel({
   if (isNoCompany) return null;
 
   const pushable = pushStatus.data?.pushable ?? false;
+  const hardBlockers = blockers.filter((b) => !INFO_ONLY_CODES.has(b.code));
+  const infoNotes = blockers.filter((b) => INFO_ONLY_CODES.has(b.code));
 
   return (
     <div className="card p-4">
@@ -105,13 +114,20 @@ export function TallyPushPanel({
       {push.isSuccess && (
         <p className="mt-2 text-xs text-[#25a566]">
           Queued — the shop's agent will send this on its next check-in.
+          {infoNotes.length > 0 && (
+            <>
+              {" "}
+              New Tally masters will be created for it — run a masters pull
+              afterward to fully link them on our side.
+            </>
+          )}
         </p>
       )}
       {push.isError && <p className="mt-2 text-xs text-danger">Could not start the push.</p>}
 
-      {!pushable && blockers.length > 0 && (
+      {hardBlockers.length > 0 && (
         <ul className="mt-2 space-y-1 text-xs text-muted">
-          {blockers.map((b) => (
+          {hardBlockers.map((b) => (
             <li key={b.code}>{b.message}</li>
           ))}
         </ul>
@@ -119,6 +135,14 @@ export function TallyPushPanel({
 
       {pushable && !push.isSuccess && (
         <p className="mt-2 text-xs text-muted">{autoPushHint}</p>
+      )}
+
+      {infoNotes.length > 0 && !push.isSuccess && (
+        <ul className="mt-2 space-y-1 text-xs text-[#9a7b2f]">
+          {infoNotes.map((b) => (
+            <li key={b.code}>{b.message}</li>
+          ))}
+        </ul>
       )}
     </div>
   );

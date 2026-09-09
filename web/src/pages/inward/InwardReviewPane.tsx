@@ -274,7 +274,7 @@ export function InwardReviewPane({ billId }: { billId: string }) {
           statusUrl={`/inward-bills/${billId}/tally/push-status`}
           pushUrl={`/inward-bills/${billId}/tally/push`}
           queryKey={["inward-bill-tally-push-status", billId]}
-          autoPushHint="Ready to sync. This usually happens automatically on approve — use the button if it didn't (common for a first bill from a new supplier, until its party/items are linked to Tally)."
+          autoPushHint="Ready to sync. This usually happens automatically on approve — use the button if it didn't."
         />
       )}
 

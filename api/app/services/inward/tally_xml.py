@@ -10,7 +10,24 @@ party credit = grand total).
 Dates YYYYMMDD. Intra/inter from supply_type. Serialised in the configured
 encoding (UTF-16 default) with the matching <?xml?> declaration.
 
-The accountant imports via Gateway of Tally -> Import Data -> Vouchers.
+The accountant imports via Gateway of Tally -> Import Data -> Vouchers
+(file-export path, unchanged). F5d/F5-e (`services/tally/jobs.py::
+enqueue_push_purchase`) also POSTs this same envelope live over HTTP with
+`xml_encoding="UTF-8"` — this module doesn't know or care which transport
+carries it, both just call `build_xml_bytes`/`build_envelope`.
+
+**F5-e (2026-09-09) — live-push auto-create.** `new_supplier_name` /
+`new_item_names` (this module's pre-existing master-create trigger,
+originally built only for the file-export path) are now also used by the
+live-push caller: a first-time vendor bill is the *expected* case for
+purchase-side pushes (confirmed live on the very first real bill pushed
+through this pipeline), so `enqueue_push_purchase` passes these whenever
+the bill's supplier/items aren't yet Tally-linked, instead of refusing to
+push. `line_item_names` (new) lets that caller pin each line's inventory-
+entry name to the linked `Item.name` (the source of truth once approve
+has run) rather than trusting a possibly-stale `new_item_staged_json`
+snapshot — keeping the master-create block's name and the inventory
+entry's `STOCKITEMNAME` from ever diverging.
 """
 
 from __future__ import annotations
@@ -75,6 +92,7 @@ def build_envelope(
     *,
     new_supplier_name: str | None = None,
     new_item_names: set[str] | None = None,
+    line_item_names: dict[str, str] | None = None,
 ) -> etree._Element:
     new_item_names = new_item_names or set()
     is_inter = bill.supply_type == SupplyType.inter
@@ -114,7 +132,7 @@ def build_envelope(
 
     # --- master creates: new stock items ---
     for line in bill.lines:
-        name = _staged_item_name(line)
+        name = (line_item_names or {}).get(line.id) or _staged_item_name(line)
         if name and name in new_item_names:
             msg = _sub(reqdata, "TALLYMESSAGE")
             si = etree.SubElement(msg, "STOCKITEM", NAME=name, ACTION="Create")
@@ -150,9 +168,21 @@ def build_envelope(
     )
     udf.text = f"ib_{bill.id}"
 
-    # inventory entries — one per line
+    # inventory entries — one per line. `line_item_names` (keyed by
+    # InwardBillLine.id), when given, takes priority over the staged JSON
+    # name — it's the caller's chance to pass the linked Item's *current*
+    # name (source of truth once approve has run and matched_item_id is
+    # set). F5-e auto-create needs this exact string to match whatever
+    # name is passed via new_item_names, or a stale staged-JSON name could
+    # silently create a second, differently-named stock item in Tally.
+    # Falls back to the staged name, then the raw description.
+    line_item_names = line_item_names or {}
     for line in bill.lines:
-        item_name = _staged_item_name(line) or (line.description or "Item")
+        item_name = (
+            line_item_names.get(line.id)
+            or _staged_item_name(line)
+            or (line.description or "Item")
+        )
         inv = _sub(vch, "ALLINVENTORYENTRIES.LIST")
         _sub(inv, "STOCKITEMNAME", item_name)
         _sub(inv, "ISDEEMEDPOSITIVE", "Yes")
@@ -224,12 +254,14 @@ def build_xml_bytes(
     party_name: str | None = None,
     new_supplier_name: str | None = None,
     new_item_names: set[str] | None = None,
+    line_item_names: dict[str, str] | None = None,
 ) -> bytes:
     env = build_envelope(
         bill,
         cfg,
         new_supplier_name=new_supplier_name,
         new_item_names=new_item_names,
+        line_item_names=line_item_names,
     )
     if party_name:
         for tag in ("PARTYLEDGERNAME", "BASICBUYERNAME"):

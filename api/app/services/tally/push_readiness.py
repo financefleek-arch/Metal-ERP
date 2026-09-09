@@ -15,6 +15,21 @@ findings"). `purchase_push_blockers()` requires `purchase_ledger` +
 `round_off_ledger` instead — the purchase voucher's existing, live-
 verified shape (F5d plan, 2026-09-09 live probe) uses a real standalone
 Round Off ledger line, unlike sales.
+
+**F5-e (2026-09-09) — purchase-side auto-create, sales-side unchanged.**
+`push_blockers()` (sales/invoices) stays strict mode: an unlinked party or
+item still hard-blocks, per F1b-1's own decision (most invoices reference
+parties/items that already exist from normal shop operation, so this bit
+rarely in practice). `purchase_push_blockers()` (inward bills) no longer
+hard-blocks on an unlinked-but-*nameable* party/item — a first-time
+vendor bill is the *expected common case* for AP capture, confirmed by
+the very first real bill pushed through this pipeline (Sugal Foods:
+1 staged-new supplier + 12 staged-new items, zero pre-existing in Tally).
+Those now surface as informational `PENDING_MASTER_CREATE` `PushBlocker`s
+(still returned, so the UI can say "will create X new masters" — see
+`pending_master_creates()`) but do NOT prevent `pushable=True`. A bill is
+still hard-blocked if a line has literally no item at all (`item_id is
+None` *and* no staged name) — genuinely nothing to push.
 """
 
 from __future__ import annotations
@@ -30,10 +45,42 @@ from app.models._mixins import InwardStatus
 _MAX_LISTED_ITEMS = 3
 
 
+# Codes that are informational, not blocking — a bill/invoice with only
+# these in its blocker list is still pushable=True. Currently just F5-e's
+# auto-create notice; kept as a set (not a single string) so a future
+# informational code can join it without touching every call site.
+_INFO_ONLY_CODES = frozenset({"pending_master_create"})
+
+
 @dataclass
 class PushBlocker:
     code: str
     message: str
+
+
+def is_pushable(blockers: list[PushBlocker]) -> bool:
+    """True if none of `blockers` are hard blockers — i.e. every entry (if
+    any) is purely informational (F5-e's "will auto-create" notices)."""
+    return all(b.code in _INFO_ONLY_CODES for b in blockers)
+
+
+@dataclass
+class PendingMasterCreates:
+    """What `enqueue_push_purchase` will ask Tally to create alongside the
+    voucher, in the same envelope — F5-e auto-create. `supplier_name` is
+    set only when the bill's party has no `tally_guid` yet (whether it was
+    staged-new by approve or matched to a pre-existing, not-yet-Tally-
+    linked Party); `item_names` likewise for lines whose item has no
+    `tally_guid`. Both empty means nothing to auto-create — the strict-mode
+    "fully pre-linked" case.
+    """
+
+    supplier_name: str | None
+    item_names: set[str]
+
+    @property
+    def has_any(self) -> bool:
+        return self.supplier_name is not None or bool(self.item_names)
 
 
 def _real_lines(invoice: Invoice) -> list:
@@ -160,44 +207,82 @@ def purchase_push_blockers(session: Session, bill: InwardBill) -> list[PushBlock
     if not lines:
         blockers.append(PushBlocker("no_lines", "This bill has no line items."))
 
-    if bill.matched_party_id is None:
+    # A line with genuinely nothing to push — no linked item AND no name to
+    # even create one from — is a hard blocker; there's no voucher line to
+    # build. This should be unreachable for an *approved* bill (approve_gate
+    # requires every line resolved, per-item, one way or the other) but
+    # stays defensive since it costs nothing to check.
+    nameless_lines = [
+        ln.sl_no
+        for ln in lines
+        if ln.matched_item_id is None and not (ln.new_item_staged_json or {}).get("name")
+    ]
+    if nameless_lines:
+        blockers.append(
+            PushBlocker(
+                "no_lines",
+                f"Line(s) {', '.join(str(n) for n in nameless_lines)} have no item "
+                "and no name to create one from.",
+            )
+        )
+
+    # Supplier: a hard blocker only if there's no name at all to create
+    # from (shouldn't happen post-approve — approve_gate requires a
+    # resolved supplier either way). An unlinked-but-nameable supplier is
+    # informational only (F5-e auto-create), not blocking.
+    pending = pending_master_creates(session, bill)
+    if bill.matched_party_id is None and pending.supplier_name is None:
         blockers.append(
             PushBlocker(
                 "party_not_linked",
-                "This bill's supplier was staged as new and hasn't been "
-                "pushed to Tally as a master yet — pull masters after "
-                "adding it in Tally, or add it there by hand.",
+                "This bill has no resolved supplier to push.",
             )
         )
-    else:
-        party = session.get(Party, bill.matched_party_id)
-        if party is None or not party.tally_guid:
-            name = party.legal_name if party else bill.supplier_name or "the supplier"
-            blockers.append(
-                PushBlocker(
-                    "party_not_linked",
-                    f"Supplier '{name}' isn't linked to Tally yet — pull "
-                    "masters after adding it in Tally, or add it there by hand.",
-                )
+    elif pending.supplier_name is not None:
+        blockers.append(
+            PushBlocker(
+                "pending_master_create",
+                f"Supplier '{pending.supplier_name}' isn't in Tally yet — "
+                "will be created automatically when this pushes.",
             )
+        )
 
-    unlinked_item_names: list[str] = []
-    for ln in lines:
-        if ln.matched_item_id is None:
-            unlinked_item_names.append(ln.description)
-            continue
-        item = session.get(Item, ln.matched_item_id)
-        if item is None or not item.tally_guid:
-            unlinked_item_names.append(item.name if item else ln.description)
-    if unlinked_item_names:
-        shown = unlinked_item_names[:_MAX_LISTED_ITEMS]
-        extra = len(unlinked_item_names) - len(shown)
+    if pending.item_names:
+        shown = sorted(pending.item_names)[:_MAX_LISTED_ITEMS]
+        extra = len(pending.item_names) - len(shown)
         names = ", ".join(shown) + (f" +{extra} more" if extra > 0 else "")
         blockers.append(
             PushBlocker(
-                "item_not_linked",
-                f"These items aren't linked to Tally yet: {names}.",
+                "pending_master_create",
+                f"These items aren't in Tally yet: {names} — will be created "
+                "automatically when this pushes.",
             )
         )
 
     return blockers
+
+
+def pending_master_creates(session: Session, bill: InwardBill) -> PendingMasterCreates:
+    """What `enqueue_push_purchase` needs to ask Tally to create alongside
+    the voucher (F5-e). Never raises — a bill with nothing resolvable at
+    all just returns an empty result; the caller's blocker check above
+    handles that as a hard block separately.
+    """
+    supplier_name: str | None = None
+    if bill.matched_party_id is not None:
+        party = session.get(Party, bill.matched_party_id)
+        if party is not None and not party.tally_guid:
+            supplier_name = party.legal_name
+    elif bill.new_supplier_staged_json:
+        supplier_name = bill.new_supplier_staged_json.get("legal_name") or bill.supplier_name
+
+    item_names: set[str] = set()
+    for ln in bill.lines:
+        if ln.matched_item_id is not None:
+            item = session.get(Item, ln.matched_item_id)
+            if item is not None and not item.tally_guid:
+                item_names.add(item.name)
+        elif ln.new_item_staged_json and ln.new_item_staged_json.get("name"):
+            item_names.add(str(ln.new_item_staged_json["name"]))
+
+    return PendingMasterCreates(supplier_name=supplier_name, item_names=item_names)

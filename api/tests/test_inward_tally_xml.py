@@ -41,6 +41,10 @@ def _bill() -> InwardBill:
     )
     bill.lines = [
         InwardBillLine(
+            id="line-1",  # explicit — PkUuidMixin's default is a column
+            # default that only fires at flush; an unflushed object's `id`
+            # is None, which would make `line_item_names` keying look like
+            # it works by coincidence rather than by design.
             sl_no=1,
             description="Steel Thali",
             hsn="7323",
@@ -109,3 +113,64 @@ def test_purchase_ledger_and_round_off_ledger_from_ledger_map_style_config() -> 
     assert "Purchase Accounts (Metal)" in ledger_names
     round_off_names = {e.text for e in root.findall(".//LEDGERENTRIES.LIST/LEDGERNAME")}
     assert "Rounding" in round_off_names
+
+
+# --------------------------------------------------------------------------
+# F5-e — auto-create at push time
+# --------------------------------------------------------------------------
+
+
+def test_new_supplier_and_item_create_blocks_emitted_when_requested() -> None:
+    """`new_supplier_name`/`new_item_names` (this module's pre-existing
+    master-create trigger, originally built for the file-export path) now
+    also drive F5-e's live-push auto-create — confirm the create blocks
+    land in the same envelope as the voucher, and that the item's create
+    name matches its inventory-entry STOCKITEMNAME exactly (they must,
+    or Tally would create one stock item but reference a different one).
+    """
+    cfg = LedgerConfig(xml_encoding="UTF-8")
+    bill = _bill()
+    xml_bytes = build_xml_bytes(
+        bill,
+        cfg,
+        party_name="ZZTEST Supplier",
+        new_supplier_name="ZZTEST Supplier",
+        new_item_names={"Steel Thali"},
+        line_item_names={"line-1": "Steel Thali"},
+    )
+    root = etree.fromstring(xml_bytes)
+
+    ledger_create = root.find('.//LEDGER[@ACTION="Create"]')
+    assert ledger_create is not None
+    assert ledger_create.get("NAME") == "ZZTEST Supplier"
+
+    stock_create = root.find('.//STOCKITEM[@ACTION="Create"]')
+    assert stock_create is not None
+    assert stock_create.get("NAME") == "Steel Thali"
+
+    inv_name = root.findtext(".//ALLINVENTORYENTRIES.LIST/STOCKITEMNAME")
+    assert inv_name == stock_create.get("NAME")
+
+
+def test_line_item_names_overrides_stale_staged_json() -> None:
+    """`line_item_names` (keyed by InwardBillLine.id) takes priority over
+    `new_item_staged_json` — the linked Item's current name is the source
+    of truth once approve has run, per the module docstring's F5-e note.
+    """
+    cfg = LedgerConfig(xml_encoding="UTF-8")
+    bill = _bill()
+    bill.lines[0].new_item_staged_json = {"name": "Stale Old Name"}
+    xml_bytes = build_xml_bytes(
+        bill,
+        cfg,
+        party_name="ZZTEST Supplier",
+        line_item_names={"line-1": "Fresh Current Name"},
+    )
+    inv_name = build_envelope_name(xml_bytes)
+    assert inv_name == "Fresh Current Name"
+    assert "Stale Old Name" not in xml_bytes.decode("utf-8")
+
+
+def build_envelope_name(xml_bytes: bytes) -> str | None:
+    root = etree.fromstring(xml_bytes)
+    return root.findtext(".//ALLINVENTORYENTRIES.LIST/STOCKITEMNAME")
