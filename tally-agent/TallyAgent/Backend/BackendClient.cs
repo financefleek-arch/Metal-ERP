@@ -44,12 +44,29 @@ public sealed class BackendClient
                     TallyReason = tallyReason,
                 },
                 ct);
-            resp.EnsureSuccessStatusCode();
-            return await resp.Content.ReadFromJsonAsync<CheckinResponse>(cancellationToken: ct);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                // Log the real status + body BEFORE throwing — EnsureSuccessStatusCode's
+                // exception message alone doesn't carry the response body, and a bare
+                // "checkin failed" warning gives no way to tell a stale/rotated key
+                // (401) apart from a network/server problem without this.
+                var body = await SafeReadBodyAsync(resp, ct);
+                _log.LogWarning(
+                    "checkin rejected: {StatusCode} {ReasonPhrase} - {Body}",
+                    (int)resp.StatusCode, resp.ReasonPhrase, body);
+                resp.EnsureSuccessStatusCode();
+            }
+
+            var result = await resp.Content.ReadFromJsonAsync<CheckinResponse>(cancellationToken: ct);
+            _log.LogInformation(
+                "checkin ok - shop {ShopId}, {OutboxCount} outbox item(s)",
+                result?.ShopId, result?.Outbox.Count ?? 0);
+            return result;
         }
         catch (Exception ex)
         {
-            _log.LogWarning(ex, "checkin failed");
+            _log.LogWarning(ex, "checkin failed - could not reach {BackendBaseUrl}", _http.BaseAddress);
             return null;
         }
     }
@@ -122,5 +139,21 @@ public sealed class BackendClient
         using var plain = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         var resp = await plain.PutAsync(putUrl, content, ct);
         resp.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>Best-effort response-body read for logging a failure — never
+    /// throws (a body read can itself fail on a truncated/streamed response),
+    /// truncated to keep one log line readable.</summary>
+    private static async Task<string> SafeReadBodyAsync(HttpResponseMessage resp, CancellationToken ct)
+    {
+        try
+        {
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            return body.Length > 500 ? body[..500] + "…" : body;
+        }
+        catch
+        {
+            return "<could not read response body>";
+        }
     }
 }
