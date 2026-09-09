@@ -28,6 +28,7 @@ from app.routers import (
     reference,
     tally,
     tally_agent,
+    tally_self_serve,
     tenant,
     whatsapp,
 )
@@ -70,6 +71,7 @@ app.include_router(whatsapp.router)
 app.include_router(whatsapp.invoice_router)
 app.include_router(tally.router)
 app.include_router(tally_agent.router)
+app.include_router(tally_self_serve.router)
 app.include_router(inward.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.

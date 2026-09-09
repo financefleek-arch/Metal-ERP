@@ -67,6 +67,16 @@ class BackupShop(PkUuidMixin, TimestampMixin, Base):
     last_error: Mapped[str | None] = mapped_column(Text)
     last_error_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
+    # The per-shop installer zip, built + cached in R2 when the API key is
+    # minted or rotated (see services/tally/installer.py). NULL until built.
+    installer_r2_key: Mapped[str | None] = mapped_column(String(500))
+
+    # Second checkin signal (0026): can the agent reach TallyPrime's gateway?
+    # `last_tally_status` in {'connected','refused','no_company','unknown'};
+    # NULL = never reported. `last_tally_ok_at` = last 'connected' checkin.
+    last_tally_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_tally_status: Mapped[str | None] = mapped_column(String(40))
+
 
 class BackupUpload(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "backup_upload"

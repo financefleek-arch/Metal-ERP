@@ -137,3 +137,28 @@ class CollectionsRow(BaseModel):
     outstanding_balance: Money
     oldest_unpaid_days: int | None
     open_invoice_count: int
+
+
+# --------------------------------------------------------------------------
+# collections ageing dashboard (F3a)
+# --------------------------------------------------------------------------
+
+AgeingBucketLabel = Literal["lt30", "d30", "d60", "d90p"]
+
+
+class AgeingRow(BaseModel):
+    party_id: str
+    legal_name: str
+    phone: str | None
+    # bucket sums — keys map to UI labels "<30 days / 30+ / 60+ / >3 months"
+    lt30: Money
+    d30: Money
+    d60: Money
+    d90p: Money
+    total: Money
+    worst_bucket: AgeingBucketLabel
+    is_overdue: bool
+    oldest_bill_date: date_t | None
+    oldest_bill_number: int | None
+    last_payment_date: date_t | None
+    open_invoice_count: int

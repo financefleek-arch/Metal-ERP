@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type { Tenant } from "../lib/types";
 import { StateSelect } from "../components/StateSelect";
+import { TallyConnectCard } from "../components/TallyConnectCard";
 import { panError } from "../lib/reference";
 
 type FormShape = Omit<Tenant, "id" | "gst_enabled" | "gstin" | "trade_name" | "email">;
@@ -86,6 +87,8 @@ export function FirmPage() {
           )}
         </div>
       </div>
+
+      <TallyConnectCard />
 
       <form onSubmit={onSubmit} className="card p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">

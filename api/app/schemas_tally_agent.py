@@ -15,10 +15,17 @@ class OutboxItemOut(BaseModel):
     payload: dict
 
 
+TALLY_REASONS = ("connected", "refused", "no_company", "unknown")
+
+
 class ShopCheckinIn(BaseModel):
     # Per-module status this poll, e.g. {"backup": "ok", "whatsapp_delivery": "tally_not_open"}.
     module_status: dict[str, str] = Field(default_factory=dict)
     error: str | None = None
+    # Second signal (independent of `error`): could the agent reach
+    # TallyPrime's HTTP gateway on this poll? None = agent didn't probe.
+    tally_reachable: bool | None = None
+    tally_reason: str | None = Field(default=None, pattern="^(connected|refused|no_company|unknown)$")
 
 
 class ShopCheckinOut(BaseModel):

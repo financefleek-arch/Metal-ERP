@@ -39,6 +39,44 @@ public sealed class TallyGatewayClient(HttpClient http, ILogger<TallyGatewayClie
         }
     }
 
+    /// <summary>Cheap probe classifying WHY the gateway is or isn't usable,
+    /// for the checkin heartbeat's second signal (independent of any actual
+    /// job). Reuses the same minimal "List of Companies" envelope as
+    /// <see cref="IsReachableAsync"/> — one request, three outcomes:
+    /// connected / no_company / refused (unknown as a last resort).</summary>
+    public async Task<(bool Reachable, string Reason)> ProbeAsync(string baseUrl, CancellationToken ct)
+    {
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl)
+            {
+                Content = new StringContent(EmptyExportEnvelope, System.Text.Encoding.UTF8)
+                {
+                    Headers = { ContentType = new MediaTypeHeaderValue("text/xml") },
+                },
+            };
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+            var resp = await http.SendAsync(req, cts.Token);
+            if (!resp.IsSuccessStatusCode)
+                return (false, "unknown");
+            var body = await resp.Content.ReadAsStringAsync(cts.Token);
+            if (body.Contains("Could not find Company", StringComparison.OrdinalIgnoreCase))
+                return (false, "no_company");
+            return (true, "connected");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            log.LogDebug(ex, "Tally Gateway probe failed at {BaseUrl}", baseUrl);
+            return (false, "refused");
+        }
+        catch (Exception ex)
+        {
+            log.LogDebug(ex, "Tally Gateway probe errored at {BaseUrl}", baseUrl);
+            return (false, "unknown");
+        }
+    }
+
     public async Task<string> ExportAsync(string baseUrl, string requestXml, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl)

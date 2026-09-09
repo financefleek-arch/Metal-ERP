@@ -5,6 +5,43 @@ doc (`MASTER-tally-complement-saas.md` §F3/§F4) + a read of the current code.
 Companion to it, not a replacement — this is the "what would we actually build,
 in what order, against what already exists" pass.
 
+**Visual review done 2026-09-09** — `docs/visual-plan/f3a-ageing-dashboard-review.html`
++ `docs/visual-plan/f3b-statement-whatsapp-review.html`. Decisions locked:
+
+- **F3a buckets** = `<30 days / 30+ / 60+ / >3 months` (four, mutually exclusive;
+  internal keys `lt30 / d30 / d60 / d90p`, labels display-only). Boundary:
+  `age<=29 → lt30`, `30–59 → d30`, `60–89 → d60`, `>=90 → d90p`.
+  Credit-days default **0**, tenant-wide only. Net total → caption under the
+  strip. `<30 days` cell colour = neutral grey.
+- **F3a Overdue** = worst bucket > 30 days → new scope chip, **radio-exclusive
+  with Owes us / Overpaid / Either** (Owes us is a superset of Overdue, so
+  selecting Overdue replaces it, doesn't stack). Plus a per-row **"Send
+  statement"** link. `ageing_summary` returns `worst_bucket` + `is_overdue` so
+  the chip needs no client scan.
+- **F3b period** = preset dropdown: This month (default) / Last month / This FY
+  (**Apr–Mar, hard-wired** — no tenant FY-start setting) / Last 90 days / Custom
+  range. Endpoint takes `?period=&from=&to=`. Custom-range date fields render
+  inline (native `<input type=date>`), same on phone + tablet.
+- **F3b content** = full ledger for the window (invoices + payments +
+  adjustments), NOT open-bills-only. First row is a synthetic
+  *"Opening balance as on <start>"* = running balance carried forward from
+  everything before the window. **Reversed payments in the window stay in**,
+  struck-through with the reversal reason (never omitted). Closing line reads
+  **"Total due ₹X"**.
+- **F3b empty window** = no entries in range → **Send disabled** ("Nothing
+  happened this period"); Download still works.
+- **F3b file name** = `<Party slug> statement <YYYY-MM-DD>.pdf` via the existing
+  `download_name()` helper — **today's date**, matching invoice PDFs, no period
+  token.
+- **F3b — NO migration.** `whatsapp_message` already has a nullable `party_id`
+  FK (separate from `invoice_id`, see `models/whatsapp.py:51`). A statement row
+  is `party_id` set / `invoice_id` null / `template_name="account_statement"`.
+  Meta template `account_statement` params = `(party_name, total_due)`.
+- **F3b entry points** = Party Account tab (Download + Send, both keep a plain
+  Download) AND the F3a Collections per-row "Send statement" (opens the same
+  send dialog, party pre-filled, period = This month). Bulk multi-select send
+  (all overdue) stays **F3c**.
+
 ---
 
 ## TL;DR
@@ -88,51 +125,67 @@ reversed payment → no last_payment_date). Reuse the SQLite test DB pattern.
 
 ### A.2 Slice F3b — Statement → WhatsApp
 
-**Goal:** one tap on a party → PDF of open items + running balance → send on
-WhatsApp (or download).
+**Goal:** one tap on a party → PDF of the account ledger for a chosen period
+(opening balance → entries → closing) → send on WhatsApp (or download).
+Decisions from the 2026-09-09 review are folded in below.
 
 **Backend**
-- New `render_party_statement_pdf(session, party_id, *, since=None)` in a new
-  `services/statements.py` (or extend `services/invoices/pdf.py`'s Jinja env —
-  it already has the `money` / `kg` / `uom` filters and Indian grouping).
-  - Reuses `party_ledger()` for rows. Template
-    `templates/statement_v1.html` — header (firm block from `Tenant`, party
-    block, "as on" date), the ledger table (date / particulars / debit /
-    credit / balance), closing balance line. Mirror the invoice template's
-    look. **UoM: `pcs` via the `uom` filter, never `nos`** (guardrail).
-  - Write under `settings.pdf_dir` as `statement-<party_id>-<yyyymmdd>.pdf`;
-    no persisted `pdf_path` on party (regenerate on demand — a statement is
-    always "as of now", unlike an invoice).
-  - Shared download-name helper: `"<Party slug> statement <YYYY-MM-DD>.pdf"`,
-    same spirit as `download_name()` for invoices.
-- `GET /api/parties/{id}/statement.pdf?since=` → streams the file
-  (`Content-Disposition` with the friendly name), mirrors the invoice PDF route.
-- `POST /api/parties/{id}/statement/whatsapp` → body `{to_phone?}` →
-  render + `_send_template_message()` with a **new template**
-  `account_statement` (`party_name`, `closing_balance`, document header = the
-  PDF). Add `"account_statement": ("party_name", "closing_balance")` to
-  `TEMPLATE_BODY_PARAMS`. Records a `WhatsappMessage` row (needs a nullable
-  `party_id` / generic `subject_type,subject_id` on that table if it's
-  invoice-only today — check `models` before assuming).
+- New `render_party_statement_pdf(session, party_id, *, period, dt_from=None,
+  dt_to=None)` in a new `services/statements.py` (or extend
+  `services/invoices/pdf.py`'s Jinja env — it already has `money` / `kg` /
+  `uom` filters + Indian grouping).
+  - **Period resolver.** `period ∈ this_month | last_month | this_fy | last_90
+    | custom`. `this_fy` = **1 Apr of the current Indian FY → today**
+    (hard-wired April, no tenant setting). `custom` needs `dt_from` + `dt_to`.
+  - **Opening-balance row.** First row is synthetic *"Opening balance as on
+    <start>"* = the party's running balance carried forward from everything
+    **before** the window (`party.opening_balance` + Σ earlier invoices − Σ
+    earlier payments). Then the window's `party_ledger()` rows, then closing.
+  - **Reversed payments** that fall in the window are **kept**, rendered
+    struck-through with the reversal reason — never dropped (the balance column
+    shows nil net effect, so the arithmetic ties out).
+  - Closing line reads **"Total due ₹X"**.
+  - Template `templates/statement_v1.html` — mirror the invoice template's
+    header block + table rhythm. **UoM: `pcs` via the `uom` filter, never
+    `nos`** (guardrail).
+  - Regenerate on demand — no persisted `pdf_path`. Download name via the
+    existing `download_name()` helper: `"<Party slug> statement
+    <YYYY-MM-DD>.pdf"` where the date is **today** (generation date), matching
+    invoice PDFs — *not* a period token.
+- `GET /api/parties/{id}/statement.pdf?period=&from=&to=` → streams the file
+  (`Content-Disposition` friendly name), mirrors the invoice PDF route.
+- `POST /api/parties/{id}/statement/whatsapp` → body
+  `{period, from?, to?, to_phone?}` → render + `_send_template_message()` with
+  a **new template** `account_statement` (`party_name`, `total_due`, document
+  header = the PDF). Add `"account_statement": ("party_name", "total_due")` to
+  `TEMPLATE_BODY_PARAMS`. **422 if the window is empty.** Writes a
+  `whatsapp_message` row — **no migration**: the table already has a nullable
+  `party_id` FK (`models/whatsapp.py:51`), so the row is `party_id` set /
+  `invoice_id` null / `template_name="account_statement"`.
 
 **Frontend**
-- `PartyAccountTab.tsx`: two buttons in the tab header — "Download statement"
-  and "Send on WhatsApp". The WA button reuses the existing recipient-picker
-  dialog pattern from the invoice send (party phone checkbox + other-number
-  field + "save this number to the party?" prompt — see
-  `WhatsappSendDialog` / `phone-input-and-save-slice`).
-- `CollectionsPage.tsx` row: optional overflow action "Send statement" so the
-  owner can fire one without opening the party.
+- `PartyAccountTab.tsx` header: a **period dropdown** (This month default) +
+  **Download** + **Send on WhatsApp**. "Custom range…" reveals two native
+  `<input type=date>` fields inline — same layout on phone + tablet. The WA
+  button reuses the invoice-send recipient dialog (`WhatsappSendDialog` /
+  `phone-input-and-save-slice`).
+- **Empty window** → Send is disabled ("Nothing happened this period");
+  Download stays enabled.
+- `CollectionsPage.tsx` (F3a): a per-row **"Send statement"** link on
+  **overdue** rows opens the same send dialog, party pre-filled, period =
+  This month. Bulk multi-select send is **F3c**.
 
-**Templates to submit to Meta now (days of lead time):**
-`payment_reminder` (already in code, F3c), `account_statement` (F3b).
-Do both in the same submission batch.
+**Templates to submit to Meta on day 1 (1–2 business days review, longer if
+rejected):** `account_statement` (F3b) and `payment_reminder` (already drafted
+in `whatsapp.py:49`, needed by F3c). Submit both **before** or **in parallel
+with** building F3b — the code can't send until `account_statement` is
+approved, so start the approval clock first. Done in Meta Business Manager →
+WhatsApp Manager → Message Templates by whoever manages the FleekWA app.
 
-**Migration:** none, unless `WhatsappMessage` needs the subject generalisation
-→ then `0023`.
+**Migration:** **none.**
 
-**Effort:** ~2 days (most of it the statement template + the WA message-model
-generalisation if needed).
+**Effort:** ~2 days (statement template + period resolver + the two routes +
+the header UI).
 
 ### A.3 Slice F3c — Reminder policy + approval queue + scheduler
 
@@ -319,12 +372,17 @@ serializer.
 
 ## Combined recommendation
 
-1. **Now (day 0):** submit `payment_reminder` + `account_statement` WhatsApp
-   templates to Meta. Audit 3–5 pilot shops' Tally editions.
-2. **F3a** (ageing dashboard) — standalone, low risk, immediate owner value,
-   no Tally dependency. ~1.5 days.
-3. **F3b** (statement → WhatsApp) — builds on F3a + the existing WA path.
-   ~2 days.
+1. **Day 1, before/parallel to F3b code:** submit `account_statement` (params
+   `party_name`, `total_due`, PDF document header) + `payment_reminder`
+   (already drafted, `whatsapp.py:49`) to Meta. Review is 1–2 business days,
+   longer if rejected — F3b's send route is dead until `account_statement` is
+   approved, so the approval clock must start first. Also audit 3–5 pilot
+   shops' Tally editions (unrelated, for F1).
+2. **F3a** (ageing dashboard) — standalone, low risk, no Tally dependency.
+   ~1.5 days. One migration: `tenant.default_credit_days` (verify `alembic
+   heads` — F1a took 0022–0024, so likely `0025`).
+3. **F3b** (statement → WhatsApp) — builds on F3a's Overdue chip + the existing
+   WA path. **No migration.** ~2 days.
 4. **F3c** (reminders) — the infrastructure slice; needs the scheduler
    decision (recommend APScheduler + DB lock). ~3–4 days.
 5. **F4** — *not now.* Fold into the F1b slice per the master doc's S4.
@@ -340,9 +398,11 @@ Total F3 (a+b+c): ~7–8 working days. F4: 0 until F1 exists.
 
 - **UoM: `pcs` display-only, never `nos` in data** — the statement PDF routes
   through the `uom` Jinja filter like the invoice template.
-- **Migrations:** next free is `0022` — run `alembic heads` before writing any.
-  F3a=`0022` (tenant.credit_days), F3b maybe `0023` (WhatsappMessage subject),
-  F3c=`0024` (reminder_policy/reminder_run/party.snooze), F3d=`0025`.
+- **Migrations:** F1a took `0022`–`0024` — run `alembic heads` before writing
+  any. F3a = **1 migration** (`tenant.default_credit_days`, likely `0025`).
+  F3b = **none** (`whatsapp_message.party_id` already exists). F3c =
+  `reminder_policy` / `reminder_run` / `party.reminder_snooze_until`. F3d =
+  `promise_to_pay`.
 - **Infra:** any scheduler-via-external-cron or new env var → push `fleek-infra`
   first (memory `infra-alignment`). APScheduler in-process needs no infra change.
 - **No commits/pushes** — user does check-ins.

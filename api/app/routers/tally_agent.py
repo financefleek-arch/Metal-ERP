@@ -50,6 +50,12 @@ def checkin(body: ShopCheckinIn, shop: ShopAuth, session: SessionDep) -> ShopChe
     if body.error:
         shop.last_error = body.error[:1000]
         shop.last_error_at = now
+    if body.tally_reachable is not None:
+        shop.last_tally_status = body.tally_reason or (
+            "connected" if body.tally_reachable else "unknown"
+        )
+        if body.tally_reachable:
+            shop.last_tally_ok_at = now
     session.flush()
 
     outbox = list(

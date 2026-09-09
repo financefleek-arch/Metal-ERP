@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Account Statement — {{ s.party_name }}</title>
+  <style>
+    @page { size: A4; margin: 12mm 12mm 14mm 12mm; }
+    * { box-sizing: border-box; }
+    body { font-family: "DejaVu Sans", Arial, sans-serif; font-size: 9pt; color: #000; margin: 0; }
+    table { border-collapse: collapse; width: 100%; }
+    td, th { border: 0.5pt solid #000; padding: 2pt 4pt; vertical-align: top; }
+    .noborder td { border: none; padding: 1pt 4pt; }
+    .r { text-align: right; }
+    .b { font-weight: bold; }
+    .title { text-align: center; font-weight: bold; font-size: 12pt; margin-bottom: 4pt; }
+    .muted { color: #555; font-size: 8pt; }
+    .ledger th { background: #eee; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.02em; }
+    .ledger td { font-size: 9pt; }
+    .ledger tr.opening td { font-style: italic; background: #f6f6f6; }
+    .ledger tr.rev td { color: #777; }
+    .ledger tr.rev td.strike { text-decoration: line-through; }
+    .ledger tr.close td { font-weight: bold; border-top: 1pt solid #000;
+      border-bottom: 2.5pt double #000; padding-top: 5pt; }
+    .foot { margin-top: 8pt; font-size: 8pt; color: #333; }
+  </style>
+</head>
+<body>
+  <div class="title">Account Statement</div>
+
+  <table>
+    <tr>
+      <td style="width: 55%;">
+        <div class="b" style="font-size: 11pt;">{{ tenant.trade_name or tenant.legal_name }}</div>
+        {% if tenant.address %}<div>{{ tenant.address }}</div>{% endif %}
+        <div>
+          {%- set loc = [] -%}
+          {%- if tenant.city %}{% set _ = loc.append(tenant.city) %}{% endif -%}
+          {%- if tenant.pincode %}{% set _ = loc.append("PIN " ~ tenant.pincode) %}{% endif -%}
+          {{ loc | join(", ") }}
+        </div>
+        {% if tenant.pan %}<div>PAN: {{ tenant.pan }}</div>{% endif %}
+        {% if tenant.phone %}<div>Contact: {{ tenant.phone }}</div>{% endif %}
+      </td>
+      <td>
+        <table class="noborder" style="width:100%;">
+          <tr><td style="width:45%;">Statement for</td><td class="b">{{ s.party_name }}</td></tr>
+          {% if s.party_phone %}<tr><td>Phone</td><td>{{ s.party_phone }}</td></tr>{% endif %}
+          <tr><td>Period</td><td class="b">{{ s.period_from.strftime("%d-%b-%Y") }} &ndash; {{ s.period_to.strftime("%d-%b-%Y") }}</td></tr>
+          <tr><td>Generated</td><td>{{ s.generated_on.strftime("%d-%b-%Y") }}</td></tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table class="ledger" style="margin-top: 8pt;">
+    <thead>
+      <tr>
+        <th style="width: 14%;">Date</th>
+        <th>Particulars</th>
+        <th class="r" style="width: 16%;">Debit</th>
+        <th class="r" style="width: 16%;">Credit</th>
+        <th class="r" style="width: 18%;">Balance</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="opening">
+        <td>{{ s.period_from.strftime("%d-%b-%Y") }}</td>
+        <td>Opening balance as on {{ s.period_from.strftime("%d-%b-%Y") }}</td>
+        <td class="r">&mdash;</td>
+        <td class="r">&mdash;</td>
+        <td class="r">{{ s.opening_balance | money }}</td>
+      </tr>
+      {% for row in s.rows %}
+      <tr class="{{ 'rev' if row.reversed else '' }}">
+        <td class="{{ 'strike' if row.reversed else '' }}">{{ row.date.strftime("%d-%b-%Y") }}</td>
+        <td class="{{ 'strike' if row.reversed else '' }}">{{ row.particulars }}</td>
+        <td class="r {{ 'strike' if row.reversed else '' }}">{% if row.debit %}{{ row.debit | money }}{% else %}&mdash;{% endif %}</td>
+        <td class="r {{ 'strike' if row.reversed else '' }}">{% if row.credit %}{{ row.credit | money }}{% else %}&mdash;{% endif %}</td>
+        <td class="r">{{ row.running_balance | money }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="close">
+        <td colspan="4">Total due as on {{ s.generated_on.strftime("%d-%b-%Y") }}</td>
+        <td class="r">{{ s.total_due | money }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="foot">
+    Amounts in &#8377;. E&amp;OE. Please reply PAID on WhatsApp once settled.
+    {% if s.rows | selectattr("reversed") | list %}
+    <br>Struck-through rows are reversed payments, shown for the record; they do not affect the balance.
+    {% endif %}
+  </div>
+</body>
+</html>

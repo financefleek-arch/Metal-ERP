@@ -22,6 +22,7 @@ from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Invoice, Party, Payment, PaymentAllocation
 from app.models._mixins import AllocationType, InvoiceStatus, PaymentMode, PaymentStatus
 from app.schemas_payments import (
+    AgeingRow,
     CollectionsRow,
     PartyLedgerEntry,
     PaymentAllocationOut,
@@ -30,6 +31,7 @@ from app.schemas_payments import (
     ReversePaymentIn,
 )
 from app.services.payments import (
+    ageing_summary,
     balance_due_for_invoice,
     claim_voucher_no,
     collections_summary,
@@ -269,6 +271,35 @@ def collections(
             phone=r.phone,
             outstanding_balance=r.outstanding_balance,
             oldest_unpaid_days=r.oldest_unpaid_days,
+            open_invoice_count=r.open_invoice_count,
+        )
+        for r in rows
+    ]
+
+
+@collections_router.get("/ageing", response_model=list[AgeingRow])
+def collections_ageing(
+    user: CurrentUser,
+    session: SessionDep,
+    q: str | None = Query(default=None),
+    as_on: date | None = Query(default=None),
+) -> list[AgeingRow]:
+    rows = ageing_summary(session, user.tenant_id, as_on=as_on, q=q)
+    return [
+        AgeingRow(
+            party_id=r.party_id,
+            legal_name=r.legal_name,
+            phone=r.phone,
+            lt30=r.lt30,
+            d30=r.d30,
+            d60=r.d60,
+            d90p=r.d90p,
+            total=r.total,
+            worst_bucket=r.worst_bucket,
+            is_overdue=r.is_overdue,
+            oldest_bill_date=r.oldest_bill_date,
+            oldest_bill_number=r.oldest_bill_number,
+            last_payment_date=r.last_payment_date,
             open_invoice_count=r.open_invoice_count,
         )
         for r in rows

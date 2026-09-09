@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>F3a — Collections ageing dashboard</title>
+<style>
+  :root{
+    --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a;
+    --accent:#2f6f89; --accent-dark:#245771; --accent-soft:#eef4f7;
+    --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b; --tan:#f1e7d6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif;padding:32px 20px 80px}
+  h1{font-family:"Fraunces",Georgia,serif;font-size:24px;margin:0 0 4px}
+  h2{font-family:"Fraunces",Georgia,serif;font-size:17px;margin:36px 0 6px}
+  h3{font-family:"Fraunces",Georgia,serif;font-size:14px;margin:0 0 2px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px;max-width:74ch}
+  .wrap{max-width:1040px;margin:0 auto}
+  .plan{background:var(--tan);border:1px solid #e3d4b4;border-radius:8px;padding:10px 12px;
+    font-size:12.5px;color:#6b5426;margin:0 0 20px}
+  .plan b{color:#4d3c17}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .note{background:#fbf8f2;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    font-size:12.5px;color:var(--muted);margin:10px 0}
+  .note b{color:var(--ink)}
+  code{background:#efeae0;border-radius:3px;padding:1px 4px;font-size:12px}
+  .label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+
+  /* ---------- mobile phone frame ---------- */
+  .phone{max-width:390px;border:1px solid var(--line);border-radius:14px;background:var(--ground);
+    padding:14px 12px;margin:0}
+  .phone .card{margin-bottom:12px}
+
+  /* ---------- CURRENT: collections list row ---------- */
+  .clist button, .clist .r{display:flex;width:100%;align-items:center;gap:10px;
+    border:0;border-bottom:1px solid #f3eee4;background:#fff;padding:12px 14px;text-align:left;font:inherit}
+  .clist .r:last-child{border-bottom:0}
+  .avatar{width:34px;height:34px;flex:0 0 auto;border-radius:50%;background:var(--accent-soft);
+    color:var(--accent);font-size:12px;font-weight:600;display:grid;place-items:center}
+  .pname{font-size:14px;font-weight:600}
+  .pmeta{font-size:11px;color:var(--muted)}
+  .amtcell{margin-left:auto;text-align:right;flex:0 0 auto}
+  .amtbig{font-family:"Fraunces",serif;font-size:14px;font-weight:600}
+  .age{font-size:10px}
+  .age.warn{color:var(--warn)} .age.danger{color:var(--danger)} .age.muted{color:var(--muted)}
+  .chev{color:var(--muted);font-size:13px;flex:0 0 auto}
+
+  /* ---------- summary tiles (current 2, proposed 5) ---------- */
+  .tiles2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .tile{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px}
+  .tile .v{font-family:"Fraunces",serif;font-size:18px;font-weight:600}
+
+  .buckets{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+  .bkt{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 6px;text-align:center;cursor:pointer}
+  .bkt.active{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft) inset}
+  .bkt .k{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;color:var(--muted)}
+  .bkt .v{font-family:ui-monospace,monospace;font-size:12.5px;font-weight:600;margin-top:3px}
+  .bkt.b0 .k{color:var(--muted)} .bkt.b30 .k{color:var(--warn)}
+  .bkt.b60 .k{color:#b5622f} .bkt.b90p .k{color:var(--danger)}
+  .bkt.b90p{background:#fdf3f1;border-color:#e8c9c1}
+
+  /* worst-bucket pill on a row */
+  .wbpill{display:inline-block;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.02em}
+  .wb0{background:#eee9df;color:var(--muted)}
+  .wb30{background:var(--tan);color:var(--warn)}
+  .wb60{background:#f6e7dd;color:#b5622f}
+  .wb90p{background:#f6dcd6;color:var(--danger)}
+
+  /* overdue scope chip + row action */
+  .chip{border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--muted)}
+  .chip.on{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+  .chip.overdue.on{background:var(--danger);border-color:var(--danger);color:#fff}
+  .rowact{font-size:10.5px;font-weight:600;color:var(--accent);text-decoration:underline;margin-top:3px;display:inline-block}
+
+  /* ---------- desktop table ---------- */
+  .thead,.trow{display:grid;grid-template-columns:minmax(160px,1.4fr) 84px 84px 84px 84px 96px 110px;
+    gap:8px;align-items:center;padding:9px 14px}
+  .thead{background:var(--ground);font-size:10px;font-weight:700;text-transform:uppercase;
+    color:var(--muted);letter-spacing:.03em;border-bottom:1px solid var(--line)}
+  .trow{border-bottom:1px solid #f3eee4;font-size:12.5px}
+  .trow:last-child{border-bottom:0}
+  .trow:hover{background:#fcfbf8}
+  .num{font-family:ui-monospace,monospace;text-align:right}
+  .num.z{color:#c9c3b6}
+  .num.tot{font-weight:700}
+  .num.d90{color:var(--danger);font-weight:600}
+  .num.d60{color:var(--warn)}
+  .scroll{overflow-x:auto}
+
+  ul.sub li{margin-bottom:4px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.split{grid-template-columns:1fr}}
+  .k{font-family:ui-monospace,monospace;font-size:11px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>F3a — Collections ageing dashboard</h1>
+  <p class="sub">
+    Turn the flat <i>"oldest 34d"</i> number on the Collections list into real
+    ageing buckets (<b>&lt;30 days · 30+ · 60+ · &gt;3 months</b>) so an owner
+    sees the <b>shape</b> of what's owed, not just one worst-case age. Same
+    Collections screen — richer, no new page.
+  </p>
+
+  <div class="note" style="background:#e3efe6;border-color:#b8d8c2;color:#2f5d3f">
+    <b>Decided 2026-09-09.</b> Buckets = <b>&lt;30 days / 30+ / 60+ / &gt;3 months</b>
+    (four, not five; cumulative-sounding labels the trader already uses — "30+"
+    reads as "over a month late"). Credit-days default <b>0</b> stays. Net total
+    → caption under the strip. "&lt;30 days" bucket colour → neutral grey
+    ("nothing to chase"). <b>New "Overdue" scope chip</b> (worst bucket &gt; 30d),
+    <b>radio-exclusive with Owes us / Overpaid / Either</b> — Overdue is a subset
+    of Owes us, so picking one clears the other. Per-row <b>"Send statement"</b>
+    link opens F3b's send dialog (party pre-filled, period = This month). Bulk
+    multi-select send is <b>F3c</b>.
+  </div>
+
+  <div class="plan">
+    <b>PLAN — nothing built.</b> Scope: <code>docs/SCOPE-F3-F4-collections-and-tally-handoff.md</code> §A.1.
+    Backend: new <code>ageing_summary()</code> next to <code>collections_summary()</code>,
+    new <code>GET /api/collections/ageing?q=&amp;as_on=</code>, one migration adding
+    <code>tenant.default_credit_days INT NOT NULL DEFAULT 0</code>
+    (verify <code>alembic heads</code> — F1a took 0022–0024, so this is likely <code>0025</code>).
+    No F1 / Tally dependency — read-only over invoices + payments.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>1 · Where we are today</h2>
+  <p class="sub">
+    <code>CollectionsPage.tsx</code> — two summary tiles (net Outstanding, party
+    count), scope chips, search, ₹/Oldest sort, and a list where the only ageing
+    signal is <code>oldest {n}d</code> under the balance (grey &lt;14d, amber
+    ≥14d, red ≥30d). It answers "who's the most overdue" but not "how much is
+    30-day vs 90-day money".
+  </p>
+
+  <div class="phone">
+    <div class="tiles2">
+      <div class="tile"><div class="label">Outstanding</div><div class="v">₹ 4,62,180</div></div>
+      <div class="tile"><div class="label">Parties</div><div class="v">14</div></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:10px">
+      <span class="wbpill wb0" style="background:var(--ink);color:var(--ground)">Owes us</span>
+      <span class="wbpill" style="background:#fff;border:1px solid var(--line);color:var(--muted)">Overpaid</span>
+      <span class="wbpill" style="background:#fff;border:1px solid var(--line);color:var(--muted)">Either</span>
+    </div>
+    <div class="card clist">
+      <div class="r">
+        <span class="avatar">JM</span>
+        <span><span class="pname">Jorerhang Metal</span><br><span class="pmeta">+91 98xxxxxx02 · 3 open bills</span></span>
+        <span class="amtcell"><span class="amtbig">₹ 82,554</span><br><span class="age danger">oldest 47d</span></span>
+        <span class="chev">›</span>
+      </div>
+      <div class="r">
+        <span class="avatar">ST</span>
+        <span><span class="pname">S Taluk Da</span><br><span class="pmeta">+91 90xxxxxx11 · 2 open bills</span></span>
+        <span class="amtcell"><span class="amtbig">₹ 41,300</span><br><span class="age warn">oldest 21d</span></span>
+        <span class="chev">›</span>
+      </div>
+      <div class="r">
+        <span class="avatar">OM</span>
+        <span><span class="pname">Omiyo</span><br><span class="pmeta">— · 1 open bill</span></span>
+        <span class="amtcell"><span class="amtbig">₹ 10,395</span><br><span class="age muted">oldest 6d</span></span>
+        <span class="chev">›</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Gap.</b> No buckets — a party owing ₹80k that is all 8 days old looks
+    scarier ("oldest 47d" on a different party) than it is, and ₹2L spread thin
+    across 90+ days is invisible. There's no portfolio view: the owner can't say
+    "₹X is 90+ and needs a call today". <code>oldest_unpaid_days</code> already
+    comes from <code>collections_summary()</code>; the bucketing math is new.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>2 · Proposed — bucket strip + worst-bucket pill + Overdue chip</h2>
+  <p class="sub">
+    A four-cell bucket strip replaces the two-tile summary (net total drops to a
+    caption). Tap a bucket to filter the list to parties with money in it. A new
+    <b>Overdue</b> scope chip (worst bucket &gt; 30 days) sits beside Owes us /
+    Overpaid / Either. Each row swaps <code>oldest {n}d</code> for a coloured
+    <b>worst-bucket pill</b>, and overdue rows carry a "Send statement" action.
+    Search, sort, and the row → PaymentDialog tap all stay.
+  </p>
+
+  <div class="phone">
+    <div style="display:flex;gap:6px;margin-bottom:4px;flex-wrap:wrap">
+      <span class="chip">Owes us</span>
+      <span class="chip overdue on">Overdue</span>
+      <span class="chip">Overpaid</span>
+      <span class="chip">Either</span>
+    </div>
+    <p style="font-size:10.5px;color:var(--muted);margin:0 0 10px">
+      Radio-exclusive — <b>Overdue</b> is a subset of <b>Owes us</b>, so picking one clears the other.
+    </p>
+    <div class="buckets">
+      <div class="bkt b0"><div class="k">&lt;30 days</div><div class="v">₹ 78k</div></div>
+      <div class="bkt b30 active"><div class="k">30+</div><div class="v">₹ 1.4L</div></div>
+      <div class="bkt b60"><div class="k">60+</div><div class="v">₹ 96k</div></div>
+      <div class="bkt b90p"><div class="k">&gt;3 months</div><div class="v">₹ 60k</div></div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:-4px 0 10px">
+      Total outstanding <b>₹ 4,62,180</b> across 14 parties · <b>Overdue</b>: 6 parties, ₹ 3,00,580 ↓
+    </p>
+    <div class="card clist">
+      <div class="r">
+        <span class="avatar">JM</span>
+        <span><span class="pname">Jorerhang Metal</span><br>
+          <span class="pmeta">+91 98xxxxxx02 · 3 open bills · oldest INV-19 · last paid 12 Aug</span>
+          <br><span class="rowact">Send statement</span></span>
+        <span class="amtcell"><span class="amtbig">₹ 82,554</span><br><span class="wbpill wb60">60+</span></span>
+        <span class="chev">›</span>
+      </div>
+      <div class="r">
+        <span class="avatar">JS</span>
+        <span><span class="pname">Jain Metal Store</span><br>
+          <span class="pmeta">+91 90xxxxxx11 · 4 open bills · oldest INV-06 · last paid 2 Jul</span>
+          <br><span class="rowact">Send statement</span></span>
+        <span class="amtcell"><span class="amtbig">₹ 60,120</span><br><span class="wbpill wb90p">&gt;3 mo</span></span>
+        <span class="chev">›</span>
+      </div>
+      <div class="r">
+        <span class="avatar">ST</span>
+        <span><span class="pname">S Taluk Da</span><br>
+          <span class="pmeta">+91 90xxxxxx11 · 2 open bills · oldest INV-22 · last paid 28 Aug</span>
+          <br><span class="rowact">Send statement</span></span>
+        <span class="amtcell"><span class="amtbig">₹ 41,300</span><br><span class="wbpill wb30">30+</span></span>
+        <span class="chev">›</span>
+      </div>
+      <div class="r" style="opacity:.5">
+        <span class="avatar">OM</span>
+        <span><span class="pname">Omiyo</span><br>
+          <span class="pmeta">— · 1 open bill · oldest INV-27 · last paid 1 Sep · not overdue</span></span>
+        <span class="amtcell"><span class="amtbig">₹ 10,395</span><br><span class="wbpill wb0">&lt;30d</span></span>
+        <span class="chev">›</span>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);margin:8px 4px 0">
+      Omiyo shown greyed only to illustrate the filter — with <b>Overdue</b> active it drops off the list.
+    </p>
+  </div>
+
+  <div class="note">
+    <b>What changed.</b>
+    · Two summary tiles → four bucket cells; each is a tap-to-filter control.
+    · New <b>Overdue</b> scope chip = worst bucket &gt; 30 days; caption shows the overdue count + ₹.
+    · <code>oldest {n}d</code> caption → worst-bucket pill (grey / amber / rust / red).
+    · Row meta line gains <i>oldest bill no.</i> + <i>last payment date</i>; overdue rows get a <b>Send statement</b> link (fires F3b's send dialog).
+    · <b>Nothing removed</b> — search, ₹/Oldest sort, row-tap opens PaymentDialog exactly as today.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>3 · Desktop — bucket columns on the table</h2>
+  <p class="sub">
+    On <code>md:</code> and up the list is a table; it gains one column per
+    bucket plus a Total. Empty buckets render a faint dash so the eye tracks the
+    heavy column. Sorting by a bucket header is a nice-to-have, not F3a scope.
+  </p>
+
+  <div class="card scroll">
+    <div class="thead" style="grid-template-columns:minmax(160px,1.6fr) 100px 100px 110px 96px 110px">
+      <span>Party</span><span class="num">&lt;30 days</span><span class="num">30+</span>
+      <span class="num">60+</span><span class="num">&gt;3 mo</span><span class="num">Total</span>
+    </div>
+    <div class="trow" style="grid-template-columns:minmax(160px,1.6fr) 100px 100px 110px 96px 110px">
+      <span>Jorerhang Metal</span>
+      <span class="num z">–</span><span class="num">21,000</span><span class="num d60">61,554</span>
+      <span class="num z">–</span><span class="num tot">82,554</span>
+    </div>
+    <div class="trow" style="grid-template-columns:minmax(160px,1.6fr) 100px 100px 110px 96px 110px">
+      <span>Jain Metal Store</span>
+      <span class="num z">–</span><span class="num">8,400</span><span class="num">18,720</span>
+      <span class="num d90">33,000</span><span class="num tot">60,120</span>
+    </div>
+    <div class="trow" style="grid-template-columns:minmax(160px,1.6fr) 100px 100px 110px 96px 110px">
+      <span>S Taluk Da</span>
+      <span class="num">12,300</span><span class="num">29,000</span><span class="num z">–</span>
+      <span class="num z">–</span><span class="num tot">41,300</span>
+    </div>
+    <div class="trow" style="grid-template-columns:minmax(160px,1.6fr) 100px 100px 110px 96px 110px">
+      <span>Omiyo</span>
+      <span class="num">10,395</span><span class="num z">–</span><span class="num z">–</span>
+      <span class="num z">–</span><span class="num tot">10,395</span>
+    </div>
+    <div class="trow" style="grid-template-columns:minmax(160px,1.6fr) 100px 100px 110px 96px 110px;background:var(--ground);font-weight:700">
+      <span>All parties</span>
+      <span class="num">78,050</span><span class="num">1,42,300</span><span class="num">96,400</span>
+      <span class="num">60,000</span><span class="num tot">4,62,180</span>
+    </div>
+  </div>
+  <p class="sub" style="margin-top:6px">
+    Labels are cumulative-<i>sounding</i> ("30+") but the columns are still
+    <b>mutually exclusive</b> — "30+" = 31–60 days, "60+" = 61–90, "&gt;3 mo" =
+    91+ — so each row's columns sum to the Total. Only the wording changed, not
+    the bucketing.
+  </p>
+
+  <!-- ===================================================== -->
+  <h2>4 · Bucketing rules (the actual logic)</h2>
+  <div class="split">
+    <div>
+      <h3>Due date</h3>
+      <p class="sub">
+        <span class="k">due = invoice.date + tenant.default_credit_days</span><br>
+        Default credit days = <b>0</b> → "due on invoice date", which is exactly
+        today's implicit behaviour, so existing tenants see no change until they
+        set a credit period. Per-party override (<code>party.credit_days</code>)
+        is <b>out of scope</b> for F3a.
+      </p>
+      <h3>Which bucket</h3>
+      <p class="sub">
+        Each open invoice's <b>live</b> <code>balance_due</code> (not its
+        original total) drops into the bucket its due date falls in, measured
+        against <code>as_on</code> (default today):<br>
+        <span class="k">age = as_on − due</span><br>
+        age ≤ 0 or ≤ 29 &rArr; <b>&lt;30 days</b> · 30–59 &rArr; <b>30+</b> ·
+        60–89 &rArr; <b>60+</b> · 90+ &rArr; <b>&gt;3 months</b>.
+        Four internal keys <span class="k">lt30, d30, d60, d90p</span>; labels are
+        display-only.
+      </p>
+    </div>
+    <div>
+      <h3>Opening balance</h3>
+      <p class="sub">
+        Folded in the same way <code>collections_summary()</code> already does:
+        an opening debit ages by <code>opening_balance_as_of</code>; if that's
+        null it lands in <b>&lt;30 days</b>. An opening credit reduces the
+        party's net, never a bucket.
+      </p>
+      <h3>Query shape</h3>
+      <p class="sub">
+        One aggregate, party-driven LEFT JOINs — same discipline as
+        <code>collections_summary()</code> so a party with only an opening
+        balance still appears. Returns per party:
+        <span class="k">lt30, d30, d60, d90p, total, worst_bucket,
+        is_overdue, oldest_bill_date, oldest_bill_number, last_payment_date,
+        open_invoice_count</span>.
+        <code>is_overdue</code> = <code>worst_bucket != "lt30"</code> — powers
+        the Overdue chip without a client-side scan.
+      </p>
+    </div>
+  </div>
+
+  <div class="note">
+    <b><code>GET /api/collections</code> is untouched</b> — the PaymentDialog and
+    the current list still call it. F3a adds <code>GET /api/collections/ageing</code>
+    alongside; the page switches its list query to the new endpoint.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>5 · Decisions locked (2026-09-09)</h2>
+  <ul class="sub">
+    <li><b>Buckets:</b> <code>&lt;30 days</code> / <code>30+</code> / <code>60+</code> / <code>&gt;3 months</code> — four, mutually exclusive, labels display-only over keys <code>lt30 / d30 / d60 / d90p</code>.</li>
+    <li><b>Boundary:</b> <code>age &le; 29</code> &rArr; &lt;30 days; <code>30–59</code> &rArr; 30+; <code>60–89</code> &rArr; 60+; <code>&ge; 90</code> &rArr; &gt;3 months.</li>
+    <li><b>Credit-days default 0</b> — reproduces today's numbers exactly until a tenant sets a period. Tenant-wide only for F3a.</li>
+    <li><b>Net total</b> → caption under the strip (no summary tile).</li>
+    <li><b>"&lt;30 days" colour</b> → neutral grey (nothing to chase). Null-<code>as_of</code> opening balances also land here.</li>
+    <li><b>Overdue</b> = worst bucket &gt; 30 days → new scope chip, <b>radio-exclusive</b> with Owes us / Overpaid / Either (Overdue ⊂ Owes us). Per-row "Send statement". Bulk multi-select send is <b>F3c</b>.</li>
+  </ul>
+
+  <h2>6 · Review checklist (still to eyeball)</h2>
+  <ul class="sub">
+    <li>Four bucket cells + ₹ on a 360px phone — readable in one row, or wrap to 2×2?</li>
+    <li>Tapping an already-active bucket — clear the filter (toggle) or no-op?</li>
+    <li>Worst-bucket pill only, or pill + <code>oldest {n}d</code> as well?</li>
+    <li>Overpaid / credit parties in the ageing view — hidden, or shown with all-zero buckets + a "credit" tag?</li>
+    <li>Desktop bucket-header sort in F3a, or F3-later?</li>
+    <li>"Send statement" row link — inline (proposed) vs. inside a ⋯ menu to keep the row clean?</li>
+    <li>"As on" date picker — expose in F3a (back-date ageing) or hard-wire today until F3c needs it?</li>
+  </ul>
+
+</div>
+</body>
+</html>

@@ -57,10 +57,15 @@ def build_installer_zip(
         shop_api_key=shop_api_key, backend_base_url=backend_base_url, watch_folder=watch_folder
     )
 
+    # The build dir carries its own template appsettings.json (and dev
+    # variant) — skip both so the per-shop one written below is the only
+    # copy in the zip, not a silently-shadowed duplicate entry.
+    _skip = {"appsettings.json", "appsettings.development.json"}
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for path in build_dir.rglob("*"):
-            if path.is_file():
+            if path.is_file() and path.name.lower() not in _skip:
                 zf.write(path, arcname=f"publish/{path.relative_to(build_dir)}")
         zf.writestr("install.ps1", install_script)
         zf.writestr("publish/appsettings.json", appsettings)
@@ -105,6 +110,14 @@ def _generate_appsettings(*, shop_api_key: str, backend_base_url: str, watch_fol
                 "Enabled": False,
                 "PollIntervalMinutes": 5,
                 "TallyGatewayBaseUrl": "http://localhost:9000",
+            },
+            # F1a masters-in. Mirrors AgentOptions.TallyMastersOptions defaults
+            # so the module is configured by the download, not a hand-edit.
+            "TallyMasters": {
+                "Enabled": True,
+                "GatewayUrl": "http://localhost:9000",
+                "ExportDir": "",
+                "PollIntervalMinutes": 1,
             },
         },
     }

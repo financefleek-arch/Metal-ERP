@@ -43,4 +43,18 @@ public sealed class AgentContext(
     public IReadOnlyDictionary<string, string> ModuleStatusSnapshot => _moduleStatus;
 
     public string? LastErrorSnapshot => _lastError;
+
+    // Second checkin signal: can this agent reach TallyPrime's HTTP gateway
+    // right now? Independent of module_status/backend reachability above.
+    // Null until a module has probed at least once this run.
+    public bool? TallyReachable { get; private set; }
+    public string? TallyReason { get; private set; }
+
+    /// <summary>Records this poll's Tally-gateway reachability for the next
+    /// checkin. `reason` is one of connected|refused|no_company|unknown.</summary>
+    public void SetTallyReachable(bool reachable, string reason)
+    {
+        TallyReachable = reachable;
+        TallyReason = reason;
+    }
 }

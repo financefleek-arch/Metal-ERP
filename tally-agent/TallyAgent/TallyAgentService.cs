@@ -66,6 +66,8 @@ public sealed class TallyAgentService(
                 var resp = await backend.CheckinAsync(
                     ctx.ModuleStatusSnapshot.ToDictionary(kv => kv.Key, kv => kv.Value),
                     ctx.LastErrorSnapshot,
+                    ctx.TallyReachable,
+                    ctx.TallyReason,
                     stoppingToken);
                 // Hand this round's outbox to modules for the next round.
                 ctx.SetPendingOutbox(resp?.Outbox ?? new List<Backend.OutboxItem>());

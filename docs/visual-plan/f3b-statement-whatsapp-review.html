@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>F3b — Party statement → WhatsApp</title>
+<style>
+  :root{
+    --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a;
+    --accent:#2f6f89; --accent-dark:#245771; --accent-soft:#eef4f7;
+    --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b; --tan:#f1e7d6;
+    --wa:#25a566;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);
+    font:14px/1.5 "IBM Plex Sans",system-ui,sans-serif;padding:32px 20px 80px}
+  h1{font-family:"Fraunces",Georgia,serif;font-size:24px;margin:0 0 4px}
+  h2{font-family:"Fraunces",Georgia,serif;font-size:17px;margin:36px 0 6px}
+  h3{font-family:"Fraunces",Georgia,serif;font-size:14px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 12px;max-width:74ch}
+  .wrap{max-width:1040px;margin:0 auto}
+  .plan{background:var(--tan);border:1px solid #e3d4b4;border-radius:8px;padding:10px 12px;
+    font-size:12.5px;color:#6b5426;margin:0 0 20px}
+  .plan b{color:#4d3c17}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .note{background:#fbf8f2;border:1px solid var(--line);border-radius:8px;padding:10px 12px;
+    font-size:12.5px;color:var(--muted);margin:10px 0}
+  .note b{color:var(--ink)}
+  code{background:#efeae0;border-radius:3px;padding:1px 4px;font-size:12px}
+  .label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+
+  .phone{max-width:390px;border:1px solid var(--line);border-radius:14px;background:var(--ground);padding:14px 12px}
+
+  .btn{height:34px;border:1px solid var(--line);background:#fff;border-radius:6px;padding:0 12px;
+    font-size:12.5px;color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.wa{border-color:var(--wa);color:var(--wa)}
+  .btn svg{width:14px;height:14px;flex:0 0 auto}
+
+  /* account tab header */
+  .acct-card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px}
+  .acct-bal{font-family:"Fraunces",serif;font-size:24px;font-weight:600}
+  .acct-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+
+  /* statement PDF mock */
+  .pdf{background:#fff;border:1px solid var(--line);border-radius:6px;max-width:460px;
+    padding:22px 24px;font-size:12px;box-shadow:0 2px 14px rgba(0,0,0,.06)}
+  .pdf .firm{font-family:"Fraunces",serif;font-size:15px;font-weight:600}
+  .pdf .muted{color:var(--muted);font-size:11px}
+  .pdf hr{border:0;border-top:1px solid var(--line);margin:12px 0}
+  .pdf .two{display:flex;justify-content:space-between;gap:20px}
+  .st-tbl{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
+  .st-tbl th{text-align:left;border-bottom:1px solid var(--ink);padding:5px 4px;font-size:9.5px;
+    text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+  .st-tbl td{padding:5px 4px;border-bottom:1px solid #f0ebe1}
+  .st-tbl .r{text-align:right;font-family:ui-monospace,monospace}
+  .st-tbl tr.close td{border-top:2px solid var(--ink);border-bottom:0;font-weight:700;padding-top:7px}
+  .st-tbl .dr{color:var(--danger)} .st-tbl .cr{color:var(--ok)}
+
+  /* WA send dialog mock */
+  .dlg{max-width:360px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:16px}
+  .dlg .row{display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 0}
+  .field{width:100%;height:36px;border:1px solid var(--line);border-radius:6px;padding:0 10px;font-size:13px}
+  .savep{background:var(--tan);border:1px solid #e3d4b4;border-radius:6px;padding:8px 10px;
+    font-size:12px;color:#6b5426;margin-top:8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+
+  /* WA message row (chat preview) */
+  .wa-msg{max-width:320px;background:#d9fdd3;border-radius:8px 8px 2px 8px;padding:8px 10px;font-size:12.5px;margin-left:auto}
+  .wa-doc{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.05);border-radius:6px;padding:8px;margin-bottom:6px}
+  .wa-doc svg{width:22px;height:22px;color:#c0392b;flex:0 0 auto}
+  .wa-time{font-size:10px;color:#5b6b57;text-align:right;margin-top:2px}
+
+  ul.sub li{margin-bottom:4px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.split{grid-template-columns:1fr}}
+  .k{font-family:ui-monospace,monospace;font-size:11px}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:3px;padding:0 5px;font-size:10px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>F3b — Party statement → WhatsApp</h1>
+  <p class="sub">
+    One tap on a party → a PDF of the account ledger for a chosen period
+    (opening balance → entries → closing) → send it on WhatsApp (or just
+    download). Reuses <code>party_ledger()</code> for the rows and the existing
+    invoice-send WhatsApp path for delivery.
+  </p>
+
+  <div class="plan">
+    <b>PLAN — nothing built.</b> Scope: <code>docs/SCOPE-F3-F4-collections-and-tally-handoff.md</code> §A.2.
+    New <code>services/statements.py::render_party_statement_pdf()</code>,
+    template <code>templates/statement_v1.html</code>,
+    <code>GET /api/parties/{id}/statement.pdf?period=&amp;from=&amp;to=</code> and
+    <code>POST /api/parties/{id}/statement/whatsapp</code>.
+    New Meta template <code>account_statement</code> (<code>party_name</code>,
+    <code>total_due</code>) — <b>submit now, approval takes days</b>.
+    <b>Depends on F3a</b> for the Overdue chip + per-row "Send statement" entry point.
+    <b>No migration</b> — <code>whatsapp_message</code> already has a nullable
+    <code>party_id</code> FK (separate from <code>invoice_id</code>); a statement
+    row is <code>party_id</code> set / <code>invoice_id</code> null.
+  </div>
+
+  <div class="note" style="background:#e3efe6;border-color:#b8d8c2;color:#2f5d3f">
+    <b>Decided 2026-09-09.</b>
+    <b>Period picker</b> = preset dropdown: <i>This month</i> (default) / Last
+    month / This FY (<b>Apr–Mar, hard-wired</b>) / Last 90 days / Custom range.
+    Statement opens with a synthetic <b>"Opening balance as on &lt;start&gt;"</b>
+    row (running balance rolled forward), then the window's entries, then the
+    closing balance.
+    <b>Content = full ledger for the window</b>, not open-bills-only.
+    <b>Reversed payments</b> inside the window stay in — struck-through with a
+    "reversed" note — never omitted (keeps the history + arithmetic honest).
+    <b>Empty window</b> (no entries) → the Send button is disabled with
+    "Nothing happened this period" — no point sending opening = closing.
+    <b>Closing line wording = "Total due ₹X".</b>
+    <b>File name</b> = <code>&lt;Party slug&gt; statement &lt;YYYY-MM-DD&gt;.pdf</code>
+    (today's date, matching <code>download_name()</code> for invoices — not a
+    period token).
+    <b>Custom range</b> fields render inline and work identically on phone + tablet.
+    <b>No migration</b> — <code>whatsapp_message.party_id</code> already exists.
+    <b>Entry points</b>: Party Account tab (Download + Send) <i>and</i> the F3a
+    Collections per-row "Send statement" on overdue parties. Bulk multi-select
+    send stays in F3c.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>1 · Where we are today</h2>
+  <p class="sub">
+    <code>PartyAccountTab.tsx</code> shows the running statement on screen —
+    opening row, invoices (amber dot, <code>+</code>), payments (green dot,
+    <code>−</code>), running balance, a Reverse link on each payment. There is
+    <b>no way to hand it to the customer</b>: no PDF, no share. The ledger is
+    JSON-only (<code>GET /api/parties/{id}/ledger</code>).
+  </p>
+
+  <div class="phone">
+    <div class="acct-card">
+      <div class="label">Outstanding balance</div>
+      <div class="acct-bal">₹ 82,554</div>
+      <div class="acct-actions">
+        <button class="btn primary">+ Record payment</button>
+      </div>
+    </div>
+    <div class="label" style="margin:16px 0 6px">Statement</div>
+    <div class="card" style="padding:0">
+      <div style="padding:12px 14px;border-bottom:1px solid #f3eee4;display:flex;gap:10px">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--line);margin-top:5px;flex:0 0 auto"></span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600;font-style:italic;color:var(--muted)">Opening balance</div>
+          <div style="font-size:11px;color:var(--muted)">01 Apr 2026 · carried forward</div></div>
+        <div style="text-align:right"><div style="font-size:13px;font-weight:600;color:var(--danger)">+ ₹ 20,000</div>
+          <div style="font-size:10px;color:var(--muted)">bal ₹ 20,000</div></div>
+      </div>
+      <div style="padding:12px 14px;border-bottom:1px solid #f3eee4;display:flex;gap:10px">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--warn);margin-top:5px;flex:0 0 auto"></span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600">INV-19</div>
+          <div style="font-size:11px;color:var(--muted)">24 Jul 2026</div></div>
+        <div style="text-align:right"><div style="font-size:13px;font-weight:600;color:var(--danger)">+ ₹ 61,554</div>
+          <div style="font-size:10px;color:var(--muted)">bal ₹ 81,554</div></div>
+      </div>
+      <div style="padding:12px 14px;display:flex;gap:10px">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--ok);margin-top:5px;flex:0 0 auto"></span>
+        <div style="flex:1"><div style="font-size:13px;font-weight:600">Payment · UPI</div>
+          <div style="font-size:11px;color:var(--muted)">12 Aug 2026</div></div>
+        <div style="text-align:right"><div style="font-size:13px;font-weight:600;color:var(--ok)">− ₹ 19,000</div>
+          <div style="font-size:10px;color:var(--muted)">bal ₹ 82,554</div>
+          <div style="font-size:10px;color:var(--danger)">Reverse</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>2 · Proposed — Account tab header + period picker</h2>
+  <p class="sub">
+    <b>Download</b> and <b>Send on WhatsApp</b> sit beside "+ Record payment",
+    with a <b>period dropdown</b> (This month default). Both actions carry the
+    selected period. The WhatsApp button opens the <i>same</i> recipient-picker
+    dialog the invoice send already uses. Nothing about the on-screen statement
+    list changes.
+  </p>
+
+  <div class="phone">
+    <div class="acct-card">
+      <div class="label">Outstanding balance</div>
+      <div class="acct-bal">₹ 82,554</div>
+      <div class="acct-actions">
+        <button class="btn primary">+ Record payment</button>
+      </div>
+      <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="label" style="margin-bottom:6px">Statement</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <select class="field" style="width:auto;padding-right:24px">
+            <option>This month</option>
+            <option>Last month</option>
+            <option>This FY (Apr–Mar)</option>
+            <option>Last 90 days</option>
+            <option selected>Custom range…</option>
+          </select>
+          <button class="btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+            Download
+          </button>
+          <button class="btn wa">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.7 15l-1.2 4.4 4.5-1.2A10 10 0 1 0 12 2Zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.7.7.7-2.6-.2-.3A8 8 0 1 1 12 20Zm4.4-6c-.2-.1-1.4-.7-1.6-.8s-.4-.1-.5.1-.6.8-.8 1-.3.2-.5.1a6.5 6.5 0 0 1-1.9-1.2 7.2 7.2 0 0 1-1.4-1.7c-.1-.2 0-.4.1-.5l.4-.5.2-.5v-.4l-.7-1.7c-.2-.5-.4-.4-.5-.4h-.5a.9.9 0 0 0-.7.3A2.8 2.8 0 0 0 6 9.3a4.8 4.8 0 0 0 1 2.6 11 11 0 0 0 4.3 3.8c2.5 1 2.5.7 3 .6a2.4 2.4 0 0 0 1.6-1.1 2 2 0 0 0 .1-1.1c0-.1-.2-.2-.4-.3Z"/></svg>
+            Send
+          </button>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input class="field" type="date" value="2026-09-01" style="flex:1" />
+          <input class="field" type="date" value="2026-09-30" style="flex:1" />
+        </div>
+        <p style="font-size:11px;color:var(--muted);margin:6px 0 0">
+          Dropdown = This month (default) / Last month / This FY / Last 90 days /
+          Custom range. On "Custom range…" the two native date fields appear here
+          — same layout on phone and tablet. Period remembered per session.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Empty window.</b> If the party had no invoice / payment / adjustment in
+    the selected range, <b>Send is disabled</b> ("Nothing happened this period") —
+    a statement that's just opening = closing isn't worth a WhatsApp. Download
+    stays enabled for the owner's own records.
+  </div>
+
+  <div class="note">
+    <b>Second entry point — F3a Collections.</b> On an <b>overdue</b> row
+    (worst bucket &gt; 30 days) a <span class="pill">Send statement</span> link
+    opens this same dialog with the party pre-filled and period defaulted to
+    <i>This month</i>. Bulk "send to all overdue" (multi-select + throttle +
+    approval) is <b>F3c</b>, not here.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>3 · The recipient dialog (reused from invoice send)</h2>
+  <div class="grid">
+    <div>
+      <p class="sub">Same component as "Send invoice on WhatsApp". Party phone
+        pre-checked; an "Other number" field for a one-off; on a successful send
+        to a new number, the "save to party?" prompt.</p>
+      <div class="dlg">
+        <h3>Send statement on WhatsApp</h3>
+        <p style="font-size:12px;color:var(--muted);margin:2px 0 8px">Jorerhang Metal · Sep 2026 · total due ₹ 82,554</p>
+        <label class="row"><input type="checkbox" checked /> +91 98xxxxxx02 <span style="color:var(--muted)">(on file)</span></label>
+        <label class="row"><input type="checkbox" /> Other number</label>
+        <input class="field" placeholder="+91 …" />
+        <div class="savep"><span>Save +91 90000 11111 to Jorerhang Metal?</span><button class="btn" style="height:26px">Save</button></div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">
+          <button class="btn">Cancel</button>
+          <button class="btn wa">Send</button>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="sub">What the customer receives — the <code>account_statement</code>
+        template body + the PDF as a document header, exactly like
+        <code>invoice_ready</code> today.</p>
+      <div class="wa-msg">
+        <div class="wa-doc">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm8 1.5V8h4.5L14 3.5Z"/></svg>
+          <div><div style="font-weight:600">Jorerhang Metal statement 2026-09-09.pdf</div>
+            <div style="font-size:10px;color:#5b6b57">PDF · 41 KB</div></div>
+        </div>
+        Hello Jorerhang Metal, here is your account statement.
+        Total due: ₹ 82,554. Please reply PAID once settled.
+        <div class="wa-time">14:02 ✓✓</div>
+      </div>
+      <p class="sub" style="margin-top:10px">
+        Records a <code>WhatsappMessage</code> row — <code>party_id</code> set,
+        <code>invoice_id</code> null, <code>template_name = "account_statement"</code>.
+        <b>The table already has both nullable FKs</b>
+        (<code>models/whatsapp.py</code> lines 51 + 54), so <b>no migration</b>.
+        Delivery / read ticks flow in via the webhook fan-in already deployed
+        (matched on <code>wa_message_id</code>, party-vs-invoice makes no difference).
+      </p>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>4 · The statement PDF</h2>
+  <p class="sub">
+    New template <code>templates/statement_v1.html</code>, same Jinja env as the
+    invoice PDF (<code>money</code> / <code>kg</code> / <code>uom</code> filters,
+    Indian digit grouping). Rows from <code>party_ledger()</code> <b>sliced to
+    the window</b>. Regenerated on demand — no persisted <code>pdf_path</code>.
+    File name via the existing <code>download_name()</code> helper:
+    <span class="k">"&lt;Party slug&gt; statement &lt;YYYY-MM-DD&gt;.pdf"</span>
+    where the date is <b>today</b> (generation date), matching how invoice PDFs
+    are named — not a period token.
+  </p>
+
+  <p class="sub">
+    <b>Opening-balance row.</b> The first row is always a synthetic
+    <i>"Opening balance as on &lt;start&gt;"</i> — the running balance carried
+    forward from everything <b>before</b> the window (the party's own
+    <code>opening_balance</code> + every earlier invoice − every earlier
+    payment). Then the window's entries. Then closing. So a "This month"
+    statement starting 01 Sep shows the balance as it stood on 01 Sep, not the
+    all-time opening balance.
+  </p>
+
+  <div class="pdf">
+    <div class="two">
+      <div>
+        <div class="firm">Shree Metal Traders</div>
+        <div class="muted">GSTIN 08AAB…1Z5 · Jaipur · +91 141 …</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-weight:600">Account Statement</div>
+        <div class="muted">Sep 2026 · generated 09 Sep 2026</div>
+      </div>
+    </div>
+    <hr>
+    <div class="two">
+      <div><div class="muted">Statement for</div>
+        <div style="font-weight:600">Jorerhang Metal</div>
+        <div class="muted">Namchi · +91 98xxxxxx02</div></div>
+      <div style="text-align:right"><div class="muted">Period</div>
+        <div>01 Sep 2026 – 30 Sep 2026</div></div>
+    </div>
+    <table class="st-tbl">
+      <thead><tr><th>Date</th><th>Particulars</th><th class="r">Debit</th><th class="r">Credit</th><th class="r">Balance</th></tr></thead>
+      <tbody>
+        <tr><td>01 Sep</td><td><i>Opening balance as on 01 Sep 2026</i></td><td class="r">—</td><td class="r">—</td><td class="r">62,554.00</td></tr>
+        <tr><td>03 Sep</td><td>INV-27</td><td class="r dr">10,395.00</td><td class="r">—</td><td class="r">72,949.00</td></tr>
+        <tr><td>06 Sep</td><td>Payment — UPI ref 5108</td><td class="r">—</td><td class="r cr">10,395.00</td><td class="r">62,554.00</td></tr>
+        <tr style="color:var(--muted)"><td style="text-decoration:line-through">07 Sep</td>
+          <td style="text-decoration:line-through">Payment — cheque 88213</td>
+          <td class="r" style="text-decoration:line-through">—</td>
+          <td class="r" style="text-decoration:line-through">15,000.00</td>
+          <td class="r">62,554.00 <span style="font-style:italic">· reversed (cheque bounced)</span></td></tr>
+        <tr><td>08 Sep</td><td>INV-28</td><td class="r dr">20,000.00</td><td class="r">—</td><td class="r">82,554.00</td></tr>
+        <tr class="close"><td colspan="4">Total due as on 09 Sep 2026</td><td class="r">82,554.00</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top:10px">Amounts in ₹. E&amp;OE. Please reply PAID on WhatsApp once settled.</p>
+  </div>
+
+  <div class="note">
+    <b>Guardrails.</b> Piece unit prints as <code>pcs</code> via the
+    <code>uom</code> Jinja filter — never <code>nos</code>. Mirror the invoice
+    template's header block + table rhythm. Closing line reads
+    <b>"Total due ₹X"</b>. <b>Reversed payments inside the window are kept</b>,
+    struck-through with the reversal reason — the balance column shows they had
+    no net effect, so the arithmetic still ties out. Never omitted.
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>5 · Endpoints</h2>
+  <div class="split">
+    <div>
+      <h3>Download</h3>
+      <p class="sub"><span class="k">GET /api/parties/{id}/statement.pdf?period=this_month</span><br>
+        <code>period</code> ∈ <code>this_month | last_month | this_fy | last_90 | custom</code>;
+        <code>custom</code> requires <code>from=&amp;to=</code> (ISO dates).
+        <code>this_fy</code> = <b>1 Apr of the current Indian FY → today</b>
+        (hard-wired April, no tenant setting). Server resolves the window,
+        computes the carried-forward opening balance, slices the ledger, renders,
+        streams with a friendly <code>Content-Disposition</code> name.</p>
+    </div>
+    <div>
+      <h3>Send</h3>
+      <p class="sub"><span class="k">POST /api/parties/{id}/statement/whatsapp</span><br>
+        Body <code>{period, from?, to?, to_phone?}</code>. Renders (same resolver) +
+        <code>_send_template_message()</code> with <code>account_statement</code>
+        (<code>party_name</code>, <code>total_due</code>). 422 if the window is
+        empty. Writes a <code>whatsapp_message</code> row
+        (<code>party_id</code> set, <code>invoice_id</code> null) and returns it
+        so the dialog can show "sent".</p>
+    </div>
+  </div>
+
+  <!-- ===================================================== -->
+  <h2>6 · Decisions locked (2026-09-09)</h2>
+  <ul class="sub">
+    <li><b>Period picker</b> = preset dropdown: This month (default) / Last month / This FY / Last 90 days / Custom range.</li>
+    <li><b>Content</b> = full ledger for the window — invoices, payments, adjustments — <i>not</i> open-bills-only.</li>
+    <li><b>Opening row</b> = synthetic "Opening balance as on &lt;start&gt;", running balance carried forward from before the window.</li>
+    <li><b>Reversed payments</b> in the window are <b>kept, struck-through with the reason</b> — never omitted. Balance column shows nil net effect.</li>
+    <li><b>Empty window</b> → Send disabled ("Nothing happened this period"); Download stays enabled.</li>
+    <li><b>Closing line wording</b> = <b>"Total due ₹X"</b>.</li>
+    <li><b>File name</b> = <code>&lt;Party slug&gt; statement &lt;YYYY-MM-DD&gt;.pdf</code> — <b>today's date</b> via <code>download_name()</code>, matching invoice PDFs. No period token.</li>
+    <li><b>Custom-range date fields</b> render inline under the dropdown; identical on phone + tablet (native <code>&lt;input type=date&gt;</code>).</li>
+    <li><b>No migration</b> — <code>whatsapp_message</code> already carries a nullable <code>party_id</code> FK.</li>
+    <li><b>Entry points</b> = Party Account tab (Download + Send) <i>and</i> F3a Collections per-row "Send statement" on overdue parties. Bulk = <b>F3c</b>.</li>
+    <li><b>Keep a plain Download</b> button beside Send.</li>
+  </ul>
+
+  <h2>7 · Review checklist (still to eyeball)</h2>
+  <ul class="sub">
+    <li>Meta <code>account_statement</code> copy — <code>{{2}}</code> = total due; reads naturally with the PDF attached? (Submit early — approval lead time.)</li>
+    <li>Struck-through reversed row — does the greyed line-through survive WeasyPrint cleanly, or does it need a lighter "(reversed)" tag instead of <code>text-decoration</code>?</li>
+    <li>"Nothing happened this period" — where does the message sit (disabled-button tooltip, inline caption, toast)?</li>
+    <li>Opening-balance row with a zero carried-forward balance (brand-new party, statement = their whole history) — show "Opening balance ₹0.00" or suppress the row?</li>
+    <li>Collections "Send statement" → does it open the full recipient dialog, or one-tap send to the party's stored number with an undo toast?</li>
+    <li>Last-90-days / custom windows that span a year boundary — statement header date format stays unambiguous?</li>
+  </ul>
+
+</div>
+</body>
+</html>

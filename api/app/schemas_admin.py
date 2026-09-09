@@ -148,8 +148,8 @@ class FirmWhatsappTestOut(BaseModel):
 
 
 class FirmTallyShopOut(BaseModel):
-    """Whether this firm has a provisioned tally-agent shop yet. No key here
-    — a key is only ever returned once, from the provision/rotate call."""
+    """This firm's tally-agent status. The API key never appears here — it's
+    baked into the downloadable installer, not shown to a human."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -159,8 +159,20 @@ class FirmTallyShopOut(BaseModel):
     last_checkin_at: datetime | None = None
     last_upload_at: datetime | None = None
 
+    # Seamless-onboarding fields.
+    installer_ready: bool = False
+    agent_online: bool = False  # checked in within the offline window
+    tally_status: str | None = None  # connected | refused | no_company | unknown
+    tally_ok_at: datetime | None = None
+
 
 class FirmTallyShopProvisionResult(BaseModel):
     shop_id: str
-    api_key: str = Field(description="plaintext — shown once, never returned again")
     created: bool
+    installer_ready: bool = False
+    # Deprecated: the key is now delivered inside the installer zip and no
+    # longer needs to reach a human. Kept for one release for the emergency
+    # "read the raw key" path + existing tests.
+    api_key: str = Field(
+        default="", description="deprecated — plaintext key, now baked into the installer"
+    )

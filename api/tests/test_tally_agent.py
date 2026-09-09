@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 import app.routers.tally_agent as tally_agent_router
+import app.services.tally.installer as installer_mod
 from app.db import SessionLocal
 from app.main import app
 from app.models import AgentOutboxItem
@@ -23,6 +24,30 @@ from tools.make_platform_admin import run as make_admin
 @pytest.fixture
 def client() -> TestClient:
     return TestClient(app)
+
+
+_last_built_key: dict[str, str] = {}
+
+
+@pytest.fixture(autouse=True)
+def _stub_installer_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provisioning also builds + caches an installer zip — stub it out (no
+    real agent build dir / R2 in tests). The plaintext key normally never
+    leaves this function (it's baked into the zip); tests that need to prove
+    the key works read it back via `_last_built_key` rather than the API
+    response, since the response no longer carries it."""
+    _last_built_key.clear()
+
+    def _fake_build(session, shop, *, plaintext_key):  # type: ignore[no-untyped-def]
+        shop.installer_r2_key = f"installers/{shop.id}.zip"
+        session.flush()
+        _last_built_key[shop.id] = plaintext_key
+        return shop.installer_r2_key
+
+    monkeypatch.setattr(installer_mod, "build_and_cache_installer", _fake_build)
+    import app.routers.admin as admin_router
+
+    monkeypatch.setattr(admin_router, "get_object", lambda r2_key: b"PK\x03\x04fake-zip")
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -117,6 +142,43 @@ def test_checkin_updates_last_checkin_and_reports_error(
     assert len(listed) == 1
     assert listed[0]["last_error"] == "watch folder missing"
     assert listed[0]["last_checkin_at"] is not None
+
+
+def test_checkin_records_tally_reachability(client: TestClient, session: Session) -> None:
+    from app.models import BackupShop
+
+    shop_id, key = _make_shop(session)
+
+    r = client.post(
+        "/api/tally-agent/checkin",
+        headers={"X-Shop-Key": key},
+        json={"tally_reachable": False, "tally_reason": "refused"},
+    )
+    assert r.status_code == 200
+    session.expire_all()
+    shop = session.get(BackupShop, shop_id)
+    assert shop.last_tally_status == "refused"
+    assert shop.last_tally_ok_at is None
+
+    r = client.post(
+        "/api/tally-agent/checkin",
+        headers={"X-Shop-Key": key},
+        json={"tally_reachable": True},
+    )
+    assert r.status_code == 200
+    session.expire_all()
+    shop = session.get(BackupShop, shop_id)
+    assert shop.last_tally_status == "connected"
+    assert shop.last_tally_ok_at is not None
+
+    # a checkin that doesn't mention tally_reachable leaves it alone
+    prev_status, prev_ok_at = shop.last_tally_status, shop.last_tally_ok_at
+    r = client.post("/api/tally-agent/checkin", headers={"X-Shop-Key": key}, json={})
+    assert r.status_code == 200
+    session.expire_all()
+    shop = session.get(BackupShop, shop_id)
+    assert shop.last_tally_status == prev_status
+    assert shop.last_tally_ok_at == prev_ok_at
 
 
 def test_checkin_returns_queued_outbox_items(client: TestClient, session: Session) -> None:
@@ -236,14 +298,16 @@ def test_provision_firm_agent_returns_key_once(client: TestClient) -> None:
     assert r.status_code == 200
     assert r.json()["provisioned"] is False
 
-    # provision -> key returned once
+    # provision -> agent identity created, installer built + cached; the key
+    # itself is no longer echoed back (it's baked into the zip instead)
     r = client.post(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
     assert r.status_code == 201, r.text
     body = r.json()
-    assert body["api_key"] and body["shop_id"]
-    shop_id, key = body["shop_id"], body["api_key"]
+    assert body["shop_id"] and body["installer_ready"] is True
+    shop_id = body["shop_id"]
+    key = _last_built_key[shop_id]
 
-    # status now shows provisioned, no key
+    # status now shows provisioned + installer ready, no key
     r = client.get(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
     assert r.json() == {
         "provisioned": True,
@@ -251,13 +315,22 @@ def test_provision_firm_agent_returns_key_once(client: TestClient) -> None:
         "is_active": True,
         "last_checkin_at": None,
         "last_upload_at": None,
+        "installer_ready": True,
+        "agent_online": False,
+        "tally_status": None,
+        "tally_ok_at": None,
     }
 
-    # the key actually works for the agent auth
+    # the key baked into the installer actually works for agent auth
     r = client.post(
         "/api/tally-agent/checkin", headers={"X-Shop-Key": key}, json={}
     )
     assert r.status_code == 200
+
+    # the installer itself downloads
+    r = client.get(f"/api/admin/firms/{firm_id}/tally-shop/installer", headers=_auth(tok))
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
 
     # second provision -> 409, rotate instead
     r = client.post(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
@@ -267,15 +340,16 @@ def test_provision_firm_agent_returns_key_once(client: TestClient) -> None:
 def test_rotate_firm_agent_key_invalidates_old(client: TestClient) -> None:
     tok = _admin_token(client)
     firm_id = _make_firm(client, tok)
-    old_key = client.post(
-        f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok)
-    ).json()["api_key"]
+    r = client.post(f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok))
+    shop_id = r.json()["shop_id"]
+    old_key = _last_built_key[shop_id]
 
     r = client.post(
         f"/api/admin/firms/{firm_id}/tally-shop/rotate-key", headers=_auth(tok)
     )
     assert r.status_code == 200
-    new_key = r.json()["api_key"]
+    assert r.json()["installer_ready"] is True
+    new_key = _last_built_key[shop_id]
     assert new_key != old_key
 
     # old key dead, new key works

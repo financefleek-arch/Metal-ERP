@@ -11,6 +11,7 @@ from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
@@ -415,3 +416,101 @@ def list_open_invoices(
             )
         )
     return out
+
+
+# --------------------------------------------------------------------------
+# account statement (F3b) — period-windowed ledger PDF + WhatsApp send
+# --------------------------------------------------------------------------
+
+
+class StatementWhatsappSend(BaseModel):
+    period: str = Field(
+        default="this_month",
+        description="this_month | last_month | this_fy | last_90 | custom",
+    )
+    date_from: date | None = Field(default=None, alias="from")
+    date_to: date | None = Field(default=None, alias="to")
+    to_phone: str | None = Field(
+        default=None,
+        max_length=20,
+        description="explicit recipient (digits, country code ok, no +). "
+        "Omit to send to the party's stored phone.",
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class StatementWhatsappOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    status: str
+    template_name: str
+    to_phone: str
+    wa_message_id: str | None = None
+    error: str | None = None
+
+
+@router.get("/{party_id}/statement.pdf")
+def get_party_statement_pdf(
+    party_id: str,
+    user: CurrentUser,
+    session: SessionDep,
+    period: str = Query(default="this_month"),
+    date_from: date | None = Query(default=None, alias="from"),
+    date_to: date | None = Query(default=None, alias="to"),
+) -> Response:
+    from fastapi.responses import FileResponse
+
+    from app.services.statements import (
+        StatementError,
+        render_party_statement_pdf,
+        resolve_period,
+        statement_download_name,
+    )
+
+    _get_owned(session, user.tenant_id, party_id)
+    try:
+        start, end = resolve_period(period, dt_from=date_from, dt_to=date_to)  # type: ignore[arg-type]
+        path, data = render_party_statement_pdf(
+            session, party_id, period_from=start, period_to=end
+        )
+    except StatementError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ImportError as exc:  # WeasyPrint native libs missing (bare dev box)
+        raise HTTPException(
+            status_code=503, detail="PDF rendering is unavailable on this host"
+        ) from exc
+    return FileResponse(
+        str(path), media_type="application/pdf", filename=statement_download_name(data)
+    )
+
+
+@router.post("/{party_id}/statement/whatsapp", response_model=StatementWhatsappOut)
+def send_party_statement_whatsapp(
+    party_id: str,
+    body: StatementWhatsappSend,
+    user: WriteUser,
+    session: SessionDep,
+) -> StatementWhatsappOut:
+    from app.services.whatsapp import (
+        WhatsappError,
+        WhatsappNotConfigured,
+        send_party_statement,
+    )
+
+    _get_owned(session, user.tenant_id, party_id)
+    try:
+        msg = send_party_statement(
+            session,
+            party_id,
+            period=body.period,
+            dt_from=body.date_from,
+            dt_to=body.date_to,
+            to_phone=(body.to_phone.strip() if body.to_phone else None),
+        )
+    except WhatsappNotConfigured as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except WhatsappError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return StatementWhatsappOut.model_validate(msg)

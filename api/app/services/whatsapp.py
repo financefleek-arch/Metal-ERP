@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -30,7 +30,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Invoice, TenantWhatsappConfig, WhatsappMessage
+from app.models import Invoice, Party, TenantWhatsappConfig, WhatsappMessage
 
 log = logging.getLogger("whatsapp")
 _settings = get_settings()
@@ -47,6 +47,10 @@ _TIMEOUT = 15  # seconds — Meta's Graph API is usually sub-second
 TEMPLATE_BODY_PARAMS: dict[str, tuple[str, ...]] = {
     "invoice_ready": ("party_name", "invoice_number", "grand_total"),
     "payment_reminder": ("party_name", "invoice_number", "grand_total"),
+    # F3b — party account statement. Body:
+    #   "Hello {{1}}, here is your account statement. Total due: ₹{{2}}.
+    #    Please reply PAID once settled." + PDF document header.
+    "account_statement": ("party_name", "total_due"),
 }
 
 
@@ -413,6 +417,111 @@ def send_invoice(
             cfg,
             to_phone=recipient,
             template_name=template_name,
+            body_params=body_params,
+            document_media_id=media_id,
+            document_filename=filename,
+        )
+    except WhatsappError as exc:
+        msg.status = "failed"
+        msg.error = str(exc)[:1000]
+        session.flush()
+        raise
+
+    msg.status = "sent"
+    msg.wa_message_id = wa_id
+    msg.sent_at = datetime.now(UTC)
+    session.flush()
+    return msg
+
+
+# --------------------------------------------------------------------------
+# high-level: send a party account statement (F3b)
+# --------------------------------------------------------------------------
+
+
+def send_party_statement(
+    session: Session,
+    party_id: str,
+    *,
+    period: str,
+    dt_from: date | None = None,
+    dt_to: date | None = None,
+    to_phone: str | None = None,
+) -> WhatsappMessage:
+    """Render the party's account statement for `period` and send it over
+    WhatsApp (template `account_statement`, PDF as the document header).
+
+    `to_phone` given  → send there (explicit operator choice); the party's
+                        stored phone is not consulted.
+    `to_phone` omitted → send to the party's stored phone; it must exist.
+
+    Raises WhatsappError (nothing sent) on: empty window, party has no phone
+    and no `to_phone`, firm has no active WhatsApp config. On a Meta
+    rejection the `whatsapp_message` row is left `failed` and the exception
+    re-raised. The row is `party_id` set / `invoice_id` NULL.
+    """
+    from app.services.statements import (
+        StatementError,
+        render_party_statement_pdf,
+        resolve_period,
+        statement_download_name,
+    )
+
+    party = session.get(Party, party_id)
+    if party is None:
+        raise WhatsappError("party not found")
+
+    try:
+        start, end = resolve_period(period, dt_from=dt_from, dt_to=dt_to)  # type: ignore[arg-type]
+    except StatementError as exc:
+        raise WhatsappError(str(exc)) from exc
+
+    if to_phone:
+        recipient = _phone_e164(to_phone)
+        if len(recipient) < 10:
+            raise WhatsappError(f"recipient phone looks invalid: {to_phone!r}")
+    else:
+        if not party.phone:
+            raise WhatsappError("party has no phone number")
+        recipient = _phone_e164(party.phone)
+
+    cfg = get_config(session, party.tenant_id)
+
+    try:
+        pdf_path, data = render_party_statement_pdf(
+            session, party_id, period_from=start, period_to=end
+        )
+    except StatementError as exc:
+        raise WhatsappError(str(exc)) from exc
+    if data.is_empty:
+        raise WhatsappError("nothing happened this period — no statement to send")
+
+    filename = statement_download_name(data)
+    # {{2}} is a Number variable in the template — bare numeric string, no ₹.
+    total_str = f"{data.total_due:.2f}"
+    param_values = {"party_name": party.legal_name, "total_due": total_str}
+    body_params = [param_values[k] for k in TEMPLATE_BODY_PARAMS["account_statement"]]
+
+    msg = WhatsappMessage(
+        tenant_id=party.tenant_id,
+        party_id=party.id,
+        invoice_id=None,
+        template_name="account_statement",
+        to_phone=recipient,
+        status="pending",
+    )
+    session.add(msg)
+    session.flush()
+
+    media_id: str | None = None
+    try:
+        if Path(pdf_path).exists():
+            media_id = upload_media(cfg, str(pdf_path), filename=filename)
+            msg.media_id = media_id
+        wa_id = _send_template_message(
+            cfg,
+            to_phone=recipient,
+            template_name="account_statement",
             body_params=body_params,
             document_media_id=media_id,
             document_filename=filename,

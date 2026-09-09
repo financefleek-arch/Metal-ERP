@@ -46,6 +46,26 @@ def presigned_put_url(r2_key: str) -> tuple[str, int]:
     return url, _PUT_URL_EXPIRY_SECONDS
 
 
+def put_object(r2_key: str, body: bytes, content_type: str = "application/octet-stream") -> None:
+    """Server-side upload of an object we built in this process (the per-shop
+    tally-agent installer zip). Unlike the agent's uploads there's no presign
+    step — the API holds the creds. Raises `R2NotConfigured` if unset.
+    """
+    _client().put_object(
+        Bucket=_settings.tally_r2_bucket,
+        Key=r2_key,
+        Body=body,
+        ContentType=content_type,
+    )
+
+
+def delete_object(r2_key: str) -> None:
+    """Best-effort delete. Used when an installer is being rebuilt on key
+    rotation; harmless if the key doesn't exist. Raises `R2NotConfigured`.
+    """
+    _client().delete_object(Bucket=_settings.tally_r2_bucket, Key=r2_key)
+
+
 # 64 MB — matches the Tally-import upload ceiling; a full "All Masters"
 # export is well under this.
 _MAX_FETCH_BYTES = 64 * 1024 * 1024

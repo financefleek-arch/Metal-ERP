@@ -178,7 +178,7 @@ function FirmDetailPane({ firmId }: { firmId: string }) {
     <div>
       <FirmFields firm={firm.data} onSaved={refresh} />
       <WhatsappPanel firmId={firm.data.id} />
-      <TallyPanel firmId={firm.data.id} />
+      <TallyPanel firmId={firm.data.id} firmName={firm.data.legal_name} />
       <UsersTable firm={firm.data} onChanged={refresh} />
     </div>
   );

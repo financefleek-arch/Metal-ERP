@@ -4,23 +4,34 @@ import { api } from "../lib/api";
 import { inr } from "../lib/previewTotal";
 import { useDebounced } from "../lib/useDebounced";
 import { PaymentDialog } from "../components/PaymentDialog";
-import type { CollectionsRow } from "../lib/types";
+import { StatementSendDialog } from "../components/StatementSendDialog";
+import type { AgeingBucket, AgeingRow, CollectionsRow } from "../lib/types";
 
-type Sort = "balance" | "oldest";
-type Scope = "outstanding" | "overpaid" | "either";
+/** Scope chips are radio-exclusive. "owes"/"overdue" read the ageing
+ *  endpoint (money owed to us, bucketed); "overpaid"/"either" fall back to
+ *  the plain collections list (ageing is meaningless for a credit balance). */
+type Scope = "owes" | "overdue" | "overpaid" | "either";
 
 const SCOPES: { key: Scope; label: string }[] = [
-  { key: "outstanding", label: "Owes us" },
+  { key: "owes", label: "Owes us" },
+  { key: "overdue", label: "Overdue" },
   { key: "overpaid", label: "Overpaid" },
   { key: "either", label: "Either" },
 ];
 
-function ageClass(days: number | null): string {
-  if (days == null) return "text-muted";
-  if (days >= 30) return "text-danger";
-  if (days >= 14) return "text-warn";
-  return "text-muted";
-}
+const BUCKETS: { key: AgeingBucket; label: string }[] = [
+  { key: "lt30", label: "<30 days" },
+  { key: "d30", label: "30+" },
+  { key: "d60", label: "60+" },
+  { key: "d90p", label: ">3 months" },
+];
+
+const BUCKET_PILL: Record<AgeingBucket, { cls: string; label: string }> = {
+  lt30: { cls: "bg-[#eee9df] text-muted", label: "<30d" },
+  d30: { cls: "bg-[#f1e7d6] text-warn", label: "30+" },
+  d60: { cls: "bg-[#f6e7dd] text-[#b5622f]", label: "60+" },
+  d90p: { cls: "bg-[#f6dcd6] text-danger", label: ">3 mo" },
+};
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -30,58 +41,77 @@ function initials(name: string): string {
 export function CollectionsPage() {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
-  const [sort, setSort] = useState<Sort>("balance");
-  const [scope, setScope] = useState<Scope>("outstanding");
-  const [payingFor, setPayingFor] = useState<CollectionsRow | null>(null);
+  const [scope, setScope] = useState<Scope>("owes");
+  const [bucket, setBucket] = useState<AgeingBucket | null>(null);
+  const [payingFor, setPayingFor] = useState<{ party_id: string; legal_name: string; balance: string } | null>(null);
+  const [statementFor, setStatementFor] = useState<{ party_id: string; legal_name: string; phone: string | null } | null>(null);
 
-  const list = useQuery({
-    queryKey: ["collections", dq, sort, scope],
+  const ageingView = scope === "owes" || scope === "overdue";
+
+  const ageing = useQuery({
+    queryKey: ["collections-ageing", dq],
     queryFn: () => {
-      const p = new URLSearchParams({ sort, scope });
+      const p = new URLSearchParams();
+      if (dq) p.set("q", dq);
+      return api<AgeingRow[]>(`/collections/ageing?${p.toString()}`);
+    },
+    enabled: ageingView,
+  });
+
+  const legacy = useQuery({
+    queryKey: ["collections", dq, scope],
+    queryFn: () => {
+      const p = new URLSearchParams({ scope, sort: "balance" });
       if (dq) p.set("q", dq);
       return api<CollectionsRow[]>(`/collections?${p.toString()}`);
     },
+    enabled: !ageingView,
   });
 
-  const rows = list.data ?? [];
-  const totals = useMemo(
-    () => ({
-      // net across whatever's showing — a mixed "Either" view nets out,
-      // which is the honest total, not a sum of absolute values
-      net: rows.reduce((s, r) => s + Number(r.outstanding_balance), 0),
-      count: rows.length,
-    }),
-    [list.data],
-  );
-  const netLabel = totals.net < 0 ? "Net credit owed" : "Outstanding";
+  const ageingRows = useMemo(() => ageing.data ?? [], [ageing.data]);
+
+  const bucketTotals = useMemo(() => {
+    const t: Record<AgeingBucket, number> = { lt30: 0, d30: 0, d60: 0, d90p: 0 };
+    for (const r of ageingRows) {
+      t.lt30 += Number(r.lt30);
+      t.d30 += Number(r.d30);
+      t.d60 += Number(r.d60);
+      t.d90p += Number(r.d90p);
+    }
+    return t;
+  }, [ageingRows]);
+
+  const grandTotal = bucketTotals.lt30 + bucketTotals.d30 + bucketTotals.d60 + bucketTotals.d90p;
+
+  const visibleAgeing = useMemo(() => {
+    let rows = ageingRows;
+    if (scope === "overdue") rows = rows.filter((r) => r.is_overdue);
+    if (bucket) rows = rows.filter((r) => Number(r[bucket]) > 0);
+    return rows;
+  }, [ageingRows, scope, bucket]);
+
+  const overdueCount = ageingRows.filter((r) => r.is_overdue).length;
+  const overdueTotal = ageingRows.filter((r) => r.is_overdue).reduce((s, r) => s + Number(r.total), 0);
+
+  function pickScope(next: Scope) {
+    setScope(next);
+    setBucket(null);
+  }
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
       <h1 className="font-serif text-lg font-semibold">Collections</h1>
 
-      <div className="grid grid-cols-2 gap-2.5">
-        <div className="card p-3">
-          <div className="label mb-0.5">{netLabel}</div>
-          <div
-            className={`font-serif text-lg font-semibold ${totals.net < 0 ? "text-ok" : ""}`}
-          >
-            {inr(Math.abs(totals.net))}
-          </div>
-        </div>
-        <div className="card p-3">
-          <div className="label mb-0.5">Parties</div>
-          <div className="font-serif text-lg font-semibold">{totals.count}</div>
-        </div>
-      </div>
-
       <div className="flex flex-wrap gap-1.5">
         {SCOPES.map((s) => (
           <button
             key={s.key}
-            onClick={() => setScope(s.key)}
+            onClick={() => pickScope(s.key)}
             className={`rounded-full border px-3 py-1 text-xs ${
               scope === s.key
-                ? "border-ink bg-ink text-ground"
+                ? s.key === "overdue"
+                  ? "border-danger bg-danger text-white"
+                  : "border-ink bg-ink text-ground"
                 : "border-line bg-card text-muted hover:bg-ground"
             }`}
           >
@@ -90,111 +120,240 @@ export function CollectionsPage() {
         ))}
       </div>
 
-      <div className="flex items-center gap-2">
-        <input
-          className="field flex-1"
-          placeholder="Search a party…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <div className="flex overflow-hidden rounded-md border border-line">
-          <button
-            className={`px-2.5 py-2 text-[11px] font-semibold ${
-              sort === "balance" ? "bg-ink text-ground" : "bg-card text-muted"
-            }`}
-            onClick={() => setSort("balance")}
-          >
-            ₹ Balance
-          </button>
-          <button
-            className={`px-2.5 py-2 text-[11px] font-semibold ${
-              sort === "oldest" ? "bg-ink text-ground" : "bg-card text-muted"
-            }`}
-            onClick={() => setSort("oldest")}
-          >
-            Oldest
-          </button>
-        </div>
-      </div>
+      {ageingView && (
+        <>
+          <div className="grid grid-cols-4 gap-1.5">
+            {BUCKETS.map((b) => {
+              const on = bucket === b.key;
+              return (
+                <button
+                  key={b.key}
+                  onClick={() => setBucket(on ? null : b.key)}
+                  className={`rounded-lg border px-1.5 py-2 text-center ${
+                    on ? "border-accent ring-2 ring-inset ring-accent-soft" : "border-line"
+                  } ${b.key === "d90p" ? "bg-[#fdf3f1]" : "bg-card"}`}
+                >
+                  <div className="label text-[9px]">{b.label}</div>
+                  <div className="mt-0.5 font-mono text-xs font-semibold">
+                    {inr(bucketTotals[b.key])}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <p className="-mt-2 text-[11px] text-muted">
+            {scope === "overdue" ? (
+              <>
+                Overdue: <b>{overdueCount}</b> {overdueCount === 1 ? "party" : "parties"} ·{" "}
+                {inr(overdueTotal)}
+              </>
+            ) : (
+              <>
+                Total outstanding <b>{inr(grandTotal)}</b> across {ageingRows.length}{" "}
+                {ageingRows.length === 1 ? "party" : "parties"}
+              </>
+            )}
+            {bucket && ` · showing ${BUCKETS.find((b) => b.key === bucket)?.label}`}
+          </p>
+        </>
+      )}
+
+      <input
+        className="field"
+        placeholder="Search a party…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
 
       <div className="card overflow-hidden">
-        {list.isLoading && <div className="px-3 py-6 text-center text-xs text-muted">Loading…</div>}
-        {!list.isLoading && rows.length === 0 && (
-          <div className="px-3 py-8 text-center text-xs text-muted">
-            {dq
-              ? "No matches."
-              : scope === "overpaid"
-                ? "No party is currently overpaid."
-                : "Nobody owes you anything right now."}
-          </div>
+        {ageingView ? (
+          <AgeingList
+            rows={visibleAgeing}
+            loading={ageing.isLoading}
+            emptyText={
+              dq
+                ? "No matches."
+                : scope === "overdue"
+                  ? "Nobody is more than 30 days overdue."
+                  : "Nobody owes you anything right now."
+            }
+            onPay={(r) => setPayingFor({ party_id: r.party_id, legal_name: r.legal_name, balance: r.total })}
+            onStatement={(r) =>
+              setStatementFor({ party_id: r.party_id, legal_name: r.legal_name, phone: r.phone })
+            }
+          />
+        ) : (
+          <LegacyList
+            rows={legacy.data ?? []}
+            loading={legacy.isLoading}
+            emptyText={
+              dq
+                ? "No matches."
+                : scope === "overpaid"
+                  ? "No party is currently overpaid."
+                  : "No party has a non-zero balance."
+            }
+            onPay={(r) =>
+              setPayingFor({
+                party_id: r.party_id,
+                legal_name: r.legal_name,
+                balance: r.outstanding_balance,
+              })
+            }
+          />
         )}
-        {rows.map((r) => {
-          const balance = Number(r.outstanding_balance);
-          const isCredit = balance < 0;
-          return (
-            <button
-              key={r.party_id}
-              className="flex w-full items-center gap-2.5 border-b border-[#f3eee4] px-3.5 py-3 text-left last:border-b-0 hover:bg-accent-soft"
-              onClick={() => setPayingFor(r)}
-            >
-              <span className="grid h-8.5 w-8.5 flex-none place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
-                {initials(r.legal_name)}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-semibold">{r.legal_name}</span>
-                <span className="block text-[11px] text-muted">
-                  {r.phone ?? "—"} ·{" "}
-                  {r.open_invoice_count > 0
-                    ? `${r.open_invoice_count} open bill${r.open_invoice_count === 1 ? "" : "s"}`
-                    : "no open bills"}
-                </span>
-              </span>
-              <span className="flex-none text-right">
-                <span
-                  className={`block font-serif text-sm font-semibold ${isCredit ? "text-ok" : ""}`}
-                >
-                  {inr(Math.abs(balance))}
-                </span>
-                {isCredit ? (
-                  <span className="block text-[10px] text-ok">credit</span>
-                ) : (
-                  r.oldest_unpaid_days != null && (
-                    <span className={`block text-[10px] ${ageClass(r.oldest_unpaid_days)}`}>
-                      oldest {r.oldest_unpaid_days}d
-                    </span>
-                  )
-                )}
-              </span>
-              <span className="flex-none text-xs text-muted">›</span>
-            </button>
-          );
-        })}
       </div>
 
       <p className="text-[11px] leading-snug text-muted">
-        {scope === "outstanding"
-          ? "Only parties who owe you money appear here — not the full Parties list. A party drops off once fully paid."
-          : scope === "overpaid"
-            ? "Parties with an unapplied credit — they've paid more than they currently owe."
-            : "Every party with a non-zero balance in either direction."}
+        {scope === "owes"
+          ? "Parties who owe you money, aged by each bill's due date. A party drops off once fully paid."
+          : scope === "overdue"
+            ? "Parties whose oldest unpaid balance is more than 30 days past due — chase these first."
+            : scope === "overpaid"
+              ? "Parties with an unapplied credit — they've paid more than they currently owe."
+              : "Every party with a non-zero balance in either direction."}
       </p>
 
       {payingFor && (
         <PaymentDialog
           partyId={payingFor.party_id}
           partyName={payingFor.legal_name}
-          // a negative balance is a credit, not something to label
-          // "outstanding" in the dialog's subheading — omit it there
-          outstandingBalance={
-            Number(payingFor.outstanding_balance) > 0 ? payingFor.outstanding_balance : null
-          }
+          outstandingBalance={Number(payingFor.balance) > 0 ? payingFor.balance : null}
           onClose={() => setPayingFor(null)}
           onSaved={() => {
             setPayingFor(null);
-            list.refetch();
+            ageing.refetch();
+            legacy.refetch();
           }}
         />
       )}
+
+      {statementFor && (
+        <StatementSendDialog
+          partyId={statementFor.party_id}
+          partyName={statementFor.legal_name}
+          partyPhone={statementFor.phone}
+          onClose={() => setStatementFor(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function AgeingList({
+  rows,
+  loading,
+  emptyText,
+  onPay,
+  onStatement,
+}: {
+  rows: AgeingRow[];
+  loading: boolean;
+  emptyText: string;
+  onPay: (r: AgeingRow) => void;
+  onStatement: (r: AgeingRow) => void;
+}) {
+  if (loading) return <div className="px-3 py-6 text-center text-xs text-muted">Loading…</div>;
+  if (rows.length === 0)
+    return <div className="px-3 py-8 text-center text-xs text-muted">{emptyText}</div>;
+  return (
+    <>
+      {rows.map((r) => {
+        const pill = BUCKET_PILL[r.worst_bucket];
+        return (
+          <div
+            key={r.party_id}
+            className="flex w-full items-center gap-2.5 border-b border-[#f3eee4] px-3.5 py-3 last:border-b-0"
+          >
+            <span className="grid h-8.5 w-8.5 flex-none place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
+              {initials(r.legal_name)}
+            </span>
+            <button className="min-w-0 flex-1 text-left" onClick={() => onPay(r)}>
+              <span className="block truncate text-sm font-semibold">{r.legal_name}</span>
+              <span className="block text-[11px] text-muted">
+                {r.phone ?? "—"}
+                {" · "}
+                {r.open_invoice_count > 0
+                  ? `${r.open_invoice_count} open bill${r.open_invoice_count === 1 ? "" : "s"}`
+                  : "opening balance"}
+                {r.oldest_bill_number != null && ` · oldest INV-${r.oldest_bill_number}`}
+                {r.last_payment_date && ` · last paid ${r.last_payment_date}`}
+              </span>
+              {r.is_overdue && (
+                <button
+                  type="button"
+                  className="mt-1 text-[10.5px] font-semibold text-accent underline"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStatement(r);
+                  }}
+                >
+                  Send statement
+                </button>
+              )}
+            </button>
+            <button className="flex-none text-right" onClick={() => onPay(r)}>
+              <span className="block font-serif text-sm font-semibold">{inr(r.total)}</span>
+              <span
+                className={`mt-0.5 inline-block rounded-[3px] px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ${pill.cls}`}
+              >
+                {pill.label}
+              </span>
+            </button>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function LegacyList({
+  rows,
+  loading,
+  emptyText,
+  onPay,
+}: {
+  rows: CollectionsRow[];
+  loading: boolean;
+  emptyText: string;
+  onPay: (r: CollectionsRow) => void;
+}) {
+  if (loading) return <div className="px-3 py-6 text-center text-xs text-muted">Loading…</div>;
+  if (rows.length === 0)
+    return <div className="px-3 py-8 text-center text-xs text-muted">{emptyText}</div>;
+  return (
+    <>
+      {rows.map((r) => {
+        const balance = Number(r.outstanding_balance);
+        const isCredit = balance < 0;
+        return (
+          <button
+            key={r.party_id}
+            className="flex w-full items-center gap-2.5 border-b border-[#f3eee4] px-3.5 py-3 text-left last:border-b-0 hover:bg-accent-soft"
+            onClick={() => onPay(r)}
+          >
+            <span className="grid h-8.5 w-8.5 flex-none place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
+              {initials(r.legal_name)}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-semibold">{r.legal_name}</span>
+              <span className="block text-[11px] text-muted">
+                {r.phone ?? "—"} ·{" "}
+                {r.open_invoice_count > 0
+                  ? `${r.open_invoice_count} open bill${r.open_invoice_count === 1 ? "" : "s"}`
+                  : "no open bills"}
+              </span>
+            </span>
+            <span className="flex-none text-right">
+              <span className={`block font-serif text-sm font-semibold ${isCredit ? "text-ok" : ""}`}>
+                {inr(Math.abs(balance))}
+              </span>
+              {isCredit && <span className="block text-[10px] text-ok">credit</span>}
+            </span>
+            <span className="flex-none text-xs text-muted">›</span>
+          </button>
+        );
+      })}
+    </>
   );
 }

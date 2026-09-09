@@ -51,6 +51,11 @@ public sealed class TallyMastersModule(
             return;
         }
 
+        // Standing health probe — independent of whether there's a job to
+        // run. Feeds the checkin heartbeat's second signal ("agent -> Tally"),
+        // separate from "agent -> Fleek" which the checkin itself proves.
+        await ProbeReachabilityAsync(ctx, log, ct);
+
         var jobs = ctx.PendingOutbox
             .Where(o => o.Module == "tally"
                         && GetString(o.Payload, "action") == "pull_masters")
@@ -73,6 +78,21 @@ public sealed class TallyMastersModule(
             }
             var companyName = GetString(item.Payload, "company_name") ?? "";
             await ProcessOneAsync(ctx, log, jobId, companyName, ct);
+        }
+    }
+
+    private async Task ProbeReachabilityAsync(AgentContext ctx, ILogger log, CancellationToken ct)
+    {
+        try
+        {
+            var (reachable, reason) = await gateway.ProbeAsync(_opts!.GatewayUrl, ct);
+            ctx.SetTallyReachable(reachable, reason);
+        }
+        catch (Exception ex)
+        {
+            // Never let the health probe itself take down the module round.
+            log.LogDebug(ex, "Tally reachability probe threw unexpectedly");
+            ctx.SetTallyReachable(false, "unknown");
         }
     }
 

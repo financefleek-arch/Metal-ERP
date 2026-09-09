@@ -26,13 +26,23 @@ public sealed class BackendClient
     }
 
     public async Task<CheckinResponse?> CheckinAsync(
-        Dictionary<string, string> moduleStatus, string? error, CancellationToken ct)
+        Dictionary<string, string> moduleStatus,
+        string? error,
+        bool? tallyReachable,
+        string? tallyReason,
+        CancellationToken ct)
     {
         try
         {
             var resp = await _http.PostAsJsonAsync(
                 "api/tally-agent/checkin",
-                new CheckinRequest { ModuleStatus = moduleStatus, Error = error },
+                new CheckinRequest
+                {
+                    ModuleStatus = moduleStatus,
+                    Error = error,
+                    TallyReachable = tallyReachable,
+                    TallyReason = tallyReason,
+                },
                 ct);
             resp.EnsureSuccessStatusCode();
             return await resp.Content.ReadFromJsonAsync<CheckinResponse>(cancellationToken: ct);

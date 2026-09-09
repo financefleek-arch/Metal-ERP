@@ -14,8 +14,10 @@ plaintext password back.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import func, select
 
+from app.backup_storage import R2NotConfigured, get_object
 from app.deps import SessionDep, require_platform_admin
 from app.models import BackupShop, BackupUpload, Tenant, TenantWhatsappConfig, User
 from app.models._mixins import UserRole
@@ -257,16 +259,18 @@ def test_firm_whatsapp(
 # --------------------------------------------------------------------------
 # firm companion agent (the Windows tally-agent install at the shop)
 #
-# One agent per firm. The key it authenticates with (`X-Shop-Key`) is
-# generated here and shown exactly once — same contract as a user password.
-# `tally_company.shop_id` and every future shop-side capability route to
-# this row; the firm's staff never see it.
+# One agent per firm. Provisioning mints the key, bakes it into a downloadable
+# installer zip (cached in R2), and discards the plaintext — no human ever
+# sees or types the key. The firm's staff download the same zip from their
+# own login (`GET /api/tally/installer`).
 # --------------------------------------------------------------------------
 
 
 def _shop_out(session: SessionDep, shop: BackupShop | None) -> FirmTallyShopOut:
     if shop is None:
         return FirmTallyShopOut(provisioned=False)
+    from app.services.tally.agent_health import agent_online
+
     last_upload = session.scalar(
         select(func.max(BackupUpload.uploaded_at)).where(
             BackupUpload.shop_id == shop.id, BackupUpload.status == "confirmed"
@@ -278,16 +282,46 @@ def _shop_out(session: SessionDep, shop: BackupShop | None) -> FirmTallyShopOut:
         is_active=shop.is_active,
         last_checkin_at=shop.last_checkin_at,
         last_upload_at=last_upload,
+        installer_ready=shop.installer_r2_key is not None,
+        agent_online=agent_online(shop),
+        tally_status=shop.last_tally_status,
+        tally_ok_at=shop.last_tally_ok_at,
     )
+
+
+def _firm_shop(session: SessionDep, firm_id: str) -> BackupShop | None:
+    return session.scalar(select(BackupShop).where(BackupShop.tenant_id == firm_id))
+
+
+def _cache_installer_or_503(session: SessionDep, shop: BackupShop, key: str) -> bool:
+    """Build + cache the shop's installer zip. Returns True on success. On a
+    missing prod build, rolls back nothing (the agent identity persists) and
+    raises 503 — a later rotate-key rebuilds once the build lands."""
+    from app.services.tally.installer import BuildNotAvailable, build_and_cache_installer
+
+    try:
+        build_and_cache_installer(session, shop, plaintext_key=key)
+        return True
+    except BuildNotAvailable as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The agent build hasn't been published to this environment yet. "
+                "The firm's agent identity was created — retry the download once "
+                "platform ops publishes the build."
+            ),
+        ) from exc
+    except R2NotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cloud storage is not configured — cannot cache the installer.",
+        ) from exc
 
 
 @router.get("/firms/{firm_id}/tally-shop", response_model=FirmTallyShopOut)
 def get_firm_tally_shop(firm_id: str, session: SessionDep) -> FirmTallyShopOut:
     _load_firm(session, firm_id)
-    shop = session.scalar(
-        select(BackupShop).where(BackupShop.tenant_id == firm_id)
-    )
-    return _shop_out(session, shop)
+    return _shop_out(session, _firm_shop(session, firm_id))
 
 
 @router.post(
@@ -298,15 +332,12 @@ def get_firm_tally_shop(firm_id: str, session: SessionDep) -> FirmTallyShopOut:
 def provision_firm_tally_shop(
     firm_id: str, session: SessionDep
 ) -> FirmTallyShopProvisionResult:
-    """Create this firm's companion-agent identity + first key. 409 if one
-    already exists (rotate the key instead of re-provisioning)."""
+    """Create this firm's companion-agent identity, mint its key, and bake it
+    into a cached installer zip. 409 if one already exists (rotate instead)."""
     from tools.make_backup_shop import run as make_shop
 
     firm = _load_firm(session, firm_id)
-    existing = session.scalar(
-        select(BackupShop).where(BackupShop.tenant_id == firm_id)
-    )
-    if existing is not None:
+    if _firm_shop(session, firm_id) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="This firm already has an agent. Rotate its key instead.",
@@ -320,7 +351,10 @@ def provision_firm_tally_shop(
         session, name=name, tenant_id=firm_id, rotate_key=False
     )
     assert key is not None
-    return FirmTallyShopProvisionResult(shop_id=shop_id, api_key=key, created=created)
+    shop = session.get(BackupShop, shop_id)
+    assert shop is not None
+    ready = _cache_installer_or_503(session, shop, key)
+    return FirmTallyShopProvisionResult(shop_id=shop_id, created=created, installer_ready=ready)
 
 
 @router.post(
@@ -330,14 +364,12 @@ def provision_firm_tally_shop(
 def rotate_firm_tally_shop_key(
     firm_id: str, session: SessionDep
 ) -> FirmTallyShopProvisionResult:
-    """Issue a new key, invalidating the old one. The shop's install is
-    offline until its appsettings.json is updated."""
+    """Issue a new key and rebuild the cached installer. The previous
+    download stops working (its baked-in key is now dead)."""
     from tools.make_backup_shop import run as make_shop
 
     _load_firm(session, firm_id)
-    shop = session.scalar(
-        select(BackupShop).where(BackupShop.tenant_id == firm_id)
-    )
+    shop = _firm_shop(session, firm_id)
     if shop is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -347,7 +379,36 @@ def rotate_firm_tally_shop_key(
         session, name=shop.name, tenant_id=firm_id, rotate_key=True
     )
     assert key is not None
-    return FirmTallyShopProvisionResult(shop_id=shop.id, api_key=key, created=False)
+    ready = _cache_installer_or_503(session, shop, key)
+    return FirmTallyShopProvisionResult(shop_id=shop.id, created=False, installer_ready=ready)
+
+
+@router.get("/firms/{firm_id}/tally-shop/installer")
+def download_firm_installer(firm_id: str, session: SessionDep) -> Response:
+    """Stream the cached per-shop installer zip (platform-admin copy of the
+    download the firm also gets from its own login)."""
+    firm = _load_firm(session, firm_id)
+    shop = _firm_shop(session, firm_id)
+    if shop is None or shop.installer_r2_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No installer built yet — provision the agent first.",
+        )
+    from app.services.tally.installer import installer_filename
+
+    try:
+        blob = get_object(shop.installer_r2_key)
+    except R2NotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cloud storage is not configured.",
+        ) from exc
+    fname = installer_filename(firm.legal_name)
+    return Response(
+        content=blob,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 # --------------------------------------------------------------------------

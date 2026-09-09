@@ -25,6 +25,7 @@ from app.schemas_tally import (
     TallyCompanyOut,
     TallySyncJobOut,
 )
+from app.services.tally.agent_health import agent_online
 from app.services.tally.jobs import assert_no_pull_in_flight, enqueue_pull_masters
 
 router = APIRouter(
@@ -51,6 +52,47 @@ def _load_company(session: SessionDep, firm_id: str) -> TallyCompany:
             detail="No Tally company is linked to this firm yet.",
         )
     return company
+
+
+_TALLY_REASON_MESSAGE = {
+    "refused": "Tally isn't reachable from the shop's agent — it's likely closed, "
+    "or \"acts as Server\" is off. Ask the shop to open TallyPrime with the "
+    "company loaded, then retry.",
+    "no_company": "The shop's agent can reach Tally, but no company is loaded. "
+    "Ask the shop to open the company in TallyPrime, then retry.",
+    "unknown": "The shop's agent couldn't confirm it can reach Tally. Retry once "
+    "the console shows Tally as connected.",
+}
+
+
+def _assert_tally_reachable(session: SessionDep, company: TallyCompany) -> None:
+    """A fresh, negative reachability signal blocks the pull with a message
+    that tells the operator what to ask the shop to do — rather than
+    queuing a job that will just sit on 'waiting on Tally'. A stale or
+    never-reported signal doesn't block (the agent's own retry-on-poll
+    behaviour still applies); only a *current* known-bad state does.
+
+    A company with no linked agent (`shop_id is None`) is left to
+    `enqueue_pull_masters`'s own 422 — that's the more specific error.
+    """
+    if company.shop_id is None:
+        return
+    shop = session.get(BackupShop, company.shop_id)
+    if shop is None:
+        return
+    if not agent_online(shop):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The shop's agent hasn't checked in recently — it may be offline. "
+            "Confirm the shop's PC is on and connected before pulling.",
+        )
+    if shop.last_tally_status and shop.last_tally_status != "connected":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_TALLY_REASON_MESSAGE.get(
+                shop.last_tally_status, _TALLY_REASON_MESSAGE["unknown"]
+            ),
+        )
 
 
 # --------------------------------------------------------------------------
@@ -127,6 +169,7 @@ def pull_masters(firm_id: str, session: SessionDep) -> TallySyncJob:
     _firm(session, firm_id)
     company = _load_company(session, firm_id)
     assert_no_pull_in_flight(session, firm_id)
+    _assert_tally_reachable(session, company)
     return enqueue_pull_masters(session, company)
 
 
@@ -218,4 +261,5 @@ def retry_sync_job(
         )
     company = _load_company(session, firm_id)
     assert_no_pull_in_flight(session, firm_id)
+    _assert_tally_reachable(session, company)
     return enqueue_pull_masters(session, company)

@@ -9,6 +9,15 @@ public sealed class CheckinRequest
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    // Second signal, independent of module_status: can this agent reach
+    // TallyPrime's HTTP gateway right now? Null = not probed this round.
+    [JsonPropertyName("tally_reachable")]
+    public bool? TallyReachable { get; set; }
+
+    // connected | refused | no_company | unknown
+    [JsonPropertyName("tally_reason")]
+    public string? TallyReason { get; set; }
 }
 
 public sealed class CheckinResponse

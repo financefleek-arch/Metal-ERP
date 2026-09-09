@@ -82,22 +82,31 @@ export interface FirmWhatsappTestResult {
 // Tally Connector (F1a) — /api/admin/firms/{id}/tally/*
 // -------------------------------------------------------------------------
 
-/** This firm's companion-agent identity (GET /admin/firms/{id}/tally-shop).
- *  One per firm; the key it authenticates with is shown only at
- *  provision / rotate time, never here. */
+/** connected | refused | no_company | unknown | null (never reported) */
+export type TallyReachabilityStatus = "connected" | "refused" | "no_company" | "unknown" | null;
+
+/** This firm's companion-agent identity + live health
+ *  (GET /admin/firms/{id}/tally-shop, or the firm's own GET /tally/agent-status).
+ *  The key it authenticates with is never in this response — it's baked
+ *  straight into the downloadable installer, never shown to a human. */
 export interface FirmTallyShop {
   provisioned: boolean;
   shop_id: string | null;
   is_active: boolean;
   last_checkin_at: string | null;
   last_upload_at: string | null;
+  installer_ready: boolean;
+  agent_online: boolean;
+  tally_status: TallyReachabilityStatus;
+  tally_ok_at: string | null;
 }
 
-/** Response of provision / rotate-key — `api_key` is plaintext, shown once. */
-export interface FirmTallyShopKey {
+/** Response of provision / rotate-key. The plaintext key is no longer
+ *  echoed back — it's baked into the cached installer zip instead. */
+export interface FirmTallyShopProvisionResult {
   shop_id: string;
-  api_key: string;
   created: boolean;
+  installer_ready: boolean;
 }
 
 export interface KnownLedger {
@@ -836,5 +845,30 @@ export interface CollectionsRow {
    *  credit exceeds what's billed). Never zero — settled parties don't appear. */
   outstanding_balance: string;
   oldest_unpaid_days: number | null;
+  open_invoice_count: number;
+}
+
+/** Ageing bucket key. UI labels: lt30 "<30 days", d30 "30+", d60 "60+",
+ *  d90p ">3 months". Mutually exclusive — a party's balance is split across
+ *  them and they sum to `total`. */
+export type AgeingBucket = "lt30" | "d30" | "d60" | "d90p";
+
+/** One row in the Collections ageing dashboard (F3a). Only parties with a
+ *  positive net (money owed to us) appear. */
+export interface AgeingRow {
+  party_id: string;
+  legal_name: string;
+  phone: string | null;
+  lt30: string;
+  d30: string;
+  d60: string;
+  d90p: string;
+  total: string;
+  worst_bucket: AgeingBucket;
+  /** worst_bucket !== "lt30" — powers the Overdue scope chip. */
+  is_overdue: boolean;
+  oldest_bill_date: string | null;
+  oldest_bill_number: number | null;
+  last_payment_date: string | null;
   open_invoice_count: number;
 }

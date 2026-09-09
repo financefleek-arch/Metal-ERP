@@ -1,8 +1,15 @@
 # MASTER — Tally‑Complement SaaS: Feature Portfolio & Roadmap
 
-Status: **living roadmap — S1 slices built + committed, F1a built, party‑dedupe
-built** (last pass 2026‑09‑09). See §1 for the per‑feature status table and
-§4 for the running build log.
+Status: **living roadmap. S1 DEPLOYED 2026‑09‑09 (`caaf389` + `982a738`,
+migrations `0022`–`0024`, party + bartan backfills run). S2 = F3a + F3b BUILT
+2026‑09‑09, uncommitted (migration `0025`, 443 tests green). Parallel to S2:
+**Tally Agent seamless onboarding BUILT 2026‑09‑09, uncommitted** (migration
+`0026`, 452 tests green) — provisioning now builds + caches the per‑shop
+installer zip in R2 and adds a second checkin signal (`tally_reachable`) so
+the console can tell "agent installed" from "Tally is actually reachable".
+F1a deployed but not yet validated live; F2 delivery‑tracking deployed, e2e
+vs Meta unconfirmed.** See §1 for the per‑feature status table and §4/§6 for
+the running build log.
 
 Owner: Fleek. Target market: Indian SMB traders (metal / bartan / utensils
 first), currently on **Tally Prime**, accountant‑operated, desktop‑bound.
@@ -44,24 +51,24 @@ Metal ERP from a standalone ERP into a Tally companion.
 
 Legend: ✅ built & deployed · 🟢 built + committed, not deployed · 🟡 partly built · ⬜ not started
 
-Last status pass: **2026‑09‑09** (after commits `caaf389`, `982a738`).
+Last status pass: **2026‑09‑09** (after commits `caaf389`, `982a738` — now DEPLOYED).
 
 | # | Feature | Tier | Status | Depends on |
 |---|---|---|---|---|
-| F1 | **Tally Connector** — masters in, vouchers out | Platform | 🟢 **F1a (masters‑in) built + committed** `982a738`, migration `0022`/`0024`, agent `TallyMastersModule`, Ops `TallyPanel`. **NOT deployed; infra wiring + live e2e pending.** F1b (voucher‑out) ⬜ | Companion agent (F10) |
-| F2 | **WhatsApp Invoicing** — send PDF, delivery receipts, per‑firm number | 1 | 🟢 send committed earlier; phone‑normalise + opt‑in‑drop + "save number" committed `caaf389`. **Delivery‑tracking fan‑in built, NOT deployed** (needs fleek‑infra + fleek‑backend push). App‑UI e2e still unrun. | — |
-| F3 | **Collections & Reminders** — ageing, auto WhatsApp nudges, statements | 1 | 🟡 **scoped** (`SCOPE-F3-F4…`): ~70% primitives exist; missing = ageing buckets, statement‑PDF‑to‑WA, reminder scheduler (no scheduler infra in repo). Not started. | F2 |
+| F1 | **Tally Connector** — masters in, vouchers out | Platform | 🟢 **F1a (masters‑in) built + committed + DEPLOYED** `982a738`, migrations `0022`/`0024` applied on prod, agent `TallyMastersModule`, Ops `TallyPanel`. **Infra wiring done; one live e2e run still pending — F1a not yet validated live.** 🟢 **Seamless onboarding BUILT 2026‑09‑09, uncommitted** (migration `0026`): provisioning now bakes the key into a cached installer zip (no hand‑assembly, no key ever shown to a human), `install.ps1` self‑elevates + runs with zero arguments, checkin gained a second signal (`tally_reachable`) distinguishing "agent installed" from "Tally is reachable", shop self‑serve download card on the firm's own dashboard. **Needs a real agent build published to `tally_agent_build_dir` before any provision will succeed — currently the one hard blocker on the live e2e run.** F1b (voucher‑out) ⬜ | Companion agent (F10) |
+| F2 | **WhatsApp Invoicing** — send PDF, delivery receipts, per‑firm number | 1 | 🟢 send + phone‑normalise + opt‑in‑drop + "save number" + **delivery‑tracking fan‑in all DEPLOYED** 2026‑09‑09 (fleek‑infra + fleek‑backend + Metal ERP, in order). **e2e vs Meta (real send → delivered/read webhook advances the row) still unconfirmed.** | — |
+| F3 | **Collections & Reminders** — ageing, auto WhatsApp nudges, statements | 1 | 🟡 **F3a (ageing dashboard) + F3b (statement→WhatsApp) BUILT 2026‑09‑09, uncommitted** — migration `0025` (`tenant.default_credit_days`), `ageing_summary()` + `GET /api/collections/ageing`, `services/statements.py` + `statement_v1.html` + `POST /api/parties/{id}/statement/whatsapp`, `account_statement` Meta template (**submit day‑1**), `CollectionsPage` rewrite + `StatementSendDialog`. 443 tests green. **F3c (reminder scheduler) ⬜ — the one real infra piece.** F3d (promise‑to‑pay) ⬜. | F2 |
 | F4 | **Mobile Owner‑Operated Billing** — layman invoice + Collections, syncs to Tally | 1 | 🟡 editor/payments/opening‑bal all exist; F4 == "enqueue Tally push + sync chip". **Recommend folding into F1b, not a standalone slice.** | F1b |
 | F5 | **AP Bill Capture** — photo/PDF → parsed draft → approve → voucher | 2 | 🟡 Inward pipeline X0–X5 exists; Tally push + OCR polish ⬜ | F1 |
 | F6 | **GSTR‑2B / ITC Reconciliation** — pull 2B, auto‑match, "hold payment" flags | 2 | ⬜ | F5 |
 | F7 | **Bank Statement Ingestion** — PDF/Excel → auto ledger‑coding → reconcile | 2 | ⬜ | F1 |
 | F8 | **Weighment / Segment Billing** — multi‑weighing invoices, weight+count PDF | Moat | ✅ built (some parts committed in `739ba36`) | — |
 | F9 | **Old‑Metal / Exchange Handling** — scrap in against new goods | Moat | ⬜ | F8 |
-| F10 | **Companion Agent** — cloud backup + health monitor + sync transport | Platform | 🟢 backup deployed earlier; **per‑firm agent provisioning + `TallyMastersModule` committed `982a738`, NOT deployed** | — |
+| F10 | **Companion Agent** — cloud backup + health monitor + sync transport | Platform | 🟢 backup deployed earlier; **per‑firm agent provisioning + `TallyMastersModule` committed `982a738`, DEPLOYED 2026‑09‑09** (shop‑side install still a manual JSON hand‑edit) | — |
 | F11 | **On‑Prem Local‑First Box** — Postgres in Docker at the shop, one‑script deploy | Platform | ⬜ (proposal written) | F10 |
-| F12 | **Hindi / Bartan Type‑Ahead** — synonym‑aware item resolution, price bands | Moat | ✅ built; prod `backfill_bartan.py --apply` still PENDING | — |
+| F12 | **Hindi / Bartan Type‑Ahead** — synonym‑aware item resolution, price bands | Moat | ✅ built + **prod `backfill_bartan.py --apply` RUN 2026‑09‑09** (final trimmed spelling‑variant list) — F12 complete | — |
 
-**Adjacent, not in the F‑list:** *Party dedupe* — operator free‑types "still/steel/SS", "Pvt Ltd" variants → duplicate parties. Backend + UI **built + committed `982a738`** (migration `0023` `party.legal_name_normalized`, `resolve_party` ladder, structured 409 + `SimilarParties` picker, `tools/backfill_party_namekey.py` — run `--apply` post‑deploy). Not deployed. Item‑side parity deferred. Docs: `EXECUTION-PLAN-party-dedupe-backend.md`, `docs/visual-plan/party-dedupe-review.html`.
+**Adjacent, not in the F‑list:** *Party dedupe* — operator free‑types "still/steel/SS", "Pvt Ltd" variants → duplicate parties. Backend + UI **built + committed `982a738` + DEPLOYED 2026‑09‑09** (migration `0023` `party.legal_name_normalized` applied, `resolve_party` ladder, structured 409 + `SimilarParties` picker; **`tools/backfill_party_namekey.py --apply` run on prod** — fuzzy key quality now full). Item‑side parity deferred. Docs: `EXECUTION-PLAN-party-dedupe-backend.md`, `docs/visual-plan/party-dedupe-review.html`.
 
 Cross‑reference per‑feature / plan docs:
 `EXECUTION-PLAN-F1a-tally-masters-in.md`, `EXECUTION-PLAN-party-dedupe-backend.md`,
@@ -705,6 +712,146 @@ F12 Type-ahead (built) — standalone
 
 ## 6. Build log
 
+### 2026‑09‑09 — Tally Agent seamless onboarding BUILT (uncommitted)
+
+`docs/EXECUTION-PLAN-tally-agent-seamless-onboarding.md`. Visual review
+`docs/visual-plan/tally-agent-onboarding-review.html` → goal: **provisioning
+an agent IS the installer** — the operator never sees a key, never assembles
+a zip by hand; the backend does it in‑process at provision/rotate time.
+
+- Migration **`0026`** — 3 nullable columns on `backup_shop`:
+  `installer_r2_key`, `last_tally_ok_at`, `last_tally_status`
+  (`connected|refused|no_company|unknown`).
+- `app/services/tally/installer.py::build_and_cache_installer()` — calls the
+  previously‑unwired `tally_agent_installer.build_installer_zip()` right
+  after a key is minted (provision/rotate — the only two moments the
+  plaintext key exists), uploads to R2 (`installers/<shop_id>.zip`),
+  discards the plaintext. `_generate_appsettings()` gained the
+  `TallyMasters` block it was missing.
+- `backup_storage.py` — added `put_object` / `delete_object` (server‑side
+  upload, no presign — the API builds the zip itself).
+- `app/routers/admin.py` — provision/rotate now build‑and‑cache inline; new
+  `GET /firms/{id}/tally-shop/installer` streams the cached zip.
+  `FirmTallyShopProvisionResult.api_key` kept but deprecated‑empty (schema
+  compat only — UI no longer shows a key box).
+- **New `app/routers/tally_self_serve.py`** (`/api/tally/*`, `WriteUser`,
+  tenant‑scoped) — `GET /agent-status` + `GET /installer` so a firm can
+  self‑serve the *same* cached zip from its own login, not just via the
+  operator forwarding a file.
+- **New `app/services/tally/agent_health.py`** — one shared definition of
+  "agent online" (`AGENT_OFFLINE_AFTER` = 5 min) and `tally_reachable_now()`,
+  used by the admin/self‑serve status endpoints and by a new gate in
+  `routers/tally.py::pull_masters`/`retry_sync_job`: a *fresh* non‑connected
+  `tally_reachable` signal now 409s with an actionable message instead of
+  queuing a job doomed to sit on "waiting on Tally".
+- **Checkin gained a second signal** — `ShopCheckinIn.tally_reachable` +
+  `tally_reason`, independent of `module_status`/`error`. Distinguishes
+  "agent installed and phoning home" from "TallyPrime is actually
+  reachable" — today only the first existed.
+- **Agent (.NET):** `TallyGatewayClient.ProbeAsync()` classifies
+  connected/no_company/refused/unknown off the same minimal envelope
+  `IsReachableAsync` already used; `TallyMastersModule` probes every round
+  (not just when a job is pending) and stashes the result on
+  `AgentContext`; `TallyAgentService` passes it into the checkin call.
+  `dotnet build` clean, 0 warnings — no test project exists for
+  `tally-agent/` (confirmed absent, same verification level F1a shipped at).
+- **`install.ps1` rewrite:** all params now optional, self‑elevates
+  (`Start-Process -Verb RunAs`, re‑quoting bound params so the elevated
+  relaunch stays zero‑argument), skips the key‑overwrite when the bundled
+  config already has a real (non‑placeholder) key, prints a post‑install
+  checkin‑confirmation nudge, fixed the stale `tools.make_backup_shop`
+  reference, kept the UTF‑8 BOM / ASCII‑only discipline from the earlier
+  PS 5.1 codepage incident.
+- **Web:** `TallyPanel.tsx` — provision/rotate no longer show a key box;
+  new "Installer" sub‑block (Download + Rotate‑and‑rebuild) and a "Live
+  health" 2‑cell grid (*Agent → Fleek* / *Agent → TallyPrime*); "Pull
+  masters" disables with an inline reason when reachability is bad. **New
+  `components/TallyConnectCard.tsx`** — the shop‑facing "Connect your
+  Tally" card, mounted on `FirmPage.tsx` (firm's own settings page),
+  self‑hides once `tally_status === "connected"`. tsc/eslint/vite build all
+  clean.
+- **Decided against a shareable "Copy link"** in the operator UI — the
+  download route needs a bearer JWT (same‑origin auth), so a plain URL
+  can't work for someone without a login without reintroducing the token
+  machinery the design deliberately dropped. Operator downloads the file
+  and forwards it by hand instead.
+
+**Suite: 452 passed / 2 skipped** (up from 424 at F1a's own commit — +28
+tests: new `test_tally_agent_installer.py`, new `test_tally_self_serve.py`,
+additions to `test_tally_connector.py` / `test_tally_agent.py` for the
+reachability gate + checkin signal). `alembic heads` → `0026`. Nothing
+committed.
+
+**Still blocking a live e2e run:** no real agent build has been published to
+`tally_agent_build_dir` in any environment (dev included) — provisioning
+will 503 until one is dropped there. `settings.base_url` needs confirming
+for prod. See the execution‑plan doc's "Not yet done, next session" list.
+
+### 2026‑09‑09 — S2 = F3a + F3b BUILT (uncommitted)
+
+Visual review (`docs/visual-plan/f3a-ageing-dashboard-review.html`,
+`f3b-statement-whatsapp-review.html`) → decisions locked in
+`SCOPE-F3-F4…` top block → built both slices.
+
+**F3a — Collections ageing dashboard.**
+- Migration **`0025`** — `tenant.default_credit_days INT NOT NULL DEFAULT 0`
+  (0 = "due on invoice date" = pre‑column behaviour; tenant‑wide, no
+  per‑party override).
+- `app/services/payments.py::ageing_summary()` — per‑party buckets
+  `lt30 / d30 / d60 / d90p` ("<30 days / 30+ / 60+ / >3 months"), boundary
+  `≤29 / 30–59 / 60–89 / ≥90`. Due date = `invoice.date + credit_days`.
+  Bucketing done in Python (dialect‑safe). Opening debit → bucket by
+  `opening_balance_as_of` (lt30 if null); opening credit / on‑account →
+  net only, never a bucket. Returns `worst_bucket` + `is_overdue`
+  (`!= lt30`). Sorted worst‑bucket‑then‑total. Net‑credit / settled parties
+  omitted.
+- `GET /api/collections/ageing?q=&as_on=` + `AgeingRow` schema.
+  `GET /api/collections` untouched.
+- Web: `CollectionsPage.tsx` rewritten — scope chips
+  `Owes us / Overdue / Overpaid / Either` (**radio‑exclusive**; Overdue ⊂
+  Owes us). Owes us / Overdue read the ageing endpoint; Overpaid / Either
+  fall back to `/collections`. 4‑cell tap‑to‑filter bucket strip, net total
+  caption, worst‑bucket pill per row, per‑row "Send statement" on overdue
+  rows → opens F3b dialog. `AgeingRow` / `AgeingBucket` in `types.ts`.
+- Tests: `tests/test_ageing.py` (10) — boundaries, credit‑days shift,
+  opening balance ±as_of, paid/credit absent, last_payment, search, `as_on`
+  back‑date, sort.
+
+**F3b — Party statement → WhatsApp.**
+- **No migration** — `whatsapp_message.party_id` already nullable
+  (`models/whatsapp.py:51`). A statement row = `party_id` set /
+  `invoice_id` null / `template_name="account_statement"`.
+- `app/services/statements.py` — `resolve_period()` (this_month default /
+  last_month / **this_fy = Apr–Mar hard‑wired** / last_90 / custom),
+  `party_statement_data()` (synthetic "Opening balance as on <start>"
+  carrying pre‑window forward, in‑window rows, **reversed payments kept
+  struck‑through with reason, nil balance effect**, `total_due` closing,
+  `is_empty` flag), `render_party_statement_pdf()` (reuses the invoice
+  Jinja env), `statement_download_name()` = `<slug> statement
+  <YYYY‑MM‑DD>.pdf` (**today's date**, via the same convention as invoice
+  PDFs).
+- `templates/statement_v1.html` — mirrors the invoice header + table
+  rhythm; `pcs` via the `uom` filter; closing line "Total due ₹X".
+- `services/whatsapp.py` — `account_statement` added to
+  `TEMPLATE_BODY_PARAMS` = `(party_name, total_due)`; `send_party_statement()`
+  (empty window → `WhatsappError`; party‑phone or explicit `to_phone`).
+- `routers/parties.py` — `GET /{id}/statement.pdf?period=&from=&to=`
+  (422 bad range, 503 no WeasyPrint) + `POST /{id}/statement/whatsapp`.
+- Web: `components/StatementSendDialog.tsx` (period dropdown + inline custom
+  date fields, Download + Send recipient picker mirroring the invoice‑send
+  dialog, "save this number" prompt). Wired into `PartyAccountTab.tsx`
+  ("Statement" button) and `CollectionsPage.tsx` (overdue‑row link).
+- Tests: `tests/test_statements.py` (11) — period presets incl. FY,
+  custom‑range validation, carried‑forward opening, reversed‑payment kept,
+  empty‑window flag, PDF route 422, send path (party phone / explicit /
+  empty‑window reject / no‑phone reject), `account_statement` params.
+
+**Suite: 443 passed / 2 skipped** (was 424). Web tsc + eslint + vite build
+clean. **Day‑1 for deploy: submit `account_statement` + `payment_reminder`
+Meta templates** — F3b send is dead until `account_statement` is approved.
+`0002 CREATE EXTENSION` still not SQLite‑clean (pre‑existing; CI runs
+migrations on PG). Nothing committed.
+
 ### 2026‑09‑08 → 09‑09 (commits `caaf389`, `982a738`)
 
 **`caaf389` — "phone number validation and whatsapp tracking"**
@@ -750,30 +897,39 @@ F12 Type-ahead (built) — standalone
   no code.
 - **backup_storage.py** + tally‑agent backend client scaffolding.
 
-424 backend tests collected; suites green at commit time. Nothing from either
-commit is **deployed** yet.
+424 backend tests collected; suites green at commit time.
 
-### Post‑deploy checklist (when these ship)
-- `alembic upgrade head` runs on deploy → applies `0022`/`0023`/`0024`.
-- `python -m tools.backfill_party_namekey --apply` — once per env.
-- `python -m tools.backfill_bartan --apply` (F12, still pending from earlier).
-- fleek‑infra push for the WhatsApp fan‑in **before** the fleek‑backend push
-  (order matters — see the delivery‑tracking plan).
+### 2026‑09‑09 — DEPLOYED
+
+`caaf389` + `982a738` deployed to prod. Deploy sequence followed:
+1. **fleek‑infra** pushed (`METALERP_WHATSAPP_APP_SECRET` export + compose vars).
+2. **fleek‑backend** pushed (`_fanout_whatsapp_webhook`).
+3. **Metal ERP** deployed — `alembic upgrade head` applied `0022`/`0023`/`0024`.
+4. Backfills run on prod: `python -m tools.backfill_party_namekey --apply` and
+   `python -m app.services.catalogue.backfill_bartan --apply` (final trimmed list).
+
+**Still open (deployed but not validated live):**
+- **F1a live e2e** — provision an agent, point it at a real Tally, pull masters
+  through it. Never done. F1b/F4 stay blocked on this.
+- **F2 e2e vs Meta** — real WhatsApp send → delivered/read webhook lands and
+  advances the `whatsapp_message` row. Fan‑in path deployed but unexercised.
+- Browser pass on the new party‑dedupe UI + invoice‑list redesign against prod.
 
 ---
 
 ## 7. Next step
 
-**Two tracks, pick one:**
+S1 shipped + deployed 2026‑09‑09. Two validation tasks remain before new
+feature work is fully de‑risked:
 
-1. **Ship what's built.** Push fleek‑infra + fleek‑backend for the WhatsApp
-   fan‑in, deploy Metal ERP (`caaf389` + `982a738`), run the backfills, then do
-   the F1a live e2e (pull masters from the dev‑box Tally through the agent).
-   This turns 4 built slices into working features and de‑risks F1b.
-2. **Keep building — S2 = F3a ageing dashboard.** No Tally dependency, ~70%
-   primitives already exist (`SCOPE-F3-F4…` Part A). The one new moving part is
-   a scheduler, which F3c needs anyway.
+- **F1a live e2e** — provision an agent, point it at a real Tally (dev box has
+  TallyPrime, Gateway on 9000, company `100000`), pull masters through it. This
+  is the gate on F1b/F4.
+- **F2 e2e vs Meta** — send a real invoice on WhatsApp, confirm the
+  delivered/read webhook fans in from fleek‑backend and advances the row.
 
-Recommended: **(1) first** — the built‑but‑not‑deployed pile is now large
-(migrations `0022`–`0024`, 3 backfills, a cross‑repo infra change), and F1b/F4
-can't be validated until F1a runs live once.
+Then the build resumes at **S2 = F3a ageing dashboard** — no Tally dependency,
+~70% primitives already exist (`SCOPE-F3-F4…` Part A); the one new moving part
+is a reminder scheduler, which F3c needs anyway. In parallel, **F1b
+(sales‑voucher‑out, file transport)** becomes unblocked the moment F1a e2e
+passes.

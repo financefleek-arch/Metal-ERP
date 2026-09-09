@@ -1,11 +1,12 @@
 import { api } from "../../lib/api";
+import { downloadFile } from "../../lib/download";
 import type {
   AdminUser,
   AssignableRole,
   FirmDetail,
   FirmListItem,
   FirmTallyShop,
-  FirmTallyShopKey,
+  FirmTallyShopProvisionResult,
   FirmWhatsapp,
   FirmWhatsappTestResult,
   FirmWhatsappUpsert,
@@ -66,17 +67,24 @@ export const adminApi = {
     }),
 
   // ---- companion agent (per firm) ----
+  // Provisioning IS the installer: the backend mints the key, bakes it into
+  // a zip, and caches it — nothing here ever sees the plaintext key.
 
   getFirmAgent: (firmId: string) =>
     api<FirmTallyShop>(`/admin/firms/${firmId}/tally-shop`),
 
   provisionFirmAgent: (firmId: string) =>
-    api<FirmTallyShopKey>(`/admin/firms/${firmId}/tally-shop`, { method: "POST" }),
-
-  rotateFirmAgentKey: (firmId: string) =>
-    api<FirmTallyShopKey>(`/admin/firms/${firmId}/tally-shop/rotate-key`, {
+    api<FirmTallyShopProvisionResult>(`/admin/firms/${firmId}/tally-shop`, {
       method: "POST",
     }),
+
+  rotateFirmAgentKey: (firmId: string) =>
+    api<FirmTallyShopProvisionResult>(`/admin/firms/${firmId}/tally-shop/rotate-key`, {
+      method: "POST",
+    }),
+
+  downloadFirmAgentInstaller: (firmId: string, filename: string) =>
+    downloadFile(`/admin/firms/${firmId}/tally-shop/installer`, filename),
 
   // ---- Tally Connector (F1a) ----
 

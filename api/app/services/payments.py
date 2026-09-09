@@ -11,14 +11,14 @@ automatically without deleting anything.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Invoice, Party, Payment, PaymentAllocation
+from app.models import Invoice, Party, Payment, PaymentAllocation, Tenant
 from app.models._mixins import AllocationType, InvoiceStatus, PaymentStatus
 
 _ZERO = Decimal("0.00")
@@ -306,6 +306,219 @@ def collections_summary(
 
 
 # --------------------------------------------------------------------------
+# Collections ageing dashboard (F3a) — per-party ageing buckets.
+#
+# Buckets are keyed lt30 / d30 / d60 / d90p; the UI labels them
+# "<30 days / 30+ / 60+ / >3 months" (display-only, mutually exclusive).
+# An invoice's balance ages by its DUE date = invoice.date +
+# tenant.default_credit_days. Opening balance ages by opening_balance_as_of
+# (falls into lt30 when that's null). Bucketing is done in Python so the
+# date arithmetic is identical on SQLite and Postgres.
+# --------------------------------------------------------------------------
+
+AgeingBucket = Literal["lt30", "d30", "d60", "d90p"]
+
+_BUCKET_KEYS: tuple[AgeingBucket, ...] = ("lt30", "d30", "d60", "d90p")
+
+
+def _bucket_for_age(age_days: int) -> AgeingBucket:
+    """age_days = as_on - due_date. <=29 -> lt30, 30-59 -> d30,
+    60-89 -> d60, >=90 -> d90p. Not-yet-due (negative age) is lt30.
+    """
+    if age_days <= 29:
+        return "lt30"
+    if age_days <= 59:
+        return "d30"
+    if age_days <= 89:
+        return "d60"
+    return "d90p"
+
+
+@dataclass
+class AgeingRow:
+    party_id: str
+    legal_name: str
+    phone: str | None
+    lt30: Decimal
+    d30: Decimal
+    d60: Decimal
+    d90p: Decimal
+    total: Decimal
+    worst_bucket: AgeingBucket
+    is_overdue: bool  # worst_bucket != "lt30"
+    oldest_bill_date: date | None
+    oldest_bill_number: int | None
+    last_payment_date: date | None
+    open_invoice_count: int
+
+
+def ageing_summary(
+    session: Session,
+    tenant_id: str,
+    *,
+    as_on: date | None = None,
+    q: str | None = None,
+) -> list[AgeingRow]:
+    """Per-party ageing buckets for the Collections dashboard.
+
+    One query pulls every open (finalized, balance_due > 0) invoice's
+    (party, date, number, live balance); a second pulls each party's last
+    posted-payment date; a third the opening balances. Bucketing + the
+    running totals are done in Python. A party surfaces if it has any
+    positive net (open invoices and/or an opening debit); a net-credit or
+    net-zero party is omitted (mirrors `collections_summary`'s "outstanding"
+    scope — ageing is only meaningful for money owed to us).
+    """
+    as_on = as_on or date.today()
+
+    tenant = session.get(Tenant, tenant_id)
+    credit_days = int(tenant.default_credit_days) if tenant is not None else 0
+
+    paid_sq = (
+        select(
+            PaymentAllocation.invoice_id.label("invoice_id"),
+            func.sum(PaymentAllocation.amount).label("paid"),
+        )
+        .join(Payment, Payment.id == PaymentAllocation.payment_id)
+        .where(
+            PaymentAllocation.type == AllocationType.against_invoice,
+            Payment.status == PaymentStatus.posted,
+        )
+        .group_by(PaymentAllocation.invoice_id)
+        .subquery()
+    )
+    balance_due_expr = Invoice.grand_total - func.coalesce(paid_sq.c.paid, 0)
+
+    inv_rows = session.execute(
+        select(
+            Invoice.party_id,
+            Invoice.date,
+            Invoice.number,
+            balance_due_expr.label("balance_due"),
+        )
+        .outerjoin(paid_sq, paid_sq.c.invoice_id == Invoice.id)
+        .where(
+            Invoice.tenant_id == tenant_id,
+            Invoice.status == InvoiceStatus.final,
+            balance_due_expr > 0,
+        )
+    ).all()
+
+    last_pay_rows = session.execute(
+        select(Payment.party_id, func.max(Payment.date))
+        .where(
+            Payment.tenant_id == tenant_id,
+            Payment.status == PaymentStatus.posted,
+        )
+        .group_by(Payment.party_id)
+    ).all()
+    last_payment: dict[str, date] = {pid: d for pid, d in last_pay_rows if d is not None}
+
+    # on-account credit reduces the net but never a bucket (matches the
+    # display rule in the F3b/F3a review: an opening credit / advance is not
+    # "ageing money").
+    credit_rows = session.execute(
+        select(Payment.party_id, func.sum(PaymentAllocation.amount))
+        .join(PaymentAllocation, PaymentAllocation.payment_id == Payment.id)
+        .where(
+            Payment.tenant_id == tenant_id,
+            PaymentAllocation.type == AllocationType.on_account,
+            Payment.status == PaymentStatus.posted,
+        )
+        .group_by(Payment.party_id)
+    ).all()
+    on_account: dict[str, Decimal] = {
+        pid: Decimal(amt or 0) for pid, amt in credit_rows
+    }
+
+    party_rows = session.execute(
+        select(Party.id, Party.legal_name, Party.phone, Party.opening_balance,
+               Party.opening_balance_as_of, Party.created_at)
+        .where(Party.tenant_id == tenant_id)
+    ).all()
+
+    @dataclass
+    class _Acc:
+        legal_name: str
+        phone: str | None
+        buckets: dict[AgeingBucket, Decimal]
+        oldest_date: date | None = None
+        oldest_number: int | None = None
+        open_count: int = 0
+
+    acc: dict[str, _Acc] = {}
+    party_meta: dict[str, tuple] = {}
+    for pid, name, phone, opening, as_of, created in party_rows:
+        acc[pid] = _Acc(
+            legal_name=name,
+            phone=phone,
+            buckets={k: _ZERO for k in _BUCKET_KEYS},
+        )
+        party_meta[pid] = (Decimal(opening or 0), as_of, created)
+
+    for pid, inv_date, number, balance in inv_rows:
+        a = acc.get(pid)
+        if a is None:
+            continue  # invoice for an archived/other-tenant party — skip
+        bal = Decimal(balance or 0)
+        due = inv_date + timedelta(days=credit_days)
+        a.buckets[_bucket_for_age((as_on - due).days)] += bal
+        a.open_count += 1
+        if a.oldest_date is None or inv_date < a.oldest_date:
+            a.oldest_date = inv_date
+            a.oldest_number = number
+
+    # opening debit → its own bucket by opening_balance_as_of (lt30 if null);
+    # opening credit → subtract from the net later, never a bucket.
+    for pid, a in acc.items():
+        opening, as_of, created = party_meta[pid]
+        if opening > _ZERO:
+            ref = as_of or (created.date() if created is not None else as_on)
+            a.buckets[_bucket_for_age((as_on - ref).days)] += opening
+
+    out: list[AgeingRow] = []
+    ql = q.lower().strip() if q else None
+    for pid, a in acc.items():
+        opening, _as_of, _created = party_meta[pid]
+        credit = on_account.get(pid, _ZERO)
+        opening_credit = -opening if opening < _ZERO else _ZERO
+        bucket_total = sum(a.buckets.values(), _ZERO)
+        net = bucket_total - credit - opening_credit
+        if net <= _ZERO:
+            continue  # net-credit or settled — not an ageing row
+        if ql and ql not in a.legal_name.lower():
+            continue
+        worst: AgeingBucket = "lt30"
+        for k in ("d90p", "d60", "d30", "lt30"):
+            if a.buckets[k] > _ZERO:  # type: ignore[index]
+                worst = k  # type: ignore[assignment]
+                break
+        out.append(
+            AgeingRow(
+                party_id=pid,
+                legal_name=a.legal_name,
+                phone=a.phone,
+                lt30=a.buckets["lt30"],
+                d30=a.buckets["d30"],
+                d60=a.buckets["d60"],
+                d90p=a.buckets["d90p"],
+                total=bucket_total,
+                worst_bucket=worst,
+                is_overdue=worst != "lt30",
+                oldest_bill_date=a.oldest_date,
+                oldest_bill_number=a.oldest_number,
+                last_payment_date=last_payment.get(pid),
+                open_invoice_count=a.open_count,
+            )
+        )
+
+    # worst first, then biggest total — the "who needs a call today" order.
+    _rank = {"d90p": 0, "d60": 1, "d30": 2, "lt30": 3}
+    out.sort(key=lambda r: (_rank[r.worst_bucket], -r.total))
+    return out
+
+
+# --------------------------------------------------------------------------
 # Party ledger statement
 # --------------------------------------------------------------------------
 
@@ -471,6 +684,8 @@ __all__ = [
     "open_invoices_for_party",
     "collections_summary",
     "CollectionsSummaryRow",
+    "ageing_summary",
+    "AgeingRow",
     "party_ledger",
     "LedgerEntry",
     "claim_voucher_no",

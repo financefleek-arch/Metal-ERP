@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tally Agent — Seamless Onboarding Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<style>
+  :root {
+    --ground: #f4f1ec;
+    --ink: #23201b;
+    --card: #ffffff;
+    --card-2: #faf8f4;
+    --line: #e6e0d6;
+    --line-strong: #d8d0c2;
+    --muted: #7c766a;
+    --accent: #2f6f89;
+    --accent-dark: #245771;
+    --accent-soft: #eef4f7;
+    --ok: #4f8a5b;
+    --ok-soft: #edf5ee;
+    --warn: #b5892f;
+    --warn-soft: #fbf3e2;
+    --danger: #c0392b;
+    --danger-soft: #f8ecea;
+    --ops: #1a2b33;
+    --serif: "Fraunces", Georgia, serif;
+    --sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #1a1613; --ink: #ece6db; --card: #23201a; --card-2: #1f1c16;
+      --line: #37322a; --line-strong: #453f34; --muted: #9c9585;
+      --accent: #5da2c1; --accent-dark: #7bb8d3; --accent-soft: #1e2c33;
+      --ok: #79b487; --ok-soft: #1c2a20; --warn: #d6a860; --warn-soft: #2c2413;
+      --danger: #d98a80; --danger-soft: #2c1c1a; --ops: #101c22;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #1a1613; --ink: #ece6db; --card: #23201a; --card-2: #1f1c16;
+    --line: #37322a; --line-strong: #453f34; --muted: #9c9585;
+    --accent: #5da2c1; --accent-dark: #7bb8d3; --accent-soft: #1e2c33;
+    --ok: #79b487; --ok-soft: #1c2a20; --warn: #d6a860; --warn-soft: #2c2413;
+    --danger: #d98a80; --danger-soft: #2c1c1a; --ops: #101c22;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased; line-height: 1.55;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 22px 120px; }
+
+  .eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 8px;
+  }
+  h1 {
+    font-family: var(--serif); font-size: 30px; font-weight: 600;
+    margin: 0 0 6px; letter-spacing: -.01em; text-wrap: balance;
+  }
+  .lede { color: var(--muted); font-size: 14.5px; max-width: 70ch; margin: 0; }
+
+  h2 {
+    font-family: var(--serif); font-size: 20px; font-weight: 600;
+    margin: 58px 0 4px; letter-spacing: -.01em;
+  }
+  h2 .n {
+    font-family: var(--mono); font-size: 13px; font-weight: 500;
+    color: var(--accent); margin-right: 10px;
+  }
+  h3.mini {
+    font-size: 12px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--muted); margin: 26px 0 10px;
+  }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; max-width: 74ch; }
+  p.note { font-size: 13px; color: var(--muted); max-width: 76ch; }
+  code {
+    font-family: var(--mono); font-size: .88em; background: var(--card-2);
+    border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px;
+  }
+
+  /* ---------- actors legend ---------- */
+  .legend { display: flex; gap: 10px; flex-wrap: wrap; margin: 20px 0 4px; }
+  .actor {
+    display: inline-flex; align-items: center; gap: 8px; font-size: 12px;
+    font-weight: 600; padding: 5px 12px; border-radius: 999px;
+    border: 1px solid var(--line-strong); background: var(--card);
+  }
+  .actor .sw { width: 10px; height: 10px; border-radius: 3px; }
+  .sw.fleek { background: var(--accent); }
+  .sw.sys { background: #6a7f8a; }
+  .sw.shop { background: var(--warn); }
+  .sw.agent { background: var(--ok); }
+
+  /* ---------- swimlane flow ---------- */
+  .flow {
+    background: var(--card); border: 1px solid var(--line-strong);
+    border-radius: 14px; overflow: hidden; margin-top: 18px;
+  }
+  .flow-cap {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); background: var(--card-2); padding: 8px 15px;
+    border-bottom: 1px solid var(--line);
+  }
+  .lane {
+    display: grid; grid-template-columns: 132px 1fr; border-bottom: 1px solid var(--line);
+  }
+  .lane:last-child { border-bottom: none; }
+  .lane-h {
+    background: var(--card-2); border-right: 1px solid var(--line);
+    padding: 16px 12px; font-size: 12px; font-weight: 600;
+    display: flex; align-items: flex-start; gap: 7px;
+  }
+  .lane-h .sw { width: 9px; height: 9px; border-radius: 3px; margin-top: 4px; flex: none; }
+  .lane-body { padding: 14px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; }
+  .step {
+    position: relative; background: var(--card-2); border: 1px solid var(--line-strong);
+    border-radius: 9px; padding: 10px 12px; font-size: 12.5px; max-width: 250px;
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .step .k {
+    font-family: var(--mono); font-size: 10px; color: var(--accent); font-weight: 500;
+  }
+  .step .t { font-weight: 600; }
+  .step .d { color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+  .step.hl { border-color: var(--accent); background: var(--accent-soft); }
+  .step.ok { border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
+  .step.err { border-color: color-mix(in srgb, var(--danger) 45%, transparent); background: var(--danger-soft); }
+  .step.sys { border-color: color-mix(in srgb, #6a7f8a 55%, transparent); background: color-mix(in srgb, #6a7f8a 12%, var(--card)); }
+  .arrow {
+    align-self: center; color: var(--line-strong); font-size: 18px; flex: none;
+    padding: 0 2px;
+  }
+
+  /* ---------- device frames ---------- */
+  .split2 { display: grid; gap: 22px; grid-template-columns: 1fr; margin-top: 18px; }
+  @media (min-width: 940px) { .split2 { grid-template-columns: 1fr 1fr; } }
+
+  .frame {
+    background: var(--card); border: 1px solid var(--line-strong);
+    border-radius: 14px; overflow: hidden;
+  }
+  .frame-cap {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: .09em;
+    color: var(--muted); background: var(--card-2); padding: 8px 15px;
+    border-bottom: 1px solid var(--line);
+  }
+  .ops-bar {
+    background: var(--ops); color: #cfe0e6; font-size: 12.5px; font-weight: 600;
+    padding: 9px 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .ops-bar .op-accent { color: #6fb2c9; }
+  .app-bar {
+    background: var(--accent-dark); color: #eaf4f8; font-size: 12.5px; font-weight: 600;
+    padding: 9px 16px; display: flex; align-items: center; gap: 8px;
+  }
+  .win-bar {
+    background: #2b2b2b; color: #d8d8d8; font-size: 12px; font-weight: 600;
+    padding: 7px 14px; display: flex; align-items: center; gap: 8px;
+  }
+  .win-bar .dotset { display: flex; gap: 5px; }
+  .win-bar .dotset i { width: 9px; height: 9px; border-radius: 999px; display: block; }
+  .pane-body { padding: 20px 20px 24px; }
+
+  /* app section idiom (mirrors FirmsPage.tsx panels) */
+  .fsection { border-bottom: 1px solid var(--line); padding: 16px 0; }
+  .fsection:first-child { padding-top: 2px; }
+  .fsection:last-child { border-bottom: none; padding-bottom: 0; }
+  .fsection-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  }
+  .fsection-head h4 {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); margin: 0;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; align-items: flex-end; }
+  .fld-group { display: flex; flex-direction: column; }
+  .label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); margin-bottom: 4px;
+  }
+  .field {
+    height: 34px; border-radius: 6px; border: 1px solid var(--line-strong);
+    background: var(--card); color: var(--ink); padding: 0 10px; font: inherit;
+    font-size: 12.5px; display: flex; align-items: center;
+  }
+  .field.ghost { color: var(--muted); }
+  .w60 { width: 240px; } .w48 { width: 192px; } .w36 { width: 150px; } .wfull { width: 100%; }
+  .btn {
+    height: 32px; padding: 0 13px; border-radius: 6px; font: inherit;
+    font-weight: 600; font-size: 12.5px; cursor: pointer; border: 1px solid transparent;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
+  .btn.ghost { background: transparent; color: var(--accent); border-color: var(--line-strong); }
+  .btn.small { height: 27px; padding: 0 10px; font-size: 11.5px; }
+  .btn.big { height: 40px; padding: 0 20px; font-size: 13.5px; }
+  .btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .helptext { font-size: 11.5px; color: var(--muted); margin: 9px 0 0; max-width: 62ch; }
+
+  /* copyable link row */
+  .linkrow {
+    margin-top: 10px; display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap;
+  }
+  .linkrow .lv {
+    flex: 1 1 260px; font-family: var(--mono); font-size: 11.5px; color: var(--muted);
+    background: var(--card-2); border: 1px solid var(--line); border-radius: 6px;
+    padding: 8px 10px; display: flex; align-items: center; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+
+  /* status pill */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+    font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 999px; background: currentColor; }
+  .pill.ok { color: var(--ok); background: var(--ok-soft); }
+  .pill.warn { color: var(--warn); background: var(--warn-soft); }
+  .pill.err { color: var(--danger); background: var(--danger-soft); }
+  .pill.off { color: var(--muted); background: var(--card-2); border: 1px solid var(--line); }
+
+  /* health grid */
+  .health { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  .hcell {
+    border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+    background: var(--card-2); font-size: 12px;
+  }
+  .hcell .hl { font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); margin-bottom: 4px; }
+  .hcell .hv { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .hcell .hsub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+  /* windows service card */
+  .svc {
+    border: 1px solid var(--line-strong); border-radius: 9px; background: var(--card-2);
+    padding: 12px 13px; font-size: 12.5px; margin-top: 4px;
+  }
+  .svc .svc-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .svc .svc-name { font-weight: 600; display: flex; align-items: center; gap: 7px; }
+  .svc .svc-ico { width: 18px; height: 18px; border-radius: 4px; background: var(--accent);
+    color: #fff; font-size: 11px; display: flex; align-items: center; justify-content: center; font-weight: 700; }
+  .svc ul { list-style: none; margin: 9px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .svc li { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11.5px; }
+  .svc li .ldot { width: 6px; height: 6px; border-radius: 999px; flex: none; }
+  .ldot.ok { background: var(--ok); }
+  .ldot.idle { background: var(--muted); }
+
+  /* zip contents */
+  .ziptree {
+    font-family: var(--mono); font-size: 11.5px; background: var(--card-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 11px 13px;
+    margin-top: 10px; line-height: 1.75; color: var(--muted);
+  }
+  .ziptree b { color: var(--ink); font-weight: 600; }
+  .ziptree .hi { color: var(--accent); }
+
+  /* log strip */
+  .logstrip {
+    font-family: var(--mono); font-size: 11px; background: #14120f; color: #cbd8cf;
+    border-radius: 8px; padding: 10px 12px; margin-top: 10px; line-height: 1.7;
+    overflow-x: auto;
+  }
+  .logstrip .t { color: #7f8c82; }
+  .logstrip .ok { color: #86c894; }
+  .logstrip .err { color: #e0938a; }
+  .logstrip .warn { color: #d8b46a; }
+
+  /* callout */
+  .callout {
+    border: 1px solid var(--line-strong); border-left: 3px solid var(--accent);
+    background: var(--card); border-radius: 10px; padding: 14px 16px;
+    margin-top: 20px; font-size: 13px;
+  }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase;
+    letter-spacing: .06em; color: var(--muted); }
+  .callout ul { margin: 6px 0 0; padding-left: 18px; }
+  .callout li { margin: 3px 0; }
+
+  /* decision list */
+  .qlist { counter-reset: q; margin-top: 16px; display: flex; flex-direction: column; gap: 12px; }
+  .q {
+    border: 1px solid var(--line-strong); border-radius: 10px; background: var(--card);
+    padding: 13px 15px; font-size: 13px;
+  }
+  .q::before {
+    counter-increment: q; content: "Q" counter(q);
+    font-family: var(--mono); font-size: 11px; font-weight: 600; color: var(--accent);
+    display: inline-block; margin-right: 8px;
+  }
+  .q .opts { margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
+  .q .rec { color: var(--ok); font-weight: 600; }
+
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; margin-top: 14px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 620px; }
+  thead th {
+    text-align: left; font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); background: var(--card-2); padding: 9px 12px; border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody td:first-child { font-weight: 600; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Visual Plan &middot; F1a / F10 &middot; pre-build review</p>
+  <h1>Tally Agent &mdash; seamless shop onboarding &amp; health reporting</h1>
+  <p class="lede">
+    Provisioning a firm&rsquo;s agent <b>is</b> the installer. The system mints the
+    key, injects it into <code>appsettings.json</code>, packs the zip, and hands over
+    a ready download link. Nobody &mdash; not the Fleek operator, not the shop &mdash;
+    ever edits a config file. And once the shop runs it, the agent&rsquo;s heartbeat
+    tells Fleek whether it reached TallyPrime or not.
+  </p>
+
+  <div class="legend">
+    <span class="actor"><span class="sw fleek"></span> Fleek operator (platform-admin console)</span>
+    <span class="actor"><span class="sw sys"></span> Metal ERP backend (does the assembly)</span>
+    <span class="actor"><span class="sw shop"></span> Shop staff (owner / accountant)</span>
+    <span class="actor"><span class="sw agent"></span> Tally Agent (Windows service at the shop)</span>
+  </div>
+
+  <!-- ================================================================= -->
+  <h2><span class="n">1</span>End-to-end flow &mdash; no hand-assembly anywhere</h2>
+  <p class="sub">
+    Left-to-right time. The grey lane is the backend doing the work a person used to
+    do. Green = a success signal reaching Fleek; red = the failure branch and how it
+    surfaces.
+  </p>
+
+  <div class="flow">
+    <div class="flow-cap">Provision &rarr; download &rarr; install &rarr; report back</div>
+
+    <div class="lane">
+      <div class="lane-h"><span class="sw fleek"></span> Fleek<br/>operator</div>
+      <div class="lane-body">
+        <div class="step">
+          <span class="k">console</span>
+          <span class="t">Create firm + login</span>
+          <span class="d">New tenant, seeded catalogue, an owner user. Existing <code>/api/admin/firms</code>.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step hl">
+          <span class="k">console &middot; 1 click</span>
+          <span class="t">&ldquo;Set up Tally sync&rdquo;</span>
+          <span class="d">One button. No key shown, no file to build, no fields to fill. The operator&rsquo;s job ends here.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step ok">
+          <span class="k">console</span>
+          <span class="t">Copy the download link</span>
+          <span class="d">Console now shows a ready <b>Download agent</b> button + a shareable link to forward to the shop (WhatsApp / email). Or tell the shop it&rsquo;s waiting in their own login.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lane">
+      <div class="lane-h"><span class="sw sys"></span> Metal ERP<br/>backend</div>
+      <div class="lane-body">
+        <div class="step sys">
+          <span class="k">on click</span>
+          <span class="t">Mint the agent key</span>
+          <span class="d">Random key; only its <b>hash</b> is stored (same contract as a password). The plaintext exists just long enough for the next step.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step sys">
+          <span class="k">in-process</span>
+          <span class="t">Inject + pack</span>
+          <span class="d">Takes the published agent build, writes <code>appsettings.json</code> with the key + backend URL + <code>TallyMasters</code> section baked in, zips build + <code>install.ps1</code> + a 1-page PDF.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step sys">
+          <span class="k">stored</span>
+          <span class="t">Cache the zip</span>
+          <span class="d">Saved against the firm. The download route just streams it. Plaintext key is discarded &mdash; it now lives <i>only</i> inside the cached zip.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step sys">
+          <span class="k">on key-rotate</span>
+          <span class="t">Rebuild</span>
+          <span class="d">Rotating the key re-mints, re-packs, replaces the cached zip; the old download is dead.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lane">
+      <div class="lane-h"><span class="sw shop"></span> Shop<br/>staff</div>
+      <div class="lane-body">
+        <div class="step">
+          <span class="k">their ERP login &middot; or the link</span>
+          <span class="t">Click Download</span>
+          <span class="d">A &ldquo;Connect your Tally&rdquo; card on their own dashboard, or the link Fleek sent. One <code>.zip</code>.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step">
+          <span class="k">shop PC &middot; right-click</span>
+          <span class="t">Run install.ps1</span>
+          <span class="d">Self-elevates. <b>Zero arguments</b> &mdash; the key is already in the bundled config, so there is no &ldquo;paste your key&rdquo; step.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step">
+          <span class="k">TallyPrime &middot; one toggle</span>
+          <span class="t">&ldquo;Acts as Server&rdquo; on</span>
+          <span class="d"><code>F1 &rarr; Settings &rarr; Connectivity</code>, port 9000. The only Tally-side step &mdash; screenshot in the bundled PDF.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lane">
+      <div class="lane-h"><span class="sw agent"></span> Tally<br/>Agent</div>
+      <div class="lane-body">
+        <div class="step ok">
+          <span class="k">on install</span>
+          <span class="t">Register as service</span>
+          <span class="d">Auto-start at boot, no login session needed. Reads its own bundled config &mdash; nothing more to set.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step ok">
+          <span class="k">every 60s</span>
+          <span class="t">Check in with Fleek</span>
+          <span class="d"><code>POST /api/tally-agent/checkin</code> with the key + per-module status + <b>tally_reachable</b>.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step ok">
+          <span class="k">every 60s</span>
+          <span class="t">Probe TallyPrime</span>
+          <span class="d">Cheap call to <code>localhost:9000</code>. Result rides the next checkin: <code>true</code> / <code>false</code> + reason.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="lane">
+      <div class="lane-h"><span class="sw fleek"></span> Fleek<br/>console</div>
+      <div class="lane-body">
+        <div class="step ok">
+          <span class="k">reads checkin</span>
+          <span class="t">Agent: online</span>
+          <span class="d">&ldquo;Checked in 12s ago&rdquo; &mdash; the shop deployed it, key works.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step ok">
+          <span class="k">reads tally_reachable</span>
+          <span class="t">Tally: connected</span>
+          <span class="d">Green. Operator can click <b>Pull masters</b>.</span>
+        </div>
+        <span class="arrow">&rsaquo;</span>
+        <div class="step err">
+          <span class="k">tally_reachable=false</span>
+          <span class="t">Tally: not reachable</span>
+          <span class="d">Amber with the reason (<i>closed</i> / <i>no company open</i> / <i>server mode off</i>). One call to the shop; auto-recovers.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <h2><span class="n">2</span>What the Fleek operator sees</h2>
+  <p class="sub">
+    New <code>Tally Agent</code> section on the firm-detail pane. Before setup: one
+    button. After: a download link + the live heartbeat. <b>No key is ever displayed,
+    no installer is assembled by hand.</b>
+  </p>
+
+  <div class="split2">
+
+    <!-- before -->
+    <div class="frame">
+      <div class="frame-cap">Ops console &middot; before setup</div>
+      <div class="ops-bar"><span class="op-accent">Fleek Operations</span> &nbsp;/&nbsp; Firms &nbsp;/&nbsp; Gupta Steel House</div>
+      <div class="pane-body">
+        <div class="fsection">
+          <div class="fsection-head">
+            <h4>Tally Agent</h4>
+            <span class="pill off"><span class="dot"></span> Not set up</span>
+          </div>
+          <p class="helptext" style="margin-top:12px">
+            The companion agent syncs this firm&rsquo;s Tally masters into Metal ERP.
+            One click generates a ready-to-run installer for the shop &mdash; no
+            configuration.
+          </p>
+          <div class="row" style="margin-top:14px">
+            <button class="btn primary big">Set up Tally sync</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- after, healthy -->
+    <div class="frame">
+      <div class="frame-cap">Ops console &middot; after setup, healthy</div>
+      <div class="ops-bar"><span class="op-accent">Fleek Operations</span> &nbsp;/&nbsp; Firms &nbsp;/&nbsp; Sharma Bartan Bhandar</div>
+      <div class="pane-body">
+
+        <div class="fsection">
+          <div class="fsection-head">
+            <h4>Installer</h4>
+            <span class="pill ok"><span class="dot"></span> Ready</span>
+          </div>
+          <div class="linkrow">
+            <span class="lv">https://app.fleek&hellip;/d/tally-agent/9f3a-&hellip;.zip</span>
+            <button class="btn primary small">&darr; Download</button>
+            <button class="btn ghost small">Copy link</button>
+          </div>
+          <p class="helptext">
+            Forward the link to the shop, or they get it from their own login. Zip is
+            built for this firm&rsquo;s current key. <button class="btn ghost small" style="margin-left:2px">Rotate key &amp; rebuild</button>
+          </p>
+        </div>
+
+        <div class="fsection">
+          <div class="fsection-head">
+            <h4>Live health</h4>
+            <span class="pill ok"><span class="dot"></span> All good</span>
+          </div>
+          <div class="health">
+            <div class="hcell">
+              <div class="hl">Agent &rarr; Fleek</div>
+              <div class="hv"><span class="pill ok"><span class="dot"></span> Online</span></div>
+              <div class="hsub">Checked in 12s ago</div>
+            </div>
+            <div class="hcell">
+              <div class="hl">Agent &rarr; TallyPrime</div>
+              <div class="hv"><span class="pill ok"><span class="dot"></span> Connected</span></div>
+              <div class="hsub">Company &ldquo;Sharma Bartan 24-25&rdquo;, port 9000</div>
+            </div>
+            <div class="hcell">
+              <div class="hl">Last masters pull</div>
+              <div class="hv">3 Sep, 09:14</div>
+              <div class="hsub">312 parties &middot; 1,847 items</div>
+            </div>
+            <div class="hcell">
+              <div class="hl">Agent version</div>
+              <div class="hv">1.4.0</div>
+              <div class="hsub">Up to date</div>
+            </div>
+          </div>
+          <div class="logstrip">
+            <div><span class="t">09:32:04</span> <span class="ok">checkin ok</span> &mdash; tally_reachable=true</div>
+            <div><span class="t">09:32:04</span> <span class="ok">tally probe ok</span> &mdash; STATUS 1, company loaded</div>
+            <div><span class="t">09:31:04</span> <span class="ok">checkin ok</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="split2" style="margin-top:0">
+    <!-- after, broken -->
+    <div class="frame">
+      <div class="frame-cap">Ops console &middot; agent online, Tally NOT reachable</div>
+      <div class="ops-bar"><span class="op-accent">Fleek Operations</span> &nbsp;/&nbsp; Firms &nbsp;/&nbsp; Gupta Steel House</div>
+      <div class="pane-body">
+        <div class="fsection">
+          <div class="fsection-head">
+            <h4>Live health</h4>
+            <span class="pill warn"><span class="dot"></span> Needs attention</span>
+          </div>
+          <div class="health">
+            <div class="hcell">
+              <div class="hl">Agent &rarr; Fleek</div>
+              <div class="hv"><span class="pill ok"><span class="dot"></span> Online</span></div>
+              <div class="hsub">Checked in 8s ago &mdash; install succeeded</div>
+            </div>
+            <div class="hcell">
+              <div class="hl">Agent &rarr; TallyPrime</div>
+              <div class="hv"><span class="pill err"><span class="dot"></span> Not reachable</span></div>
+              <div class="hsub">Connection refused on :9000</div>
+            </div>
+            <div class="hcell">
+              <div class="hl">Likely cause</div>
+              <div class="hv" style="font-weight:500;font-size:11.5px">Tally closed, or &ldquo;acts as Server&rdquo; is off</div>
+            </div>
+            <div class="hcell">
+              <div class="hl">Last masters pull</div>
+              <div class="hv">&mdash;</div>
+              <div class="hsub">Never &mdash; blocked on the connection</div>
+            </div>
+          </div>
+          <div class="logstrip">
+            <div><span class="t">11:07:12</span> <span class="ok">checkin ok</span> &mdash; tally_reachable=<span class="err">false</span> (econnrefused)</div>
+            <div><span class="t">11:06:12</span> <span class="err">tally probe failed</span> &mdash; ECONNREFUSED localhost:9000</div>
+          </div>
+          <div class="callout warn" style="margin-top:12px">
+            <h4>What the operator does</h4>
+            <ul>
+              <li>&ldquo;Pull masters&rdquo; is <b>disabled</b>, reason inline.</li>
+              <li>One call: &ldquo;open TallyPrime, load the company, turn on F1 &rarr; Settings &rarr; Connectivity &rarr; acts as Server&rdquo;.</li>
+              <li>Cell flips green within 60s &mdash; no re-install, no re-provision.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- shop-side login -->
+    <div class="frame">
+      <div class="frame-cap">Shop&rsquo;s own Metal ERP login &middot; the download card</div>
+      <div class="app-bar">Sharma Bartan Bhandar &nbsp;/&nbsp; Dashboard</div>
+      <div class="pane-body">
+        <div class="fsection">
+          <div class="fsection-head">
+            <h4>Connect your Tally</h4>
+            <span class="pill warn"><span class="dot"></span> Not connected yet</span>
+          </div>
+          <p class="helptext" style="margin-top:12px">
+            Install this small program on the PC where TallyPrime runs. It keeps your
+            party &amp; item lists in sync &mdash; nothing to configure, just download
+            and run.
+          </p>
+          <div class="row" style="margin-top:14px">
+            <button class="btn primary big">&darr; Download for Windows</button>
+          </div>
+          <p class="helptext">
+            After running it, turn on <b>&ldquo;TallyPrime acts as Server&rdquo;</b>
+            in Tally (F1 &rarr; Settings &rarr; Connectivity). Step-by-step guide is
+            inside the download.
+          </p>
+        </div>
+        <div class="fsection">
+          <p class="helptext" style="margin-top:0">
+            Once it&rsquo;s running this card turns green: <span class="pill ok"><span class="dot"></span> Tally connected</span>
+            &mdash; same signal Fleek sees.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note" style="margin-top:16px">
+    <b>Two independent signals in one heartbeat.</b> &ldquo;Agent &rarr; Fleek:
+    Online&rdquo; proves the shop downloaded and ran the installer and the key is
+    valid. &ldquo;Agent &rarr; TallyPrime: Connected&rdquo; proves Tally is in server
+    mode with a company open. Today only the first exists; <code>tally_reachable</code>
+    is the new field so the operator can tell a bad install from &ldquo;Tally just
+    isn&rsquo;t open right now&rdquo;.
+  </p>
+
+  <!-- ================================================================= -->
+  <h2><span class="n">3</span>What the backend assembles &mdash; the zip</h2>
+  <p class="sub">
+    Built once on &ldquo;Set up Tally sync&rdquo;, cached against the firm, rebuilt on
+    key-rotate. The download route streams the cached bytes.
+  </p>
+
+  <div class="ziptree">
+    <div><b>tally-agent-sharma-bartan.zip</b></div>
+    <div>&nbsp;&nbsp;<span class="hi">install.ps1</span> &nbsp;&mdash; self-elevating, zero-argument</div>
+    <div>&nbsp;&nbsp;<span class="hi">Setup guide.pdf</span> &nbsp;&mdash; 1 page: run this, then the one Tally toggle (with screenshot)</div>
+    <div>&nbsp;&nbsp;publish/</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;TallyAgent.exe &nbsp;&mdash; self-contained .NET, no runtime prereq</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;&hellip; (dll set)</div>
+    <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="hi">appsettings.json</span> &nbsp;&mdash; <b>key + backend URL + TallyMasters section already written in</b></div>
+  </div>
+  <p class="note">
+    The only per-firm difference between one shop&rsquo;s zip and another&rsquo;s is
+    <code>appsettings.json</code>. Everything else is the same published build, so the
+    &ldquo;pack&rdquo; step is cheap &mdash; write one small JSON file, zip a folder.
+  </p>
+
+  <div class="split2">
+    <div class="frame">
+      <div class="frame-cap">Shop PC &middot; the installer window</div>
+      <div class="win-bar">
+        <span class="dotset"><i style="background:#e0685f"></i><i style="background:#e8b64c"></i><i style="background:#86c894"></i></span>
+        Windows PowerShell &mdash; install.ps1
+      </div>
+      <div class="pane-body">
+        <div class="logstrip" style="margin-top:0">
+          <div><span class="t">&gt;</span> Tally Agent installer</div>
+          <div><span class="ok">&#10003;</span> Elevated to Administrator</div>
+          <div><span class="ok">&#10003;</span> Key found in bundle &mdash; skipping manual entry</div>
+          <div><span class="ok">&#10003;</span> Copied to C:\Program Files\TallyAgent</div>
+          <div><span class="ok">&#10003;</span> Registered service &ldquo;TallyAgent&rdquo; (auto-start)</div>
+          <div><span class="ok">&#10003;</span> Service started</div>
+          <div><span class="ok">&#10003;</span> First checkin with Fleek succeeded</div>
+          <div>&nbsp;</div>
+          <div><span class="warn">&#8250;</span> Next: in TallyPrime, open your company and turn on</div>
+          <div>&nbsp;&nbsp;&nbsp;F1 &rarr; Settings &rarr; Connectivity &rarr; &ldquo;acts as Server&rdquo;.</div>
+          <div>&nbsp;&nbsp;&nbsp;(See Setup guide.pdf.) You can close this window.</div>
+        </div>
+        <p class="helptext">
+          If the first checkin fails (no internet) it says so in red and points to
+          <code>C:\ProgramData\TallyAgent\logs</code>. Only escalation path.
+        </p>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="frame-cap">Shop PC &middot; what got installed</div>
+      <div class="win-bar">
+        <span class="dotset"><i style="background:#e0685f"></i><i style="background:#e8b64c"></i><i style="background:#86c894"></i></span>
+        services.msc
+      </div>
+      <div class="pane-body">
+        <div class="svc">
+          <div class="svc-h">
+            <span class="svc-name"><span class="svc-ico">T</span> TallyAgent (Fleek)</span>
+            <span class="pill ok"><span class="dot"></span> Running</span>
+          </div>
+          <ul>
+            <li><span class="ldot ok"></span> Startup: Automatic &mdash; before login</li>
+            <li><span class="ldot ok"></span> Checkin &mdash; every 60s to Fleek</li>
+            <li><span class="ldot ok"></span> Tally masters &mdash; probes :9000, pulls on demand</li>
+            <li><span class="ldot ok"></span> Backup sync &mdash; watches the Tally backup folder</li>
+            <li><span class="ldot idle"></span> Voucher push &mdash; dormant until F1b</li>
+          </ul>
+        </div>
+        <p class="helptext">
+          One self-contained service, ~40 MB. Update = run a newer install.ps1;
+          stops, replaces, restarts, keeps appsettings.json.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================= -->
+  <h2><span class="n">4</span>Failure branches</h2>
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>Console shows</th><th>Means</th><th>Who fixes it</th><th>Recovery</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Agent &rarr; Fleek: <b>Offline</b> (&gt; 5 min no checkin)</td>
+          <td>Install not run, PC off, no internet, or key rotated since download.</td>
+          <td>Fleek &rarr; shop: PC on / online? Re-run installer. If key was rotated, they need the new download.</td>
+          <td>Auto on next checkin.</td>
+        </tr>
+        <tr>
+          <td>Online; Tally <b>Not reachable: connection refused</b></td>
+          <td>TallyPrime not running, or server mode off.</td>
+          <td>Shop: open Tally, enable server mode (PDF). No Fleek action.</td>
+          <td>Auto within 60s.</td>
+        </tr>
+        <tr>
+          <td>Online; Tally <b>Not reachable: no company open</b></td>
+          <td>Server mode on but sitting on company-select.</td>
+          <td>Shop: load the company.</td>
+          <td>Auto.</td>
+        </tr>
+        <tr>
+          <td>Tally connected; a <b>Pull</b> stuck on &ldquo;Waiting on Tally&rdquo;</td>
+          <td>Company closed mid-pull, or a different company loaded than registered.</td>
+          <td>Operator: check the registered company name; lazy auto-cancel frees it after ~10 min.</td>
+          <td>Retry, or self-cancel + re-pull.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ================================================================= -->
+  <h2><span class="n">5</span>What changes to build this</h2>
+
+  <h3 class="mini">Backend &mdash; the assembly</h3>
+  <p class="note">
+    &bull; On <code>POST /api/admin/firms/{id}/tally-shop</code> (and rotate-key):
+    after minting the key, call <code>build_installer_zip(key, backend_url)</code>
+    (already written, currently unwired) <b>in-process</b>, store the bytes against
+    the firm (R2 object or a blob column), discard the plaintext key. &nbsp;
+    &bull; <code>GET /api/admin/firms/{id}/tally-shop/installer</code> &mdash;
+    platform-admin, streams the cached zip. &nbsp;
+    &bull; <code>GET /api/tally/installer</code> &mdash; the firm&rsquo;s <i>own</i>
+    <code>WriteUser</code> session, streams the same cached zip for that tenant
+    (so the shop can self-serve from their dashboard). &nbsp;
+    &bull; <code>_generate_appsettings()</code> gains the <code>TallyMasters</code>
+    block. &nbsp;
+    &bull; <code>checkin</code> accepts <code>tally_reachable</code> +
+    <code>tally_reason</code> &rarr; <code>last_tally_ok_at</code> /
+    <code>last_tally_status</code> on <code>backup_shop</code> (2 nullable cols). &nbsp;
+    &bull; <code>settings.public_base_url</code> baked into the zip &mdash; new env
+    var, push <code>fleek-infra</code> first.
+  </p>
+
+  <h3 class="mini">Agent (.NET)</h3>
+  <p class="note">
+    &bull; Each round probe the gateway; stash reachability on
+    <code>AgentContext</code>; pass into <code>CheckinAsync</code>. &nbsp;
+    &bull; <code>BackendClient.CheckinAsync</code> body gains
+    <code>tally_reachable</code> + reason. &nbsp;
+    &bull; <code>AgentOptions.TallyMasters</code> already exists &mdash; installer
+    just needs to write the section.
+  </p>
+
+  <h3 class="mini">install.ps1 (rewrite)</h3>
+  <p class="note">
+    &bull; <code>ShopApiKey</code> / <code>BackendBaseUrl</code> /
+    <code>WatchFolder</code> become optional; if the bundled
+    <code>appsettings.json</code> already has a real key, skip the overwrite entirely.
+    Zero-argument run must work. &nbsp;
+    &bull; Self-elevate (<code>Start-Process -Verb RunAs</code>). &nbsp;
+    &bull; Print the first-checkin result before exit. &nbsp;
+    &bull; Fix the stale <code>tools.make_backup_shop</code> header; strip all
+    non-ASCII (PS 5.1 BOM/em-dash gotcha).
+  </p>
+
+  <h3 class="mini">Ops console + shop dashboard</h3>
+  <p class="note">
+    &bull; Ops: replace the &ldquo;provision&rdquo; controls with one
+    <b>Set up Tally sync</b> button; after, show <b>Download</b> + <b>Copy link</b> +
+    <b>Rotate key &amp; rebuild</b>, and the two health cells. &nbsp;
+    &bull; Shop dashboard: a <b>Connect your Tally</b> card &mdash; Download button,
+    the one-toggle reminder, and a green state once <code>tally_reachable</code>. &nbsp;
+    &bull; Disable &ldquo;Pull masters&rdquo; with an inline reason while
+    <code>tally_reachable=false</code>.
+  </p>
+
+  <h3 class="mini">Prod prerequisite (infra)</h3>
+  <p class="note">
+    A <code>dotnet publish -c Release -r win-x64 --self-contained</code> output at
+    <code>settings.tally_agent_build_dir</code> (<code>/data/tally-agent-build</code>)
+    on the <code>metalerp-api</code> container &mdash; volume mount + CI/manual drop.
+    Confirm the mount in <code>fleek-infra</code> compose.
+  </p>
+
+  <!-- ================================================================= -->
+  <h2><span class="n">6</span>Open decisions</h2>
+
+  <div class="qlist">
+    <div class="q">
+      <b>Where the cached zip lives.</b>
+      R2 object (consistent with backup storage, survives container restarts) vs. a
+      <code>bytea</code> column on <code>backup_shop</code> (simplest, ~40 MB row).
+      <div class="opts rec">Recommend R2 &mdash; the build dir and backup bucket are already there; a 40 MB DB row per firm is avoidable.</div>
+    </div>
+
+    <div class="q">
+      <b>Does the shop-facing download need auth beyond the login?</b>
+      The firm&rsquo;s own <code>WriteUser</code> session is enough to stream
+      <i>their</i> zip. The zip embeds a live key, so the route must be tenant-scoped
+      and never guessable.
+      <div class="opts rec">Recommend: tenant-scoped route, no extra token; rotating the key is the &ldquo;revoke a leaked zip&rdquo; lever.</div>
+    </div>
+
+    <div class="q">
+      <b>Backup-folder path in the bundled config.</b>
+      Bake a default (<code>C:\Tally\Backup</code> or the standard TallyPrime data
+      dir), overridable from the console later, or prompt the shop once?
+      <div class="opts rec">Recommend: default + silent &mdash; a wrong path only degrades backup, not masters sync, and is fixable from the console.</div>
+    </div>
+
+    <div class="q">
+      <b>&ldquo;Offline&rdquo; threshold + alerting.</b>
+      How long with no checkin before red &mdash; push/email to Fleek, or dashboard-only?
+      <div class="opts rec">Recommend: red at 5 min, dashboard-only for the pilot.</div>
+    </div>
+
+    <div class="q">
+      <b>Auto-update.</b>
+      Out of scope (re-run a newer install.ps1). Confirm acceptable for the pilot.
+      <div class="opts rec">Recommend: manual for the pilot; F10 auto-update is a later slice.</div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <h4>Still unavoidably manual</h4>
+    Enabling &ldquo;TallyPrime acts as Server&rdquo; is a Tally-side toggle we cannot
+    script. It ships as one screenshot in <code>Setup guide.pdf</code>, and the
+    console&rsquo;s &ldquo;Tally: not reachable&rdquo; state exists to catch the shop
+    that skipped it &mdash; visibly, on the Fleek side, within a minute.
+  </div>
+
+</div>
+</body>
+</html>

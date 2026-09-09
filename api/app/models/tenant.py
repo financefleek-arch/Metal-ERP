@@ -55,6 +55,11 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     # (data + filter only for M1; no dashboard tile yet).
     dormant_party_days: Mapped[int] = mapped_column(Integer, default=180, nullable=False)
 
+    # Days after an invoice's date that its balance is considered "due" —
+    # drives the Collections ageing buckets (F3a). 0 = "due on invoice date",
+    # which is the pre-column behaviour. Tenant-wide; no per-party override yet.
+    default_credit_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
     # Baseline markup for the (future) price-suggestion engine. Null = not set.
     default_markup_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
 

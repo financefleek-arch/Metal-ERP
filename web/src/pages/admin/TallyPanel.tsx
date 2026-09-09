@@ -33,12 +33,16 @@ function downloadJobXml(firmId: string, jobId: string): void {
  *
  * Tally is disabled until the agent is provisioned.
  */
-export function TallyPanel({ firmId }: { firmId: string }) {
+export function TallyPanel({ firmId, firmName }: { firmId: string; firmName: string }) {
   const qc = useQueryClient();
   const agentKey = ["admin-firm-agent", firmId];
   const agent = useQuery({
     queryKey: agentKey,
     queryFn: () => adminApi.getFirmAgent(firmId),
+    // Live health — cheap poll while this pane is open so a shop coming
+    // online (or Tally being switched to Server mode) shows up without a
+    // manual refresh.
+    refetchInterval: (q) => (q.state.data?.provisioned ? 20_000 : false),
   });
   const refreshAgent = () => void qc.invalidateQueries({ queryKey: agentKey });
 
@@ -46,6 +50,7 @@ export function TallyPanel({ firmId }: { firmId: string }) {
     <>
       <AgentSection
         firmId={firmId}
+        firmName={firmName}
         agent={agent.data ?? null}
         loading={agent.isLoading}
         onChanged={refreshAgent}
@@ -53,6 +58,8 @@ export function TallyPanel({ firmId }: { firmId: string }) {
       <TallySection
         firmId={firmId}
         agentReady={!!agent.data?.provisioned}
+        tallyStatus={agent.data?.tally_status ?? null}
+        agentOnline={!!agent.data?.agent_online}
       />
     </>
   );
@@ -75,59 +82,83 @@ function agentAge(lastCheckin: string | null): {
   return { label: `no check-in for ${Math.round(hr / 24)}d`, tone: "bad" };
 }
 
+function tallyStatusLabel(status: FirmTallyShop["tally_status"]): {
+  label: string;
+  tone: "ok" | "warn" | "bad";
+} {
+  switch (status) {
+    case "connected":
+      return { label: "Connected", tone: "ok" };
+    case "refused":
+      return { label: "Not reachable — Tally is closed or not in Server mode", tone: "bad" };
+    case "no_company":
+      return { label: "Not reachable — no company is open in Tally", tone: "bad" };
+    case "unknown":
+      return { label: "Not reachable", tone: "bad" };
+    default:
+      return { label: "Not reported yet", tone: "warn" };
+  }
+}
+
 function AgentSection({
   firmId,
+  firmName,
   agent,
   loading,
   onChanged,
 }: {
   firmId: string;
+  firmName: string;
   agent: FirmTallyShop | null;
   loading: boolean;
   onChanged: () => void;
 }) {
-  const [freshKey, setFreshKey] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   const provision = useMutation({
     mutationFn: () => adminApi.provisionFirmAgent(firmId),
-    onSuccess: (r) => {
+    onSuccess: () => {
       setErr(null);
-      setFreshKey(r.api_key);
       onChanged();
     },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not provision"),
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not set up the agent"),
   });
   const rotate = useMutation({
     mutationFn: () => adminApi.rotateFirmAgentKey(firmId),
-    onSuccess: (r) => {
+    onSuccess: () => {
       setErr(null);
-      setFreshKey(r.api_key);
       onChanged();
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not rotate"),
   });
 
+  const download = async () => {
+    setErr(null);
+    setDownloading(true);
+    try {
+      const slug = firmName.replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "shop";
+      await adminApi.downloadFirmAgentInstaller(firmId, `tally-agent-${slug}.zip`);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Download failed");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const provisioned = !!agent?.provisioned;
-  const age = provisioned ? agentAge(agent!.last_checkin_at) : null;
+  const checkin = provisioned ? agentAge(agent!.last_checkin_at) : null;
+  const tally = provisioned ? tallyStatusLabel(agent!.tally_status) : null;
 
   return (
     <div className="border-b border-line py-5">
       <div className="flex items-baseline justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
-          Shop agent
+          Tally Agent
         </h3>
-        {provisioned && age && (
-          <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-              age.tone === "ok"
-                ? "bg-ok/15 text-ok"
-                : age.tone === "warn"
-                  ? "bg-warn/15 text-warn"
-                  : "bg-danger/15 text-danger"
-            }`}
-          >
-            {age.label}
+        {!provisioned && (
+          <span className="rounded-full bg-line px-2 py-0.5 text-[11px] font-semibold text-muted">
+            Not set up
           </span>
         )}
       </div>
@@ -137,81 +168,94 @@ function AgentSection({
       ) : !provisioned ? (
         <div className="mt-3">
           <p className="max-w-prose text-xs text-muted">
-            The companion agent runs on the shop's Windows PC (next to Tally).
-            It handles cloud backup, health monitoring, and the Tally masters
-            pull. Provision it once per firm.
+            The companion agent syncs this firm's Tally masters into Metal ERP.
+            One click generates a ready-to-run installer for the shop — no
+            configuration, nothing to type.
           </p>
           <button
             className="btn-primary mt-3"
             disabled={provision.isPending}
             onClick={() => provision.mutate()}
           >
-            {provision.isPending ? "Setting up…" : "Set up the shop agent"}
+            {provision.isPending ? "Setting up…" : "Set up Tally sync"}
           </button>
         </div>
       ) : (
-        <div className="mt-3">
-          <p className="text-xs text-muted">
-            Agent id{" "}
-            <span className="font-mono text-ink">{agent!.shop_id}</span>
-          </p>
-          <button
-            className="mt-3 rounded border border-line px-2.5 py-1 text-xs enabled:hover:bg-ground disabled:opacity-40"
-            disabled={rotate.isPending}
-            onClick={() => rotate.mutate()}
-          >
-            {rotate.isPending ? "Rotating…" : "Rotate key"}
-          </button>
-          <span className="ml-2 text-[11px] text-muted">
-            invalidates the current key — the install is offline until its
-            config is updated
-          </span>
-        </div>
+        <>
+          <div className="mt-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+              Installer
+            </p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                className="btn-primary"
+                disabled={downloading || !agent!.installer_ready}
+                onClick={() => void download()}
+              >
+                {downloading ? "Downloading…" : "↓ Download installer"}
+              </button>
+              <button
+                className="rounded border border-line px-2.5 py-1 text-xs enabled:hover:bg-ground disabled:opacity-40"
+                disabled={rotate.isPending}
+                onClick={() => rotate.mutate()}
+              >
+                {rotate.isPending ? "Rotating…" : "Rotate key & rebuild"}
+              </button>
+            </div>
+            {!agent!.installer_ready && (
+              <p className="mt-1.5 text-[11px] text-warn">
+                Agent identity created, but the installer hasn't built yet —
+                the agent build may not be published to this environment. Try
+                rotating the key once it is.
+              </p>
+            )}
+            <p className="mt-1.5 max-w-prose text-[11px] text-muted">
+              Download and send this zip to the shop — right-click{" "}
+              <span className="font-mono">install.ps1</span> and run it, no
+              typing needed. Rotating replaces the key and invalidates any
+              copy already sent out.
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+              Live health
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="rounded-lg border border-line bg-ground/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-[0.05em] text-muted">
+                  Agent → Fleek
+                </p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      checkin?.tone === "ok" ? "bg-ok" : checkin?.tone === "warn" ? "bg-warn" : "bg-danger"
+                    }`}
+                  />
+                  {checkin?.tone === "ok" ? "Online" : "Offline"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted">{checkin?.label}</p>
+              </div>
+              <div className="rounded-lg border border-line bg-ground/40 p-2.5">
+                <p className="text-[10px] uppercase tracking-[0.05em] text-muted">
+                  Agent → TallyPrime
+                </p>
+                <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold">
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      tally?.tone === "ok" ? "bg-ok" : tally?.tone === "warn" ? "bg-warn" : "bg-danger"
+                    }`}
+                  />
+                  {tally?.tone === "ok" ? "Connected" : "Not reachable"}
+                </p>
+                <p className="mt-0.5 text-[11px] text-muted">{tally?.label}</p>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
-      {freshKey && <KeyBox value={freshKey} onDismiss={() => setFreshKey(null)} />}
-      {err && <p className="err">{err}</p>}
-    </div>
-  );
-}
-
-function KeyBox({
-  value,
-  onDismiss,
-}: {
-  value: string;
-  onDismiss: () => void;
-}) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="mt-3 rounded-lg border border-warn/40 bg-warn/5 p-3">
-      <p className="text-xs font-semibold text-warn">
-        Copy this key now — it is never shown again.
-      </p>
-      <p className="mt-1 text-[11px] text-muted">
-        Paste it into <span className="font-mono">appsettings.json</span> on the
-        shop PC as <span className="font-mono">Agent:ShopApiKey</span>.
-      </p>
-      <div className="mt-2 flex items-center gap-2">
-        <code className="flex-1 overflow-x-auto rounded border border-line bg-card px-2 py-1 text-xs">
-          {value}
-        </code>
-        <button
-          className="rounded border border-line px-2 py-1 text-xs hover:bg-card"
-          onClick={() => {
-            void navigator.clipboard?.writeText(value);
-            setCopied(true);
-          }}
-        >
-          {copied ? "Copied" : "Copy"}
-        </button>
-        <button
-          className="rounded border border-line px-2 py-1 text-xs hover:bg-card"
-          onClick={onDismiss}
-        >
-          Done
-        </button>
-      </div>
+      {err && <p className="err mt-2">{err}</p>}
     </div>
   );
 }
@@ -223,9 +267,13 @@ function KeyBox({
 function TallySection({
   firmId,
   agentReady,
+  tallyStatus,
+  agentOnline,
 }: {
   firmId: string;
   agentReady: boolean;
+  tallyStatus: FirmTallyShop["tally_status"];
+  agentOnline: boolean;
 }) {
   const qc = useQueryClient();
   const companyKey = ["admin-firm-tally", firmId];
@@ -263,7 +311,13 @@ function TallySection({
           <CompanyBlock firmId={firmId} company={linked} onSaved={refresh} />
           {linked && (
             <>
-              <PullBlock firmId={firmId} company={linked} onPulled={refresh} />
+              <PullBlock
+                firmId={firmId}
+                company={linked}
+                onPulled={refresh}
+                tallyStatus={tallyStatus}
+                agentOnline={agentOnline}
+              />
               <LedgerMapBlock firmId={firmId} company={linked} onSaved={refresh} />
               <RecentPulls firmId={firmId} />
             </>
@@ -350,14 +404,31 @@ function stepIndex(job: TallySyncJob): number {
   }
 }
 
+function reachabilityBlockReason(
+  agentOnline: boolean,
+  tallyStatus: FirmTallyShop["tally_status"],
+): string | null {
+  if (!agentOnline) {
+    return "The shop's agent hasn't checked in recently — it may be offline.";
+  }
+  if (tallyStatus && tallyStatus !== "connected") {
+    return tallyStatusLabel(tallyStatus).label;
+  }
+  return null;
+}
+
 function PullBlock({
   firmId,
   company,
   onPulled,
+  tallyStatus,
+  agentOnline,
 }: {
   firmId: string;
   company: TallyCompany;
   onPulled: () => void;
+  tallyStatus: FirmTallyShop["tally_status"];
+  agentOnline: boolean;
 }) {
   const qc = useQueryClient();
   const [jobId, setJobId] = useState<string | null>(null);
@@ -398,7 +469,10 @@ function PullBlock({
     (active.status === "queued" ||
       active.status === "sent" ||
       active.status === "running");
-  const disabled = start.isPending || !!inFlight;
+  const blockedReason = !inFlight
+    ? reachabilityBlockReason(agentOnline, tallyStatus)
+    : null;
+  const disabled = start.isPending || !!inFlight || !!blockedReason;
 
   return (
     <div className="mt-5">
@@ -425,6 +499,9 @@ function PullBlock({
         )}
       </div>
 
+      {blockedReason && !inFlight && (
+        <p className="mt-2 text-xs text-warn">{blockedReason}</p>
+      )}
       {startErr && <p className="err">{startErr}</p>}
       {active && (
         <PullSteps job={active} firmId={firmId} onRetry={() => setJobId(null)} />

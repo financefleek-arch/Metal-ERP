@@ -3,12 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { inr } from "../lib/previewTotal";
 import { PaymentDialog } from "./PaymentDialog";
+import { StatementSendDialog } from "./StatementSendDialog";
 import type { Party, PartyLedgerEntry } from "../lib/types";
 
 /** Party detail page's "Account" tab — running statement + record-payment entry. */
 export function PartyAccountTab({ party }: { party: Party }) {
   const qc = useQueryClient();
   const [payingOpen, setPayingOpen] = useState(false);
+  const [statementOpen, setStatementOpen] = useState(false);
   const [openAlloc, setOpenAlloc] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -58,12 +60,20 @@ export function PartyAccountTab({ party }: { party: Party }) {
         <div className={`font-serif text-2xl font-semibold ${isCredit ? "text-ok" : ""}`}>
           {inr(Math.abs(balance))}
         </div>
-        <button
-          className="btn-primary mt-3 h-10 px-4 text-sm"
-          onClick={() => setPayingOpen(true)}
-        >
-          + Record payment
-        </button>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            className="btn-primary h-10 px-4 text-sm"
+            onClick={() => setPayingOpen(true)}
+          >
+            + Record payment
+          </button>
+          <button
+            className="btn-ghost h-10 px-4 text-sm"
+            onClick={() => setStatementOpen(true)}
+          >
+            Statement
+          </button>
+        </div>
       </div>
 
       <div className="label mb-1.5 mt-5">Statement</div>
@@ -170,6 +180,15 @@ export function PartyAccountTab({ party }: { party: Party }) {
             setPayingOpen(false);
             ledger.refetch();
           }}
+        />
+      )}
+
+      {statementOpen && (
+        <StatementSendDialog
+          partyId={party.id}
+          partyName={party.legal_name}
+          partyPhone={party.phone}
+          onClose={() => setStatementOpen(false)}
         />
       )}
     </div>

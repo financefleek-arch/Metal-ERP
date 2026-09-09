@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 import app.routers.tally as tally_router
+import app.services.tally.installer as installer_mod
 import app.services.tally.pull as pull_mod
 from app.db import SessionLocal
 from app.main import app
@@ -54,6 +55,49 @@ def _stub_r2(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tally_router, "get_object", lambda r2_key: _MASTERS_XML)
 
 
+_last_built_key: dict[str, str] = {}
+
+
+@pytest.fixture(autouse=True)
+def _stub_installer_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Provisioning now also builds + caches an installer zip — stub that
+    out here (no real agent build dir / R2 in tests) so it behaves as a
+    successful no-op, same shape as `build_and_cache_installer`. The
+    plaintext key no longer comes back in the HTTP response (it's baked
+    into the zip), so tests that need it read `_last_built_key`."""
+    _last_built_key.clear()
+
+    def _fake_build(session, shop, *, plaintext_key):  # type: ignore[no-untyped-def]
+        shop.installer_r2_key = f"installers/{shop.id}.zip"
+        session.flush()
+        _last_built_key[shop.id] = plaintext_key
+        return shop.installer_r2_key
+
+    monkeypatch.setattr(installer_mod, "build_and_cache_installer", _fake_build)
+    import app.routers.admin as admin_router
+
+    monkeypatch.setattr(admin_router, "get_object", lambda r2_key: b"PK\x03\x04fake-zip")
+
+
+def _mark_agent_healthy(shop_id: str, *, tally_status: str = "connected") -> None:
+    """Simulate the agent's first checkin so `pull-masters`'s reachability
+    gate (services/tally/agent_health.py) doesn't 409 in tests that don't
+    care about that gate specifically — a real pull is always preceded by at
+    least one checkin in practice."""
+    from datetime import UTC, datetime
+
+    from app.models import BackupShop
+
+    with SessionLocal() as s:
+        shop = s.get(BackupShop, shop_id)
+        assert shop is not None
+        shop.last_checkin_at = datetime.now(UTC)
+        shop.last_tally_status = tally_status
+        if tally_status == "connected":
+            shop.last_tally_ok_at = datetime.now(UTC)
+        s.commit()
+
+
 def _admin_token(client: TestClient, email: str = "ops@f1a.example.com") -> str:
     with SessionLocal() as s:
         make_admin(s, email=email, password="ops-s3cret-pass")
@@ -75,12 +119,15 @@ def _make_firm(client: TestClient, token: str, name: str = "F1a Traders") -> str
 
 def _provision_agent(client: TestClient, tok: str, firm_id: str) -> tuple[str, str]:
     """Provision the firm's companion agent via the admin UI endpoint.
-    Returns (shop_id, plaintext_api_key)."""
+    Returns (shop_id, plaintext_api_key). The key is baked into the cached
+    installer rather than echoed in the response — read it back from the
+    stubbed builder."""
     r = client.post(
         f"/api/admin/firms/{firm_id}/tally-shop", headers=_auth(tok)
     )
     assert r.status_code == 201, r.text
-    return r.json()["shop_id"], r.json()["api_key"]
+    shop_id = r.json()["shop_id"]
+    return shop_id, _last_built_key[shop_id]
 
 
 def _base(firm_id: str) -> str:
@@ -175,7 +222,9 @@ def test_pull_needs_a_provisioned_agent(client: TestClient) -> None:
 
 
 def _link_company(client: TestClient, tok: str, firm_id: str) -> tuple[str, str]:
-    """Provision the agent, register the company. Returns (shop_id, key)."""
+    """Provision the agent, register the company, and simulate a healthy
+    first checkin (a real pull is always preceded by one). Returns
+    (shop_id, key)."""
     shop_id, key = _provision_agent(client, tok, firm_id)
     r = client.post(
         f"{_base(firm_id)}/company",
@@ -184,6 +233,7 @@ def _link_company(client: TestClient, tok: str, firm_id: str) -> tuple[str, str]
     )
     assert r.status_code == 200, r.text
     assert r.json()["shop_id"] == shop_id
+    _mark_agent_healthy(shop_id)
     return shop_id, key
 
 
@@ -264,6 +314,53 @@ def test_full_pull_flow(client: TestClient) -> None:
     r = client.get(f"{_base(firm_id)}/sync-jobs", headers=_auth(tok))
     assert r.status_code == 200
     assert r.json()[0]["id"] == job_id
+
+
+def test_pull_blocked_when_agent_reports_tally_unreachable(client: TestClient) -> None:
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+    shop_id, key = _link_company(client, tok, firm_id)
+
+    # a fresh 'refused' checkin blocks the pull with an actionable message
+    r = client.post(
+        "/api/tally-agent/checkin",
+        headers={"X-Shop-Key": key},
+        json={"tally_reachable": False, "tally_reason": "refused"},
+    )
+    assert r.status_code == 200
+    r = client.post(f"{_base(firm_id)}/pull-masters", headers=_auth(tok))
+    assert r.status_code == 409
+    assert "acts as Server" in r.json()["detail"]
+
+    # once the agent reports connected, the pull proceeds
+    r = client.post(
+        "/api/tally-agent/checkin",
+        headers={"X-Shop-Key": key},
+        json={"tally_reachable": True},
+    )
+    assert r.status_code == 200
+    r = client.post(f"{_base(firm_id)}/pull-masters", headers=_auth(tok))
+    assert r.status_code == 201, r.text
+
+
+def test_pull_blocked_when_agent_offline(client: TestClient) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+    shop_id, key = _link_company(client, tok, firm_id)
+
+    # age the last checkin past the offline window
+    from app.models import BackupShop
+
+    with SessionLocal() as s:
+        shop = s.get(BackupShop, shop_id)
+        shop.last_checkin_at = datetime.now(UTC) - timedelta(minutes=10)
+        s.commit()
+
+    r = client.post(f"{_base(firm_id)}/pull-masters", headers=_auth(tok))
+    assert r.status_code == 409
+    assert "offline" in r.json()["detail"]
 
 
 def test_result_error_path_and_idempotency(client: TestClient) -> None:
