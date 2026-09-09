@@ -92,18 +92,32 @@ public sealed class BackendClient
     }
 
     /// <summary>
-    /// Report a tally_sync_job's outcome. status "ok" carries the R2 key of
-    /// the uploaded masters XML (the backend then downloads + parses it);
-    /// status "error" carries a short message. The backend never 500s here,
-    /// so a non-success status code means a real problem (wrong shop, bad
-    /// job id) — log and move on, a later poll re-dispatches the job.
+    /// Report a tally_sync_job's outcome. For pull_masters, status "ok"
+    /// carries the R2 key of the uploaded masters XML (the backend then
+    /// downloads + parses it). For push_sales, status "ok" carries Tally's
+    /// own Import-Data response XML inline via <paramref name="tallyResponse"/>
+    /// (small enough that no R2 round-trip is needed). status "error"
+    /// carries a short message either way. The backend never 500s here, so
+    /// a non-success status code means a real problem (wrong shop, bad job
+    /// id) — log and move on, a later poll re-dispatches the job.
     /// </summary>
     public async Task PostJobResultAsync(
-        string jobId, string status, string? r2Key, string? error, CancellationToken ct)
+        string jobId,
+        string status,
+        string? r2Key,
+        string? error,
+        CancellationToken ct,
+        string? tallyResponse = null)
     {
         var resp = await _http.PostAsJsonAsync(
             $"api/tally-agent/jobs/{jobId}/result",
-            new JobResultRequest { Status = status, R2Key = r2Key, Error = error },
+            new JobResultRequest
+            {
+                Status = status,
+                R2Key = r2Key,
+                TallyResponse = tallyResponse,
+                Error = error,
+            },
             ct);
         resp.EnsureSuccessStatusCode();
     }

@@ -38,6 +38,11 @@ class InwardBillListItem(BaseModel):
     extraction_method: ExtractionMethod | None
     extraction_confidence: Decimal | None
     created_at: datetime
+    # Collapsed from the latest tally_sync_job (F5d): None = never
+    # attempted (no Tally company, or strict-mode blockers not yet
+    # cleared — the common case), 'pending' = queued/sent/running,
+    # 'synced' = ok, 'error' = failed.
+    tally_sync_status: str | None = None
 
 
 # --------------------------------------------------------------------------

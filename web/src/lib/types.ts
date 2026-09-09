@@ -155,6 +155,10 @@ export interface TallySyncJob {
   direction: string;
   kind: string;
   status: "queued" | "sent" | "running" | "ok" | "error";
+  // F1b-1: which ERP record this job pushes ('invoice' + the invoice id).
+  // Null for F1a pull_masters jobs, which reference no single record.
+  entity_type?: "invoice" | null;
+  entity_id?: string | null;
   r2_key: string | null;
   batch_id: string | null;
   counts: {
@@ -168,6 +172,12 @@ export interface TallySyncJob {
   // present on the detail endpoint; drives the "Waiting on Tally" step
   last_agent_status?: "no_company_loaded" | "tally_unavailable" | null;
   last_agent_status_at?: string | null;
+}
+
+/** F1b-1 — GET .../invoices/{id}/push-status. */
+export interface TallyPushBlockers {
+  pushable: boolean;
+  blockers: { code: string; message: string }[];
 }
 
 export interface Tenant {
@@ -713,6 +723,9 @@ export interface InvoiceListItem {
   payment_status: InvoicePaymentStatus | null;
   /** Latest whatsapp_message.status for this invoice; null if never sent. */
   whatsapp_status: WhatsappStatus | null;
+  /** Collapsed from the latest tally_sync_job (F1b-1): null = never
+   *  attempted — the common case for any firm not yet on Tally push. */
+  tally_sync_status: "pending" | "synced" | "error" | null;
 }
 
 export interface InvoiceWhatsappMessage {

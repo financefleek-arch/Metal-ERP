@@ -18,7 +18,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import Invoice, InvoiceLine, Party, Payment, PaymentAllocation
+from app.models import Invoice, InvoiceLine, Party, Payment, PaymentAllocation, TallySyncJob
 from app.models._mixins import AllocationType, DocType, InvoiceStatus, PaymentStatus, PdfStatus
 from app.models.whatsapp import WhatsappMessage
 from app.schemas_invoice import (
@@ -214,11 +214,38 @@ def list_invoices(
         .subquery()
     )
 
+    # One Tally push status per invoice for the list column (F1b-1), same
+    # newest-row-wins aggregate shape as the WhatsApp column above.
+    tally_rn = func.row_number().over(
+        partition_by=TallySyncJob.entity_id,
+        order_by=TallySyncJob.created_at.desc(),
+    )
+    tally_ranked = (
+        select(
+            TallySyncJob.entity_id.label("invoice_id"),
+            TallySyncJob.status.label("job_status"),
+            tally_rn.label("rn"),
+        )
+        .where(
+            TallySyncJob.entity_type == "invoice",
+            TallySyncJob.tenant_id == user.tenant_id,
+        )
+        .subquery()
+    )
+    tally_sq = (
+        select(tally_ranked.c.invoice_id, tally_ranked.c.job_status)
+        .where(tally_ranked.c.rn == 1)
+        .subquery()
+    )
+
     stmt = (
-        select(Invoice, Party.legal_name, paid_sq.c.paid, wa_sq.c.wa_status)
+        select(
+            Invoice, Party.legal_name, paid_sq.c.paid, wa_sq.c.wa_status, tally_sq.c.job_status
+        )
         .outerjoin(Party, Party.id == Invoice.party_id)
         .outerjoin(paid_sq, paid_sq.c.invoice_id == Invoice.id)
         .outerjoin(wa_sq, wa_sq.c.invoice_id == Invoice.id)
+        .outerjoin(tally_sq, tally_sq.c.invoice_id == Invoice.id)
         .where(Invoice.tenant_id == user.tenant_id)
     )
     if status_ is not None:
@@ -250,6 +277,18 @@ def list_invoices(
             return "paid"
         return "partial"
 
+    def _tally_sync_status(job_status: str | None) -> str | None:
+        # Collapses the job's internal lifecycle (queued/sent/running/ok/
+        # error) into the three states the UI actually distinguishes — a
+        # firm doesn't need to see "sent" vs "running", just "still going".
+        if job_status is None:
+            return None
+        if job_status == "ok":
+            return "synced"
+        if job_status == "error":
+            return "error"
+        return "pending"
+
     return [
         InvoiceListItem(
             id=inv.id,
@@ -263,8 +302,9 @@ def list_invoices(
             pdf_status=inv.pdf_status,
             payment_status=_payment_status(inv, paid),
             whatsapp_status=wa_status,
+            tally_sync_status=_tally_sync_status(job_status),
         )
-        for inv, name, paid, wa_status in rows
+        for inv, name, paid, wa_status, job_status in rows
     ]
 
 

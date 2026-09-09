@@ -11,6 +11,7 @@ import { normalizePhone, phoneError } from "../../lib/reference";
 import { lastSeenLabel } from "../../lib/format";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import { WhatsappLog } from "../../components/WhatsappStatus";
+import { TallyPushPanel } from "../../components/TallySyncStatus";
 import { SimilarParties } from "../../components/SimilarParties";
 import { isDup409 } from "../../lib/types";
 import type {
@@ -718,6 +719,7 @@ export function InvoiceEditorPage() {
       {finalized && inv && (
         <WhatsappLog invoiceId={inv.id} onResend={() => setWaOpen(true)} />
       )}
+      {finalized && inv && <TallyPushPanel invoiceId={inv.id} />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         {/* left: header fields + lines */}

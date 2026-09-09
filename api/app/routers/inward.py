@@ -13,7 +13,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.config import get_settings
 from app.deps import SessionDep, get_current_user, require_write
@@ -23,6 +23,7 @@ from app.models import (
     Item,
     Party,
     TallyLedgerConfig,
+    TallySyncJob,
     Tenant,
     User,
 )
@@ -38,8 +39,12 @@ from app.schemas_inward import (
     RejectRequest,
     SupplierOut,
 )
+from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
 from app.services.inward.approve import ApproveError, approve_bill, approve_gate
 from app.services.inward.run_extraction import run_extraction
+from app.services.tally.agent_health import assert_tally_reachable
+from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
+from app.services.tally.push_readiness import get_tally_company, purchase_push_blockers
 
 router = APIRouter(prefix="/api/inward-bills", tags=["inward"])
 
@@ -127,6 +132,18 @@ def _out(session: SessionDep, bill: InwardBill) -> InwardBillOut:
 # --------------------------------------------------------------------------
 
 
+def _tally_sync_status(job_status: str | None) -> str | None:
+    # Same three-state collapse as routers/invoices.py's helper — a firm
+    # doesn't need to see "sent" vs "running", just "still going".
+    if job_status is None:
+        return None
+    if job_status == "ok":
+        return "synced"
+    if job_status == "error":
+        return "error"
+    return "pending"
+
+
 @router.get("", response_model=list[InwardBillListItem])
 def list_bills(
     session: SessionDep,
@@ -134,14 +151,58 @@ def list_bills(
     status_: InwardStatus | None = Query(default=None, alias="status"),
     supplier: str | None = Query(default=None),
 ) -> list[InwardBillListItem]:
-    stmt = select(InwardBill).where(InwardBill.tenant_id == user.tenant_id)
+    # One Tally push status per bill for the list column (F5d), same
+    # newest-row-wins window-function shape as InvoiceListItem's column.
+    tally_rn = func.row_number().over(
+        partition_by=TallySyncJob.entity_id,
+        order_by=TallySyncJob.created_at.desc(),
+    )
+    tally_ranked = (
+        select(
+            TallySyncJob.entity_id.label("bill_id"),
+            TallySyncJob.status.label("job_status"),
+            tally_rn.label("rn"),
+        )
+        .where(
+            TallySyncJob.entity_type == "inward_bill",
+            TallySyncJob.tenant_id == user.tenant_id,
+        )
+        .subquery()
+    )
+    tally_sq = (
+        select(tally_ranked.c.bill_id, tally_ranked.c.job_status)
+        .where(tally_ranked.c.rn == 1)
+        .subquery()
+    )
+
+    stmt = (
+        select(InwardBill, tally_sq.c.job_status)
+        .outerjoin(tally_sq, tally_sq.c.bill_id == InwardBill.id)
+        .where(InwardBill.tenant_id == user.tenant_id)
+    )
     if status_:
         stmt = stmt.where(InwardBill.status == status_)
     if supplier:
         stmt = stmt.where(InwardBill.supplier_name.ilike(f"%{supplier}%"))
     stmt = stmt.order_by(InwardBill.created_at.desc())
+    rows = session.execute(stmt).all()
     return [
-        InwardBillListItem.model_validate(b) for b in session.scalars(stmt).all()
+        InwardBillListItem(
+            id=b.id,
+            source_filename=b.source_filename,
+            supplier_name=b.supplier_name,
+            supplier_gstin=b.supplier_gstin,
+            bill_no=b.bill_no,
+            bill_date=b.bill_date,
+            grand_total=b.grand_total,
+            status=b.status,
+            reconciled=b.reconciled,
+            extraction_method=b.extraction_method,
+            extraction_confidence=b.extraction_confidence,
+            created_at=b.created_at,
+            tally_sync_status=_tally_sync_status(job_status),
+        )
+        for b, job_status in rows
     ]
 
 
@@ -459,6 +520,47 @@ def download_xml(
             "Content-Disposition": f'attachment; filename="inward-{bill.bill_no or bill.id}.xml"'
         },
     )
+
+
+# --------------------------------------------------------------------------
+# live push to Tally (F5d) — mirrors routers/tally.py's invoice push pair,
+# tenant-scoped like the rest of this router (inward has no separate
+# Ops-console admin path the way invoices do).
+# --------------------------------------------------------------------------
+
+
+@router.get("/{bill_id}/tally/push-status", response_model=TallyPushBlockersOut)
+def get_tally_push_status(
+    bill_id: str, session: SessionDep, user: InwardUser
+) -> TallyPushBlockersOut:
+    bill = _get_owned(session, user.tenant_id, bill_id)
+    blockers = purchase_push_blockers(session, bill)
+    return TallyPushBlockersOut(
+        pushable=not blockers,
+        blockers=[{"code": b.code, "message": b.message} for b in blockers],
+    )
+
+
+@router.post(
+    "/{bill_id}/tally/push",
+    response_model=TallySyncJobOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def push_bill_to_tally(
+    bill_id: str, session: SessionDep, user: InwardWriteUser
+) -> TallySyncJob:
+    bill = _get_owned(session, user.tenant_id, bill_id)
+    blockers = purchase_push_blockers(session, bill)
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="; ".join(b.message for b in blockers),
+        )
+    company = get_tally_company(session, user.tenant_id)
+    assert company is not None  # purchase_push_blockers() already confirmed this
+    assert_no_purchase_push_in_flight(session, user.tenant_id, bill_id)
+    assert_tally_reachable(session, company)
+    return enqueue_push_purchase(session, company, bill)
 
 
 # --------------------------------------------------------------------------

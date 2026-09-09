@@ -34,6 +34,7 @@ from app.schemas_tally_agent import (
 )
 from app.services.tally.jobs import mark_job_sent, record_agent_status
 from app.services.tally.pull import process_pull_result
+from app.services.tally.push import process_push_result
 
 router = APIRouter(prefix="/api/tally-agent", tags=["tally-agent"])
 
@@ -94,17 +95,29 @@ def job_result(
     """Agent -> backend: a `tally_sync_job` finished on the shop side.
 
     For `pull_masters`, `status='ok'` carries the R2 key of the uploaded
-    masters XML; the backend downloads + parses + stages it. Never 500s —
-    a bad payload becomes a job `error`.
+    masters XML; the backend downloads + parses + stages it. For
+    `push_sales` (F1b-1) / `push_purchase` (F5d), `status='ok'` carries
+    Tally's own Import-Data response XML inline (`tally_response`) — small
+    enough that no R2 round-trip is needed. Never 500s — a bad payload
+    becomes a job `error`.
     """
     job = _job_for_shop(session, job_id, shop.id)
-    process_pull_result(
-        session,
-        job,
-        ok=(body.status == "ok"),
-        r2_key=body.r2_key,
-        agent_error=body.error,
-    )
+    if job.kind in ("push_sales", "push_purchase"):
+        process_push_result(
+            session,
+            job,
+            ok=(body.status == "ok"),
+            tally_response=body.tally_response,
+            agent_error=body.error,
+        )
+    else:
+        process_pull_result(
+            session,
+            job,
+            ok=(body.status == "ok"),
+            r2_key=body.r2_key,
+            agent_error=body.error,
+        )
     return job
 
 

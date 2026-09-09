@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -276,6 +277,13 @@ def finalize_invoice(
     # --- 8. PDF (best-effort) ---
     pdf_status = _render_pdf_best_effort(session, invoice)
 
+    # --- 9. Tally push (best-effort, F1b-1 — this IS F4: "mobile billing
+    # syncs to Tally", folded into F1b per the master plan rather than a
+    # standalone slice). Silently no-ops for the common case (no Tally
+    # company linked, or any other push_blockers()) — most invoices, most
+    # firms, will never be pushable, and that's fine. ---
+    _enqueue_tally_push_best_effort(session, invoice)
+
     return FinalizeResult(
         number=number,
         fy=invoice.fy,
@@ -310,3 +318,36 @@ def _render_pdf_best_effort(session: Session, invoice: Invoice) -> PdfStatus:
         )
         session.flush()
         return PdfStatus.failed
+
+
+def _enqueue_tally_push_best_effort(session: Session, invoice: Invoice) -> None:
+    """Best-effort: if this invoice is pushable right now (Tally company
+    linked, ledger map complete, party + every item already Tally-linked,
+    agent online and reporting Tally reachable), enqueue a `push_sales`
+    job. Any failure — including "not pushable" — is silent here; a manual
+    push button covers every case this misses (Tally closed at finalize
+    time, party/item linked after the fact, etc).
+
+    Deliberately does NOT raise `HTTPException` on a reachability/in-flight
+    conflict the way the interactive push routes do — finalize is not the
+    place to surface "Tally is closed" to the user typing a bill.
+    """
+    try:
+        from app.services.tally.agent_health import assert_tally_reachable
+        from app.services.tally.jobs import assert_no_push_in_flight, enqueue_push_sales
+        from app.services.tally.push_readiness import get_tally_company, push_blockers
+
+        if push_blockers(session, invoice):
+            return
+        company = get_tally_company(session, invoice.tenant_id)
+        if company is None:
+            return
+        assert_no_push_in_flight(session, invoice.tenant_id, invoice.id)
+        assert_tally_reachable(session, company)
+        enqueue_push_sales(session, company, invoice)
+    except Exception as exc:  # noqa: BLE001 - deliberately broad; finalize must not fail because of Tally
+        # HTTPException (409 in-flight / not-reachable) lands here too —
+        # that's fine, it just means "don't auto-push this time".
+        logging.getLogger("tally.finalize_push").info(
+            "tally push not enqueued for invoice %s: %s", invoice.id, exc
+        )

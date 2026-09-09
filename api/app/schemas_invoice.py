@@ -213,6 +213,10 @@ class InvoiceListItem(BaseModel):
     payment_status: PaymentStatusLabel | None = None
     # Latest whatsapp_message.status for this invoice, None if never sent.
     whatsapp_status: WhatsappStatusLabel | None = None
+    # Collapsed from the latest tally_sync_job (F1b-1): None = never
+    # attempted (the common case — most firms aren't on Tally push yet),
+    # 'pending' = queued/sent/running, 'synced' = ok, 'error' = failed.
+    tally_sync_status: str | None = None
 
 
 class InvoiceWhatsappMessageOut(BaseModel):

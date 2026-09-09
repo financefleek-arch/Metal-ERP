@@ -11,10 +11,13 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 # The ledger-name slots the operator maps. Only debtors_parent /
-# creditors_parent are read in F1a (party scoping); the GST-ledger names are
-# collected for F1b voucher-out.
+# creditors_parent are read in F1a (party scoping); the GST-ledger names and
+# sales_ledger are for F1b-1 voucher-out; purchase_ledger is for F5d
+# purchase-voucher-out (converged in from the old tally_ledger_config table
+# — see alembic 0028 / the F5d execution plan's "Decision: converge…").
 _LEDGER_MAP_KEYS = (
     "sales_ledger",
+    "purchase_ledger",
     "cash_ledger",
     "bank_ledger",
     "round_off_ledger",
@@ -62,6 +65,7 @@ class LedgerMapIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     sales_ledger: str | None = None
+    purchase_ledger: str | None = None
     cash_ledger: str | None = None
     bank_ledger: str | None = None
     round_off_ledger: str | None = None
@@ -79,6 +83,8 @@ class TallySyncJobOut(BaseModel):
     direction: str
     kind: str
     status: str
+    entity_type: str | None = None
+    entity_id: str | None = None
     r2_key: str | None
     batch_id: str | None
     counts: dict | None
@@ -90,10 +96,16 @@ class TallySyncJobOut(BaseModel):
 
 
 class JobResultIn(BaseModel):
-    """Agent -> backend callback for a `tally_sync_job`."""
+    """Agent -> backend callback for a `tally_sync_job`.
+
+    `r2_key` (F1a pull) and `tally_response` (F1b push) are alternatives —
+    a pull result carries the former, a push result the latter (Tally's
+    small Import-Data response XML, sent inline rather than via R2).
+    """
 
     status: str = Field(pattern="^(ok|error)$")
     r2_key: str | None = Field(default=None, max_length=500)
+    tally_response: str | None = Field(default=None, max_length=16_000)
     error: str | None = Field(default=None, max_length=2000)
     # optional: the newest export file's mtime, so the UI can warn "stale"
     file_mtime: datetime | None = None
@@ -103,3 +115,15 @@ class JobStatusPingIn(BaseModel):
     """Agent -> backend: a 'not ready' reason instead of a real result."""
 
     agent_status: str = Field(pattern="^(no_company_loaded|tally_unavailable)$")
+
+
+class PushBlockerOut(BaseModel):
+    code: str
+    message: str
+
+
+class TallyPushBlockersOut(BaseModel):
+    """Whether an invoice can be pushed right now, and why not if not."""
+
+    pushable: bool
+    blockers: list[PushBlockerOut]

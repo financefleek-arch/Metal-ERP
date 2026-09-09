@@ -134,6 +134,9 @@ class TallyLink(PkUuidMixin, Base):
 
 class TallySyncJob(PkUuidMixin, Base):
     """One sync operation. F1a: `direction='in'`, `kind='pull_masters'`.
+    F1b: `direction='out'`, `kind='push_sales'`, `entity_type='invoice'` +
+    `entity_id` set so the invoice list/detail can look up "the job for
+    *this* invoice" without scanning `counts`/`error`.
 
     Lifecycle: queued -> sent (agent picked up the outbox item) -> running
     (result callback received, parsing) -> ok | error.
@@ -143,6 +146,8 @@ class TallySyncJob(PkUuidMixin, Base):
     __table_args__ = (
         # "is a pull already in flight for this tenant?" hits this a lot.
         Index("ix_tally_sync_job_tenant_status", "tenant_id", "status"),
+        # "is there already a push job for this invoice?" (F1b)
+        Index("ix_tally_sync_job_entity", "entity_type", "entity_id"),
     )
 
     tenant_id: Mapped[str] = mapped_column(
@@ -153,8 +158,12 @@ class TallySyncJob(PkUuidMixin, Base):
     )
 
     direction: Mapped[str] = mapped_column(String(3), nullable=False)  # 'in' | 'out'
-    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # 'pull_masters'
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)  # 'pull_masters' | 'push_sales'
     status: Mapped[str] = mapped_column(String(10), default="queued", nullable=False)
+
+    # F1b: which ERP record this job pushes. Null for F1a pull jobs.
+    entity_type: Mapped[str | None] = mapped_column(String(10))  # 'invoice'
+    entity_id: Mapped[str | None] = mapped_column(String(36))
 
     outbox_item_id: Mapped[str | None] = mapped_column(
         ForeignKey("agent_outbox_item.id")

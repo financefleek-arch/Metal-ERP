@@ -85,6 +85,12 @@ public sealed class JobResultRequest
     [JsonPropertyName("r2_key")]
     public string? R2Key { get; set; }
 
+    // F1b-1 (push_sales): Tally's own small Import-Data <RESPONSE> XML,
+    // sent back inline — no R2 round-trip for a voucher result the way
+    // pull's masters XML needs one.
+    [JsonPropertyName("tally_response")]
+    public string? TallyResponse { get; set; }
+
     [JsonPropertyName("error")]
     public string? Error { get; set; }
 }

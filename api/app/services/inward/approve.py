@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -296,6 +297,11 @@ def approve_bill(
     )
     session.flush()
 
+    # F5d — best-effort live push to Tally. Never blocks or fails approve;
+    # the file-XML written above (kept unconditionally) remains the manual-
+    # import safety net regardless of whether this succeeds.
+    _enqueue_tally_push_best_effort(session, bill)
+
     return ApproveResult(
         created_supplier_id=created_supplier_id,
         promoted_party_id=promoted_party_id,
@@ -303,3 +309,31 @@ def approve_bill(
         linked_line_count=linked,
         xml_path=str(xml_path),
     )
+
+
+def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
+    """F5d — same non-blocking pattern as
+    `services/invoices/finalize.py::_enqueue_tally_push_best_effort`
+    (F1b-1): silently no-ops on any blocker (the common case — most bills,
+    most firms, especially a bill with a staged-new supplier/item, per the
+    F5d plan's scope decision) or on any Tally-side problem (not
+    reachable, push already in flight). Approve must succeed regardless of
+    Tally state.
+    """
+    try:
+        from app.services.tally.agent_health import assert_tally_reachable
+        from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
+        from app.services.tally.push_readiness import get_tally_company, purchase_push_blockers
+
+        if purchase_push_blockers(session, bill):
+            return
+        company = get_tally_company(session, bill.tenant_id)
+        if company is None:
+            return
+        assert_no_purchase_push_in_flight(session, bill.tenant_id, bill.id)
+        assert_tally_reachable(session, company)
+        enqueue_push_purchase(session, company, bill)
+    except Exception as exc:
+        logging.getLogger("tally.approve_push").info(
+            "tally push not enqueued for inward bill %s: %s", bill.id, exc
+        )

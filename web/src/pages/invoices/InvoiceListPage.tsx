@@ -5,6 +5,7 @@ import { api, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { inr } from "../../lib/previewTotal";
 import { WhatsappBadge } from "../../components/WhatsappStatus";
+import { TallySyncBadge } from "../../components/TallySyncStatus";
 import type { InvoiceListItem, InvoicePaymentStatus, InvoiceStatus } from "../../lib/types";
 
 type Scope = "" | InvoiceStatus;
@@ -179,9 +180,12 @@ export function InvoiceListPage() {
               </span>
 
               {/* whatsapp — only meaningful once final */}
-              <span className="col-start-2 md:col-start-auto">
+              <span className="col-start-2 flex flex-col gap-0.5 md:col-start-auto">
                 {iv.status === "final" ? (
-                  <WhatsappBadge status={iv.whatsapp_status} />
+                  <>
+                    <WhatsappBadge status={iv.whatsapp_status} />
+                    <TallySyncBadge status={iv.tally_sync_status} />
+                  </>
                 ) : (
                   <span className="hidden md:inline text-[11px] text-[#b7b1a4]">—</span>
                 )}

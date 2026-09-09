@@ -17,12 +17,24 @@ from sqlalchemy import select
 
 from app.backup_storage import R2NotConfigured, get_object
 from app.deps import SessionDep, WriteUser
-from app.models import BackupShop
+from app.models import BackupShop, Invoice, TallySyncJob
 from app.schemas_admin import FirmTallyShopOut
-from app.services.tally.agent_health import agent_online
+from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
+from app.services.tally.agent_health import agent_online, assert_tally_reachable
 from app.services.tally.installer import installer_filename
+from app.services.tally.jobs import assert_no_push_in_flight, enqueue_push_sales
+from app.services.tally.push_readiness import get_tally_company, push_blockers
 
 router = APIRouter(prefix="/api/tally", tags=["tally-self-serve"])
+
+
+def _owned_invoice(session: SessionDep, user: WriteUser, invoice_id: str) -> Invoice:
+    inv = session.scalar(
+        select(Invoice).where(Invoice.id == invoice_id, Invoice.tenant_id == user.tenant_id)
+    )
+    if inv is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
+    return inv
 
 
 def _own_shop(session: SessionDep, user: WriteUser) -> BackupShop | None:
@@ -69,3 +81,42 @@ def download_own_installer(user: WriteUser, session: SessionDep) -> Response:
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+# --------------------------------------------------------------------------
+# push a sales voucher (F1b-1) — manual re-push, tenant-scoped
+# --------------------------------------------------------------------------
+
+
+@router.get("/invoices/{invoice_id}/push-status", response_model=TallyPushBlockersOut)
+def get_own_push_status(
+    invoice_id: str, user: WriteUser, session: SessionDep
+) -> TallyPushBlockersOut:
+    invoice = _owned_invoice(session, user, invoice_id)
+    blockers = push_blockers(session, invoice)
+    return TallyPushBlockersOut(
+        pushable=not blockers,
+        blockers=[{"code": b.code, "message": b.message} for b in blockers],
+    )
+
+
+@router.post(
+    "/invoices/{invoice_id}/push",
+    response_model=TallySyncJobOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def push_own_invoice(
+    invoice_id: str, user: WriteUser, session: SessionDep
+) -> TallySyncJob:
+    invoice = _owned_invoice(session, user, invoice_id)
+    blockers = push_blockers(session, invoice)
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="; ".join(b.message for b in blockers),
+        )
+    company = get_tally_company(session, user.tenant_id)
+    assert company is not None  # push_blockers() already confirmed this
+    assert_no_push_in_flight(session, user.tenant_id, invoice_id)
+    assert_tally_reachable(session, company)
+    return enqueue_push_sales(session, company, invoice)
