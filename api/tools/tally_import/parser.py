@@ -20,6 +20,15 @@ from lxml import etree
 # Tally sometimes writes raw control-char entities that are illegal in XML 1.0.
 _BAD_ENTITY_RE = re.compile(rb"&#(?:x0?[0-8bcef]|x1[0-9a-f]|[0-8]|1[0-9]|2[0-9]|3[01]);", re.I)
 
+# Tally also emits the same illegal control characters UNESCAPED, straight
+# in the text content (e.g. a literal 0x05 inside a voucher-class name —
+# Tally internally uses 0x04/0x05 as compound-unit/rate separators and its
+# own export doesn't always escape them). XML 1.0's Char production allows
+# only \t \n \r and \x20+ — anything else in this range is a hard parse
+# error (lxml: "PCDATA invalid Char value N"). Strip these bytes outright;
+# they're internal Tally markers, not meaningful text.
+_BAD_CONTROL_BYTE_RE = re.compile(rb"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
 
 @dataclass
 class TallyLedger:
@@ -87,7 +96,8 @@ def _decode(raw: bytes) -> bytes:
     # Drop the XML declaration's encoding so lxml doesn't fight us.
     text = re.sub(r"<\?xml[^>]*\?>", "", text, count=1)
     data = text.encode("utf-8")
-    return _BAD_ENTITY_RE.sub(b"", data)
+    data = _BAD_ENTITY_RE.sub(b"", data)
+    return _BAD_CONTROL_BYTE_RE.sub(b"", data)
 
 
 def _t(el: etree._Element, tag: str) -> str | None:
