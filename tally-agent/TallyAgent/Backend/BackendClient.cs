@@ -152,6 +152,17 @@ public sealed class BackendClient
         // meaningless to R2 and the URL's signature doesn't cover this header.
         using var plain = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
         var resp = await plain.PutAsync(putUrl, content, ct);
+        if (!resp.IsSuccessStatusCode)
+        {
+            // R2's error body is a small <Error><Code>...</Code></Error> XML
+            // document that pinpoints the real cause (NoSuchBucket,
+            // SignatureDoesNotMatch, AccessDenied, ...) — EnsureSuccessStatusCode's
+            // exception alone only carries the status code, not this.
+            var body = await SafeReadBodyAsync(resp, ct);
+            _log.LogWarning(
+                "PUT to R2 rejected: {StatusCode} {ReasonPhrase} - {Body}",
+                (int)resp.StatusCode, resp.ReasonPhrase, body);
+        }
         resp.EnsureSuccessStatusCode();
     }
 
