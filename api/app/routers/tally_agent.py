@@ -32,6 +32,7 @@ from app.schemas_tally_agent import (
     UploadRequestIn,
     UploadRequestOut,
 )
+from app.services.tally.backup_retention import prune_confirmed_backups
 from app.services.tally.jobs import mark_job_sent, record_agent_status
 from app.services.tally.pull import process_pull_result
 from app.services.tally.push import process_push_result
@@ -193,6 +194,8 @@ def upload_confirm(
     upload.status = body.status
     if body.status == "confirmed":
         upload.uploaded_at = datetime.now(UTC)
+        session.flush()
+        prune_confirmed_backups(session, shop)
     session.flush()
     return UploadConfirmOut(upload_id=upload.id, status=upload.status)
 

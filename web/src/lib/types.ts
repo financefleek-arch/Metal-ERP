@@ -110,6 +110,20 @@ export interface FirmTallyShopProvisionResult {
   installer_ready: boolean;
 }
 
+/** One confirmed cloud backup the firm can download (GET /tally/backups).
+ *  Feed the file to Tally's own Restore — there is no server-side restore. */
+export interface FirmBackup {
+  id: string;
+  filename: string;
+  size_bytes: number;
+  uploaded_at: string | null;
+}
+
+export interface FirmBackupList {
+  retention_count: number;
+  backups: FirmBackup[];
+}
+
 export interface KnownLedger {
   name: string;
   parent: string | null;

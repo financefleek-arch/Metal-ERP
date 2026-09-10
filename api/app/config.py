@@ -84,6 +84,12 @@ class Settings(BaseSettings):
             and self.tally_r2_bucket
         )
 
+    # Cloud retention for the companion agent's backup uploads: keep at most
+    # this many confirmed backups per shop, pruning the oldest (object + row)
+    # after each new confirm. A firm may override via
+    # `BackupShop.backup_retention_count`; NULL there falls back to this.
+    tally_backup_retention_count: int = 30
+
     # Pre-published tally-agent Windows build (dotnet publish -r win-x64
     # --self-contained output), dropped here by a manual/CI step. The admin
     # "download installer" action zips this directory + a generated

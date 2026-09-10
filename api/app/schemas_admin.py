@@ -167,6 +167,23 @@ class FirmTallyShopOut(BaseModel):
     tally_ok_at: datetime | None = None
 
 
+class FirmBackupOut(BaseModel):
+    """One confirmed cloud backup the firm can download and feed to Tally's
+    own Restore. `r2_key` is deliberately not exposed."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    filename: str
+    size_bytes: int
+    uploaded_at: datetime | None = None
+
+
+class FirmBackupListOut(BaseModel):
+    retention_count: int  # how many confirmed backups are kept before pruning
+    backups: list[FirmBackupOut]
+
+
 class FirmTallyShopProvisionResult(BaseModel):
     shop_id: str
     created: bool

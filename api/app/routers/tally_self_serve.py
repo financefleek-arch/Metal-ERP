@@ -17,10 +17,11 @@ from sqlalchemy import select
 
 from app.backup_storage import R2NotConfigured, get_object
 from app.deps import SessionDep, WriteUser
-from app.models import BackupShop, Invoice, TallySyncJob
-from app.schemas_admin import FirmTallyShopOut
+from app.models import BackupShop, BackupUpload, Invoice, TallySyncJob
+from app.schemas_admin import FirmBackupListOut, FirmBackupOut, FirmTallyShopOut
 from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
 from app.services.tally.agent_health import agent_online, assert_tally_reachable
+from app.services.tally.backup_retention import effective_retention_count
 from app.services.tally.installer import installer_filename
 from app.services.tally.jobs import assert_no_push_in_flight, enqueue_push_sales
 from app.services.tally.push_readiness import get_tally_company, push_blockers
@@ -80,6 +81,70 @@ def download_own_installer(user: WriteUser, session: SessionDep) -> Response:
         content=blob,
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# --------------------------------------------------------------------------
+# cloud backups — list + download, tenant-scoped. No in-place restore: the
+# firm downloads the file and runs Tally's own Restore (Alt+F3 -> Data ->
+# Restore), which is an exclusive-access company operation the HTTP gateway
+# can't perform.
+# --------------------------------------------------------------------------
+
+
+@router.get("/backups", response_model=FirmBackupListOut)
+def list_own_backups(user: WriteUser, session: SessionDep) -> FirmBackupListOut:
+    shop = _own_shop(session, user)
+    if shop is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Tally sync hasn't been set up for this firm yet — ask Fleek to enable it.",
+        )
+    rows = list(
+        session.scalars(
+            select(BackupUpload)
+            .where(
+                BackupUpload.shop_id == shop.id,
+                BackupUpload.status == "confirmed",
+            )
+            .order_by(BackupUpload.uploaded_at.desc())
+            .limit(100)
+        )
+    )
+    return FirmBackupListOut(
+        retention_count=effective_retention_count(shop),
+        backups=[FirmBackupOut.model_validate(r) for r in rows],
+    )
+
+
+@router.get("/backups/{upload_id}/download")
+def download_own_backup(
+    upload_id: str, user: WriteUser, session: SessionDep
+) -> Response:
+    """Stream one confirmed backup file. The firm feeds this to Tally's own
+    Restore — there is no server-triggered restore."""
+    shop = _own_shop(session, user)
+    upload = session.scalar(
+        select(BackupUpload).where(BackupUpload.id == upload_id)
+    )
+    if (
+        shop is None
+        or upload is None
+        or upload.shop_id != shop.id
+        or upload.status != "confirmed"
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Backup not found")
+    try:
+        blob = get_object(upload.r2_key)
+    except R2NotConfigured as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Cloud storage is not configured.",
+        ) from exc
+    return Response(
+        content=blob,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{upload.filename}"'},
     )
 
 
