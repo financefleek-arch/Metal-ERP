@@ -47,13 +47,13 @@ export function TallySyncBadge({ status }: { status: ListStatus | null }) {
 // shown as a note under the button, not as a reason nothing can happen.
 const INFO_ONLY_CODES = new Set(["pending_master_create"]);
 
-/** Detail-page panel: current status + a manual "Push to Tally" button
- *  when the entity is pushable but hasn't been pushed automatically
- *  (finalize/approve's best-effort enqueue missed it — Tally was closed,
- *  the party/item got linked after the fact, etc). Renders nothing if the
- *  firm has no Tally company linked at all (the overwhelmingly common
- *  case) — only shows up once a push is either done, in flight, failed,
- *  or genuinely one click away.
+/** Detail-page panel: current Tally sync status + a "Push to Tally" button.
+ *  Pushing a finalized invoice to Tally is an explicit choice — it does NOT
+ *  happen on finalize — so this panel is where the shop makes that call.
+ *  Renders nothing if the firm has no Tally company linked at all (the
+ *  overwhelmingly common case) — it only appears once the firm is on the
+ *  Tally connector, then shows the button (or the blocker reasons, or the
+ *  in-flight / done / failed state).
  *
  *  `queryKey` must be unique per entity (e.g.
  *  `["invoice-tally-push-status", id]` /
@@ -63,13 +63,13 @@ export function TallyPushPanel({
   statusUrl,
   pushUrl,
   queryKey,
-  autoPushHint = "Ready to sync. This usually happens automatically — use the button if it didn't.",
+  autoPushHint = "Ready to send to Tally.",
 }: {
   statusUrl: string;
   pushUrl: string;
   queryKey: unknown[];
-  /** Shown when pushable but not yet pushed — phrase the "usually
-   *  automatic" moment for the caller's own entity (finalize vs. approve). */
+  /** Shown when pushable but not yet pushed — one short line for the
+   *  caller's own entity (sales voucher vs. purchase voucher). */
   autoPushHint?: string;
 }) {
   const qc = useQueryClient();

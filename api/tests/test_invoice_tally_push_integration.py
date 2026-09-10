@@ -444,15 +444,17 @@ def test_reenqueue_after_ok_push_is_a_noop(client: TestClient) -> None:
 
 
 # --------------------------------------------------------------------------
-# finalize-time auto-enqueue (F4, folded into F1b-1)
+# finalize does NOT push to Tally — push is an explicit action afterwards
+# (POST /api/tally/invoices/{id}/push), never a finalize side effect.
 # --------------------------------------------------------------------------
 
 
-def test_finalize_auto_enqueues_push_when_everything_pre_linked(client: TestClient) -> None:
-    """Party + item already have a tally_guid (as if from a prior F1a pull)
-    *before* the invoice is created — finalize should auto-enqueue a push
-    with no manual button click."""
-    tok, tenant_id = _register_firm(client, "f1@x.example.com")
+def _fully_linked_finalized_invoice(client: TestClient, email: str):
+    """Register a firm, provision its agent + Tally company + ledger map,
+    link the party + a pre-created item, then create + finalize an invoice
+    for them. Returns (tok, tenant_id, invoice_id). Everything a push needs
+    is in place — only the explicit push call is missing."""
+    tok, tenant_id = _register_firm(client, email)
     admin_tok = _admin_token(client)
     shop_id = _provision_agent(client, admin_tok, tenant_id)
     r = client.post(
@@ -471,18 +473,15 @@ def test_finalize_auto_enqueues_push_when_everything_pre_linked(client: TestClie
 
     pid = _party(client, _h(tok))
     _link_party_to_tally(pid)
-
-    # pre-create the item and link it, so the finalize-time item-resolve
-    # ladder matches it by name instead of creating a fresh (unlinked) item
     with SessionLocal() as s:
-        item = Item(
-            id="preexisting-item",
-            tenant_id=tenant_id,
-            name="SS Thali 11in",
-            name_normalized="ss thali 11in",
-            tally_guid="item-guid-pre",
+        s.add(
+            Item(
+                tenant_id=tenant_id,
+                name="SS Thali 11in",
+                name_normalized="ss thali 11in",
+                tally_guid=f"item-guid-{email}",
+            )
         )
-        s.add(item)
         s.commit()
 
     d = client.post("/api/invoices", headers=_h(tok), json={"party_id": pid}).json()
@@ -493,89 +492,40 @@ def test_finalize_auto_enqueues_push_when_everything_pre_linked(client: TestClie
     )
     assert r.status_code == 200, r.text
     r = client.post(f"/api/invoices/{d['id']}/finalize", headers=_h(tok))
-    assert r.status_code == 200, r.text  # finalize itself always succeeds
+    assert r.status_code == 200, r.text
+    return tok, tenant_id, d["id"]
 
+
+def _push_job_for(tenant_id: str, invoice_id: str):
     with SessionLocal() as s:
-        job = s.scalar(
+        return s.scalar(
             select(TallySyncJob).where(
                 TallySyncJob.tenant_id == tenant_id,
-                TallySyncJob.kind == "push_sales",
                 TallySyncJob.entity_type == "invoice",
-                TallySyncJob.entity_id == d["id"],
+                TallySyncJob.entity_id == invoice_id,
             )
         )
-        assert job is not None
-        assert job.status == "queued"
 
 
-def test_finalize_does_not_enqueue_when_not_pushable(client: TestClient) -> None:
-    """No Tally company at all — finalize succeeds, silently, no job."""
+def test_finalize_never_enqueues_even_when_fully_pushable(client: TestClient) -> None:
+    """Party + item linked, agent online, Tally reachable — everything a
+    push needs. Finalize STILL does not enqueue a job; it's an explicit
+    action now."""
+    tok, tenant_id, iid = _fully_linked_finalized_invoice(client, "f1@x.example.com")
+    assert _push_job_for(tenant_id, iid) is None
+
+    # ...but the explicit push endpoint does enqueue it.
+    r = client.post(f"/api/tally/invoices/{iid}/push", headers=_h(tok))
+    assert r.status_code == 201, r.text
+    job = _push_job_for(tenant_id, iid)
+    assert job is not None
+    assert job.kind == "push_sales"
+    assert job.status == "queued"
+
+
+def test_finalize_never_enqueues_when_no_tally_company(client: TestClient) -> None:
+    """No Tally company at all — finalize succeeds, no job (unchanged)."""
     tok, tenant_id = _register_firm(client, "f2@x.example.com")
     pid = _party(client, _h(tok))
-    iid, _item_id = _finalized_invoice(client, _h(tok), pid)  # finalize already ran here
-
-    with SessionLocal() as s:
-        job = s.scalar(
-            select(TallySyncJob).where(
-                TallySyncJob.tenant_id == tenant_id,
-                TallySyncJob.entity_type == "invoice",
-                TallySyncJob.entity_id == iid,
-            )
-        )
-        assert job is None
-
-
-def test_finalize_does_not_enqueue_when_tally_unreachable(client: TestClient) -> None:
-    """Everything linked, but the agent reports Tally as closed — finalize
-    still succeeds; no job is queued (the manual push button is the
-    fallback, per the plan)."""
-    tok, tenant_id = _register_firm(client, "f3@x.example.com")
-    admin_tok = _admin_token(client)
-    shop_id = _provision_agent(client, admin_tok, tenant_id)
-    client.post(
-        f"/api/admin/firms/{tenant_id}/tally/company",
-        headers=_h(admin_tok),
-        json={"company_name": "M/s F1b Traders"},
-    )
-    client.put(
-        f"/api/admin/firms/{tenant_id}/tally/company/ledger-map",
-        headers=_h(admin_tok),
-        json={"sales_ledger": "Sales Accounts"},
-    )
-    with SessionLocal() as s:
-        shop = s.get(BackupShop, shop_id)
-        shop.last_checkin_at = datetime.now(UTC)
-        shop.last_tally_status = "refused"
-        s.commit()
-
-    pid = _party(client, _h(tok))
-    _link_party_to_tally(pid)
-    with SessionLocal() as s:
-        item = Item(
-            id="preexisting-item-2",
-            tenant_id=tenant_id,
-            name="SS Thali 11in",
-            name_normalized="ss thali 11in",
-            tally_guid="item-guid-pre-2",
-        )
-        s.add(item)
-        s.commit()
-
-    d = client.post("/api/invoices", headers=_h(tok), json={"party_id": pid}).json()
-    client.put(
-        f"/api/invoices/{d['id']}",
-        headers=_h(tok),
-        json={"lines": [{"description": "SS Thali 11in", "quantity": "10", "unit_rate": "96.00"}]},
-    )
-    r = client.post(f"/api/invoices/{d['id']}/finalize", headers=_h(tok))
-    assert r.status_code == 200, r.text
-
-    with SessionLocal() as s:
-        job = s.scalar(
-            select(TallySyncJob).where(
-                TallySyncJob.tenant_id == tenant_id,
-                TallySyncJob.entity_type == "invoice",
-                TallySyncJob.entity_id == d["id"],
-            )
-        )
-        assert job is None
+    iid, _item_id = _finalized_invoice(client, _h(tok), pid)
+    assert _push_job_for(tenant_id, iid) is None

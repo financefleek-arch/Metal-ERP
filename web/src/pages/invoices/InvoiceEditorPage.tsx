@@ -724,7 +724,7 @@ export function InvoiceEditorPage() {
           statusUrl={`/tally/invoices/${inv.id}/push-status`}
           pushUrl={`/tally/invoices/${inv.id}/push`}
           queryKey={["invoice-tally-push-status", inv.id]}
-          autoPushHint="Ready to sync. This usually happens automatically when the invoice is finalized — use the button if it didn't."
+          autoPushHint="Ready to send to Tally as a sales voucher."
         />
       )}
 

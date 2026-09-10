@@ -59,10 +59,10 @@ Last status pass: **2026‑09‑10** (F1b‑1 sales‑voucher‑out live e2e con
 
 | # | Feature | Tier | Status | Depends on |
 |---|---|---|---|---|
-| F1 | **Tally Connector** — masters in, vouchers out | Platform | ✅ **F1a (masters‑in) + F1b‑1 (sales‑voucher‑out) both DEPLOYED + LIVE E2E CONFIRMED** (F1a 2026‑09‑09, F1b‑1 2026‑09‑10). Migrations `0022`/`0024`/`0026`/`0027`/`0028` on prod. Agent `TallyMastersModule` handles both `pull_masters` and `push_sales`/`push_purchase` outbox actions. **F1b‑1 proven end to end:** finalize a real invoice on prod → finalize hook auto‑enqueues → agent POSTs a Sales voucher to the live Tally gateway → `tally_sync_status: synced` → voucher confirmed in TallyPrime. Strict mode (party+item need `tally_guid`), non‑GST, round‑off folded into last line. Remaining: **F1c** (Receipt voucher + agent long‑poll) ⬜, **F1d** (ledger‑map UI + sync dashboard) ⬜. | Companion agent (F10) |
+| F1 | **Tally Connector** — masters in, vouchers out | Platform | ✅ **F1a (masters‑in) + F1b‑1 (sales‑voucher‑out) both DEPLOYED + LIVE E2E CONFIRMED** (F1a 2026‑09‑09, F1b‑1 2026‑09‑10). Migrations `0022`/`0024`/`0026`/`0027`/`0028` on prod. Agent `TallyMastersModule` handles both `pull_masters` and `push_sales`/`push_purchase` outbox actions. **F1b‑1 proven end to end:** a `push_sales` job → agent POSTs a Sales voucher to the live Tally gateway → `tally_sync_status: synced` → voucher confirmed in TallyPrime. Strict mode (party+item need `tally_guid`), non‑GST, round‑off folded into last line. **DESIGN DECISION 2026‑09‑10: push is NOT on finalize — the current `_enqueue_tally_push_best_effort` finalize hook is to be removed / gated off; the explicit `POST /api/tally/invoices/{id}/push` ("Send to Tally" button) is the real path, so the shop chooses which finalized invoices cross into Tally.** Remaining: rip out the finalize hook + wire the button; **F1c** (Receipt voucher + agent long‑poll) ⬜; **F1d** (ledger‑map UI + sync dashboard) ⬜; **GST branch** ⬜ (gate on `tenant.gst_enabled`). | Companion agent (F10) |
 | F2 | **WhatsApp Invoicing** — send PDF, delivery receipts, per‑firm number | 1 | 🟢 send + phone‑normalise + opt‑in‑drop + "save number" + **delivery‑tracking fan‑in all DEPLOYED** 2026‑09‑09 (fleek‑infra + fleek‑backend + Metal ERP, in order). **e2e vs Meta (real send → delivered/read webhook advances the row) still unconfirmed.** | — |
 | F3 | **Collections & Reminders** — ageing, auto WhatsApp nudges, statements | 1 | 🟡 **F3a (ageing dashboard) + F3b (statement→WhatsApp) BUILT 2026‑09‑09, uncommitted** — migration `0025` (`tenant.default_credit_days`), `ageing_summary()` + `GET /api/collections/ageing`, `services/statements.py` + `statement_v1.html` + `POST /api/parties/{id}/statement/whatsapp`, `account_statement` Meta template (**submit day‑1**), `CollectionsPage` rewrite + `StatementSendDialog`. 443 tests green. **F3c (reminder scheduler) ⬜ — the one real infra piece.** F3d (promise‑to‑pay) ⬜. | F2 |
-| F4 | **Mobile Owner‑Operated Billing** — layman invoice + Collections, syncs to Tally | 1 | ✅ **delivered by F1b‑1's finalize hook** (`_enqueue_tally_push_best_effort`) — "bill on phone → appears in Tally" proven live 2026‑09‑10. No standalone slice. Sync chip on the invoice list = `tally_sync_status`. | F1b |
+| F4 | **Mobile Owner‑Operated Billing** — layman invoice + Collections, syncs to Tally | 1 | 🟢 editor/payments/collections all exist; F1b‑1 provides the push. F4 == bill on phone → finalize → tap **"Send to Tally"** (explicit, NOT on finalize — see F1 note). Sync chip on the invoice list = `tally_sync_status`. Remaining: the button + rip out the finalize hook. | F1b |
 | F5 | **AP Bill Capture** — photo/PDF → parsed draft → approve → voucher | 2 | 🟡 Inward pipeline X0–X5 exists; Tally push + OCR polish ⬜ | F1 |
 | F6 | **GSTR‑2B / ITC Reconciliation** — pull 2B, auto‑match, "hold payment" flags | 2 | ⬜ | F5 |
 | F7 | **Bank Statement Ingestion** — PDF/Excel → auto ledger‑coding → reconcile | 2 | ⬜ | F1 |
@@ -117,9 +117,10 @@ outbound push. Any integration is: our code speaks Tally XML, either
    `Sundry Debtors`; our `item` ↔ Tally `StockItem` with unit, HSN, GST rate;
    our `invoice_line` ↔ Tally inventory entries; our tax split ↔ Tally
    `CGST/SGST/IGST` ledgers (names are per‑company config).
-3. **Sync engine** — pull on a schedule + on demand; push on finalize/payment;
-   idempotency via a stored `tally_guid` / `VOUCHERKEY` per record; a
-   **sync log** with per‑record status and the raw XML for debugging.
+3. **Sync engine** — pull on demand; **push on an explicit per‑record "Send
+   to Tally" action** (NOT auto on finalize/payment — decision 2026‑09‑10, §6);
+   idempotency via a stored `tally_guid` / `LASTVCHID` per record + a `checksum`;
+   a **sync log** with per‑record status and the raw XML for debugging.
 4. **Two transports:**
    - **Agent transport** (preferred) — F10 companion agent holds a persistent
      connection to our cloud; cloud sends it XML jobs; agent POSTs to
@@ -317,21 +318,25 @@ long to learn for what I actually need".
 
 **What we build.** Mostly built — mobile‑first invoice editor, party ledger,
 quick‑create party, line‑row with Hindi/bartan search (F12), opening balance,
-discount ₹/% toggle, weighment (F8). Gap is **the Tally hand‑off**:
+discount ₹/% toggle, weighment (F8), and the F1b‑1 sales‑voucher push. Gap is
+**the Tally hand‑off UX**:
 
-- Bills the owner makes on the phone during the day **queue as `tally_sync_job`
-  rows** and post to Tally as sales vouchers (via F1) — overnight batch or on
-  finalize. The accountant opens Tally next morning and the day's sales are
-  already there, correctly grouped.
-- Receipts entered on the phone (F3 / payments slice) post as receipt vouchers.
-- Any master the owner quick‑creates (new party, new item) pushes as a Tally
-  master first, so the voucher references a real ledger.
+- The owner bills on the phone; finalize does its normal job (freeze totals,
+  number, PDF). A separate explicit **"Send to Tally"** tap pushes that
+  invoice as a sales voucher via F1b‑1. **Push is NOT automatic on finalize**
+  (design decision 2026‑09‑10 — see F1 / §6): the shop decides which finalized
+  bills cross into Tally.
+- Receipts entered on the phone (F3 / payments slice) push as receipt vouchers
+  — same explicit model — **F1c**.
+- A master the owner quick‑creates that isn't in Tally blocks the push with a
+  `push_blockers()` reason (strict mode); the shop pulls masters / adds it in
+  Tally first. (Auto‑create at push time = F1b‑2, deferred.)
 
 **Data model.** Reuses invoice / payment / party models + F1's `tally_link`
 and `tally_sync_job`.
 
-**APIs.** On `POST /api/invoices/{id}/finalize` and payment create, enqueue a
-push job when the tenant has a linked `tally_company`.
+**APIs.** `POST /api/tally/invoices/{id}/push` (exists, live‑e2e'd) + its admin
+mirror. Remove the `finalize.py::_enqueue_tally_push_best_effort` hook.
 
 **UI.** A small "Tally: synced ✓ / pending ⟳ / error !" chip on the invoice
 list and detail. Ops sees the failures.
@@ -339,12 +344,17 @@ list and detail. Ops sees the failures.
 **Sync to Tally.** Core of the feature — see F1.
 
 **Open questions.**
-- Batch timing: on finalize (near‑real‑time, needs agent transport) vs. nightly
-  file drop. Start nightly file; upgrade to agent.
+- ~~Batch timing: on finalize vs nightly.~~ **RESOLVED — neither: explicit
+  "Send to Tally" per invoice. Not automatic.**
 - What if the accountant also enters the same bill in Tally? De‑dupe on our
-  invoice number in the UDF; sync log flags a probable duplicate.
+  invoice number in the UDF (`METALERP_REF = inv_{id}`); sync log flags a
+  probable duplicate.
+- Payment entered only in Tally (not the ERP) → ERP ageing/reminders stale.
+  v1: operational convention (receipts go in the ERP). Future: voucher‑pull
+  slice.
 
-**Effort.** Small **once F1 exists** — it's mostly enqueue calls + status chips.
+**Effort.** Small — the push exists (F1b‑1); this is the button + chip + a
+finalize‑hook removal.
 
 ---
 
@@ -734,8 +744,10 @@ dev box + this box's live TallyPrime (`localhost:9000`, company "Fleek"):
 2. probe `GET /api/tally/invoices/{id}/push-status` across the firm's
    parties/items to find one that's Tally‑linked (`ZZTEST Customer` +
    `ZZTEST Item`).
-3. create + **finalize** a real invoice → `finalize.py`'s
-   `_enqueue_tally_push_best_effort` auto‑enqueues a `push_sales` job.
+3. create + **finalize** a real invoice → the (still‑present, to‑be‑removed)
+   `finalize.py::_enqueue_tally_push_best_effort` hook enqueued a `push_sales`
+   job. *The shipping design replaces this with an explicit "Send to Tally"
+   button — the driver used the hook only because it exists today.*
 4. poll `GET /api/invoices` until `tally_sync_status == synced` (~121 s —
    agent checks in ~every 60 s, `TallyMastersModule` runs on a 1‑min
    timer).
@@ -759,11 +771,22 @@ written onto the `Item` / `Party` row only when the staged batch is
 **committed** (`POST /api/{items,parties}/import/{batch_id}/commit`). The
 driver does this automatically after a pull.
 
-**F1b‑1 is therefore DEPLOYED + LIVE‑VERIFIED end to end.** F4 ("bill on
-phone → appears in Tally") is delivered by the same finalize hook — no
-separate slice. Remaining F1 work: **F1c** (Receipt voucher from a
-payment, + agent long‑poll transport to retire the checkin‑poll latency)
-and **F1d** (ledger‑map editor UI + sync‑job dashboard / raw‑XML drawer).
+**F1b‑1 is therefore DEPLOYED + LIVE‑VERIFIED end to end.**
+
+**DESIGN DECISION 2026‑09‑10 — push is NOT on finalize.** Finalize already
+does enough in one transaction (freeze totals, gap‑free number, render the
+PDF); coupling a Tally push into it is fragile, and the shop must choose
+which finalized invoices actually cross into Tally (pakka/kachcha). So the
+`_enqueue_tally_push_best_effort` finalize hook is to be **removed / gated
+off**, and the explicit `POST /api/tally/invoices/{id}/push` (already
+live‑e2e'd) becomes the real path — surfaced as a **"Send to Tally"**
+button on the finalized invoice. F4 = that button.
+
+Remaining F1 work: rip out the finalize hook + wire the button; **GST
+branch** (gate on `tenant.gst_enabled` — flag exists, set by Fleek admin,
+currently read by nothing); **F1c** (Receipt voucher from a payment, +
+agent long‑poll transport to retire the checkin‑poll latency); **F1d**
+(ledger‑map editor UI + sync‑job dashboard / raw‑XML drawer).
 
 ### 2026‑09‑09 — Tally Agent seamless onboarding BUILT + DEPLOYED + LIVE E2E CONFIRMED
 
