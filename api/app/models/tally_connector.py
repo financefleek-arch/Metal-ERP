@@ -116,8 +116,8 @@ class TallyLink(PkUuidMixin, Base):
     tenant_id: Mapped[str] = mapped_column(
         ForeignKey("tenant.id"), nullable=False, index=True
     )
-    # 'party' | 'item' | 'group'  (F1b adds 'invoice' | 'payment')
-    entity_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    # 'party' | 'item' | 'group' | 'invoice' | 'payment' | 'inward_bill'
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
     entity_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     tally_guid: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -162,7 +162,8 @@ class TallySyncJob(PkUuidMixin, Base):
     status: Mapped[str] = mapped_column(String(10), default="queued", nullable=False)
 
     # F1b: which ERP record this job pushes. Null for F1a pull jobs.
-    entity_type: Mapped[str | None] = mapped_column(String(10))  # 'invoice'
+    # 'invoice' (push_sales) | 'inward_bill' (push_purchase).
+    entity_type: Mapped[str | None] = mapped_column(String(20))
     entity_id: Mapped[str | None] = mapped_column(String(36))
 
     outbox_item_id: Mapped[str | None] = mapped_column(

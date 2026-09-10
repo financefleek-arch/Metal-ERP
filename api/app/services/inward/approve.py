@@ -320,6 +320,11 @@ def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
     An unlinked-but-nameable supplier/item is no longer a reason to skip
     (F5-e auto-create) — `enqueue_push_purchase` handles that case itself.
     """
+    # Capture the id up front: a DB error inside the try can leave `session`
+    # in a rolled-back state, and `bill` is a session-bound row — touching
+    # `bill.id` afterwards would re-raise (PendingRollbackError) and turn a
+    # deliberately-swallowed failure into a 500 for the whole approve.
+    bill_id = bill.id
     try:
         from app.services.tally.agent_health import assert_tally_reachable
         from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
@@ -334,10 +339,14 @@ def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
         company = get_tally_company(session, bill.tenant_id)
         if company is None:
             return
-        assert_no_purchase_push_in_flight(session, bill.tenant_id, bill.id)
+        assert_no_purchase_push_in_flight(session, bill.tenant_id, bill_id)
         assert_tally_reachable(session, company)
-        enqueue_push_purchase(session, company, bill)
-    except Exception as exc:
+        # Savepoint: if the enqueue's flush fails (e.g. a bad column write),
+        # roll back ONLY the enqueue's rows — the approve's own supplier /
+        # item / status / audit writes stay intact and still commit.
+        with session.begin_nested():
+            enqueue_push_purchase(session, company, bill)
+    except Exception as exc:  # noqa: BLE001 - approve must not fail because of Tally
         logging.getLogger("tally.approve_push").info(
-            "tally push not enqueued for inward bill %s: %s", bill.id, exc
+            "tally push not enqueued for inward bill %s: %s", bill_id, exc
         )
