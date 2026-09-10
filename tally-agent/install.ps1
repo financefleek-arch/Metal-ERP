@@ -30,7 +30,11 @@ param(
     [string]$ShopApiKey = "",
     [string]$BackendBaseUrl = "",
     [string]$WatchFolder = "",
-    [string]$FilePattern = "*",
+    # Optional override for the backup-file globs. Empty = keep the bundled
+    # appsettings value (ships as ["TDBK*","TBK*.900"] — native Data BacKup
+    # manifest + parts, never the TSDBK SQL export). Pass one or more globs
+    # to replace it, e.g. -FilePatterns 'TDBK*','TBK*.900'.
+    [string[]]$FilePatterns = @(),
     [string]$InstallDir = "C:\Program Files\TallyAgent",
     [string]$SourceDir = "",
     [string]$ServiceName = "TallyAgent"
@@ -127,7 +131,10 @@ if ($bundledKeyIsPlaceholder -and $ShopApiKey) {
 
 if ($BackendBaseUrl) { $settings.Agent.BackendBaseUrl = $BackendBaseUrl }
 if ($WatchFolder) { $settings.Agent.BackupSync.WatchFolder = $WatchFolder }
-if ($FilePattern -ne "*") { $settings.Agent.BackupSync.FilePattern = $FilePattern }
+if ($FilePatterns.Count -gt 0) {
+    $settings.Agent.BackupSync.FilePatterns = $FilePatterns
+    $settings.Agent.BackupSync.PSObject.Properties.Remove("FilePattern")  # drop any legacy scalar
+}
 
 $settings | ConvertTo-Json -Depth 10 | Set-Content -Path $settingsPath -Encoding utf8
 

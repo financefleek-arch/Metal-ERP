@@ -169,6 +169,7 @@ def upload_request(
         filename=body.filename,
         size_bytes=body.size_bytes,
         r2_key=r2_key,
+        set_id=body.set_id,
         status="pending",
     )
     session.add(upload)

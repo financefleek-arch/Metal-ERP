@@ -167,9 +167,8 @@ class FirmTallyShopOut(BaseModel):
     tally_ok_at: datetime | None = None
 
 
-class FirmBackupOut(BaseModel):
-    """One confirmed cloud backup the firm can download and feed to Tally's
-    own Restore. `r2_key` is deliberately not exposed."""
+class FirmBackupFileOut(BaseModel):
+    """One file of a backup set. `r2_key` is deliberately not exposed."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -179,9 +178,20 @@ class FirmBackupOut(BaseModel):
     uploaded_at: datetime | None = None
 
 
+class FirmBackupSetOut(BaseModel):
+    """One TallyPrime backup run — a manifest plus one or more data parts,
+    all restored together. Download every file into the same folder, then
+    use Tally's own Restore."""
+
+    set_id: str | None  # NULL for legacy/standalone single-file uploads
+    uploaded_at: datetime | None  # newest file in the set
+    total_bytes: int
+    files: list[FirmBackupFileOut]
+
+
 class FirmBackupListOut(BaseModel):
-    retention_count: int  # how many confirmed backups are kept before pruning
-    backups: list[FirmBackupOut]
+    retention_count: int  # how many backup *sets* are kept before pruning
+    sets: list[FirmBackupSetOut]
 
 
 class FirmTallyShopProvisionResult(BaseModel):

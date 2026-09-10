@@ -72,11 +72,11 @@ public sealed class BackendClient
     }
 
     public async Task<UploadRequestResponse?> RequestUploadAsync(
-        string filename, long sizeBytes, CancellationToken ct)
+        string filename, long sizeBytes, CancellationToken ct, string? setId = null)
     {
         var resp = await _http.PostAsJsonAsync(
             "api/tally-agent/upload-request",
-            new UploadRequestRequest { Filename = filename, SizeBytes = sizeBytes },
+            new UploadRequestRequest { Filename = filename, SizeBytes = sizeBytes, SetId = setId },
             ct);
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadFromJsonAsync<UploadRequestResponse>(cancellationToken: ct);

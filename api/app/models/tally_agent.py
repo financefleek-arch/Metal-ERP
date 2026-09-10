@@ -91,6 +91,11 @@ class BackupUpload(PkUuidMixin, TimestampMixin, Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     r2_key: Mapped[str] = mapped_column(String(500), nullable=False)
 
+    # Shared by every file of one Tally backup run (manifest + data parts),
+    # so cloud retention prunes whole sets. NULL for pre-0030 rows and
+    # standalone uploads — retention then treats the row as its own set.
+    set_id: Mapped[str | None] = mapped_column(String(40), index=True)
+
     # pending | confirmed | failed
     status: Mapped[str] = mapped_column(String(12), default="pending", nullable=False, index=True)
     uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

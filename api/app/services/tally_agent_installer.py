@@ -17,7 +17,7 @@ from app.config import get_settings
 
 _settings = get_settings()
 
-_README = """\
+_README_TEMPLATE = """\
 Tally Agent — install instructions
 ===================================
 
@@ -34,6 +34,34 @@ That's it — the shop's API key and backend address are already filled in
 below; you should not need to type anything.
 
 Logs (if something looks wrong): C:\\ProgramData\\TallyAgent\\logs
+
+
+Configure TallyPrime's backup (one-time, do this once)
+-----------------------------------------------------
+The agent uploads TallyPrime's OWN backup files from a local folder — it
+does not read the live company. Set TallyPrime up like this:
+
+1. In TallyPrime: Gateway of Tally -> press Alt+Y -> "Backup" (or set up
+   a scheduled backup under F1: Help -> Settings on newer builds).
+2. For Destination, choose "Specify Path" (a LOCAL folder), NOT
+   "TallyDrive (Cloud Storage)". Set the path to:
+       {watch_folder}
+   (or tell Fleek the folder you use, so we point the agent at it.)
+3. Use the normal Data Backup. Each run writes a small manifest
+   (TBK...900) and one or more data files (TDBK...001, .002 ... for a
+   large company) — the agent picks up the whole set. If your setup also
+   writes an ODBC/SQL export (TSDBK...), that's fine — the agent skips it.
+   TallyPrime's own Restore does NOT clearly separate the two in its
+   list, so we only ever ship the real Data Backup to you.
+4. Turn ON versioned / numbered backups (so each run keeps a new copy
+   instead of overwriting the last one). Without this the agent only ever
+   sees a single, ever-changing set.
+5. Schedule it to run at least daily (end of day is typical).
+
+Once that's running, the agent uploads each new backup set and keeps the
+most recent sets in the cloud. To recover, download EVERY file of a set
+from the Fleek app into one folder, then use TallyPrime's Restore
+(Alt+F3 -> Data -> Restore) pointed at that folder.
 """
 
 
@@ -72,7 +100,7 @@ def build_installer_zip(
                 zf.write(path, arcname=f"publish/{path.relative_to(build_dir)}")
         zf.writestr("install.ps1", install_script)
         zf.writestr("publish/appsettings.json", appsettings)
-        zf.writestr("README.txt", _README)
+        zf.writestr("README.txt", _README_TEMPLATE.replace("{watch_folder}", watch_folder))
 
     return buf.getvalue()
 
@@ -125,7 +153,13 @@ def _generate_appsettings(*, shop_api_key: str, backend_base_url: str, watch_fol
             "BackupSync": {
                 "Enabled": True,
                 "WatchFolder": watch_folder,
-                "FilePattern": "*",
+                # One TallyPrime native backup run = a TBK…900 manifest plus
+                # one or more TDBK…001/.002 data parts. Both globs, so a
+                # split (large) backup is captured whole. Deliberately
+                # excludes the ODBC/SQL export (TSDBK*), which TallyPrime
+                # cannot restore from and which its Restore list doesn't
+                # visibly distinguish — so we never ship it to the firm.
+                "FilePatterns": ["TDBK*", "TBK*.900"],
                 "PollIntervalMinutes": 5,
                 "LocalRetentionCount": 7,
             },

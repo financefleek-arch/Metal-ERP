@@ -37,6 +37,9 @@ class ShopCheckinOut(BaseModel):
 class UploadRequestIn(BaseModel):
     filename: str
     size_bytes: int = Field(ge=0)
+    # Groups the files of one Tally backup run so retention prunes whole
+    # sets. Omitted by older agents and by standalone uploads.
+    set_id: str | None = Field(default=None, max_length=40)
 
 
 class UploadRequestOut(BaseModel):

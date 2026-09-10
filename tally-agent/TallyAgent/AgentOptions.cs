@@ -20,9 +20,15 @@ public sealed class BackupSyncOptions
 {
     public bool Enabled { get; set; } = true;
     public string WatchFolder { get; set; } = "";
-    /// <summary>Glob, e.g. "*.001" or "*" — Tally's exact backup output naming
-    /// varies by version/config, so this is left to per-shop configuration.</summary>
-    public string FilePattern { get; set; } = "*";
+
+    /// <summary>Globs for one TallyPrime native backup run:
+    /// <c>TDBK*</c> = the data parts (<c>.001</c>, and <c>.002</c>+ when a
+    /// large backup splits, plus versioned <c>_1</c>/<c>_2</c> copies);
+    /// <c>TBK*.900</c> = the manifest Restore needs alongside them.
+    /// Deliberately excludes the ODBC/SQL export (<c>TSDBK*</c>), which
+    /// TallyPrime cannot restore from. Overridable per-shop if a Tally
+    /// build names its backups differently.</summary>
+    public string[] FilePatterns { get; set; } = ["TDBK*", "TBK*.900"];
     public int PollIntervalMinutes { get; set; } = 5;
     /// <summary>How many confirmed-uploaded local backups to keep before pruning older ones.</summary>
     public int LocalRetentionCount { get; set; } = 7;

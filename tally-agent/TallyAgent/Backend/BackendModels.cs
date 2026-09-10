@@ -51,6 +51,12 @@ public sealed class UploadRequestRequest
 
     [JsonPropertyName("size_bytes")]
     public long SizeBytes { get; set; }
+
+    /// <summary>Groups the files of one Tally backup run (manifest + data
+    /// parts) so cloud retention prunes whole sets, never a partial. Null
+    /// for a standalone upload (e.g. the masters-XML pull).</summary>
+    [JsonPropertyName("set_id")]
+    public string? SetId { get; set; }
 }
 
 public sealed class UploadRequestResponse

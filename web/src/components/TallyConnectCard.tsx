@@ -66,12 +66,25 @@ export function TallyConnectCard() {
           >
             {downloading ? "Downloading…" : "↓ Download for Windows"}
           </button>
-          <p className="mt-2 max-w-prose text-[11px] text-muted">
-            After running it, turn on{" "}
-            <span className="font-semibold">"TallyPrime acts as Server"</span>{" "}
-            in Tally (F1 → Settings → Connectivity). A step-by-step guide is
-            inside the download.
-          </p>
+          <div className="mt-2 max-w-prose space-y-1.5 text-[11px] text-muted">
+            <p>
+              After running it, turn on{" "}
+              <span className="font-semibold">
+                "TallyPrime acts as Server"
+              </span>{" "}
+              in Tally (F1 → Settings → Connectivity).
+            </p>
+            <p>
+              Also set up Tally's scheduled backup (Gateway of Tally → Alt+Y
+              → Backup): choose{" "}
+              <span className="font-semibold">Specify Path</span> to a local
+              folder (not TallyDrive), keep the normal{" "}
+              <span className="font-semibold">Data Backup</span>, and turn on{" "}
+              <span className="font-semibold">versioned backups</span> so
+              each run keeps a new copy. A step-by-step guide is inside the
+              download.
+            </p>
+          </div>
           {data.agent_online && (
             <p className="mt-1.5 text-[11px] text-ok">
               Installed and checking in — waiting on Tally to be reachable.

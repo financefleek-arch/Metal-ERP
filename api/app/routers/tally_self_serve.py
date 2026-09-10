@@ -12,13 +12,20 @@ or download its own agent's installer.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import select
 
 from app.backup_storage import R2NotConfigured, get_object
 from app.deps import SessionDep, WriteUser
 from app.models import BackupShop, BackupUpload, Invoice, TallySyncJob
-from app.schemas_admin import FirmBackupListOut, FirmBackupOut, FirmTallyShopOut
+from app.schemas_admin import (
+    FirmBackupFileOut,
+    FirmBackupListOut,
+    FirmBackupSetOut,
+    FirmTallyShopOut,
+)
 from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
 from app.services.tally.agent_health import agent_online, assert_tally_reachable
 from app.services.tally.backup_retention import effective_retention_count
@@ -102,18 +109,38 @@ def list_own_backups(user: WriteUser, session: SessionDep) -> FirmBackupListOut:
         )
     rows = list(
         session.scalars(
-            select(BackupUpload)
-            .where(
+            select(BackupUpload).where(
                 BackupUpload.shop_id == shop.id,
                 BackupUpload.status == "confirmed",
             )
-            .order_by(BackupUpload.uploaded_at.desc())
-            .limit(100)
         )
     )
+
+    # Group by set_id; a row without one is its own set, keyed by row id so
+    # it can never merge with another.
+    grouped: dict[tuple[bool, str], list[BackupUpload]] = {}
+    for r in rows:
+        gkey = (True, r.set_id) if r.set_id else (False, r.id)
+        grouped.setdefault(gkey, []).append(r)
+
+    epoch = datetime.min.replace(tzinfo=UTC)
+    sets: list[FirmBackupSetOut] = []
+    for (has_set_id, identifier), members in grouped.items():
+        members.sort(key=lambda m: m.uploaded_at or epoch, reverse=True)
+        newest = next((m.uploaded_at for m in members if m.uploaded_at), None)
+        sets.append(
+            FirmBackupSetOut(
+                set_id=identifier if has_set_id else None,
+                uploaded_at=newest,
+                total_bytes=sum(m.size_bytes for m in members),
+                files=[FirmBackupFileOut.model_validate(m) for m in members],
+            )
+        )
+    sets.sort(key=lambda s: s.uploaded_at or epoch, reverse=True)
+
     return FirmBackupListOut(
         retention_count=effective_retention_count(shop),
-        backups=[FirmBackupOut.model_validate(r) for r in rows],
+        sets=sets,
     )
 
 

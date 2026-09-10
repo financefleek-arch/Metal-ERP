@@ -37,6 +37,32 @@ def test_generate_appsettings_includes_tally_masters_block() -> None:
     }
     # Existing blocks untouched.
     assert agent["BackupSync"]["WatchFolder"] == "C:\\Tally\\Backup"
+    # Native TallyPrime backup set (manifest + data parts) — never the
+    # ODBC/SQL export, and no legacy scalar FilePattern.
+    assert agent["BackupSync"]["FilePatterns"] == ["TDBK*", "TBK*.900"]
+    assert "FilePattern" not in agent["BackupSync"]
+
+
+def test_readme_names_the_configured_watch_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    build_dir = tmp_path / "publish"
+    build_dir.mkdir()
+    (build_dir / "TallyAgent.exe").write_bytes(b"x")
+    (build_dir / "install.ps1").write_text("# fake\n")
+    monkeypatch.setattr(installer._settings, "tally_agent_build_dir", str(build_dir))
+
+    blob = installer.build_installer_zip(
+        shop_api_key="k",
+        backend_base_url="https://api.example.com",
+        watch_folder="D:\\Backups\\Tally",
+    )
+    with zipfile.ZipFile(BytesIO(blob)) as zf:
+        readme = zf.read("README.txt").decode()
+
+    assert "D:\\Backups\\Tally" in readme  # placeholder substituted with the real folder
+    assert "{watch_folder}" not in readme
+    assert "TSDBK" in readme  # warns the shop off the SQL/ODBC export
 
 
 def test_build_installer_zip_raises_when_build_missing(

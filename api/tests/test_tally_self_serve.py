@@ -122,7 +122,14 @@ def _provision_shop(client: TestClient, firm_name: str) -> str:
     return r.json()["shop_id"]
 
 
-def _add_upload(shop_id: str, name: str, *, status_: str = "confirmed", ts=None) -> str:
+def _add_upload(
+    shop_id: str,
+    name: str,
+    *,
+    status_: str = "confirmed",
+    ts=None,
+    set_id: str | None = None,
+) -> str:
     from datetime import UTC, datetime
 
     with SessionLocal() as s:
@@ -132,6 +139,7 @@ def _add_upload(shop_id: str, name: str, *, status_: str = "confirmed", ts=None)
             size_bytes=1234,
             r2_key=f"{shop_id}/{name}",
             status=status_,
+            set_id=set_id,
             uploaded_at=ts or datetime.now(UTC),
         )
         s.add(row)
@@ -139,22 +147,30 @@ def _add_upload(shop_id: str, name: str, *, status_: str = "confirmed", ts=None)
         return row.id
 
 
-def test_list_backups_only_own_confirmed(client: TestClient) -> None:
+def test_list_backups_groups_into_sets_own_confirmed(client: TestClient) -> None:
     tok_a = _register_firm(client, "Backup Firm A", "b-a@self-serve.example.com")
     _register_firm(client, "Backup Firm B", "b-b@self-serve.example.com")
     shop_a = _provision_shop(client, "Backup Firm A")
     shop_b = _provision_shop(client, "Backup Firm B")
 
-    _add_upload(shop_a, "a1.001")
-    _add_upload(shop_a, "a2.001", status_="pending")
-    _add_upload(shop_b, "b1.001")
+    # one 2-file set for A, plus a pending file (excluded), plus B's own
+    _add_upload(shop_a, "TBK1800_100000.900", set_id="tbk:1800_100000_v0")
+    _add_upload(shop_a, "TDBK1800_100000.001", set_id="tbk:1800_100000_v0")
+    _add_upload(shop_a, "half.001", status_="pending")
+    _add_upload(shop_b, "TDBK1800_200000.001", set_id="tbk:1800_200000_v0")
 
     r = client.get("/api/tally/backups", headers=_auth(tok_a))
     assert r.status_code == 200, r.text
     body = r.json()
-    names = {b["filename"] for b in body["backups"]}
-    assert names == {"a1.001"}  # own confirmed only
     assert body["retention_count"] == 30
+    assert len(body["sets"]) == 1  # A's single confirmed set only
+    the_set = body["sets"][0]
+    assert the_set["set_id"] == "tbk:1800_100000_v0"
+    assert {f["filename"] for f in the_set["files"]} == {
+        "TBK1800_100000.900",
+        "TDBK1800_100000.001",
+    }
+    assert the_set["total_bytes"] == 2468
 
 
 def test_download_backup_tenant_scoped(client: TestClient, monkeypatch) -> None:
@@ -176,7 +192,35 @@ def test_download_backup_tenant_scoped(client: TestClient, monkeypatch) -> None:
     assert r.status_code == 404
 
 
-def test_retention_prunes_oldest_confirmed(monkeypatch) -> None:
+def _add_set(s, shop_id: str, set_id: str, base_ts, *, parts: int = 3) -> None:
+    """A backup set = one .900 manifest + `parts` TDBK data files, all
+    sharing `set_id` and `base_ts`."""
+    s.add(
+        BackupUpload(
+            shop_id=shop_id,
+            filename=f"{set_id}.900",
+            size_bytes=1,
+            r2_key=f"{shop_id}/{set_id}.900",
+            status="confirmed",
+            set_id=set_id,
+            uploaded_at=base_ts,
+        )
+    )
+    for p in range(1, parts + 1):
+        s.add(
+            BackupUpload(
+                shop_id=shop_id,
+                filename=f"{set_id}.00{p}",
+                size_bytes=1,
+                r2_key=f"{shop_id}/{set_id}.00{p}",
+                status="confirmed",
+                set_id=set_id,
+                uploaded_at=base_ts,
+            )
+        )
+
+
+def test_retention_prunes_whole_sets_oldest_first(monkeypatch) -> None:
     from datetime import UTC, datetime, timedelta
 
     from app.config import get_settings
@@ -190,18 +234,10 @@ def test_retention_prunes_oldest_confirmed(monkeypatch) -> None:
         s.add(shop)
         s.flush()
         base = datetime.now(UTC)
+        # keep + 3 sets of 4 files each (1 manifest + 3 parts)
         for i in range(keep + 3):
-            s.add(
-                BackupUpload(
-                    shop_id=shop.id,
-                    filename=f"b{i}.001",
-                    size_bytes=1,
-                    r2_key=f"{shop.id}/b{i}.001",
-                    status="confirmed",
-                    uploaded_at=base - timedelta(hours=i),
-                )
-            )
-        # a failed row must never be pruned
+            _add_set(s, shop.id, f"set-{i:03d}", base - timedelta(hours=i), parts=3)
+        # a failed straggler must never be pruned
         s.add(
             BackupUpload(
                 shop_id=shop.id,
@@ -209,6 +245,7 @@ def test_retention_prunes_oldest_confirmed(monkeypatch) -> None:
                 size_bytes=1,
                 r2_key=f"{shop.id}/stale-failed.001",
                 status="failed",
+                set_id="set-999",
                 uploaded_at=base - timedelta(days=9),
             )
         )
@@ -217,32 +254,39 @@ def test_retention_prunes_oldest_confirmed(monkeypatch) -> None:
         removed = retention_mod.prune_confirmed_backups(s, shop)
         s.commit()
 
-        assert removed == 3
-        assert len(deleted) == 3
+        # 3 whole sets * 4 files
+        assert removed == 12
+        assert len(deleted) == 12
         remaining = list(
             s.scalars(select(BackupUpload).where(BackupUpload.shop_id == shop.id))
         )
-        assert len([r for r in remaining if r.status == "confirmed"]) == keep
+        confirmed = [r for r in remaining if r.status == "confirmed"]
+        # exactly `keep` sets survive, each still whole (4 files)
+        surviving_sets = {r.set_id for r in confirmed}
+        assert len(surviving_sets) == keep
+        for sid in surviving_sets:
+            assert len([r for r in confirmed if r.set_id == sid]) == 4
         assert any(r.filename == "stale-failed.001" for r in remaining)
 
 
-def test_retention_per_shop_override(monkeypatch) -> None:
+def test_retention_legacy_null_set_id_is_its_own_set(monkeypatch) -> None:
     from datetime import UTC, datetime, timedelta
 
     monkeypatch.setattr(retention_mod, "delete_object", lambda key: None)
 
     with SessionLocal() as s:
-        shop = BackupShop(name="Override Co", api_key_hash="h-override", backup_retention_count=2)
+        shop = BackupShop(name="Legacy Co", api_key_hash="h-legacy", backup_retention_count=2)
         s.add(shop)
         s.flush()
         base = datetime.now(UTC)
+        # 5 pre-0030 single-file backups, no set_id -> 5 singleton sets
         for i in range(5):
             s.add(
                 BackupUpload(
                     shop_id=shop.id,
-                    filename=f"o{i}.001",
+                    filename=f"legacy{i}.001",
                     size_bytes=1,
-                    r2_key=f"{shop.id}/o{i}.001",
+                    r2_key=f"{shop.id}/legacy{i}.001",
                     status="confirmed",
                     uploaded_at=base - timedelta(hours=i),
                 )
@@ -250,7 +294,7 @@ def test_retention_per_shop_override(monkeypatch) -> None:
         s.commit()
         removed = retention_mod.prune_confirmed_backups(s, shop)
         s.commit()
-        assert removed == 3
+        assert removed == 3  # keep 2 newest singletons
         remaining = list(
             s.scalars(select(BackupUpload).where(BackupUpload.shop_id == shop.id))
         )

@@ -208,18 +208,29 @@ def test_checkin_returns_queued_outbox_items(client: TestClient, session: Sessio
 
 
 def test_upload_request_then_confirm(client: TestClient, session: Session) -> None:
+    from app.models import BackupUpload
+
     _shop_id, key = _make_shop(session)
 
     req = client.post(
         "/api/tally-agent/upload-request",
         headers={"X-Shop-Key": key},
-        json={"filename": "backup_20260903.001", "size_bytes": 12345},
+        json={
+            "filename": "TDBK1800_100000.001",
+            "size_bytes": 12345,
+            "set_id": "tbk:1800_100000_v0",
+        },
     )
     assert req.status_code == 200, req.text
     body = req.json()
     assert body["put_url"].startswith("https://r2.example.com/")
-    assert body["r2_key"].endswith("_backup_20260903.001")
+    assert body["r2_key"].endswith("_TDBK1800_100000.001")
     upload_id = body["upload_id"]
+
+    session.expire_all()
+    stored = session.get(BackupUpload, upload_id)
+    assert stored is not None
+    assert stored.set_id == "tbk:1800_100000_v0"
 
     confirm = client.post(
         "/api/tally-agent/upload-confirm",
