@@ -55,16 +55,16 @@ Metal ERP from a standalone ERP into a Tally companion.
 
 Legend: ✅ built & deployed · 🟢 built + committed, not deployed · 🟡 partly built · ⬜ not started
 
-Last status pass: **2026‑09‑10** (F1b‑1 sales‑voucher‑out live e2e confirmed — see §6).
+Last status pass: **2026‑09‑10** (F1 fully live‑e2e'd both voucher directions; push moved off finalize; TallyPrime 7.1 competitive shift — see §6).
 
 | # | Feature | Tier | Status | Depends on |
 |---|---|---|---|---|
-| F1 | **Tally Connector** — masters in, vouchers out | Platform | ✅ **F1a (masters‑in) + F1b‑1 (sales‑voucher‑out) both DEPLOYED + LIVE E2E CONFIRMED** (F1a 2026‑09‑09, F1b‑1 2026‑09‑10). Migrations `0022`/`0024`/`0026`/`0027`/`0028` on prod. Agent `TallyMastersModule` handles both `pull_masters` and `push_sales`/`push_purchase` outbox actions. **F1b‑1 proven end to end:** a `push_sales` job → agent POSTs a Sales voucher to the live Tally gateway → `tally_sync_status: synced` → voucher confirmed in TallyPrime. Strict mode (party+item need `tally_guid`), non‑GST, round‑off folded into last line. **DESIGN DECISION 2026‑09‑10: push is NOT on finalize — the current `_enqueue_tally_push_best_effort` finalize hook is to be removed / gated off; the explicit `POST /api/tally/invoices/{id}/push` ("Send to Tally" button) is the real path, so the shop chooses which finalized invoices cross into Tally.** Remaining: rip out the finalize hook + wire the button; **F1c** (Receipt voucher + agent long‑poll) ⬜; **F1d** (ledger‑map UI + sync dashboard) ⬜; **GST branch** ⬜ (gate on `tenant.gst_enabled`). | Companion agent (F10) |
-| F2 | **WhatsApp Invoicing** — send PDF, delivery receipts, per‑firm number | 1 | 🟢 send + phone‑normalise + opt‑in‑drop + "save number" + **delivery‑tracking fan‑in all DEPLOYED** 2026‑09‑09 (fleek‑infra + fleek‑backend + Metal ERP, in order). **e2e vs Meta (real send → delivered/read webhook advances the row) still unconfirmed.** | — |
-| F3 | **Collections & Reminders** — ageing, auto WhatsApp nudges, statements | 1 | 🟡 **F3a (ageing dashboard) + F3b (statement→WhatsApp) BUILT 2026‑09‑09, uncommitted** — migration `0025` (`tenant.default_credit_days`), `ageing_summary()` + `GET /api/collections/ageing`, `services/statements.py` + `statement_v1.html` + `POST /api/parties/{id}/statement/whatsapp`, `account_statement` Meta template (**submit day‑1**), `CollectionsPage` rewrite + `StatementSendDialog`. 443 tests green. **F3c (reminder scheduler) ⬜ — the one real infra piece.** F3d (promise‑to‑pay) ⬜. | F2 |
-| F4 | **Mobile Owner‑Operated Billing** — layman invoice + Collections, syncs to Tally | 1 | 🟢 editor/payments/collections all exist; F1b‑1 provides the push. F4 == bill on phone → finalize → tap **"Send to Tally"** (explicit, NOT on finalize — see F1 note). Sync chip on the invoice list = `tally_sync_status`. Remaining: the button + rip out the finalize hook. | F1b |
-| F5 | **AP Bill Capture** — photo/PDF → parsed draft → approve → voucher | 2 | 🟡 Inward pipeline X0–X5 exists; Tally push + OCR polish ⬜ | F1 |
-| F6 | **GSTR‑2B / ITC Reconciliation** — pull 2B, auto‑match, "hold payment" flags | 2 | ⬜ | F5 |
+| F1 | **Tally Connector** — masters in, vouchers out | Platform | ✅ **FULLY LIVE E2E — BOTH voucher directions.** F1a masters‑in + F1b‑1 sales‑out + F5d/F5‑e purchase‑out (all 2026‑09‑09/10, proven against prod + a real TallyPrime 7.1). Migrations `0022`/`0024`/`0026`/`0027`/`0028`/`0031`. `TallyMastersModule` handles `pull_masters` / `push_sales` / `push_purchase`. **Push is EXPLICIT** — `POST /api/tally/invoices/{id}/push` ("Push to Tally" button, `TallyPushPanel`), NOT on finalize (shop controls pakka/kachcha). Sales = strict mode; purchase (F5d) = auto‑on‑approve + button, F5‑e auto‑creates missing supplier/item/unit masters in the same envelope. Non‑GST only. Remaining: **GST branch** ⬜ (gate on `tenant.gst_enabled`); **F1c** (Receipt voucher + agent long‑poll) ⬜; **F1d** (ledger‑map UI + sync dashboard) ⬜; move purchase push off auto‑on‑approve ⬜. | Companion agent (F10) |
+| F2 | **WhatsApp Invoicing** — send PDF, delivery receipts, per‑firm number | 1 | ✅ send + phone‑normalise + opt‑in‑drop + "save number" + delivery‑tracking fan‑in all DEPLOYED. **e2e vs real Meta still unconfirmed.** ⚠️ **Now parity — TallyPrime 6.x ships first‑party WhatsApp.** Don't lead with this. | — |
+| F3 | **Collections & Reminders** — ageing, auto WhatsApp nudges, statements | 1 | ✅ **F3a (ageing dashboard) + F3b (statement→WhatsApp) DEPLOYED** (migration `0025`). **F3c (reminder scheduler / cadence engine) ⬜ — the one real infra piece, and the F3 bit Tally‑native WhatsApp does NOT do.** F3d (promise‑to‑pay) ⬜. **Submit `account_statement` + `payment_reminder` Meta templates.** | F2 |
+| F4 | **Mobile Owner‑Operated Billing** — layman invoice + Collections, syncs to Tally | 1 | ✅ editor/payments/collections + F1b‑1 push all live. Bill on phone → finalize → tap **"Push to Tally"** (explicit). ⚠️ Now parity — Vyapar/myBillBook. The edge is verticalising it (F12 + weighment + handwritten‑bill OCR). | F1b |
+| F5 | **AP Bill Capture** — photo/PDF → parsed draft → approve → voucher | 2 | 🟡 Inward pipeline X0–X5 + F5d/F5‑e Tally purchase‑voucher push all live‑e2e'd. **OCR/vision path (X7) still ⬜.** ⚠️ **AP‑side OCR is now parity — TallyPrime 7.1 "Docs by Ira" does scanned‑PDF/photo → draft purchase voucher (inward‑only).** See "Vision invoice capture" in §7. | F1 |
+| F6 | **GSTR‑2B / ITC Reconciliation** — pull 2B, auto‑match, "hold payment" flags | 2 | ⬜ ⚠️ **Now parity — TallyPrime 6.1 ships native GSTR‑2B/IMS reconciliation.** Deprioritise; pull Tally's result if needed. | F5 |
 | F7 | **Bank Statement Ingestion** — PDF/Excel → auto ledger‑coding → reconcile | 2 | ⬜ | F1 |
 | F8 | **Weighment / Segment Billing** — multi‑weighing invoices, weight+count PDF | Moat | ✅ built (some parts committed in `739ba36`) | — |
 | F9 | **Old‑Metal / Exchange Handling** — scrap in against new goods | Moat | ⬜ | F8 |
@@ -726,6 +726,52 @@ F12 Type-ahead (built) — standalone
 
 ## 6. Build log
 
+### 2026‑09‑10 (later) — Push moved OFF finalize + F5d/F5‑e purchase‑voucher LIVE E2E + 4 bugs
+
+**Decision: Tally push is an explicit per‑invoice action, NOT a finalize
+side effect.** `_enqueue_tally_push_best_effort` removed from `finalize.py`.
+Finalize does its own job (freeze totals, gap‑free number, PDF); the shop
+taps **"Push to Tally"** (`TallyPushPanel`, already wired on the finalized
+invoice) to cross a bill into Tally — pakka/kachcha control. `inward/approve.py`'s
+**purchase** auto‑push‑on‑approve was left in place (revisit for symmetry).
+Sales e2e re‑confirmed via `f1b_e2e.py` (now calls `/push` explicitly).
+
+**F5d/F5‑e purchase‑voucher‑out — LIVE E2E CONFIRMED.** `f5d_e2e.py` full
+Sugal Foods run against prod + live TallyPrime: upload PDF → extract
+(reconciled, supplier + 12 lines matched) → approve → F5d hook auto‑enqueued
+`push_purchase` → agent POSTed the voucher → `tally_sync_status: synced` →
+Purchase voucher confirmed in Tally via a Collection gateway query. F5‑e
+auto‑create worked (1 UNIT + 1 supplier LEDGER + 12 STOCKITEM + the voucher
+in one envelope). **Both voucher directions are now live‑verified.**
+
+**4 real bugs found + fixed** (commits `d9ac42b`, `5288e65`; migration
+`0031`):
+1. `tally_sync_job.entity_type` / `tally_link.entity_type` were `VARCHAR(10)`
+   — F5d writes `'inward_bill'` (11 chars) → Postgres
+   `StringDataRightTruncation` → **prod 500 on inward‑bill approve**. Sales
+   writes `'invoice'` (7) so F1b‑1 never hit it. Fix: widen both to
+   `VARCHAR(20)` (`0031`).
+2. The `except` in `approve.py::_enqueue_tally_push_best_effort` then read
+   `bill.id` on the rolled‑back session → `PendingRollbackError` escaped the
+   `except` → 500 for the whole approve. Fix: capture `bill_id` before the
+   `try`; wrap `enqueue_push_purchase` in `session.begin_nested()` so its
+   flush failure rolls back only its own rows, not the approve's.
+3. `STOCKITEM ACTION="Create"` fails with `Unit 'Pcs' does not exist!` when
+   the target company lacks that unit → items never created → voucher fails
+   on "Stock Item does not exist". Fix: `build_envelope` emits a
+   `<UNIT ACTION="Create">` (simple unit, 0 decimals) for each distinct
+   `BASEUNITS` before the STOCKITEM blocks. `ACTION="Create"` on an existing
+   master just alters it (no error — live‑verified).
+4. `<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>` on a **Purchase**
+   voucher → silent `EXCEPTIONS=1` (whole voucher rejected, no `LINEERROR`)
+   unless the company's Purchase voucher type is "as invoice". Binary‑searched
+   against the live gateway. Fix: purchase serializer no longer emits
+   `PERSISTEDVIEW`. Sales keeps it (sales voucher type is invoice‑mode by
+   default).
+
+507 backend tests pass. Dev box confirmed as **TallyPrime 7.1**
+(`PRODMAJORREL 7`), unlicensed → voucher dates must be the 1st/2nd.
+
 ### 2026‑09‑10 — F1b‑1 sales‑voucher‑out LIVE E2E CONFIRMED
 
 `docs/EXECUTION-PLAN-F1b1-sales-voucher-push.md`. The F1b‑1 serializer +
@@ -1024,35 +1070,45 @@ migrations on PG). Nothing committed.
 
 ## 7. Next step
 
-**F1a live e2e — DONE 2026‑09‑09. F1b‑1 sales‑voucher‑out live e2e — DONE
-2026‑09‑10** (§6): a real invoice finalized on prod → the running agent
-pushed it → a Sales voucher was confirmed in a real TallyPrime.
-**F1a + F1b‑1 + F4 are now all live‑verified end to end** — the
-Tally‑complement critical path (F10 → F1a/F1b → F4) is proven.
+**F1 is FULLY live‑verified end to end — BOTH voucher directions**
+(§6, 2026‑09‑10): F1a masters‑in, F1b‑1 sales‑voucher‑out (explicit push),
+F5d/F5‑e purchase‑voucher‑out (auto‑on‑approve + button, with master
+auto‑create) — all proven against prod + a real TallyPrime. The
+Tally‑complement critical path (F10 → F1a/F1b/F5d) is done.
 
-### Candidate next work items (pick one)
+### Competitive reality (see memory `competitive-landscape-2026`)
 
-| Item | Why now | Size | Notes |
-|---|---|---|---|
-| **F1c — Receipt voucher + agent long‑poll** | Completes the write side (payments → Tally, not just invoices) and retires the ~60‑120 s checkin‑poll latency for a near‑real‑time push. Reuses the whole F1b‑1 transport. | Medium | New serializer over `Payment`/`PaymentAllocation` bill‑wise; new `push_receipt` job kind; agent gets a long‑poll `GET /jobs/next` instead of piggybacking on checkin. |
-| **F2 e2e vs Meta** | Last un‑verified thing in the shipped stack. Send a real invoice on WhatsApp, confirm the delivered/read webhook fans in from fleek‑backend and advances the `whatsapp_message` row. | Small | Pure validation, no code expected unless it surfaces a bug. |
-| **Submit `account_statement` + `payment_reminder` Meta templates** | F3b's statement‑to‑WhatsApp send is dead code until `account_statement` is approved (Meta lead time = days). Do this first if S2 is going to ship soon. | Tiny | Just the Meta submission; no repo change. |
-| **Commit + deploy S2 (F3a ageing + F3b statement)** | Built 2026‑09‑09, still uncommitted (migration `0025`). Owner‑facing value, no Tally dependency. | Small (already built) | Needs the two Meta templates above submitted, then `alembic upgrade head` on prod. |
-| **F1d — ledger‑map editor UI + sync dashboard** | Support/ops ergonomics: a sync‑job failure table with retry + raw‑XML drawer, and a proper ledger‑map editor (dropdowns from the last pull's `known_ledgers`). Partly present in `TallyPanel.tsx`. | Medium | Not on the critical path; do when pilot support load justifies it. |
-| **F3c — reminder scheduler** | Turns F3a/F3b from a dashboard into automation. The one genuinely new piece of plumbing — **no scheduler infra exists in the repo**. | Large | Depends on S2 being committed/deployed first. |
+TallyPrime is eating the horizontal features natively: **6.x** = WhatsApp
+invoicing/reminders + GSTR‑2B/IMS reconciliation; **7.1 (Jun 2026)** =
+"Docs by Ira" AI PDF invoice OCR (scanned PDF + phone photo → draft
+**purchase** voucher; inward‑only; 100 free pages/2mo then metered;
+phased/gated rollout). So **F2, F3, F6, and AP‑side OCR are parity, not an
+edge** — don't lead with them. The open lanes: the **vertical bundle**
+(F8 weighment / F9 exchange / F12 bartan search), **sales‑side
+handwritten‑invoice OCR** (Docs by Ira is inward‑only), and **owning the
+read** (vision extract + shop‑specific match + a correction learning loop).
 
-**Recommendation:** F1c keeps the Tally critical path moving and removes
-the last transport shortcut (checkin‑poll). F2 e2e + the Meta template
-submissions are cheap and can be done alongside. S2 commit/deploy is
-low‑risk once the templates are in.
+### Candidate next work items
+
+| Item | Why | Size |
+|---|---|---|
+| **Vision invoice capture** (sales‑first, then AP) | Photo of a handwritten counter bill → draft invoice. On‑thesis (owner/counter/mobile/vertical), and Docs by Ira does NOT do sales‑side. Everything downstream (editor, match, reconcile, Tally push) exists — this is one vision‑extraction module + two thin call sites + cost control. Also the abandoned "X7". | Small–Medium |
+| **GST billing** | `tenant.gst_enabled` exists + is admin‑set but read by nothing; `finalize.py` hardcodes `v1‑nongst`. `ledger_map` + `InvoiceLine.gst_rate` + HSN already modelled. Slice = light up what's modelled, gate on the flag + a `v1‑gst` template + a GST branch in `tax.py` / the Tally serializer. | Medium |
+| **F3c — reminder scheduler** | Turns F3a/F3b from a dashboard into automation. **No scheduler infra in the repo** — the one genuinely new plumbing. This is the F3 gap Tally‑native WhatsApp doesn't fill (it's send‑on‑demand, no cadence). | Large |
+| **Submit `account_statement` + `payment_reminder` Meta templates** | F3b send is dead until `account_statement` is approved (Meta lead time = days). Do regardless of what's next. | Tiny |
+| **F2 e2e vs Meta** | Last un‑verified thing in the shipped stack. | Small |
+| **F1c — Receipt voucher + agent long‑poll** | Payments → Tally, and retires the ~60‑120 s checkin‑poll latency. Reuses the F1b/F5d transport. | Medium |
+| **Purchase push: move off auto‑on‑approve** | For symmetry with the sales decision — approve is a heavy txn; shop should choose. | Small |
 
 ### Standing gotchas for any Tally‑side work
 
-- The dev‑box TallyPrime is **unlicensed / eval mode** → only accepts
-  voucher dates = 1st or 2nd of the month. A licensed pilot Tally does
-  not. See §6 (2026‑09‑10) + the F1b‑1 plan's "Finding 1".
+- Dev‑box TallyPrime is **7.1, unlicensed** → voucher dates must be the 1st
+  or 2nd of the month. Licensed pilot Tally: no such limit. e2e drivers
+  default `VOUCHER_DATE` / `BILL_DATE` to the 2nd.
 - A masters pull **stages only**; `tally_guid` needs a
   `POST /api/{items,parties}/import/{batch}/commit` afterward.
-- Regression‑check F1b with `scratchpad/f1b_e2e.py` (session scratchpad,
-  not committed) — `--check` for readiness, `--no-pull` for a fast push
-  loop.
+- **Purchase voucher: no `<PERSISTEDVIEW>`** (silent `EXCEPTIONS=1`);
+  **emit a `<UNIT ACTION="Create">`** for each new stock item's BASEUNITS
+  before the STOCKITEM block. Sales voucher keeps `PERSISTEDVIEW`.
+- Regression‑check with `scratchpad/{f1b,f5d}_e2e.py` (session scratchpad,
+  not committed) — `--check` for readiness, `--no-pull` for a fast loop.
