@@ -138,87 +138,109 @@ export function InvoiceListPage() {
             month: "short",
             year: "2-digit",
           });
+          const actions = (
+            <>
+              {iv.status === "final" && (
+                <button
+                  className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
+                  onClick={() => openPdf(iv.id)}
+                >
+                  PDF
+                </button>
+              )}
+              <RowMenu
+                iv={iv}
+                onOpen={() => nav(`/invoices/${iv.id}`)}
+                onPdf={() => openPdf(iv.id)}
+                onDuplicate={() => dup.mutate(iv.id)}
+                onDelete={
+                  canDelete(iv.status)
+                    ? () => {
+                        const msg =
+                          iv.status === "draft"
+                            ? "Delete this draft?"
+                            : `Delete cancelled invoice #${iv.number} permanently?`;
+                        if (confirm(msg)) del.mutate(iv.id);
+                      }
+                    : undefined
+                }
+              />
+            </>
+          );
+
+          const numberBtn = (
+            <button
+              className="shrink-0 text-left font-mono font-semibold text-accent hover:underline"
+              onClick={() => nav(`/invoices/${iv.id}`)}
+            >
+              {iv.number ?? "—"}
+            </button>
+          );
+
+          const partyBlock = (
+            <button
+              className="block min-w-0 text-left"
+              onClick={() => nav(`/invoices/${iv.id}`)}
+            >
+              <div
+                className={`truncate font-semibold hover:underline ${
+                  iv.party_id ? "" : "italic text-muted"
+                }`}
+              >
+                {iv.party_name}
+              </div>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
+                {st && (
+                  <span className={`font-semibold uppercase tracking-wide ${st.cls}`}>
+                    {st.text}
+                  </span>
+                )}
+                <span>{dateStr}</span>
+                <PaymentDot s={iv.payment_status} />
+              </div>
+            </button>
+          );
+
+          const amount = (
+            <span className="font-mono font-semibold">
+              {iv.grand_total ? inr(iv.grand_total) : "—"}
+            </span>
+          );
+
+          const whatsapp =
+            iv.status === "final" ? (
+              <span className="flex flex-col gap-0.5">
+                <WhatsappBadge status={iv.whatsapp_status} />
+                <TallySyncBadge status={iv.tally_sync_status} />
+              </span>
+            ) : (
+              <span className="hidden text-[11px] text-[#b7b1a4] md:inline">—</span>
+            );
+
           return (
             <div
               key={iv.id}
-              className="grid grid-cols-[36px_1fr_auto] items-start gap-x-3 gap-y-2 border-b border-[#f3eee4] px-3 py-3 text-sm last:border-0 hover:bg-[#fcfbf8] md:grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] md:items-center md:py-2.5"
+              className="border-b border-[#f3eee4] px-3 py-3 text-sm last:border-0 hover:bg-[#fcfbf8] md:grid md:grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] md:items-center md:gap-3 md:py-2.5"
             >
-              {/* number */}
-              <button
-                className="text-left font-mono font-semibold text-accent hover:underline"
-                onClick={() => nav(`/invoices/${iv.id}`)}
-              >
-                {iv.number ?? "—"}
-              </button>
-
-              {/* party + meta line */}
-              <button
-                className="col-start-2 min-w-0 text-left"
-                onClick={() => nav(`/invoices/${iv.id}`)}
-              >
-                <div
-                  className={`truncate font-semibold hover:underline ${
-                    iv.party_id ? "" : "italic text-muted"
-                  }`}
-                >
-                  {iv.party_name}
+              {/* ---- mobile: a plain stack, nothing can overlap ---- */}
+              <div className="md:hidden">
+                <div className="flex items-baseline gap-3">
+                  {numberBtn}
+                  <div className="min-w-0 flex-1">{partyBlock}</div>
+                  <span className="shrink-0 text-right">{amount}</span>
                 </div>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted">
-                  {st && (
-                    <span className={`font-semibold uppercase tracking-wide ${st.cls}`}>
-                      {st.text}
-                    </span>
-                  )}
-                  <span>{dateStr}</span>
-                  <PaymentDot s={iv.payment_status} />
+                <div className="mt-2 flex items-center justify-between gap-3 pl-[calc(2ch+0.75rem)]">
+                  <span className="min-w-0">{whatsapp}</span>
+                  <span className="flex shrink-0 items-center gap-1">{actions}</span>
                 </div>
-              </button>
-
-              {/* amount */}
-              <span className="col-start-3 row-start-1 self-center text-right font-mono font-semibold md:col-start-auto">
-                {iv.grand_total ? inr(iv.grand_total) : "—"}
-              </span>
-
-              {/* whatsapp — only meaningful once final */}
-              <span className="col-start-2 flex flex-col gap-0.5 md:col-start-auto">
-                {iv.status === "final" ? (
-                  <>
-                    <WhatsappBadge status={iv.whatsapp_status} />
-                    <TallySyncBadge status={iv.tally_sync_status} />
-                  </>
-                ) : (
-                  <span className="hidden md:inline text-[11px] text-[#b7b1a4]">—</span>
-                )}
-              </span>
-
-              {/* actions: PDF stays one tap, everything else in the menu */}
-              <div className="col-start-3 row-start-2 flex items-center justify-end gap-1 md:col-start-auto md:row-start-auto">
-                {iv.status === "final" && (
-                  <button
-                    className="rounded-md border border-line px-2 py-1 text-[11px] hover:bg-ground"
-                    onClick={() => openPdf(iv.id)}
-                  >
-                    PDF
-                  </button>
-                )}
-                <RowMenu
-                  iv={iv}
-                  onOpen={() => nav(`/invoices/${iv.id}`)}
-                  onPdf={() => openPdf(iv.id)}
-                  onDuplicate={() => dup.mutate(iv.id)}
-                  onDelete={
-                    canDelete(iv.status)
-                      ? () => {
-                          const msg =
-                            iv.status === "draft"
-                              ? "Delete this draft?"
-                              : `Delete cancelled invoice #${iv.number} permanently?`;
-                          if (confirm(msg)) del.mutate(iv.id);
-                        }
-                      : undefined
-                  }
-                />
               </div>
+
+              {/* ---- md+: the aligned table row ---- */}
+              <div className="hidden md:block">{numberBtn}</div>
+              <div className="hidden min-w-0 md:block">{partyBlock}</div>
+              <div className="hidden text-right md:block">{amount}</div>
+              <div className="hidden md:block">{whatsapp}</div>
+              <div className="hidden items-center justify-end gap-1 md:flex">{actions}</div>
             </div>
           );
         })}
