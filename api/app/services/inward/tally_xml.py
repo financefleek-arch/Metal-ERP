@@ -130,19 +130,41 @@ def build_envelope(
             _sub(led, "LEDSTATENAME", state_name)
         _sub(led, "ISBILLWISEON", "Yes")
 
-    # --- master creates: new stock items ---
-    for line in bill.lines:
+    # --- master creates: units, then new stock items ---
+    # Which lines are getting a STOCKITEM create this envelope.
+    _new_item_lines = [
+        line
+        for line in bill.lines
+        if ((line_item_names or {}).get(line.id) or _staged_item_name(line))
+        in new_item_names
+        and ((line_item_names or {}).get(line.id) or _staged_item_name(line))
+    ]
+
+    # A STOCKITEM create fails ("Unit 'X' does not exist!") if its BASEUNITS
+    # isn't already a unit in the target company — which a fresh company, or
+    # one whose units are named differently ('Pcs' vs 'nos'), routinely
+    # isn't. Emit a simple-unit create for each distinct BASEUNITS first.
+    # ACTION="Create" on a unit that already exists just alters it (no
+    # error — verified against the live gateway), so this is safe to send
+    # unconditionally.
+    for unit_name in dict.fromkeys(ln.uom or "Nos" for ln in _new_item_lines):
+        msg = _sub(reqdata, "TALLYMESSAGE")
+        u = etree.SubElement(msg, "UNIT", NAME=unit_name, ACTION="Create")
+        _sub(u, "NAME", unit_name)
+        _sub(u, "ISSIMPLEUNIT", "Yes")
+        _sub(u, "DECIMALPLACES", "0")
+
+    for line in _new_item_lines:
         name = (line_item_names or {}).get(line.id) or _staged_item_name(line)
-        if name and name in new_item_names:
-            msg = _sub(reqdata, "TALLYMESSAGE")
-            si = etree.SubElement(msg, "STOCKITEM", NAME=name, ACTION="Create")
-            _sub(si, "NAME", name)
-            _sub(si, "PARENT", "Primary")
-            _sub(si, "BASEUNITS", line.uom or "Nos")
-            if line.hsn:
-                gst = _sub(si, "GSTDETAILS.LIST")
-                _sub(gst, "HSNMASTERNAME", "")
-                _sub(gst, "HSNCODE", line.hsn)
+        msg = _sub(reqdata, "TALLYMESSAGE")
+        si = etree.SubElement(msg, "STOCKITEM", NAME=name, ACTION="Create")
+        _sub(si, "NAME", name)
+        _sub(si, "PARENT", "Primary")
+        _sub(si, "BASEUNITS", line.uom or "Nos")
+        if line.hsn:
+            gst = _sub(si, "GSTDETAILS.LIST")
+            _sub(gst, "HSNMASTERNAME", "")
+            _sub(gst, "HSNCODE", line.hsn)
 
     # --- the purchase voucher ---
     msg = _sub(reqdata, "TALLYMESSAGE")
@@ -157,7 +179,12 @@ def build_envelope(
     _sub(vch, "BASICBUYERNAME", party_name)
     if state_name:
         _sub(vch, "PLACEOFSUPPLY", state_name)
-    _sub(vch, "PERSISTEDVIEW", "Invoice Voucher View")
+    # NB: no <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW> here.
+    # Live-probed against the gateway: on a Purchase voucher it triggers a
+    # silent EXCEPTIONS=1 (the whole voucher is rejected with no LINEERROR)
+    # unless the company's Purchase voucher type is configured "as invoice"
+    # — which a plain company isn't. Sales keeps PERSISTEDVIEW (works there);
+    # Purchase omits it and imports fine in the default accounting view.
 
     udf = etree.SubElement(
         vch,

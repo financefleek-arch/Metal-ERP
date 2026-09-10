@@ -115,6 +115,17 @@ def test_purchase_ledger_and_round_off_ledger_from_ledger_map_style_config() -> 
     assert "Rounding" in round_off_names
 
 
+def test_purchase_voucher_has_no_persistedview() -> None:
+    """Live-probed: <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW> on a
+    Purchase voucher triggers a silent EXCEPTIONS=1 from the gateway unless
+    the company's Purchase voucher type is set "as invoice". The sales
+    serializer keeps PERSISTEDVIEW (works there); purchase must not emit it.
+    """
+    root = etree.fromstring(build_xml_bytes(_bill(), LedgerConfig(xml_encoding="UTF-8"),
+                                            party_name="ZZTEST Supplier"))
+    assert root.find(".//PERSISTEDVIEW") is None
+
+
 # --------------------------------------------------------------------------
 # F5-e — auto-create at push time
 # --------------------------------------------------------------------------
@@ -150,6 +161,16 @@ def test_new_supplier_and_item_create_blocks_emitted_when_requested() -> None:
 
     inv_name = root.findtext(".//ALLINVENTORYENTRIES.LIST/STOCKITEMNAME")
     assert inv_name == stock_create.get("NAME")
+
+    # A STOCKITEM create fails against a company that lacks the unit
+    # ("Unit 'X' does not exist!"), so a UNIT create for the item's
+    # BASEUNITS must precede it, and in document order.
+    unit_create = root.find('.//UNIT[@ACTION="Create"]')
+    assert unit_create is not None
+    assert unit_create.get("NAME") == "Nos"  # the line's uom
+    assert unit_create.findtext("BASEUNITS") is None  # simple unit
+    ordered = [el.tag for el in root.iter() if el.tag in ("UNIT", "STOCKITEM", "VOUCHER")]
+    assert ordered == ["UNIT", "STOCKITEM", "VOUCHER"], ordered
 
 
 def test_line_item_names_overrides_stale_staged_json() -> None:

@@ -544,10 +544,14 @@ def test_approve_auto_enqueues_push_with_auto_create_for_new_supplier_and_items(
         assert outbox is not None
         voucher_xml = outbox.payload["voucher_xml"]
         assert 'LEDGER NAME="SUGAL FOODS" ACTION="Create"' in voucher_xml
-        # 1 supplier LEDGER + 12 item STOCKITEM creates + the voucher's own
-        # ACTION="Create" = 14 ACTION="Create" occurrences total.
         assert voucher_xml.count('STOCKITEM NAME=') == 12
-        assert voucher_xml.count('ACTION="Create"') == 14
+        # A STOCKITEM create fails ("Unit 'X' does not exist!") on a company
+        # missing that unit — so a UNIT create precedes the item creates,
+        # one per distinct BASEUNITS. All 12 Sugal lines are "Pcs" => 1 UNIT.
+        assert voucher_xml.count('UNIT NAME="Pcs" ACTION="Create"') == 1
+        # 1 UNIT + 1 supplier LEDGER + 12 STOCKITEM + the voucher's own
+        # ACTION="Create" = 15 total.
+        assert voucher_xml.count('ACTION="Create"') == 15
         assert "Monin Mojito Mint Syrup" in voucher_xml
         assert 'VCHTYPE="Purchase"' in voucher_xml
 
