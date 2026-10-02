@@ -86,7 +86,12 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   return data as T;
 }
 
-export type Page<T> = { data: T; nextCursor: string | null };
+export type Page<T> = {
+  data: T;
+  nextCursor: string | null;
+  /** `X-Total-Count`, when the endpoint sends it (null otherwise). */
+  total: number | null;
+};
 
 /**
  * GET that also surfaces the `X-Next-Cursor` response header the paginated
@@ -115,7 +120,12 @@ export async function apiPage<T>(path: string, opts: Options = {}): Promise<Page
     const { message, detail } = parseError(data, res.statusText);
     throw new ApiError(res.status, message, detail);
   }
-  return { data: data as T, nextCursor: res.headers.get("X-Next-Cursor") };
+  const total = res.headers.get("X-Total-Count");
+  return {
+    data: data as T,
+    nextCursor: res.headers.get("X-Next-Cursor"),
+    total: total === null ? null : Number(total),
+  };
 }
 
 /** multipart/form-data POST (file upload). Same auth + error handling as `api`. */

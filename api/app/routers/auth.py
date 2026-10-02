@@ -100,4 +100,5 @@ def me(user: CurrentUser, session: SessionDep) -> UserOut:
         tenant_id=user.tenant_id,
         is_platform_admin=user.is_platform_admin,
         ext_inward_import=bool(tenant and tenant.ext_inward_import),
+        ext_supplier_catalog=bool(tenant and tenant.ext_supplier_catalog),
     )

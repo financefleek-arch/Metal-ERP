@@ -16,9 +16,12 @@ export function Shell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Inward appears only when the tenant has ext_inward_import.
-  const nav = me?.ext_inward_import
-    ? [...baseNav, { to: "/inward", label: "Inward" }]
-    : baseNav;
+  // Catalogs appears only when the tenant has ext_supplier_catalog.
+  const nav = [
+    ...baseNav,
+    ...(me?.ext_inward_import ? [{ to: "/inward", label: "Inward" }] : []),
+    ...(me?.ext_supplier_catalog ? [{ to: "/catalogs", label: "Catalogs" }] : []),
+  ];
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setDrawerOpen(false), [pathname]);

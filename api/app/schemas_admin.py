@@ -35,6 +35,7 @@ class FirmListItem(BaseModel):
     city: str | None = None
     gst_enabled: bool
     ext_inward_import: bool
+    ext_supplier_catalog: bool
     user_count: int
     active_user_count: int
     created_at: datetime
@@ -59,6 +60,7 @@ class FirmDetail(BaseModel):
     city: str | None = None
     gst_enabled: bool
     ext_inward_import: bool
+    ext_supplier_catalog: bool
     created_at: datetime
     users: list[AdminUserOut]
 
@@ -73,6 +75,7 @@ class FirmPatch(BaseModel):
     city: str | None = Field(default=None, max_length=100)
     gst_enabled: bool | None = None
     ext_inward_import: bool | None = None
+    ext_supplier_catalog: bool | None = None
 
 
 # --------------------------------------------------------------------------

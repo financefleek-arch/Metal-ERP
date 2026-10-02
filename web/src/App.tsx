@@ -13,6 +13,8 @@ import { CollectionsPage } from "./pages/CollectionsPage";
 import { InwardListPage } from "./pages/inward/InwardListPage";
 import { InwardSettingsPage } from "./pages/inward/InwardSettingsPage";
 import { InwardDebugPage } from "./pages/inward/InwardDebugPage";
+import { CatalogListPage } from "./pages/catalog/CatalogListPage";
+import { CatalogReviewPage } from "./pages/catalog/CatalogReviewPage";
 import { AdminShell } from "./pages/admin/AdminShell";
 import { FirmsPage } from "./pages/admin/FirmsPage";
 
@@ -40,6 +42,7 @@ export function App() {
   }
 
   const inward = me.ext_inward_import;
+  const catalogs = me.ext_supplier_catalog;
 
   return (
     <Shell>
@@ -67,6 +70,10 @@ export function App() {
         {inward && <Route path="/inward/settings" element={<InwardSettingsPage />} />}
         {inward && <Route path="/inward/debug" element={<InwardDebugPage />} />}
         {inward && <Route path="/inward/:id" element={<InwardListPage />} />}
+
+        {/* Supplier Catalog — only when the tenant flag is on */}
+        {catalogs && <Route path="/catalogs" element={<CatalogListPage />} />}
+        {catalogs && <Route path="/catalogs/:id" element={<CatalogReviewPage />} />}
 
         <Route path="*" element={<Navigate to="/invoices" replace />} />
       </Routes>

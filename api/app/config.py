@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     # contract as pdf_dir).
     inward_dir: str = "/data/inward"
 
+    # Supplier Catalog (ext_supplier_catalog). Images + source PDFs go to R2
+    # under `catalog/` when TALLY_R2_* is set; otherwise (dev, tests) to this
+    # local directory.
+    catalog_local_dir: str = "/data/catalog"
+
     # LLM line-disambiguation (X3) + vision extraction (X7). Off by default —
     # fuzzy-only line matching until real bills show the miss rate. When true,
     # anthropic_api_key must be set.

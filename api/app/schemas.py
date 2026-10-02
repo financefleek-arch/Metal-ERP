@@ -42,6 +42,21 @@ City = Annotated[str | None, AfterValidator(validate_city)]
 LegalName = Annotated[str, AfterValidator(validate_legal_name)]
 OptLegalName = Annotated[str | None, AfterValidator(validate_legal_name)]
 
+
+def _validate_code_prefix(v: str | None) -> str | None:
+    """Item-code prefix: 2-8 letters/digits, stored upper-case; blank -> None."""
+    if v is None:
+        return None
+    v = v.strip().upper()
+    if not v:
+        return None
+    if not (2 <= len(v) <= 8 and v.isascii() and v.isalnum()):
+        raise ValueError("Code prefix must be 2-8 letters or digits")
+    return v
+
+
+CatalogPrefix = Annotated[str | None, AfterValidator(_validate_code_prefix)]
+
 # --------------------------------------------------------------------------
 # auth
 # --------------------------------------------------------------------------
@@ -76,6 +91,7 @@ class UserOut(BaseModel):
     is_platform_admin: bool = False
     # Extension flags the SPA needs at bootstrap (nav gating / route guards).
     ext_inward_import: bool = False
+    ext_supplier_catalog: bool = False
 
 
 # --------------------------------------------------------------------------
@@ -103,6 +119,8 @@ class TenantUpdate(BaseModel):
     terms_text: str | None = Field(default=None, max_length=2000)
     jurisdiction_text: str | None = Field(default=None, max_length=500)
     document_label: str | None = Field(default=None, max_length=50)
+    catalog_code_prefix: CatalogPrefix = None
+    catalog_group_create_policy: Literal["auto", "suggest_only"] | None = None
 
 
 class TenantOut(BaseModel):
@@ -130,6 +148,8 @@ class TenantOut(BaseModel):
     document_label: str
     gst_enabled: bool
     gstin: str | None
+    catalog_code_prefix: str | None = None
+    catalog_group_create_policy: str = "auto"
 
 
 # --------------------------------------------------------------------------

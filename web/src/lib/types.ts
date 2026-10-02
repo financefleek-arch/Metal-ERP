@@ -11,6 +11,8 @@ export interface Me {
   is_platform_admin: boolean;
   /** ext_inward_import — gates the Inward nav item and its routes. */
   ext_inward_import: boolean;
+  /** ext_supplier_catalog — gates the Catalogs nav item and its routes. */
+  ext_supplier_catalog: boolean;
 }
 
 // --- platform admin (/api/admin/*) ---
@@ -33,6 +35,7 @@ export interface FirmListItem {
   city: string | null;
   gst_enabled: boolean;
   ext_inward_import: boolean;
+  ext_supplier_catalog: boolean;
   user_count: number;
   active_user_count: number;
   created_at: string;
@@ -44,6 +47,7 @@ export interface FirmDetail {
   city: string | null;
   gst_enabled: boolean;
   ext_inward_import: boolean;
+  ext_supplier_catalog: boolean;
   created_at: string;
   users: AdminUser[];
 }
@@ -225,6 +229,10 @@ export interface Tenant {
   document_label: string;
   gst_enabled: boolean;
   gstin: string | null;
+  /** Default item-code prefix for new supplier catalogs (null = derived). */
+  catalog_code_prefix: string | null;
+  /** 'auto' creates a missing group (category); 'suggest_only' leaves it blank. */
+  catalog_group_create_policy: "auto" | "suggest_only";
 }
 
 export interface PartyAddress {

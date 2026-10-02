@@ -72,6 +72,18 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     # Toggled by a DB update / seed until an admin screen exists.
     ext_inward_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Extension flag: Supplier Catalog module (supplier price-list PDF -> priced
+    # items, barcode labels, customer catalog, Tally stock items). Off by
+    # default; when false the /api/supplier-catalogs* routes 404.
+    ext_supplier_catalog: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Default item-code prefix for new catalogs (e.g. "GL"). Null = derive one.
+    catalog_code_prefix: Mapped[str | None] = mapped_column(String(8))
+    # 'auto' = create our group (item_category) when a catalog item names one
+    # that doesn't exist; 'suggest_only' = leave blank until the user approves.
+    catalog_group_create_policy: Mapped[str] = mapped_column(
+        String(12), default="auto", server_default="auto", nullable=False
+    )
+
     users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
 
 

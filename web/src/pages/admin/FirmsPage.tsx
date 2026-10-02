@@ -431,13 +431,15 @@ function FirmFields({
   const [city, setCity] = useState(firm.city ?? "");
   const [gst, setGst] = useState(firm.gst_enabled);
   const [inward, setInward] = useState(firm.ext_inward_import);
+  const [catalog, setCatalog] = useState(firm.ext_supplier_catalog);
   const [err, setErr] = useState<string | null>(null);
 
   const dirty =
     legalName.trim() !== firm.legal_name ||
     city.trim() !== (firm.city ?? "") ||
     gst !== firm.gst_enabled ||
-    inward !== firm.ext_inward_import;
+    inward !== firm.ext_inward_import ||
+    catalog !== firm.ext_supplier_catalog;
 
   const save = useMutation({
     mutationFn: () =>
@@ -446,6 +448,7 @@ function FirmFields({
         city: city.trim() || null,
         gst_enabled: gst,
         ext_inward_import: inward,
+        ext_supplier_catalog: catalog,
       }),
     onSuccess: onSaved,
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Save failed"),
@@ -484,6 +487,11 @@ function FirmFields({
           label="Inward Bill Import"
           on={inward}
           onToggle={() => setInward((v) => !v)}
+        />
+        <Toggle
+          label="Supplier Catalog"
+          on={catalog}
+          onToggle={() => setCatalog((v) => !v)}
         />
         <button
           className="btn-ghost ml-auto"

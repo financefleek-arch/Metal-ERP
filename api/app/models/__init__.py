@@ -10,6 +10,13 @@ what `alembic/env.py` targets for autogenerate.
 """
 
 from app.models.audit import AuditLog
+from app.models.catalog import (
+    CatalogOutputJob,
+    CodeSequence,
+    CustomerCatalog,
+    SupplierCatalog,
+    SupplierCatalogItem,
+)
 from app.models.common import HsnCode, NumberSequence, Synonym
 from app.models.invoice import Invoice, InvoiceLine
 from app.models.inward import (
@@ -37,9 +44,14 @@ __all__ = [
     "AuditLog",
     "BackupShop",
     "BackupUpload",
+    "CatalogOutputJob",
+    "CodeSequence",
+    "CustomerCatalog",
     "HsnCode",
     "NumberSequence",
     "Synonym",
+    "SupplierCatalog",
+    "SupplierCatalogItem",
     "ExtractionRun",
     "InwardBill",
     "InwardBillLine",

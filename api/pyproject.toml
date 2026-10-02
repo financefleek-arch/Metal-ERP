@@ -25,6 +25,8 @@ dependencies = [
     "pymupdf>=1.24",
     # Tally companion agent — pre-signed R2 (S3-compatible) upload URLs.
     "boto3>=1.35",
+    # Supplier Catalog (ext_supplier_catalog) — Code 128 barcode modules.
+    "python-barcode>=0.15",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +36,8 @@ dev = [
     "httpx>=0.28",
     "ruff>=0.8",
     "mypy>=1.13",
+    # Supplier Catalog tests decode generated barcodes back to their text.
+    "zxing-cpp>=2.2",
 ]
 
 [build-system]
@@ -68,7 +72,7 @@ disallow_untyped_defs = true
 exclude = ["alembic/versions/", "tests/"]
 
 [[tool.mypy.overrides]]
-module = ["passlib.*", "weasyprint.*", "segno.*", "jose.*", "lxml.*", "pdfplumber.*", "fitz.*", "pymupdf.*", "pyzbar.*", "boto3.*", "botocore.*"]
+module = ["passlib.*", "weasyprint.*", "segno.*", "jose.*", "lxml.*", "pdfplumber.*", "fitz.*", "pymupdf.*", "pyzbar.*", "boto3.*", "botocore.*", "barcode.*", "zxingcpp.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

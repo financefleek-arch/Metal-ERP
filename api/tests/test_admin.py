@@ -142,6 +142,34 @@ def test_patch_firm_fields_and_flags(client: TestClient) -> None:
     assert out["gst_enabled"] is True
 
 
+def test_admin_can_toggle_supplier_catalog_flag(client: TestClient) -> None:
+    token = _admin_token(client)
+    firm = client.post(
+        "/api/admin/firms", headers=_auth(token), json={"legal_name": "Catalog Co"}
+    ).json()
+    assert firm["ext_supplier_catalog"] is False
+
+    r = client.patch(
+        f"/api/admin/firms/{firm['id']}",
+        headers=_auth(token),
+        json={"ext_supplier_catalog": True},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["ext_supplier_catalog"] is True
+    # untouched flags stay as they were
+    assert r.json()["ext_inward_import"] is False
+
+    listed = client.get("/api/admin/firms", headers=_auth(token)).json()
+    assert [f["ext_supplier_catalog"] for f in listed if f["id"] == firm["id"]] == [True]
+
+    r = client.patch(
+        f"/api/admin/firms/{firm['id']}",
+        headers=_auth(token),
+        json={"ext_supplier_catalog": False},
+    )
+    assert r.json()["ext_supplier_catalog"] is False
+
+
 def test_get_missing_firm_404(client: TestClient) -> None:
     token = _admin_token(client)
     assert client.get("/api/admin/firms/nope", headers=_auth(token)).status_code == 404

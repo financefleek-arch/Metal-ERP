@@ -6,9 +6,20 @@ import type { Tenant } from "../lib/types";
 import { StateSelect } from "../components/StateSelect";
 import { TallyConnectCard } from "../components/TallyConnectCard";
 import { TallyBackupsCard } from "../components/TallyBackupsCard";
+import { CatalogSettingsCard } from "../components/CatalogSettingsCard";
+import { useAuth } from "../lib/auth";
 import { panError } from "../lib/reference";
 
-type FormShape = Omit<Tenant, "id" | "gst_enabled" | "gstin" | "trade_name" | "email">;
+type FormShape = Omit<
+  Tenant,
+  | "id"
+  | "gst_enabled"
+  | "gstin"
+  | "trade_name"
+  | "email"
+  | "catalog_code_prefix"
+  | "catalog_group_create_policy"
+>;
 
 type FieldKind = "text" | "textarea" | "state" | "pan";
 const FIELDS: { name: keyof FormShape; label: string; full?: boolean; kind?: FieldKind }[] = [
@@ -32,6 +43,7 @@ const FIELDS: { name: keyof FormShape; label: string; full?: boolean; kind?: Fie
 
 export function FirmPage() {
   const qc = useQueryClient();
+  const { me } = useAuth();
   const { data, isLoading } = useQuery({
     queryKey: ["tenant"],
     queryFn: () => api<Tenant>("/tenant"),
@@ -91,6 +103,7 @@ export function FirmPage() {
 
       <TallyConnectCard />
       <TallyBackupsCard />
+      {me?.ext_supplier_catalog && <CatalogSettingsCard tenant={data} />}
 
       <form onSubmit={onSubmit} className="card p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">

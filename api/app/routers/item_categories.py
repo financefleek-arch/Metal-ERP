@@ -10,10 +10,11 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select, update
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import Item, ItemCategory, ProductGroup
+from app.models import Item, ItemCategory, ProductGroup, SupplierCatalogItem
 from app.schemas_catalogue import (
     CategoryDeleteIn,
     CategoryIn,
+    CategoryMergeIn,
     CategoryOut,
     CategoryUpdate,
 )
@@ -122,28 +123,45 @@ def update_category(
     )
 
 
+def _repoint(session: SessionDep, tenant_id: str, src_id: str, target: str | None) -> None:
+    """Move everything that points at category `src_id` to `target` (None = detach):
+    product groups, items, and supplier-catalog items.
+    """
+    for model in (ProductGroup, Item, SupplierCatalogItem):
+        session.execute(
+            update(model)
+            .where(model.tenant_id == tenant_id, model.category_id == src_id)
+            .values(category_id=target)
+        )
+
+
+@router.post("/{cat_id}/merge", response_model=CategoryOut)
+def merge_category(
+    cat_id: str, body: CategoryMergeIn, user: WriteUser, session: SessionDep
+) -> CategoryOut:
+    """Merge category `cat_id` into `body.into`, then delete `cat_id`."""
+    src = _owned(session, user.tenant_id, cat_id)
+    if body.into == src.id:
+        raise HTTPException(status_code=422, detail="Pick a different category to merge into.")
+    dst = _owned(session, user.tenant_id, body.into)
+    _repoint(session, user.tenant_id, src.id, dst.id)
+    session.delete(src)
+    session.flush()
+    counts = _counts(session, user.tenant_id).get(dst.id, (0, 0))
+    return CategoryOut(
+        id=dst.id, name=dst.name, sort=dst.sort, group_count=counts[0], item_count=counts[1]
+    )
+
+
 @router.delete("/{cat_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_category(
     cat_id: str, body: CategoryDeleteIn, user: WriteUser, session: SessionDep
 ) -> None:
     c = _owned(session, user.tenant_id, cat_id)
-    g, i = _counts(session, user.tenant_id).get(c.id, (0, 0))
+    # reassign_to None => detach (set null) rather than block: a category can always be dropped.
     target: str | None = None
-    if (g or i):
-        if body.reassign_to is None:
-            # detach (set null) rather than block — a category can always be dropped.
-            target = None
-        else:
-            _owned(session, user.tenant_id, body.reassign_to)
-            target = body.reassign_to
-        session.execute(
-            update(ProductGroup)
-            .where(ProductGroup.tenant_id == user.tenant_id, ProductGroup.category_id == c.id)
-            .values(category_id=target)
-        )
-        session.execute(
-            update(Item)
-            .where(Item.tenant_id == user.tenant_id, Item.category_id == c.id)
-            .values(category_id=target)
-        )
+    if body.reassign_to is not None:
+        _owned(session, user.tenant_id, body.reassign_to)
+        target = body.reassign_to
+    _repoint(session, user.tenant_id, c.id, target)
     session.delete(c)

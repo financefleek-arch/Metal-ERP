@@ -70,6 +70,7 @@ def _detail(firm: Tenant) -> FirmDetail:
         city=firm.city,
         gst_enabled=firm.gst_enabled,
         ext_inward_import=firm.ext_inward_import,
+        ext_supplier_catalog=firm.ext_supplier_catalog,
         created_at=firm.created_at,
         users=[AdminUserOut.model_validate(u) for u in _firm_users(firm)],
     )
@@ -112,6 +113,7 @@ def list_firms(session: SessionDep, q: str | None = Query(default=None)) -> list
                 city=f.city,
                 gst_enabled=f.gst_enabled,
                 ext_inward_import=f.ext_inward_import,
+                ext_supplier_catalog=f.ext_supplier_catalog,
                 user_count=len(users),
                 active_user_count=sum(1 for u in users if u.is_active),
                 created_at=f.created_at,
@@ -158,6 +160,8 @@ def update_firm(firm_id: str, body: FirmPatch, session: SessionDep) -> FirmDetai
         firm.gst_enabled = data["gst_enabled"]
     if "ext_inward_import" in data and data["ext_inward_import"] is not None:
         firm.ext_inward_import = data["ext_inward_import"]
+    if "ext_supplier_catalog" in data and data["ext_supplier_catalog"] is not None:
+        firm.ext_supplier_catalog = data["ext_supplier_catalog"]
     session.flush()
     return _detail(firm)
 

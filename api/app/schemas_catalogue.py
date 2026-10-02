@@ -37,6 +37,12 @@ class CategoryOut(BaseModel):
     item_count: int = 0
 
 
+class CategoryMergeIn(BaseModel):
+    """Merge this category INTO another: everything moves, then this one is deleted."""
+
+    into: str
+
+
 class CategoryDeleteIn(BaseModel):
     """Where to move this category's groups/items before deleting it."""
 

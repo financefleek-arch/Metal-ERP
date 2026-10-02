@@ -32,6 +32,7 @@ export const adminApi = {
       city: string | null;
       gst_enabled: boolean;
       ext_inward_import: boolean;
+      ext_supplier_catalog: boolean;
     }>,
   ) => api<FirmDetail>(`/admin/firms/${id}`, { method: "PATCH", body }),
 
