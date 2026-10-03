@@ -37,8 +37,10 @@ Origin: a review of the installer + `fleek-infra` wiring found four delivery gap
 3. **Hand-hold the first customers, after testing on machines with AV** - see the test matrix
    in `tally-agent/README.md`.
 4. **Auto-update is in.** Supersedes onboarding decision #7 ("No auto-update for the pilot").
-5. **R2 is the release store** (same bucket Metal ERP already uses, prefix `agent-releases/`),
-   not an scp to the VPS. Releases are tagged then *promoted* separately; a shop can be pinned
+5. **R2 is the release store** - a dedicated bucket `metaerp-tallyagent` (prefix `agent-releases/`;
+   `TALLY_R2_RELEASE_BUCKET`, compose default, same shared credential - verified it can reach it),
+   not an scp to the VPS. Dedicated because the GitHub CI token must not be able to touch customer
+   backups or the per-shop installers (keys baked in) in the main bucket; those stay where they are. Releases are tagged then *promoted* separately; a shop can be pinned
    to a not-yet-promoted version first (canary).
 6. **In-process updater, not an `update.ps1`.** The first draft had a PowerShell script swap
    the files. Dropped: a PowerShell child process launched by the agent is exactly the pattern
@@ -133,7 +135,8 @@ installer-first rollout; pilot re-install; AV matrix.
    `metalerp-api`; confirm `public-keys` matches; paste that public key into `ReleaseKeys` and
    commit. Until a build with the key is installed every agent refuses updates - so the first
    build goes to shops by installer.
-2. **GitHub secrets** for `agent-release.yml` (R2 write only): `AGENT_R2_ENDPOINT_URL`,
+2. **GitHub Environment `agent-release`** (done 2026-10-03; set required reviewer + `agent-v*` tags
+   only) with R2 secrets for the new bucket only: `AGENT_R2_ENDPOINT_URL`,
    `AGENT_R2_ACCESS_KEY_ID`, `AGENT_R2_SECRET_ACCESS_KEY`, `AGENT_R2_BUCKET`.
 3. Tag `agent-v1.0.0`; on the VPS `docker exec -it metalerp-api python -m tools.agent_release sign
    1.0.0` (compare the hash with the CI run summary), then `... promote 1.0.0`.

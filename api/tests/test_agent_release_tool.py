@@ -47,15 +47,21 @@ def _b64_der(key: ec.EllipticCurvePrivateKey) -> str:
 class FakeEnv:
     def __init__(self) -> None:
         self.bucket: dict[str, bytes] = {}
+        self.buckets_used: set[str | None] = set()
         self.key = ec.generate_private_key(ec.SECP256R1())
 
-    def exists(self, k: str) -> bool:
+    def exists(self, k: str, *, bucket: str | None = None) -> bool:
+        self.buckets_used.add(bucket)
         return k in self.bucket
 
-    def get(self, k: str, max_bytes: int = 0) -> bytes:
+    def get(self, k: str, max_bytes: int = 0, *, bucket: str | None = None) -> bytes:
+        self.buckets_used.add(bucket)
         return self.bucket[k]
 
-    def put(self, k: str, body: bytes, content_type: str = "") -> None:
+    def put(
+        self, k: str, body: bytes, content_type: str = "", *, bucket: str | None = None
+    ) -> None:
+        self.buckets_used.add(bucket)
         self.bucket[k] = body
 
     def stage_pending(self, blob: bytes | None = None, **overrides: object) -> bytes:
@@ -267,6 +273,30 @@ def test_public_keys_prints_the_current_key(
 ) -> None:
     tool.public_keys()
     assert tool.spki_b64(env.key) in capsys.readouterr().out
+
+
+def test_release_files_use_the_dedicated_release_bucket(
+    env: FakeEnv, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sign/promote must touch ONLY the agent-release bucket - never the main tally bucket that
+    holds customer backups and the per-shop installers."""
+    monkeypatch.setattr(tool.get_settings(), "tally_r2_release_bucket", "metaerp-tallyagent")
+    env.stage_pending()
+    tool.sign(VERSION, assume_yes=True)
+    tool.promote(VERSION)
+    tool.status()
+    assert env.buckets_used == {"metaerp-tallyagent"}
+
+
+def test_release_bucket_falls_back_to_the_main_bucket_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = tool.get_settings()
+    monkeypatch.setattr(settings, "tally_r2_bucket", "main-bucket")
+    monkeypatch.setattr(settings, "tally_r2_release_bucket", None)
+    assert settings.agent_release_bucket == "main-bucket"
+    monkeypatch.setattr(settings, "tally_r2_release_bucket", "metaerp-tallyagent")
+    assert settings.agent_release_bucket == "metaerp-tallyagent"
 
 
 def test_main_returns_nonzero_and_prints_on_error(

@@ -16,11 +16,13 @@ name: Agent release
 #                                 -> latest.json: new installers ship it and every un-pinned
 #                                    agent updates itself on its next checkin.
 #
-# Repository secrets (Settings > Secrets and variables > Actions) - R2 write access only:
+# Environment secrets - these live in the GitHub Environment "agent-release" (Settings >
+# Environments), NOT repo-level secrets, so only this job can read them. In that environment
+# turn on Required reviewers (you) and restrict deployment tags to agent-v*. R2 write access only:
 #   AGENT_R2_ENDPOINT_URL        https://<account>.r2.cloudflarestorage.com
-#   AGENT_R2_ACCESS_KEY_ID       R2 token with write access to the bucket below
+#   AGENT_R2_ACCESS_KEY_ID       R2 API token scoped to the agent-releases bucket ONLY
 #   AGENT_R2_SECRET_ACCESS_KEY
-#   AGENT_R2_BUCKET              the bucket Metal ERP uses as TALLY_R2_BUCKET (metalerp-tally)
+#   AGENT_R2_BUCKET              the agent-releases bucket
 # Even a leaked token cannot make anything go live: only a signed release.json counts, and
 # agents reject anything not signed by our key.
 
@@ -28,16 +30,19 @@ on:
   push:
     tags: ["agent-v*"]
 
-env:
-  AWS_DEFAULT_REGION: auto
-  AWS_ACCESS_KEY_ID: ${{ secrets.AGENT_R2_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ secrets.AGENT_R2_SECRET_ACCESS_KEY }}
-  R2_ENDPOINT: ${{ secrets.AGENT_R2_ENDPOINT_URL }}
-  R2_BUCKET: ${{ secrets.AGENT_R2_BUCKET }}
-
 jobs:
   release:
     runs-on: windows-latest
+    # Unlocks the environment's secrets above (and its approval / tag rules). Environment
+    # secrets are only visible INSIDE this job, so the R2 variables are defined here and not in a
+    # workflow-level env: block (where they would silently resolve to empty).
+    environment: agent-release
+    env:
+      AWS_DEFAULT_REGION: auto
+      AWS_ACCESS_KEY_ID: ${{ secrets.AGENT_R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AGENT_R2_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.AGENT_R2_ENDPOINT_URL }}
+      R2_BUCKET: ${{ secrets.AGENT_R2_BUCKET }}
     defaults:
       run:
         shell: bash

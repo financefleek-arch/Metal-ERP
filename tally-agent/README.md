@@ -125,8 +125,11 @@ VPS:  docker exec -it metalerp-api python -m tools.agent_release promote X.Y.Z
                   ->  latest.json  ->  everyone updates
 ```
 
-* **Store:** the R2 bucket Metal ERP already uses (`TALLY_R2_BUCKET`), prefix
-  `agent-releases/`: `<ver>/tally-agent-<ver>.zip` (`publish/` + `install.ps1` +
+* **Store:** a dedicated R2 bucket, `metaerp-tallyagent` (`TALLY_R2_RELEASE_BUCKET`, defaulted in
+  compose; falls back to `TALLY_R2_BUCKET` if unset), prefix `agent-releases/`. It holds only generic,
+  key-free build files, so the GitHub CI token is scoped to it and cannot reach customer backups or
+  the per-shop installers (those stay in the main bucket, written only by the API). The existing
+  `r2/shared` credential can read/write it (verified 2026-10-03), so no new Vault secret: `<ver>/tally-agent-<ver>.zip` (`publish/` + `install.ps1` +
   `uninstall.ps1`), `<ver>/pending.json` (written by CI, unsigned, **not visible to the API**),
   `<ver>/release.json` (written by the signer after you approve it), and `latest.json` (a copy of
   the promoted `release.json`). Releases are immutable; both CI and the signer refuse to overwrite.
@@ -179,8 +182,9 @@ service. Full commands: `fleek-infra/vault/RUNBOOK.md` -> "Agent release signing
    check `python -m tools.agent_release public-keys` prints the same public key.
 4. Paste that public key into `ReleaseKeys.PublicKeysSpkiBase64`
    (`TallyAgent/Updates/ReleaseVerifier.cs`) and commit.
-5. GitHub secrets for `agent-release.yml` (R2 write only - no signing key):
-   `AGENT_R2_ENDPOINT_URL`, `AGENT_R2_ACCESS_KEY_ID`, `AGENT_R2_SECRET_ACCESS_KEY`, `AGENT_R2_BUCKET`.
+5. GitHub **Environment** `agent-release` (required reviewer = you; tags `agent-v*` only) holding
+   `AGENT_R2_ENDPOINT_URL`, `AGENT_R2_ACCESS_KEY_ID`, `AGENT_R2_SECRET_ACCESS_KEY`, `AGENT_R2_BUCKET`
+   (`metaerp-tallyagent`) - an R2 token scoped to that bucket ONLY; no signing key.
 6. Tag `agent-v1.0.0`; when CI finishes, on the VPS `sign 1.0.0` (compare the hash with the run
    summary), then `promote 1.0.0`.
 7. **Ship the first build to shops by installer, not by update** - it is the first one that

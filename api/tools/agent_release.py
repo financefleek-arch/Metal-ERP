@@ -44,6 +44,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, utils
 
 from app import backup_storage
+from app.config import get_settings
 from app.services.tally.agent_release import LATEST_KEY, RELEASE_PREFIX, Release, _parse
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
@@ -52,6 +53,23 @@ _MAX_ZIP = 512 * 1024 * 1024
 
 class ReleaseError(Exception):
     """A user-facing failure (bad version, already signed, hash mismatch, ...)."""
+
+
+def _bucket() -> str | None:
+    """The agent-release bucket (not the main tally bucket - see config.py)."""
+    return get_settings().agent_release_bucket
+
+
+def _exists(key: str) -> bool:
+    return backup_storage.object_exists(key, bucket=_bucket())
+
+
+def _get(key: str, max_bytes: int) -> bytes:
+    return backup_storage.get_object(key, max_bytes=max_bytes, bucket=_bucket())
+
+
+def _put(key: str, body: bytes) -> None:
+    backup_storage.put_object(key, body, "application/json", bucket=_bucket())
 
 
 def payload(version: str, sha256: str, size_bytes: int) -> bytes:
@@ -179,17 +197,17 @@ def inspect_zip(blob: bytes) -> list[str]:
 def sign(version: str, *, assume_yes: bool = False) -> Release:
     _check_version(version)
     key = load_private_key()  # fail early, before any prompting
-    if backup_storage.object_exists(_release_key(version)):
+    if _exists(_release_key(version)):
         raise ReleaseError(f"{version} is already signed - bump the version")
-    if not backup_storage.object_exists(_pending_key(version)):
+    if not _exists(_pending_key(version)):
         raise ReleaseError(f"no pending release {version} in R2 - did the CI tag build finish?")
 
-    pending = json.loads(backup_storage.get_object(_pending_key(version), max_bytes=1024 * 1024))
+    pending = json.loads(_get(_pending_key(version), 1024 * 1024))
     zip_key = pending.get("zip_key", "")
     if zip_key != f"{RELEASE_PREFIX}/{version}/tally-agent-{version}.zip":
         raise ReleaseError(f"pending.json points at an unexpected object: {zip_key!r}")
 
-    blob = backup_storage.get_object(zip_key, max_bytes=_MAX_ZIP)
+    blob = _get(zip_key, _MAX_ZIP)
     sha = hashlib.sha256(blob).hexdigest()
     names = inspect_zip(blob)
     recorded = (pending.get("version"), pending.get("sha256"), pending.get("size_bytes"))
@@ -223,9 +241,7 @@ def sign(version: str, *, assume_yes: bool = False) -> Release:
         "built_at": pending.get("built_at"),
         "git_sha": pending.get("git_sha"),
     }
-    backup_storage.put_object(
-        _release_key(version), json.dumps(manifest, indent=2).encode(), "application/json"
-    )
+    _put(_release_key(version), json.dumps(manifest, indent=2).encode())
     rel = _parse(json.dumps(manifest).encode())
     assert rel is not None
     print(f"Signed. {_release_key(version)} written. Make it live with:  promote {version}")
@@ -234,12 +250,12 @@ def sign(version: str, *, assume_yes: bool = False) -> Release:
 
 def promote(version: str) -> None:
     _check_version(version)
-    if not backup_storage.object_exists(_release_key(version)):
+    if not _exists(_release_key(version)):
         raise ReleaseError(f"{version} is not signed yet - run `sign {version}` first")
-    raw = backup_storage.get_object(_release_key(version), max_bytes=1024 * 1024)
+    raw = _get(_release_key(version), 1024 * 1024)
     if _parse(raw) is None:
         raise ReleaseError(f"{_release_key(version)} is malformed")
-    backup_storage.put_object(LATEST_KEY, raw, "application/json")
+    _put(LATEST_KEY, raw)
     print(
         f"latest.json -> {version}. Un-pinned agents update on their next checkin "
         "(the API caches latest for up to 60s)."
@@ -247,10 +263,10 @@ def promote(version: str) -> None:
 
 
 def status() -> None:
-    if not backup_storage.object_exists(LATEST_KEY):
+    if not _exists(LATEST_KEY):
         print("no promoted release yet")
         return
-    rel = _parse(backup_storage.get_object(LATEST_KEY, max_bytes=1024 * 1024))
+    rel = _parse(_get(LATEST_KEY, 1024 * 1024))
     print(f"latest -> {rel.version if rel else '(malformed latest.json)'}")
 
 

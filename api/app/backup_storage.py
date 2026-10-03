@@ -46,35 +46,43 @@ def presigned_put_url(r2_key: str) -> tuple[str, int]:
     return url, _PUT_URL_EXPIRY_SECONDS
 
 
-def presigned_get_url(r2_key: str, expires_in: int = _PUT_URL_EXPIRY_SECONDS) -> str:
+def presigned_get_url(
+    r2_key: str, expires_in: int = _PUT_URL_EXPIRY_SECONDS, *, bucket: str | None = None
+) -> str:
     """Short-lived pre-signed GET — hands the agent a build download without
     giving it bucket credentials (auto-update, see services/tally/agent_release)."""
     return _client().generate_presigned_url(
         "get_object",
-        Params={"Bucket": _settings.tally_r2_bucket, "Key": r2_key},
+        Params={"Bucket": bucket or _settings.tally_r2_bucket, "Key": r2_key},
         ExpiresIn=expires_in,
     )
 
 
-def put_object(r2_key: str, body: bytes, content_type: str = "application/octet-stream") -> None:
+def put_object(
+    r2_key: str,
+    body: bytes,
+    content_type: str = "application/octet-stream",
+    *,
+    bucket: str | None = None,
+) -> None:
     """Server-side upload of an object we built in this process (the per-shop
     tally-agent installer zip). Unlike the agent's uploads there's no presign
     step — the API holds the creds. Raises `R2NotConfigured` if unset.
     """
     _client().put_object(
-        Bucket=_settings.tally_r2_bucket,
+        Bucket=bucket or _settings.tally_r2_bucket,
         Key=r2_key,
         Body=body,
         ContentType=content_type,
     )
 
 
-def object_exists(r2_key: str) -> bool:
+def object_exists(r2_key: str, *, bucket: str | None = None) -> bool:
     """True if the key exists. Any error other than 'not found' propagates."""
     from botocore.exceptions import ClientError
 
     try:
-        _client().head_object(Bucket=_settings.tally_r2_bucket, Key=r2_key)
+        _client().head_object(Bucket=bucket or _settings.tally_r2_bucket, Key=r2_key)
         return True
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
@@ -94,13 +102,15 @@ def delete_object(r2_key: str) -> None:
 _MAX_FETCH_BYTES = 64 * 1024 * 1024
 
 
-def get_object(r2_key: str, max_bytes: int = _MAX_FETCH_BYTES) -> bytes:
+def get_object(
+    r2_key: str, max_bytes: int = _MAX_FETCH_BYTES, *, bucket: str | None = None
+) -> bytes:
     """Download an object the agent uploaded (the Tally masters XML the
     connector pull needs to parse). Raises `R2NotConfigured` if credentials
     are missing, `ValueError` if the object is larger than `max_bytes`
     (default `_MAX_FETCH_BYTES`; the agent-release zip passes a bigger cap).
     """
-    resp = _client().get_object(Bucket=_settings.tally_r2_bucket, Key=r2_key)
+    resp = _client().get_object(Bucket=bucket or _settings.tally_r2_bucket, Key=r2_key)
     size = int(resp.get("ContentLength") or 0)
     if size > max_bytes:
         raise ValueError(

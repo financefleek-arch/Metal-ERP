@@ -1,7 +1,9 @@
 """Agent release store (R2) + auto-update offers.
 
 CI (`.github/workflows/agent-release.yml`) uploads each tagged agent build to
-the same R2 bucket the agent already uses, under `agent-releases/`:
+the agent-release R2 bucket (`settings.agent_release_bucket`, a dedicated bucket the
+GitHub token is scoped to; falls back to the main tally bucket if unset), under
+`agent-releases/`:
 
     agent-releases/<ver>/tally-agent-<ver>.zip   publish/ + install.ps1 + uninstall.ps1
     agent-releases/<ver>/release.json            manifest (below)
@@ -78,7 +80,11 @@ def _read_manifest(key: str) -> Release | None:
     if not get_settings().tally_r2_configured:
         return None
     try:
-        return _parse(backup_storage.get_object(key, max_bytes=1024 * 1024))
+        return _parse(
+            backup_storage.get_object(
+                key, max_bytes=1024 * 1024, bucket=get_settings().agent_release_bucket
+            )
+        )
     except Exception as exc:  # noqa: BLE001 — NoSuchKey / network: just 'none'
         log.info("agent release manifest %s unavailable: %s", key, exc)
         return None
@@ -112,7 +118,9 @@ def release_zip_bytes(release: Release) -> bytes:
     cache = Path(tempfile.gettempdir()) / "agent-release-cache" / f"{release.version}.zip"
     if cache.is_file() and cache.stat().st_size == release.size_bytes:
         return cache.read_bytes()
-    blob = backup_storage.get_object(release.zip_key, max_bytes=_MAX_ZIP_BYTES)
+    blob = backup_storage.get_object(
+        release.zip_key, max_bytes=_MAX_ZIP_BYTES, bucket=get_settings().agent_release_bucket
+    )
     cache.parent.mkdir(parents=True, exist_ok=True)
     cache.write_bytes(blob)
     return blob
@@ -145,7 +153,9 @@ def update_offer_for(shop: BackupShop) -> dict | None:
         return None
     return {
         "version": target.version,
-        "url": backup_storage.presigned_get_url(target.zip_key),
+        "url": backup_storage.presigned_get_url(
+            target.zip_key, bucket=get_settings().agent_release_bucket
+        ),
         "sha256": target.sha256,
         "size_bytes": target.size_bytes,
         "signature": target.signature,

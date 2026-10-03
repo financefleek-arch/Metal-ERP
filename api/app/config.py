@@ -79,6 +79,15 @@ class Settings(BaseSettings):
     tally_r2_access_key_id: str | None = None
     tally_r2_secret_access_key: str | None = None
     tally_r2_bucket: str | None = None
+    # Agent RELEASE files (agent-releases/: the generic, key-free build zips + manifests) live in
+    # their own bucket so the GitHub CI token that uploads them can touch nothing else (this
+    # bucket also holds customer backups and the per-shop installers, which have keys baked in).
+    # Unset = fall back to tally_r2_bucket.
+    tally_r2_release_bucket: str | None = None
+
+    @property
+    def agent_release_bucket(self) -> str | None:
+        return self.tally_r2_release_bucket or self.tally_r2_bucket
 
     @property
     def tally_r2_configured(self) -> bool:
