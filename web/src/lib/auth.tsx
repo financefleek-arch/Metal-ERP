@@ -1,5 +1,6 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, getToken, setToken } from "./api";
 import type { Me } from "./types";
 
@@ -16,6 +17,7 @@ const AuthCtx = createContext<AuthState | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
 
   const loadMe = useCallback(async () => {
     if (!getToken()) {
@@ -68,7 +70,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setToken(null);
     setMe(null);
-  }, []);
+    qc.clear();
+  }, [qc]);
 
   const value = useMemo(
     () => ({ me, loading, login, register, logout }),

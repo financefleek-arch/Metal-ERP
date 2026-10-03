@@ -358,6 +358,7 @@ export interface TallyPreflight {
   total: number;
   to_push: number;
   already_synced: number;
+  skipped_existing: number;
   not_promoted: number;
   batches: number;
   root: string | null;

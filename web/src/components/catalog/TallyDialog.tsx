@@ -38,6 +38,7 @@ export function TallyDialog({
   const qc = useQueryClient();
   const [scope, setScope] = useState<Scope>(selection ? "selected" : "all");
   const [includeSynced, setIncludeSynced] = useState(false);
+  const [skipExisting, setSkipExisting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
@@ -69,13 +70,13 @@ export function TallyDialog({
   });
 
   // --- the checklist ---
-  const preKey = ["tally-preflight", catalogId, JSON.stringify(selReq), includeSynced] as const;
+  const preKey = ["tally-preflight", catalogId, JSON.stringify(selReq), includeSynced, skipExisting] as const;
   const pre = useQuery({
     queryKey: preKey,
     queryFn: () =>
       api<TallyPreflight>(`/supplier-catalogs/${catalogId}/tally/preflight`, {
         method: "POST",
-        body: { ...selReq, include_synced: includeSynced },
+        body: { ...selReq, include_synced: includeSynced, skip_existing: skipExisting },
       }),
     enabled: !started,
   });
@@ -142,7 +143,7 @@ export function TallyDialog({
     mutationFn: () =>
       api<TallyRun>(`/supplier-catalogs/${catalogId}/tally/push`, {
         method: "POST",
-        body: { ...selReq, include_synced: includeSynced },
+        body: { ...selReq, include_synced: includeSynced, skip_existing: skipExisting },
       }),
     onSuccess: (r) => {
       setErr(null);
@@ -267,6 +268,21 @@ export function TallyDialog({
               <p className="err mt-2">{check.data.error}</p>
             )}
 
+            {(failed("name_collision") || skipExisting) && (
+              <label className="mt-3 flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={skipExisting}
+                  onChange={(e) => setSkipExisting(e.target.checked)}
+                />
+                <span>
+                  Leave out items that already exist in Tally
+                  {skipExisting && p ? ` (${p.skipped_existing} left out, nothing overwritten)` : ""}
+                </span>
+              </label>
+            )}
+
             {p && p.collisions.length > 0 && (
               <div className="mt-3 rounded-md border border-line bg-ground p-3 text-sm">
                 <p className="font-medium">Already in Tally under the same name</p>
@@ -276,8 +292,21 @@ export function TallyDialog({
                       {c.name} <span className="font-mono">({c.code})</span>
                     </li>
                   ))}
-                  {p.collisions.length > 8 && <li>and {p.collisions.length - 8} more</li>}
                 </ul>
+                {p.collisions.length > 8 && (
+                  <details className="mt-1 text-xs text-muted">
+                    <summary className="cursor-pointer">
+                      Show all {p.collisions.length} (the other {p.collisions.length - 8})
+                    </summary>
+                    <ul className="mt-1 max-h-60 list-disc overflow-y-auto pl-5">
+                      {p.collisions.slice(8).map((c) => (
+                        <li key={c.item_id}>
+                          {c.name} <span className="font-mono">({c.code})</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
               </div>
             )}
 

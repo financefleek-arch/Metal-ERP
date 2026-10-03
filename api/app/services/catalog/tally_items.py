@@ -94,6 +94,7 @@ class Preflight:
     total: int = 0
     to_push: int = 0
     already_synced: int = 0
+    skipped_existing: int = 0
     not_promoted: int = 0
     batches: int = 0
     root: str | None = None
@@ -231,6 +232,7 @@ def preflight(
     rows: Sequence[SupplierCatalogItem],
     *,
     include_synced: bool = False,
+    skip_existing: bool = False,
     now: datetime | None = None,
 ) -> tuple[Preflight, list[_Row], list[tuple[str, str | None]]]:
     """Everything that could go wrong, found before anything is sent."""
@@ -297,6 +299,15 @@ def preflight(
     ready = [r for r in loaded if r.item is not None]
     pf.already_synced = sum(1 for r in ready if r.row.tally_status == "synced")
     todo = [r for r in ready if include_synced or r.row.tally_status != "synced"]
+    known_items = {n for n in (company.known_stock_items or [])}
+    if skip_existing:
+        # Leave out what Tally already has under the same name, so it is never overwritten.
+        left_out = [
+            r for r in todo
+            if r.item and r.row.tally_status != "synced" and _norm(r.item.name) in known_items
+        ]
+        pf.skipped_existing = len(left_out)
+        todo = [r for r in todo if r not in left_out]
     pf.to_push = len(todo)
     pf.batches = -(-len(todo) // BATCH_SIZE) if todo else 0
     if todo:
@@ -324,7 +335,6 @@ def preflight(
             f"“{too_long[0].item.name[:40]}…”). Shorten them in your item list.",
         )
     )
-    known_items = {n for n in (company.known_stock_items or [])}
     collisions = [
         Collision(r.item.id, r.product.code if r.product else "", r.item.name)
         for r in todo

@@ -318,6 +318,7 @@ class TallyPreflightOut(BaseModel):
     total: int
     to_push: int
     already_synced: int
+    skipped_existing: int = 0
     not_promoted: int
     batches: int
     root: str | None
@@ -330,6 +331,8 @@ class TallyPreflightOut(BaseModel):
 class TallyPushIn(SelectionIn):
     # also re-send items already in Tally (an alter: use after changing names or codes)
     include_synced: bool = False
+    # leave out items whose name already exists in Tally (never overwrite them)
+    skip_existing: bool = False
 
 
 class TallyRunOut(BaseModel):

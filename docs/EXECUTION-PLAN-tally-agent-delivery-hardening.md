@@ -120,6 +120,16 @@ Origin: a review of the installer + `fleek-infra` wiring found four delivery gap
   restart-on-failure + 5-minute tick are untested live); a real install on a clean PC; any
   third-party AV; R2 upload from CI (needs secrets); the service-mode update path.
 
+## Live result 2026-10-03
+
+Release **1.0.0** went end to end in production: tag `agent-v1.0.0` -> CI (environment `agent-release`)
+-> unsigned upload to bucket `metaerp-tallyagent` -> `sign` on the VPS (hash + commit checked against
+the CI summary) -> `promote` -> pilot firm key rotated, installer rebuilt from the release
+("installer carries 1.0.0"), installed with the new per-user installer. Ops console shows: running
+1.0.0, agent online, Tally connected, cloud backup up to date. **Still unproven live:** an actual
+auto-update (1.0.0 -> 1.0.1 canary via pin), rollback on a real machine, Task Scheduler restart across
+logoff/reboot, third-party AV, a clean-PC install.
+
 ## Left for you (nothing here can be done from the repo)
 
 **Progress 2026-10-03:** signing key created in Vault (`secret/metalerp/core#agent_signing_key`, 184

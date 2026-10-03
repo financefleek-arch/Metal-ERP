@@ -752,7 +752,10 @@ def resolve(
     items_by_id = {
         it.id: it
         for it in session.scalars(
-            select(Item).where(Item.id.in_([sid for sid, _ in scored]))
+            select(Item).where(
+                Item.id.in_([sid for sid, _ in scored]),
+                Item.tenant_id == user.tenant_id,
+            )
         ).all()
     }
     candidates = [

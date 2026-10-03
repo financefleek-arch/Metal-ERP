@@ -197,6 +197,7 @@ def _preflight_out(pf: ti.Preflight) -> TallyPreflightOut:
         total=pf.total,
         to_push=pf.to_push,
         already_synced=pf.already_synced,
+        skipped_existing=pf.skipped_existing,
         not_promoted=pf.not_promoted,
         batches=pf.batches,
         root=pf.root,
@@ -229,7 +230,8 @@ def tally_preflight(
     cat = _get_catalog(session, user.tenant_id, catalog_id)
     rows = _rows(session, user.tenant_id, catalog_id, body)
     pf, _, _ = ti.preflight(
-        session, user.tenant_id, cat, rows, include_synced=body.include_synced
+        session, user.tenant_id, cat, rows,
+        include_synced=body.include_synced, skip_existing=body.skip_existing,
     )
     return _preflight_out(pf)
 
@@ -244,7 +246,8 @@ def tally_push(
     cat = _get_catalog(session, user.tenant_id, catalog_id)
     rows = _rows(session, user.tenant_id, catalog_id, body)
     pf, todo, creates = ti.preflight(
-        session, user.tenant_id, cat, rows, include_synced=body.include_synced
+        session, user.tenant_id, cat, rows,
+        include_synced=body.include_synced, skip_existing=body.skip_existing,
     )
     if pf.blockers:
         raise HTTPException(
