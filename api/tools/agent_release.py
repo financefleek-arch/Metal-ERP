@@ -1,7 +1,7 @@
 """Sign and promote tally-agent releases.
 
 The signing key is an ECDSA P-256 private key kept in Vault KV
-(`secret/metalerp/agent-release`, field `signing_key`) like the rest of the stack's
+(`secret/metalerp/core`, field `agent_signing_key`) like the rest of the stack's
 secrets. It reaches this container the standard way: `load-vault-secrets.sh` exports
 it at deploy time and docker-compose passes it in as `AGENT_SIGNING_KEY` (a single
 line: base64 of the PKCS#8 DER key; a PEM is accepted too). Nothing about it is in
@@ -84,7 +84,7 @@ def load_private_key() -> ec.EllipticCurvePrivateKey:
     value = os.environ.get("AGENT_SIGNING_KEY", "")
     if not value.strip():
         raise ReleaseError(
-            "AGENT_SIGNING_KEY is not set in this container - is secret/metalerp/agent-release "
+            "AGENT_SIGNING_KEY is not set in this container - is metalerp/core#agent_signing_key "
             "in Vault and wired through load-vault-secrets.sh + docker-compose? (see the RUNBOOK)"
         )
     return parse_private_key(value)
@@ -119,9 +119,9 @@ def verify_signature(spki: str, data: bytes, signature_b64: str) -> bool:
 
 
 def gen_key() -> None:
-    """New key pair. The private key (one line: base64 PKCS#8 DER) goes to stdout ONLY,
-    so it can be piped straight into `vault kv put ... signing_key=-` and never lands in
-    a file or on the terminal; the public key goes to stderr, where you can see it."""
+    """New key pair. The private key (one line: base64 PKCS#8 DER) goes to stdout ONLY, so it
+    can be handed straight to `vault kv patch secret/metalerp/core agent_signing_key=-` and never
+    lands in a file or on the terminal; the public key goes to stderr, where you can see it."""
     key = ec.generate_private_key(ec.SECP256R1())
     der = key.private_bytes(
         serialization.Encoding.DER,
@@ -135,7 +135,7 @@ def gen_key() -> None:
 
 
 def pubkey_from_stdin() -> None:
-    """`vault kv get -field=signing_key_next ... | docker exec -i ... pubkey` - the public
+    """`vault kv get -field=agent_signing_key_next ... | docker exec -i ... pubkey` - the public
     key of a staged (not yet active) key, so a build can trust it before it signs anything."""
     key = parse_private_key(sys.stdin.read())
     print(f'    "{spki_b64(key)}",')

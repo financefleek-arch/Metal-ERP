@@ -138,7 +138,7 @@ VPS:  docker exec -it metalerp-api python -m tools.agent_release promote X.Y.Z
   way (that's the rollback lever). An agent that never reported a version is never offered
   an update. A version the agent reported as failed is not offered again.
 * **Trust:** every release is signed with an **ECDSA P-256 key kept in Vault KV**
-  (`secret/metalerp/agent-release#signing_key`), handled like every other Fleek secret: fetched by
+  (`secret/metalerp/core#agent_signing_key`), handled like every other Fleek secret: fetched by
   `load-vault-secrets.sh`, passed to `metalerp-api` as `AGENT_SIGNING_KEY`, **nothing in `.env`**.
   CI holds no signing key. Signing (`api/tools/agent_release.py`, run with `docker exec` on the
   VPS) is a deliberate human step: it **re-hashes the zip itself** (not trusting CI's
@@ -171,9 +171,10 @@ Order matters: a missing Vault field makes `load-vault-secrets.sh` abort every d
 service. Full commands: `fleek-infra/vault/RUNBOOK.md` -> "Agent release signing key".
 
 1. Deploy Metal ERP (carries `tools/agent_release.py` into `metalerp-api`).
-2. On the VPS: `gen-key` piped straight into `vault kv put secret/metalerp/agent-release
-   signing_key=-` (the private key never hits a file or the terminal; the public key prints -
-   copy it), and add the one `path` line to `infra-deploy-read-policy`.
+2. On the VPS: `gen-key`, handed to `vault kv patch secret/metalerp/core agent_signing_key=-`
+   through a guarded snippet (the private key never hits a file or the terminal; the public key
+   prints - copy it). It is a new field in the existing `metalerp/core` secret, so **no policy
+   change** - and always `patch`, never `put` (put would wipe `jwt_secret`).
 3. Push `fleek-infra` (one `_lvs_export` line + one compose line), recreate `metalerp-api`, and
    check `python -m tools.agent_release public-keys` prints the same public key.
 4. Paste that public key into `ReleaseKeys.PublicKeysSpkiBase64`
@@ -188,7 +189,7 @@ service. Full commands: `fleek-infra/vault/RUNBOOK.md` -> "Agent release signing
    the new per-user installer (run `uninstall.ps1` first).
 
 Key rotation (ordered so shops never trust less than they need): see the RUNBOOK. In short -
-stage the new key in `signing_key_next`, ship a build trusting BOTH public keys signed with the
+stage the new key in `agent_signing_key_next`, ship a build trusting BOTH public keys signed with the
 current key, wait for every shop to be on it, then activate the new key.
 
 ## Testing

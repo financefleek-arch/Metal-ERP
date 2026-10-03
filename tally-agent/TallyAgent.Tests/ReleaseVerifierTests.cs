@@ -117,11 +117,16 @@ public class ReleaseVerifierTests
     }
 
     [Fact]
-    public void Shipped_build_has_no_baked_in_key_until_configured()
+    public void Shipped_build_trusts_a_valid_p256_release_key()
     {
-        // Fail-closed default: documents that an unconfigured build trusts nobody.
-        // When the real public key is pasted into ReleaseKeys this test is
-        // expected to be updated to assert a non-empty list.
-        Assert.NotNull(ReleaseKeys.PublicKeysSpkiBase64);
+        // Fail-closed guard in both directions: an EMPTY list would make every agent refuse
+        // every update, and a malformed entry would be silently skipped by the verifier.
+        Assert.NotEmpty(ReleaseKeys.PublicKeysSpkiBase64);
+        foreach (var spki in ReleaseKeys.PublicKeysSpkiBase64)
+        {
+            using var ecdsa = ECDsa.Create();
+            ecdsa.ImportSubjectPublicKeyInfo(Convert.FromBase64String(spki), out _);
+            Assert.Equal(256, ecdsa.KeySize);
+        }
     }
 }

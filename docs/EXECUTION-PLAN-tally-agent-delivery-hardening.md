@@ -19,11 +19,11 @@ Origin: a review of the installer + `fleek-infra` wiring found four delivery gap
    we don't hand-hold. Update integrity comes from our own **ECDSA P-256** signature over each
    release (the first draft said Ed25519 - .NET has no built-in Ed25519, P-256 is built in), not
    from Authenticode. **The private key is a Vault KV secret handled like every other Fleek
-   secret** (`secret/metalerp/agent-release#signing_key`; `load-vault-secrets.sh` -> `metalerp-api`
+   secret** (`secret/metalerp/core#agent_signing_key`; `load-vault-secrets.sh` -> `metalerp-api`
    as `AGENT_SIGNING_KEY`). **Fleek's `.env` principle is followed strictly: no new `.env`
    variable** (`.env` = Vault bootstrap login only; non-secrets -> fleek `platform_secrets`; secrets
-   -> Vault) and no new AppRole/policy file/engine - one KV path, one extra `path` line in the
-   existing `infra-deploy-read-policy`, one `_lvs_export` line, one compose line. History: first
+   -> Vault) and no new AppRole/policy change/engine - one new field in the existing `metalerp/core`
+   secret (already covered by `infra-deploy-read-policy`), one `_lvs_export` line, one compose line. History: first
    draft was a GitHub secret; then a non-exportable Vault Transit key with a hand-run wrapper
    (prototyped and tested against a real Vault, then dropped) - both replaced 2026-10-03 to match
    Fleek's existing pattern and avoid new infra. **Accepted trade-off:** the key sits in the API
@@ -91,7 +91,7 @@ Origin: a review of the installer + `fleek-infra` wiring found four delivery gap
   `public-keys` / `status`; key from `AGENT_SIGNING_KEY`; `backup_storage.object_exists`);
   infra (local edits, not pushed): `load-vault-secrets.sh` `_lvs_export METALERP_AGENT_SIGNING_KEY`,
   `docker-compose.yml` `AGENT_SIGNING_KEY` on `metalerp-api`, and a rewritten RUNBOOK section
-  "Agent release signing key" (ordered setup, rotation via `signing_key_next`, loss/exposure).
+  "Agent release signing key" (ordered setup, rotation via `agent_signing_key_next`, loss/exposure).
 * **Ops console:** "Agent version" block on the Tally Agent card (running / latest / installer
   versions, OS, rolled-back warning, pin + unpin).
 
@@ -114,16 +114,22 @@ Origin: a review of the installer + `fleek-infra` wiring found four delivery gap
 * Pre-flight run on this dev box: correctly PASSed 8 checks and FAILed on the already-installed
   service.
 * **Not verified:** the VPS wiring (`load-vault-secrets.sh` fetching the new field, compose passing
-  `AGENT_SIGNING_KEY` into `metalerp-api`, the policy line, `gen-key | vault kv put` over `docker
-  exec`); a real Task Scheduler restart (the harness emulates it - the installed task's
+  `AGENT_SIGNING_KEY` into `metalerp-api`, `gen-key` -> `vault kv patch` over `docker exec`); a real Task Scheduler restart (the harness emulates it - the installed task's
   restart-on-failure + 5-minute tick are untested live); a real install on a clean PC; any
   third-party AV; R2 upload from CI (needs secrets); the service-mode update path.
 
 ## Left for you (nothing here can be done from the repo)
 
+**Progress 2026-10-03:** signing key created in Vault (`secret/metalerp/core#agent_signing_key`, 184
+chars, verified identical to the interim copy) and its public key is **compiled into
+`ReleaseKeys`** (`ReleaseVerifier.cs`; guarded by a test that the list is non-empty and valid P-256).
+Still open below: push `fleek-infra` + recreate `metalerp-api` + confirm `public-keys` matches; the
+interim `secret/metalerp/agent-release` copy can be deleted; GitHub R2 secrets; tag/sign/promote;
+installer-first rollout; pilot re-install; AV matrix.
+
 1. **Create the signing key and wire it** - strictly in the RUNBOOK's order (a missing Vault field
-   aborts every deploy): deploy Metal ERP; `gen-key | vault kv put secret/metalerp/agent-release
-   signing_key=-`; extend `infra-deploy-read-policy` by one path; push `fleek-infra`; recreate
+   aborts every deploy): deploy Metal ERP; `gen-key` -> `vault kv patch secret/metalerp/core
+   agent_signing_key=-` (patch, never put; no policy change); push `fleek-infra`; recreate
    `metalerp-api`; confirm `public-keys` matches; paste that public key into `ReleaseKeys` and
    commit. Until a build with the key is installed every agent refuses updates - so the first
    build goes to shops by installer.

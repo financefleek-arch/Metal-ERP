@@ -5,7 +5,7 @@ namespace TallyAgent.Updates;
 
 /// <summary>
 /// Public keys the agent trusts to sign releases (base64 SubjectPublicKeyInfo,
-/// ECDSA P-256). The private key is a Vault KV secret (secret/metalerp/agent-release,
+/// ECDSA P-256). The private key is a Vault KV secret (secret/metalerp/core#agent_signing_key,
 /// delivered to metalerp-api as AGENT_SIGNING_KEY) and is used only by
 /// api/tools/agent_release.py. Print the public key on the VPS with
 /// `docker exec metalerp-api python -m tools.agent_release public-keys` and paste the
@@ -18,7 +18,11 @@ namespace TallyAgent.Updates;
 /// </summary>
 public static class ReleaseKeys
 {
-    public static readonly string[] PublicKeysSpkiBase64 = [];
+    public static readonly string[] PublicKeysSpkiBase64 =
+    [
+        // Release signing key, created 2026-10-03 (Vault: secret/metalerp/core#agent_signing_key).
+        "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEv7GB1Z92FrLydwfeuW8lr1WEeYRwQkepXl02Ox8d7N6xHD4TqgKPq2RIpFjvrYDiL55DplHmpCKxXx4wT5kNgg==",
+    ];
 }
 
 /// <summary>

@@ -29,8 +29,12 @@ pub_b64 = base64.b64encode(
 # compile the test public key into the scratch copy
 p = os.path.join(SRC, "Updates", "ReleaseVerifier.cs")
 s = open(p, encoding="utf-8").read()
-assert "PublicKeysSpkiBase64 = [];" in s
-open(p, "w", encoding="utf-8").write(s.replace("PublicKeysSpkiBase64 = [];", 'PublicKeysSpkiBase64 = ["%s"];' % pub_b64))
+# Replace the whole PublicKeysSpkiBase64 initializer (the real release key is compiled in there).
+import re
+pattern = re.compile(r"PublicKeysSpkiBase64\s*=\s*\[.*?\];", re.S)
+assert pattern.search(s), "ReleaseKeys.PublicKeysSpkiBase64 initializer not found"
+open(p, "w", encoding="utf-8").write(
+    pattern.sub(lambda m: 'PublicKeysSpkiBase64 = ["%s"];' % pub_b64, s, count=1))
 
 
 def publish(version):
