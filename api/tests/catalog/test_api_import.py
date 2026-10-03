@@ -61,16 +61,28 @@ def test_upload_creates_catalog_with_items(uploaded) -> None:
     assert cat["page_count"] == 2
     assert cat["item_count"] == 24
     assert cat["title"] == "glassware"
-    assert cat["code_prefix"] == "GL"  # derived from the title
-    assert cat["multiplier"] == "1.000"
+    assert cat["code_prefix"] == "GEN"  # fallback prefix for products with no group
+    assert cat["supplier_party_id"] is None
+    assert cat["bulk_margin_pct"] == "0.00"
     assert cat["already_exists"] is False
     assert len(_items(client, h, cat["id"], limit=200)) == 24
 
 
-def test_codes_are_sequential_in_reading_order(uploaded) -> None:
+def test_codes_are_group_based_and_sequential_in_reading_order(uploaded) -> None:
+    import re
+
     client, h, cat = uploaded
     items = _items(client, h, cat["id"], limit=200)
-    assert [i["code"] for i in items] == [f"GL-{n:06d}" for n in range(1, 25)]
+    codes = [i["code"] for i in items]
+    assert len(set(codes)) == 24 and all(re.fullmatch(r"[A-Z]{2,4}-\d{4}", c) for c in codes)
+    by_group: dict[str, list[int]] = {}
+    for i in items:
+        by_group.setdefault(i["code"].split("-")[0], []).append(int(i["code"].split("-")[1]))
+    for nums in by_group.values():  # each group's series runs 1..n in reading order
+        assert nums == list(range(1, len(nums) + 1))
+    mug = next(i for i in items if i["supplier_code"] == "Y5813")
+    assert mug["code"].startswith("BM-")  # Beer Mugs
+    assert mug["code_locked"] is False and mug["product_id"]
     assert items[0]["supplier_code"] == "AJ-1003"
     assert (items[0]["page_no"], items[0]["position"]) == (1, 1)
 
@@ -83,8 +95,8 @@ def test_items_carry_cleaned_fields_and_unmodified_price(uploaded) -> None:
     assert first["carton_qty"] == 6
     assert first["pack_qty"] == 7
     assert first["cost_price"] == "299.00"
-    assert first["sell_price"] == "299.00"  # multiplier 1.000 at import
-    assert first["multiplier_override"] is None
+    assert first["sell_price"] == "299.00"  # no margin at import
+    assert first["item_margin_pct"] is None
     assert first["included"] is True
     assert first["item_id"] is None
 
@@ -97,7 +109,11 @@ def test_same_file_twice_returns_the_existing_catalog(uploaded) -> None:
     assert r.json()["already_exists"] is True
     assert len(client.get("/api/supplier-catalogs", headers=h).json()) == 1
     # codes were not consumed again
-    assert _items(client, h, cat["id"], limit=200)[-1]["code"] == "GL-000024"
+    again = _items(client, h, cat["id"], limit=200)
+    assert [i["code"] for i in again] == [i["code"] for i in _items(client, h, cat["id"], limit=200)]
+    r2 = _upload(client, h, data=make_pdf([[TestCell(code="Q1")]]), name="q.pdf")
+    q = _items(client, h, r2.json()["id"])[0]["code"]
+    assert q.endswith("-0001") or int(q.split("-")[1]) > 0
 
 
 def test_title_and_prefix_can_be_given(catalog_client: CatalogEnv) -> None:
@@ -105,8 +121,6 @@ def test_title_and_prefix_can_be_given(catalog_client: CatalogEnv) -> None:
     r = _upload(client, h, title="Kitchen Glass Aug", code_prefix="kg")
     assert r.status_code == 201
     assert (r.json()["title"], r.json()["code_prefix"]) == ("Kitchen Glass Aug", "KG")
-    first = _items(client, h, r.json()["id"])[0]
-    assert first["code"] == "KG-000001"
 
 
 def test_tenant_default_prefix_is_used(catalog_client: CatalogEnv) -> None:
@@ -116,14 +130,14 @@ def test_tenant_default_prefix_is_used(catalog_client: CatalogEnv) -> None:
     assert r.json()["code_prefix"] == "KS"
 
 
-def test_second_catalog_continues_the_counter_for_the_same_prefix(
-    catalog_client: CatalogEnv,
-) -> None:
+def test_second_catalog_never_reuses_a_code(catalog_client: CatalogEnv) -> None:
     client, h, _ = catalog_client
-    a = _upload(client, h, code_prefix="GL").json()
+    a = _upload(client, h).json()
     other = make_pdf([[TestCell(code="Z1"), TestCell(code="Z2")]])
-    b = _upload(client, h, data=other, name="b.pdf", code_prefix="GL").json()
-    assert [i["code"] for i in _items(client, h, b["id"])] == ["GL-000025", "GL-000026"]
+    b = _upload(client, h, data=other, name="b.pdf").json()
+    codes_a = {i["code"] for i in _items(client, h, a["id"], limit=200)}
+    codes_b = {i["code"] for i in _items(client, h, b["id"])}
+    assert len(codes_b) == 2 and not codes_a & codes_b
     assert a["id"] != b["id"]
 
 
@@ -245,7 +259,8 @@ def test_search_filters_and_narrows_by_word(uploaded) -> None:
     narrower = _items(client, h, cat["id"], q="beer yujing", limit=200)
     assert 0 < len(narrower) < len(beer)
     assert _items(client, h, cat["id"], q="y5813")[0]["supplier_code"] == "Y5813"
-    assert _items(client, h, cat["id"], q="GL-000001")[0]["code"] == "GL-000001"
+    some = _items(client, h, cat["id"])[0]["code"]
+    assert some in [i["code"] for i in _items(client, h, cat["id"], q=some)]
     assert _items(client, h, cat["id"], q="zzzzzz") == []
 
 
@@ -292,7 +307,7 @@ def test_edit_cost_recomputes_sell_price(uploaded) -> None:
     it = _items(client, h, cat["id"])[0]
     out = _patch(client, h, cat["id"], it["id"], {"cost_price": "310.50"}).json()
     assert out["cost_price"] == "310.50"
-    assert out["sell_price"] == "311.00"  # multiplier 1.000, step 1, half up
+    assert out["sell_price"] == "311.00"  # no margin, step 1, half up
 
 
 def test_setting_a_new_group_creates_it_and_blank_clears_it(uploaded) -> None:

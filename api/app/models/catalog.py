@@ -3,7 +3,7 @@ customer catalog, Tally stock items.
 
 A feature-flagged module (`tenant.ext_supplier_catalog`). Catalog rows live in
 their own tables; only *promoted* rows become `Item`s (docs/EXECUTION-PLAN-
-supplier-catalog.md). Money is NUMERIC(15,2); multipliers NUMERIC(6,3).
+supplier-catalog.md). Money is NUMERIC(15,2); margins NUMERIC(7,2) (percent).
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -30,7 +31,7 @@ from app.db import Base
 from app.models._mixins import PkUuidMixin, TimestampMixin
 
 _MONEY = Numeric(15, 2)
-_MULT = Numeric(6, 3)
+_MARGIN = Numeric(7, 2)  # percent, e.g. 25.00 = +25%
 # JSONB on Postgres, plain JSON on SQLite (tests).
 _JSON = JSON().with_variant(JSONB(), "postgresql")
 
@@ -56,8 +57,10 @@ class SupplierCatalog(PkUuidMixin, TimestampMixin, Base):
     # Item-code prefix for this catalog's auto-generated codes (e.g. "GL").
     code_prefix: Mapped[str] = mapped_column(String(8), nullable=False)
 
-    # One multiplier for the whole catalog; per-item override on the item.
-    multiplier: Mapped[Decimal] = mapped_column(_MULT, default=Decimal("1.000"), nullable=False)
+    # One bulk margin (%) for the whole catalog; an item-level margin overrides it per item.
+    bulk_margin_pct: Mapped[Decimal] = mapped_column(
+        _MARGIN, default=Decimal("0.00"), nullable=False
+    )
     rounding_step: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     # extracting | ready | error
@@ -77,7 +80,9 @@ class SupplierCatalog(PkUuidMixin, TimestampMixin, Base):
 class SupplierCatalogItem(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "supplier_catalog_item"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "code", name="uq_catalog_item_tenant_code"),
+        # The same product (same code) may appear in several catalogs, so a code is unique
+        # per catalog; it is unique per firm on `catalog_product`.
+        UniqueConstraint("catalog_id", "code", name="uq_catalog_item_catalog_code"),
         UniqueConstraint("catalog_id", "supplier_code", name="uq_catalog_item_supplier_code"),
         Index("ix_catalog_item_group", "catalog_id", "category_id"),
         Index("ix_catalog_item_included", "catalog_id", "included"),
@@ -104,9 +109,14 @@ class SupplierCatalogItem(PkUuidMixin, TimestampMixin, Base):
     pack_qty: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     carton_qty: Mapped[int | None] = mapped_column(Integer)
     cost_price: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
-    multiplier_override: Mapped[Decimal | None] = mapped_column(_MULT)
+    item_margin_pct: Mapped[Decimal | None] = mapped_column(_MARGIN)  # null = bulk margin
     sell_price: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
 
+    # The shop's product this row is an offer of: it owns our code, group and name.
+    product_id: Mapped[str | None] = mapped_column(ForeignKey("catalog_product.id"), index=True)
+    # A different product that looks like the same thing (same normalised name): the user can
+    # accept (link) or dismiss it.
+    suggested_product_id: Mapped[str | None] = mapped_column(ForeignKey("catalog_product.id"))
     # Our group = an item_category, find-or-created by name.
     category_id: Mapped[str | None] = mapped_column(ForeignKey("item_category.id"))
     # Policy 'suggest_only': the group the rules proposed, not yet created.
@@ -197,3 +207,43 @@ class CustomerCatalog(PkUuidMixin, TimestampMixin, Base):
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     pdf_key: Mapped[str] = mapped_column(String(300), nullable=False)
     stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class CatalogProduct(PkUuidMixin, TimestampMixin, Base):
+    """The shop's product, as seen across supplier catalogs.
+
+    The item code belongs here, not to a PDF row: a later PDF that offers the same product
+    (same supplier + same supplier code) reuses this row and its code, group and name. The
+    code is *provisional* until first real use (printed, put in a customer catalog, promoted
+    to an item, sent to Tally); then `code_locked` is set and it never changes.
+    """
+
+    __tablename__ = "catalog_product"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_catalog_product_tenant_code"),
+        # One product per (supplier, supplier code). Without a supplier there is no key.
+        Index(
+            "uq_catalog_product_supplier_code",
+            "tenant_id",
+            "supplier_party_id",
+            "supplier_code",
+            unique=True,
+            postgresql_where=text("supplier_party_id IS NOT NULL"),
+            sqlite_where=text("supplier_party_id IS NOT NULL"),
+        ),
+        Index("ix_catalog_product_name", "tenant_id", "name_normalized"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    supplier_party_id: Mapped[str | None] = mapped_column(ForeignKey("party.id"))
+    supplier_code: Mapped[str] = mapped_column(String(60), nullable=False)
+
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    code_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    category_id: Mapped[str | None] = mapped_column(ForeignKey("item_category.id"))
+    display_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String(300), default="", nullable=False)
+
+    # Set when the product is promoted to (or matched with) an item in the shop's item list.
+    item_id: Mapped[str | None] = mapped_column(ForeignKey("item.id"), index=True)

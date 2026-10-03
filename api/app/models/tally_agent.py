@@ -82,6 +82,17 @@ class BackupShop(PkUuidMixin, TimestampMixin, Base):
     last_tally_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_tally_status: Mapped[str | None] = mapped_column(String(40))
 
+    # Agent versioning / auto-update (0037). `agent_version` is what the agent
+    # reported at its last checkin; `target_agent_version` is an ops pin (NULL =
+    # follow the promoted `latest` release); `last_update_status` is
+    # 'failed:<ver>' after a rolled-back update so it isn't re-offered.
+    agent_version: Mapped[str | None] = mapped_column(String(40))
+    agent_version_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    os_version: Mapped[str | None] = mapped_column(String(120))
+    target_agent_version: Mapped[str | None] = mapped_column(String(40))
+    installer_agent_version: Mapped[str | None] = mapped_column(String(40))
+    last_update_status: Mapped[str | None] = mapped_column(String(80))
+
 
 class BackupUpload(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "backup_upload"

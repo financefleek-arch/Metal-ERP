@@ -12,6 +12,7 @@ what `alembic/env.py` targets for autogenerate.
 from app.models.audit import AuditLog
 from app.models.catalog import (
     CatalogOutputJob,
+    CatalogProduct,
     CodeSequence,
     CustomerCatalog,
     SupplierCatalog,
@@ -45,6 +46,7 @@ __all__ = [
     "BackupShop",
     "BackupUpload",
     "CatalogOutputJob",
+    "CatalogProduct",
     "CodeSequence",
     "CustomerCatalog",
     "HsnCode",

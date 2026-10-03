@@ -26,12 +26,33 @@ class ShopCheckinIn(BaseModel):
     # TallyPrime's HTTP gateway on this poll? None = agent didn't probe.
     tally_reachable: bool | None = None
     tally_reason: str | None = Field(default=None, pattern="^(connected|refused|no_company|unknown)$")
+    # Auto-update (0037). Older agents omit all three.
+    agent_version: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$", max_length=40)
+    os_version: str | None = Field(default=None, max_length=120)
+    # Set once after an update was rolled back / failed: the version that
+    # failed, so the backend stops offering it until ops re-targets.
+    update_failed_version: str | None = Field(
+        default=None, pattern=r"^\d+\.\d+\.\d+$", max_length=40
+    )
+    update_error: str | None = Field(default=None, max_length=500)
+
+
+class UpdateOfferOut(BaseModel):
+    """A build the agent should move to. `signature` is verified by the agent
+    against a public key compiled into it — the API only relays it."""
+
+    version: str
+    url: str
+    sha256: str
+    size_bytes: int
+    signature: str
 
 
 class ShopCheckinOut(BaseModel):
     shop_id: str
     checked_in_at: datetime
     outbox: list[OutboxItemOut] = Field(default_factory=list)
+    update: UpdateOfferOut | None = None
 
 
 class UploadRequestIn(BaseModel):

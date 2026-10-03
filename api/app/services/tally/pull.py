@@ -65,6 +65,26 @@ def process_pull_result(
         complete_job_error(session, job, error=f"could not download masters XML: {e}")
         return
 
+    if job.entity_type == "stock_check":
+        # "Check Tally" for the catalog item push: read stock groups + item names only.
+        from app.services.catalog.tally_items import apply_stock_check
+
+        company = session.get(TallyCompany, job.company_id)
+        if company is None:
+            complete_job_error(session, job, error="the Tally company no longer exists")
+            return
+        try:
+            result = apply_stock_check(session, company, raw)
+        except Exception as e:  # noqa: BLE001 - never 500 at the agent
+            log.exception("tally stock check %s: could not read the export", job.id)
+            complete_job_error(session, job, error=f"could not read Tally's masters: {e}")
+            return
+        job.status = "ok"
+        job.counts = result
+        job.completed_at = datetime.now(UTC)
+        session.flush()
+        return
+
     # One shared batch id across the party + item staging so the review UI
     # and the "discard" both cover the whole pull.
     batch_id = str(uuid.uuid4())

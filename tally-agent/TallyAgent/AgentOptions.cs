@@ -7,13 +7,37 @@ public sealed class AgentOptions
 
     public string ShopApiKey { get; set; } = "";
     public string BackendBaseUrl { get; set; } = "";
-    public string StateDbPath { get; set; } = @"C:\ProgramData\TallyAgent\state.db";
-    public string LogDirectory { get; set; } = @"C:\ProgramData\TallyAgent\logs";
+    // Environment variables (%LOCALAPPDATA%, %ProgramData%) are expanded - see
+    // ExpandPaths. Per-user installs use %LOCALAPPDATA%\TallyAgent; the optional
+    // service install rewrites these to C:\ProgramData\TallyAgent.
+    public string StateDbPath { get; set; } = @"%LOCALAPPDATA%\TallyAgent\state.db";
+    public string LogDirectory { get; set; } = @"%LOCALAPPDATA%\TallyAgent\logs";
 
     public BackupSyncOptions? BackupSync { get; set; }
     public BackupHealthMonitorOptions? BackupHealthMonitor { get; set; }
     public WhatsAppDeliveryOptions? WhatsAppDelivery { get; set; }
     public TallyMastersOptions? TallyMasters { get; set; }
+    public UpdateOptions Update { get; set; } = new();
+
+    /// <summary>Expands %VAR% in every configured path. Called once after
+    /// binding (the generated appsettings.json can't know the user's profile
+    /// folder, so it ships %LOCALAPPDATA%).</summary>
+    public void ExpandPaths()
+    {
+        StateDbPath = Environment.ExpandEnvironmentVariables(StateDbPath);
+        LogDirectory = Environment.ExpandEnvironmentVariables(LogDirectory);
+        if (BackupSync is not null)
+            BackupSync.WatchFolder = Environment.ExpandEnvironmentVariables(BackupSync.WatchFolder);
+        if (TallyMasters is not null)
+            TallyMasters.ExportDir = Environment.ExpandEnvironmentVariables(TallyMasters.ExportDir);
+    }
+}
+
+public sealed class UpdateOptions
+{
+    /// <summary>Follow update offers from the backend. appsettings.Development.json
+    /// turns this off so a dev `dotnet run` never swaps its own bin folder.</summary>
+    public bool Enabled { get; set; } = true;
 }
 
 public sealed class BackupSyncOptions
@@ -48,7 +72,7 @@ public sealed class WhatsAppDeliveryOptions
 {
     public bool Enabled { get; set; } = false;
     public int PollIntervalMinutes { get; set; } = 5;
-    public string TallyGatewayBaseUrl { get; set; } = "http://localhost:9000";
+    public string TallyGatewayBaseUrl { get; set; } = "http://127.0.0.1:9000";
 }
 
 public sealed class TallyMastersOptions
@@ -57,7 +81,7 @@ public sealed class TallyMastersOptions
 
     /// <summary>Tally Prime's HTTP XML gateway. Needs "TallyPrime acts as
     /// Server" enabled in F1 > Settings > Connectivity (port 9000 default).</summary>
-    public string GatewayUrl { get; set; } = "http://localhost:9000";
+    public string GatewayUrl { get; set; } = "http://127.0.0.1:9000";
 
     /// <summary>Optional fallback: a folder the shop's accountant exports
     /// "All Masters" XML into. Used only when the gateway is unreachable.

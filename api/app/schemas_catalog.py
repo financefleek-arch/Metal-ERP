@@ -11,10 +11,10 @@ from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 # Always serialised with fixed decimals, so the JSON is the same on every database
 # (SQLite drops trailing zeros; Postgres NUMERIC keeps them).
 Money = Annotated[Decimal, PlainSerializer(lambda v: f"{v:.2f}", return_type=str)]
-MultiplierOut = Annotated[Decimal, PlainSerializer(lambda v: f"{v:.3f}", return_type=str)]
-MultiplierOrNone = Annotated[
+MarginOut = Annotated[Decimal, PlainSerializer(lambda v: f"{v:.2f}", return_type=str)]
+MarginOrNone = Annotated[
     Decimal | None,
-    PlainSerializer(lambda v: None if v is None else f"{v:.3f}", return_type=str | None),
+    PlainSerializer(lambda v: None if v is None else f"{v:.2f}", return_type=str | None),
 ]
 
 
@@ -27,15 +27,17 @@ class CatalogListItem(BaseModel):
     page_count: int
     item_count: int
     code_prefix: str
-    multiplier: MultiplierOut
+    supplier_party_id: str | None = None
+    supplier_name: str | None = None
+    bulk_margin_pct: MarginOut
     rounding_step: int
     status: str
     created_at: datetime
 
 
 class CatalogDetail(CatalogListItem):
-    # Items that carry their own multiplier instead of the catalog's.
-    override_count: int = 0
+    # Items that carry their own margin instead of the bulk margin.
+    item_margin_count: int = 0
 
 
 class CatalogUploadOut(CatalogListItem):
@@ -44,18 +46,34 @@ class CatalogUploadOut(CatalogListItem):
     # Photos with no price line (blank filler cells) that were left out.
     skipped_cells: int = 0
     warnings: list[str] = []
+    # Rows that reused a product (code, group, name) from an earlier catalog of this supplier.
+    matched_items: int = 0
+    new_products: int = 0
+    # Rows that look like a product you already have (same name): confirm or dismiss.
+    suggestions: int = 0
 
 
-# One multiplier for the catalog, or one per item: 3 decimals, 0.001 to 99.999.
-Multiplier = Annotated[Decimal | None, Field(gt=0, le=Decimal("99.999"), decimal_places=3)]
+# A margin in percent, at most 2 decimals: -99.99 (a discount) up to 1000. 25 = +25%.
+Margin = Annotated[
+    Decimal | None,
+    Field(ge=Decimal("-99.99"), le=Decimal("1000"), decimal_places=2),
+]
 
 
 class CatalogPatch(BaseModel):
-    """Changing `multiplier` or `rounding_step` reprices every item."""
+    """Changing `bulk_margin_pct` or `rounding_step` reprices every item. `supplier_party_id`
+    can be set once, on a catalog uploaded without a supplier."""
 
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    multiplier: Multiplier = None
+    supplier_party_id: str | None = None
+    bulk_margin_pct: Margin = None
     rounding_step: Literal[1, 5, 10] | None = None
+
+
+class ProductRef(BaseModel):
+    product_id: str
+    code: str
+    name: str
 
 
 class CatalogItemOut(BaseModel):
@@ -71,7 +89,7 @@ class CatalogItemOut(BaseModel):
     pack_qty: int
     carton_qty: int | None
     cost_price: Money
-    multiplier_override: MultiplierOrNone
+    item_margin_pct: MarginOrNone
     sell_price: Money
     category_id: str | None
     category_name: str | None
@@ -80,6 +98,11 @@ class CatalogItemOut(BaseModel):
     image_url: str | None
     # Code 128 bar pattern for `code` ('1' = bar, '0' = space), drawn as SVG in the browser.
     barcode: str | None
+    # The product this row is an offer of; it owns the code. A locked code never changes.
+    product_id: str | None
+    code_locked: bool
+    # Another product that looks like the same thing (same name): accept or dismiss.
+    suggestion: ProductRef | None
     item_id: str | None
     tally_status: str
 
@@ -96,8 +119,8 @@ class CatalogItemPatch(BaseModel):
     cost_price: Decimal | None = Field(default=None, ge=0, le=Decimal("9999999999999.99"))
     included: bool | None = None
     group_name: str | None = Field(default=None, max_length=120)
-    # A number sets this item's own multiplier; null clears it (back to the catalog's).
-    multiplier_override: Multiplier = None
+    # A number sets this item's own margin (%); null clears it (back to the bulk margin).
+    item_margin_pct: Margin = None
 
 
 class ItemFilter(BaseModel):
@@ -106,15 +129,15 @@ class ItemFilter(BaseModel):
     no_group: bool = False
     included: bool | None = None
     brand: str | None = None
-    # True = only items with their own multiplier; False = only those using the catalog's.
-    has_override: bool | None = None
+    # True = only items with their own (item-level) margin; False = only those on the bulk margin.
+    has_item_margin: bool | None = None
 
 
 class BulkChanges(BaseModel):
     group_name: str | None = Field(default=None, max_length=120)
     included: bool | None = None
-    # A number sets the override on every target item; null clears it.
-    multiplier_override: Multiplier = None
+    # A number sets the item-level margin (%) on every target item; null clears it.
+    item_margin_pct: Margin = None
 
 
 class BulkPatch(BaseModel):
@@ -135,6 +158,7 @@ class BulkResult(BaseModel):
 class GroupSummary(BaseModel):
     category_id: str | None
     name: str
+    code_prefix: str | None = None
     item_count: int
     included_count: int
 
@@ -209,3 +233,111 @@ class CustomerCatalogOut(BaseModel):
     # True once prices or items changed after this version was made: regenerate.
     stale: bool
     created_at: datetime
+
+
+class LinkProductIn(BaseModel):
+    product_id: str
+
+
+# --------------------------------------------------------------------------
+# S5: promote to items, push to Tally
+# --------------------------------------------------------------------------
+
+
+class SelectionIn(BaseModel):
+    """Which rows: exactly one of `ids`, `filter`, `all_included`."""
+
+    ids: list[str] | None = Field(default=None, max_length=5000)
+    filter: ItemFilter | None = None
+    all_included: bool = False
+
+
+class PromoteOut(BaseModel):
+    total: int
+    create: int
+    link_existing: int
+    reuse: int
+    already: int
+    renamed: int
+    examples: list[str]
+
+
+class TallySettingsIn(BaseModel):
+    """Only the fields sent change. A blank root means Primary."""
+
+    stock_group_root: str | None = Field(default=None, max_length=99)
+    tally_group_create_policy: Literal["create_missing", "existing_only"] | None = None
+    # {item_category_id: Tally stock group}; a blank value removes that mapping.
+    stock_group_map: dict[str, str] | None = None
+
+
+class TallySettingsOut(BaseModel):
+    connected: bool
+    company_name: str | None
+    stock_group_root: str | None
+    tally_group_create_policy: str
+    stock_group_map: dict[str, str]
+    checked_at: datetime | None
+    check_is_fresh: bool
+    known_groups: list[str]
+
+
+class TallyCheckOut(BaseModel):
+    id: str
+    status: str  # queued | sent | running | ok | error
+    error: str | None
+    groups: int | None = None
+    items: int | None = None
+    linked: int | None = None
+    created_at: datetime
+
+
+class PreflightCheckOut(BaseModel):
+    code: str
+    ok: bool
+    message: str
+    blocking: bool
+
+
+class PreflightGroupOut(BaseModel):
+    category_id: str | None
+    our_name: str
+    tally_name: str
+    status: str  # existing | create | missing
+    item_count: int
+
+
+class PreflightCollisionOut(BaseModel):
+    item_id: str
+    code: str
+    name: str
+
+
+class TallyPreflightOut(BaseModel):
+    ok: bool
+    total: int
+    to_push: int
+    already_synced: int
+    not_promoted: int
+    batches: int
+    root: str | None
+    checked_at: datetime | None
+    checks: list[PreflightCheckOut]
+    groups: list[PreflightGroupOut]
+    collisions: list[PreflightCollisionOut]
+
+
+class TallyPushIn(SelectionIn):
+    # also re-send items already in Tally (an alter: use after changing names or codes)
+    include_synced: bool = False
+
+
+class TallyRunOut(BaseModel):
+    run_id: str | None
+    state: str  # none | running | done | error | stopped
+    batches: int
+    batches_done: int
+    total_items: int
+    synced: int
+    error: str | None
+    updated_at: datetime | None

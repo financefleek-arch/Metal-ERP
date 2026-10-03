@@ -60,6 +60,7 @@ class PartySource(enum.StrEnum):
     manual = "manual"
     inward_bill = "inward_bill"
     tally_import = "tally_import"
+    catalog = "catalog"
 
 
 class AddressType(enum.StrEnum):
@@ -78,6 +79,7 @@ class ItemSource(enum.StrEnum):
     auto_from_invoice = "auto_from_invoice"
     auto_from_purchase = "auto_from_purchase"
     import_ = "import"
+    catalog = "catalog"
 
 
 class ItemStatus(enum.StrEnum):

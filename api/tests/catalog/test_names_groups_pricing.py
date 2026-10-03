@@ -13,7 +13,7 @@ from app.services.catalog.names import (
     infer_brands,
     size_of,
 )
-from app.services.catalog.pricing import effective_multiplier, sell_price
+from app.services.catalog.pricing import effective_margin, sell_price
 
 # --- display names ------------------------------------------------------------
 
@@ -139,41 +139,51 @@ def test_classification_is_case_insensitive() -> None:
 
 
 @pytest.mark.parametrize(
-    ("cost", "mult", "step", "expected"),
+    ("cost", "margin", "step", "expected"),
     [
-        ("190", "1.25", 1, "238.00"),  # 237.5 rounds half up
-        ("190", "1.25", 5, "240.00"),
-        ("190", "1.25", 10, "240.00"),
-        ("113", "1.000", 1, "113.00"),
-        ("99", "1.40", 1, "139.00"),  # 138.6
-        ("105", "1.5", 10, "160.00"),  # 157.5 -> nearest 10
-        ("0", "1.25", 1, "0.00"),
+        ("190", "25", 1, "238.00"),  # 237.5 rounds half up
+        ("190", "25", 5, "240.00"),
+        ("190", "25", 10, "240.00"),
+        ("113", "0", 1, "113.00"),  # no margin: the supplier price
+        ("99", "40", 1, "139.00"),  # 138.6
+        ("105", "50", 10, "160.00"),  # 157.5 -> nearest 10
+        ("0", "25", 1, "0.00"),
+        ("200", "-10", 1, "180.00"),  # a negative margin is a discount
+        ("100", "12.5", 1, "113.00"),  # 112.5 rounds half up
+        ("100", "1000", 1, "1100.00"),
+        ("100", "-99.99", 1, "0.00"),
     ],
 )
-def test_sell_price(cost: str, mult: str, step: int, expected: str) -> None:
-    assert sell_price(Decimal(cost), Decimal(mult), step) == Decimal(expected)
+def test_sell_price(cost: str, margin: str, step: int, expected: str) -> None:
+    assert sell_price(Decimal(cost), Decimal(margin), step) == Decimal(expected)
+
+
+def test_a_margin_is_a_markup_on_the_supplier_price() -> None:
+    assert sell_price(Decimal("100"), Decimal("25"), 1) == Decimal("125.00")
+    assert sell_price(Decimal("80"), Decimal("25"), 1) == Decimal("100.00")
 
 
 def test_half_up_not_bankers_rounding() -> None:
     # 2.5 and 3.5 both round UP (banker's would give 2 and 4)
-    assert sell_price(Decimal("2"), Decimal("1.25"), 1) == Decimal("3.00")
-    assert sell_price(Decimal("2.8"), Decimal("1.25"), 1) == Decimal("4.00")
+    assert sell_price(Decimal("2"), Decimal("25"), 1) == Decimal("3.00")
+    assert sell_price(Decimal("2.8"), Decimal("25"), 1) == Decimal("4.00")
 
 
 def test_no_float_drift() -> None:
-    assert sell_price(Decimal("0.1"), Decimal("3"), 1) == Decimal("0.00")
-    assert sell_price(Decimal("199.99"), Decimal("1.1"), 1) == Decimal("220.00")
+    assert sell_price(Decimal("0.1"), Decimal("200"), 1) == Decimal("0.00")
+    assert sell_price(Decimal("199.99"), Decimal("10"), 1) == Decimal("220.00")
 
 
-def test_bad_step_and_multiplier_rejected() -> None:
+def test_bad_step_and_margin_rejected() -> None:
     with pytest.raises(ValueError):
-        sell_price(Decimal("10"), Decimal("1"), 7)
+        sell_price(Decimal("10"), Decimal("0"), 7)
     with pytest.raises(ValueError):
-        sell_price(Decimal("10"), Decimal("0"), 1)
+        sell_price(Decimal("10"), Decimal("-100"), 1)  # would price at zero or below
     with pytest.raises(ValueError):
-        sell_price(Decimal("10"), Decimal("-1"), 1)
+        sell_price(Decimal("10"), Decimal("-250"), 1)
 
 
-def test_override_beats_catalog_multiplier() -> None:
-    assert effective_multiplier(Decimal("1.4"), Decimal("1.25")) == Decimal("1.4")
-    assert effective_multiplier(None, Decimal("1.25")) == Decimal("1.25")
+def test_item_margin_beats_the_bulk_margin() -> None:
+    assert effective_margin(Decimal("40"), Decimal("25")) == Decimal("40")
+    assert effective_margin(Decimal("0"), Decimal("25")) == Decimal("0")  # zero is a real margin
+    assert effective_margin(None, Decimal("25")) == Decimal("25")

@@ -1,6 +1,10 @@
+using System.Diagnostics;
+using Microsoft.Extensions.Options;
+using Serilog;
 using TallyAgent.Backend;
 using TallyAgent.Modules;
 using TallyAgent.Tally;
+using TallyAgent.Updates;
 
 namespace TallyAgent;
 
@@ -15,10 +19,16 @@ public sealed class TallyAgentService(
     IEnumerable<IAgentModule> modules,
     BackendClient backend,
     TallyGatewayClient tallyGateway,
+    UpdateCoordinator updates,
+    IOptions<AgentOptions> options,
     ILoggerFactory loggerFactory,
     ILogger<TallyAgentService> log) : BackgroundService
 {
     private static readonly TimeSpan CheckinInterval = TimeSpan.FromMinutes(1);
+
+    // Up this long without crashing = a freshly swapped-in build is good.
+    private static readonly TimeSpan HealthyAfter = TimeSpan.FromSeconds(90);
+    private static readonly TimeSpan TransientRetry = TimeSpan.FromMinutes(15);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -27,9 +37,23 @@ public sealed class TallyAgentService(
             "Tally Agent starting with {Count} module(s): {Names}",
             moduleList.Count, string.Join(", ", moduleList.Select(m => m.Name)));
 
+        var updatesOn = options.Value.Update.Enabled;
+        if (updatesOn && updates.OnStartup() == StartupAction.ExitForRestart)
+        {
+            // Files were swapped (or rolled back). Windows can't run the new exe
+            // from this process, so die: Task Scheduler / the SCM restarts us.
+            log.LogInformation("Exiting so the restart picks up the new build");
+            Exit(UpdateCoordinator.ExitCodeForRestart);
+        }
+
         var ctx = new AgentContext(backend, tallyGateway, loggerFactory);
         var lastRun = new Dictionary<string, DateTimeOffset>();
         var lastCheckin = DateTimeOffset.MinValue;
+        var uptime = Stopwatch.StartNew();
+        var markedHealthy = false;
+        var ignoredOffers = new HashSet<string>();
+        var nextUpdateAttempt = DateTimeOffset.MinValue;
+        using var downloadHttp = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -61,17 +85,53 @@ public sealed class TallyAgentService(
                 }
             }
 
+            if (updatesOn && !markedHealthy && uptime.Elapsed >= HealthyAfter)
+            {
+                updates.MarkHealthy();
+                markedHealthy = true;
+            }
+
             if (now - lastCheckin >= CheckinInterval)
             {
+                var failure = updatesOn ? updates.PendingFailure() : null;
                 var resp = await backend.CheckinAsync(
                     ctx.ModuleStatusSnapshot.ToDictionary(kv => kv.Key, kv => kv.Value),
                     ctx.LastErrorSnapshot,
                     ctx.TallyReachable,
                     ctx.TallyReason,
-                    stoppingToken);
+                    stoppingToken,
+                    AgentVersion.Current,
+                    AgentVersion.OsDescription,
+                    failure?.Version,
+                    failure?.Error);
                 // Hand this round's outbox to modules for the next round.
                 ctx.SetPendingOutbox(resp?.Outbox ?? new List<Backend.OutboxItem>());
                 lastCheckin = now;
+
+                // Delivered once; the backend then stops offering that version.
+                if (resp is not null && failure is not null) updates.ClearFailure();
+
+                // Every module above ran to completion, so this is a safe moment:
+                // nothing is mid-upload or mid-push.
+                if (updatesOn && resp?.Update is { } offer
+                    && !ignoredOffers.Contains(offer.Version) && now >= nextUpdateAttempt)
+                {
+                    var result = await updates.StageAsync(
+                        offer, ReleaseKeys.PublicKeysSpkiBase64, downloadHttp, stoppingToken);
+                    switch (result)
+                    {
+                        case StageResult.Staged:
+                            log.LogInformation("Update {Version} staged; restarting to apply", offer.Version);
+                            Exit(UpdateCoordinator.ExitCodeForRestart);
+                            break;
+                        case StageResult.Transient:
+                            nextUpdateAttempt = now + TransientRetry;
+                            break;
+                        default: // Skipped / Rejected: don't re-evaluate this version every minute
+                            ignoredOffers.Add(offer.Version);
+                            break;
+                    }
+                }
             }
 
             try
@@ -83,5 +143,11 @@ public sealed class TallyAgentService(
                 break;
             }
         }
+    }
+
+    private static void Exit(int code)
+    {
+        Log.CloseAndFlush();
+        Environment.Exit(code);
     }
 }

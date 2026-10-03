@@ -6,7 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-TallyAgent-8ab21223-d8b6-4cb6-ab20-55b586ee2253</UserSecretsId>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- CI passes -p:Version=X.Y.Z from the agent-vX.Y.Z tag; a local build is 0.0.0. -->
+    <Version>0.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <!-- Release builds are a windowless app (runs under the user's login with no
+         console flashing up); Debug keeps the console for `dotnet run`. -->
+    <OutputType Condition="'$(Configuration)' == 'Release'">WinExe</OutputType>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="TallyAgent.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />

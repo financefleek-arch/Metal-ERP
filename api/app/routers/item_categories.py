@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select, update
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import Item, ItemCategory, ProductGroup, SupplierCatalogItem
+from app.models import CatalogProduct, Item, ItemCategory, ProductGroup, SupplierCatalogItem, Tenant
 from app.schemas_catalogue import (
     CategoryDeleteIn,
     CategoryIn,
@@ -18,6 +18,8 @@ from app.schemas_catalogue import (
     CategoryOut,
     CategoryUpdate,
 )
+from app.services.catalog.codes import normalize_prefix
+from app.services.catalog.products import fallback_prefix, prefix_in_use
 
 router = APIRouter(prefix="/api/item-categories", tags=["item-categories"])
 
@@ -70,6 +72,7 @@ def list_categories(user: CurrentUser, session: SessionDep) -> list[CategoryOut]
             id=c.id,
             name=c.name,
             sort=c.sort,
+            code_prefix=c.code_prefix,
             group_count=counts.get(c.id, (0, 0))[0],
             item_count=counts.get(c.id, (0, 0))[1],
         )
@@ -90,7 +93,7 @@ def create_category(body: CategoryIn, user: WriteUser, session: SessionDep) -> C
     c = ItemCategory(tenant_id=user.tenant_id, name=body.name.strip(), sort=body.sort)
     session.add(c)
     session.flush()
-    return CategoryOut(id=c.id, name=c.name, sort=c.sort)
+    return CategoryOut(id=c.id, name=c.name, sort=c.sort, code_prefix=c.code_prefix)
 
 
 @router.patch("/{cat_id}", response_model=CategoryOut)
@@ -115,19 +118,47 @@ def update_category(
         c.name = patch["name"].strip()
     if "sort" in patch:
         c.sort = patch["sort"]
+    if patch.get("code_prefix") is not None:
+        _set_code_prefix(session, user.tenant_id, c, patch["code_prefix"])
     session.flush()
     counts = _counts(session, user.tenant_id).get(c.id, (0, 0))
     return CategoryOut(
-        id=c.id, name=c.name, sort=c.sort,
+        id=c.id, name=c.name, sort=c.sort, code_prefix=c.code_prefix,
         group_count=counts[0], item_count=counts[1],
     )
+
+
+def _set_code_prefix(session: SessionDep, tenant_id: str, c: ItemCategory, raw: str) -> None:
+    prefix = normalize_prefix(raw)
+    if prefix is None or len(prefix) > 4:
+        raise HTTPException(status_code=422, detail="Group code must be 2 to 4 letters or digits.")
+    if prefix == c.code_prefix:
+        return
+    if c.code_prefix and prefix_in_use(session, tenant_id, c.code_prefix):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Codes like {c.code_prefix}-0001 already exist, so this group's code is fixed.",
+        )
+    tenant = session.get(Tenant, tenant_id)
+    assert tenant is not None
+    clash = session.scalar(
+        select(ItemCategory.id).where(
+            ItemCategory.tenant_id == tenant_id,
+            ItemCategory.id != c.id,
+            ItemCategory.code_prefix == prefix,
+        )
+    )
+    taken = prefix == fallback_prefix(tenant) or prefix_in_use(session, tenant_id, prefix)
+    if clash is not None or taken:
+        raise HTTPException(status_code=409, detail=f"The code {prefix} is already taken.")
+    c.code_prefix = prefix
 
 
 def _repoint(session: SessionDep, tenant_id: str, src_id: str, target: str | None) -> None:
     """Move everything that points at category `src_id` to `target` (None = detach):
     product groups, items, and supplier-catalog items.
     """
-    for model in (ProductGroup, Item, SupplierCatalogItem):
+    for model in (ProductGroup, Item, SupplierCatalogItem, CatalogProduct):
         session.execute(
             update(model)
             .where(model.tenant_id == tenant_id, model.category_id == src_id)
@@ -149,7 +180,8 @@ def merge_category(
     session.flush()
     counts = _counts(session, user.tenant_id).get(dst.id, (0, 0))
     return CategoryOut(
-        id=dst.id, name=dst.name, sort=dst.sort, group_count=counts[0], item_count=counts[1]
+        id=dst.id, name=dst.name, sort=dst.sort, code_prefix=dst.code_prefix,
+        group_count=counts[0], item_count=counts[1],
     )
 
 

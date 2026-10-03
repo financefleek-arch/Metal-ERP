@@ -9,7 +9,7 @@ namespace TallyAgent.Modules;
 /// Drains `module == "tally"` outbox items:
 ///   - `action == "pull_masters"` — exports the Tally company's masters as
 ///     XML, uploads it to R2, reports the sync job's result.
-///   - `action == "push_sales"` / `action == "push_purchase"` — POSTs the
+///   - `action == "push_sales"` / `"push_purchase"` / `"push_items"` — POSTs the
 ///     backend-built voucher XML (already sitting in
 ///     `payload["voucher_xml"]`, no second fetch) straight to the Tally
 ///     gateway, reports Tally's own response body back inline (no R2 — a
@@ -97,6 +97,7 @@ public sealed class TallyMastersModule(
                     break;
                 case "push_sales":
                 case "push_purchase":
+                case "push_items":
                     ok = await ProcessPushAsync(
                         ctx, log, jobId, GetString(item.Payload, "voucher_xml"), ct);
                     break;
@@ -259,7 +260,7 @@ public sealed class TallyMastersModule(
     /// already built by the backend and sitting in the outbox payload
     /// (`voucher_xml`); this method's only job is to POST it and relay
     /// Tally's response back — it never inspects the voucher type, so the
-    /// same code path serves both `push_sales` and `push_purchase`. Same
+    /// same code path serves `push_sales`, `push_purchase` and `push_items`. Same
     /// "not reachable / no company" handling as pull, reusing the same
     /// status-ping vocabulary the backend already understands.
     /// </summary>

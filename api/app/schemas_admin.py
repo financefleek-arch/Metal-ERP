@@ -169,6 +169,21 @@ class FirmTallyShopOut(BaseModel):
     tally_status: str | None = None  # connected | refused | no_company | unknown
     tally_ok_at: datetime | None = None
 
+    # Agent versioning / auto-update (0037).
+    agent_version: str | None = None  # what the agent last reported
+    os_version: str | None = None
+    target_agent_version: str | None = None  # ops pin; None = follows `latest`
+    installer_agent_version: str | None = None  # version baked into the cached zip
+    latest_agent_version: str | None = None  # the promoted release right now
+    update_status: str | None = None  # 'failed:<ver>' after a rolled-back update
+
+
+class AgentTargetVersionIn(BaseModel):
+    """Pin one firm's agent to a specific released version (canary / rollback),
+    or null to follow the promoted `latest` again."""
+
+    version: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$")
+
 
 class FirmBackupFileOut(BaseModel):
     """One file of a backup set. `r2_key` is deliberately not exposed."""

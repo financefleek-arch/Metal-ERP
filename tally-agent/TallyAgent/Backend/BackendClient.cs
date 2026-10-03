@@ -30,7 +30,11 @@ public sealed class BackendClient
         string? error,
         bool? tallyReachable,
         string? tallyReason,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? agentVersion = null,
+        string? osVersion = null,
+        string? updateFailedVersion = null,
+        string? updateError = null)
     {
         try
         {
@@ -42,6 +46,10 @@ public sealed class BackendClient
                     Error = error,
                     TallyReachable = tallyReachable,
                     TallyReason = tallyReason,
+                    AgentVersion = agentVersion,
+                    OsVersion = osVersion,
+                    UpdateFailedVersion = updateFailedVersion,
+                    UpdateError = updateError,
                 },
                 ct);
 

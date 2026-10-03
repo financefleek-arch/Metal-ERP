@@ -33,8 +33,10 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.deps import SessionDep, get_current_user, require_write
 from app.models import (
     CatalogOutputJob,
+    CatalogProduct,
     CustomerCatalog,
     ItemCategory,
+    Party,
     SupplierCatalog,
     SupplierCatalogItem,
     Tenant,
@@ -54,18 +56,21 @@ from app.schemas_catalog import (
     GroupSummary,
     ItemFilter,
     LabelRequest,
+    LinkProductIn,
     OutputJobOut,
+    ProductRef,
 )
 from app.services.catalog import catalog_pdf as pdf_svc
 from app.services.catalog import customer_catalogs as cc_svc
 from app.services.catalog import image_url, output_jobs
 from app.services.catalog import labels as labels_svc
+from app.services.catalog import products as products_svc
 from app.services.catalog.barcode import modules as barcode_modules
 from app.services.catalog.codes import normalize_prefix
 from app.services.catalog.extract_grid import NotACatalog
 from app.services.catalog.groups import clean_group_name, get_or_create_category
 from app.services.catalog.importer import import_catalog
-from app.services.catalog.pricing import effective_multiplier, sell_price
+from app.services.catalog.pricing import effective_margin, sell_price
 from app.services.catalog.reprice import reprice
 from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.pagination import finish_page, paginate
@@ -132,14 +137,43 @@ def _get_item(
 
 
 @router.get("", response_model=list[CatalogListItem])
-def list_catalogs(session: SessionDep, user: CatalogUser) -> list[SupplierCatalog]:
-    return list(
+def list_catalogs(session: SessionDep, user: CatalogUser) -> list[CatalogListItem]:
+    rows = list(
         session.scalars(
             select(SupplierCatalog)
             .where(SupplierCatalog.tenant_id == user.tenant_id)
             .order_by(SupplierCatalog.created_at.desc())
         )
     )
+    names = _supplier_names(session, {r.supplier_party_id for r in rows if r.supplier_party_id})
+    out: list[CatalogListItem] = []
+    for r in rows:
+        item = CatalogListItem.model_validate(r, from_attributes=True)
+        item.supplier_name = names.get(r.supplier_party_id) if r.supplier_party_id else None
+        out.append(item)
+    return out
+
+
+def _supplier_names(session: SessionDep, ids: set[str]) -> dict[str, str]:
+    if not ids:
+        return {}
+    return {
+        pid: name
+        for pid, name in session.execute(
+            select(Party.id, Party.legal_name).where(Party.id.in_(ids))
+        )
+    }
+
+
+def _check_supplier(session: SessionDep, tenant_id: str, party_id: str) -> Party:
+    party = session.scalar(select(Party).where(Party.id == party_id, Party.tenant_id == tenant_id))
+    if party is None:
+        raise HTTPException(status_code=422, detail="That supplier was not found.")
+    if party.role not in ("supplier", "both"):
+        raise HTTPException(
+            status_code=422, detail=f"{party.legal_name} is not marked as a supplier."
+        )
+    return party
 
 
 @router.post("", response_model=CatalogUploadOut, status_code=status.HTTP_201_CREATED)
@@ -151,6 +185,7 @@ def upload_catalog(
     file: Annotated[UploadFile, File()],
     title: Annotated[str | None, Form()] = None,
     code_prefix: Annotated[str | None, Form()] = None,
+    supplier_party_id: Annotated[str | None, Form()] = None,
 ) -> CatalogUploadOut:
     data = file.file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
@@ -165,6 +200,10 @@ def upload_catalog(
     if code_prefix and code_prefix.strip() and normalize_prefix(code_prefix) is None:
         raise HTTPException(status_code=422, detail="Code prefix must be 2 to 8 letters or digits.")
 
+    supplier_id = (supplier_party_id or "").strip() or None
+    if supplier_id:
+        _check_supplier(session, user.tenant_id, supplier_id)
+
     tenant = session.get(Tenant, user.tenant_id)
     assert tenant is not None
     try:
@@ -177,6 +216,7 @@ def upload_catalog(
             data=data,
             title=title,
             code_prefix=code_prefix,
+            supplier_party_id=supplier_id,
         )
     except NotACatalog as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -186,6 +226,13 @@ def upload_catalog(
     out.already_exists = not result.created
     out.skipped_cells = result.skipped_cells
     out.warnings = result.warnings[:50]
+    out.matched_items = result.matched_items
+    out.new_products = result.new_products
+    out.suggestions = result.suggestions
+    if result.catalog.supplier_party_id:
+        out.supplier_name = _supplier_names(session, {result.catalog.supplier_party_id}).get(
+            result.catalog.supplier_party_id
+        )
     return out
 
 
@@ -195,11 +242,15 @@ def _detail(session: SessionDep, cat: SupplierCatalog) -> CatalogDetail:
         .select_from(SupplierCatalogItem)
         .where(
             SupplierCatalogItem.catalog_id == cat.id,
-            SupplierCatalogItem.multiplier_override.is_not(None),
+            SupplierCatalogItem.item_margin_pct.is_not(None),
         )
     )
     out = CatalogDetail.model_validate(cat, from_attributes=True)
-    out.override_count = int(n or 0)
+    out.item_margin_count = int(n or 0)
+    if cat.supplier_party_id:
+        out.supplier_name = _supplier_names(session, {cat.supplier_party_id}).get(
+            cat.supplier_party_id
+        )
     return out
 
 
@@ -215,9 +266,11 @@ def patch_catalog(
     cat = _get_catalog(session, user.tenant_id, catalog_id)
     if body.title is not None:
         cat.title = body.title.strip()
+    if body.supplier_party_id is not None and body.supplier_party_id != cat.supplier_party_id:
+        _set_supplier(session, user.tenant_id, cat, body.supplier_party_id)
     pricing_changed = False
-    if body.multiplier is not None and body.multiplier != cat.multiplier:
-        cat.multiplier = body.multiplier
+    if body.bulk_margin_pct is not None and body.bulk_margin_pct != cat.bulk_margin_pct:
+        cat.bulk_margin_pct = body.bulk_margin_pct
         pricing_changed = True
     if body.rounding_step is not None and body.rounding_step != cat.rounding_step:
         cat.rounding_step = body.rounding_step
@@ -227,6 +280,36 @@ def patch_catalog(
         reprice(session, cat)
         cc_svc.mark_stale(session, cat.id)
     return _detail(session, cat)
+
+
+def _set_supplier(
+    session: SessionDep, tenant_id: str, cat: SupplierCatalog, party_id: str
+) -> None:
+    """Attach the supplier to a catalog uploaded without one, so later PDFs can match it."""
+    if cat.supplier_party_id is not None:
+        raise HTTPException(status_code=409, detail="This catalog already has a supplier.")
+    _check_supplier(session, tenant_id, party_id)
+    mine = list(
+        session.scalars(
+            select(CatalogProduct)
+            .join(SupplierCatalogItem, SupplierCatalogItem.product_id == CatalogProduct.id)
+            .where(SupplierCatalogItem.catalog_id == cat.id)
+        )
+    )
+    if any(p.supplier_party_id is not None for p in mine):
+        raise HTTPException(status_code=409, detail="Some products already belong to a supplier.")
+    known = products_svc.products_by_supplier_code(session, tenant_id, party_id)
+    clash = [p.supplier_code for p in mine if p.supplier_code in known]
+    if clash:
+        raise HTTPException(
+            status_code=409,
+            detail=f"This supplier already has {len(clash)} of these product codes "
+            f"(for example {clash[0]}) from another catalog.",
+        )
+    for p in mine:
+        p.supplier_party_id = party_id
+    cat.supplier_party_id = party_id
+    session.flush()
 
 
 @router.delete("/{catalog_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -289,7 +372,7 @@ _CUSTOMER_FIELDS = {
     "cost_price",
     "included",
     "group_name",
-    "multiplier_override",
+    "item_margin_pct",
 }
 
 
@@ -321,10 +404,10 @@ def _filter_clauses(f: ItemFilter) -> list[ColumnElement[bool]]:
         out.append(C.included.is_(f.included))
     if f.brand:
         out.append(func.lower(C.brand) == f.brand.lower())
-    if f.has_override is True:
-        out.append(C.multiplier_override.is_not(None))
-    elif f.has_override is False:
-        out.append(C.multiplier_override.is_(None))
+    if f.has_item_margin is True:
+        out.append(C.item_margin_pct.is_not(None))
+    elif f.has_item_margin is False:
+        out.append(C.item_margin_pct.is_(None))
     return out
 
 
@@ -344,7 +427,31 @@ def _barcode(code: str) -> str | None:
         return None
 
 
-def _item_out(catalog_id: str, it: SupplierCatalogItem, cats: dict[str, str]) -> CatalogItemOut:
+def _product_maps(
+    session: SessionDep, items: list[SupplierCatalogItem]
+) -> tuple[dict[str, CatalogProduct], dict[str, CatalogProduct]]:
+    """(own product by id, suggested product by id) for these rows."""
+    own_ids = {i.product_id for i in items if i.product_id}
+    sug_ids = {i.suggested_product_id for i in items if i.suggested_product_id}
+    found: dict[str, CatalogProduct] = {}
+    wanted = list(own_ids | sug_ids)
+    for k in range(0, len(wanted), 500):
+        for p in session.scalars(
+            select(CatalogProduct).where(CatalogProduct.id.in_(wanted[k : k + 500]))
+        ):
+            found[p.id] = p
+    return found, found
+
+
+def _item_out(
+    catalog_id: str,
+    it: SupplierCatalogItem,
+    cats: dict[str, str],
+    prods: dict[str, CatalogProduct] | None = None,
+) -> CatalogItemOut:
+    prods = prods or {}
+    own = prods.get(it.product_id) if it.product_id else None
+    sug = prods.get(it.suggested_product_id) if it.suggested_product_id else None
     return CatalogItemOut(
         id=it.id,
         page_no=it.page_no,
@@ -358,7 +465,7 @@ def _item_out(catalog_id: str, it: SupplierCatalogItem, cats: dict[str, str]) ->
         pack_qty=it.pack_qty,
         carton_qty=it.carton_qty,
         cost_price=it.cost_price,
-        multiplier_override=it.multiplier_override,
+        item_margin_pct=it.item_margin_pct,
         sell_price=it.sell_price,
         category_id=it.category_id,
         category_name=cats.get(it.category_id) if it.category_id else None,
@@ -371,6 +478,11 @@ def _item_out(catalog_id: str, it: SupplierCatalogItem, cats: dict[str, str]) ->
             else None
         ),
         barcode=_barcode(it.code),
+        product_id=it.product_id,
+        code_locked=bool(own.code_locked) if own else False,
+        suggestion=(
+            ProductRef(product_id=sug.id, code=sug.code, name=sug.display_name) if sug else None
+        ),
         item_id=it.item_id,
         tally_status=it.tally_status,
     )
@@ -387,7 +499,7 @@ def list_items(
     no_group: bool = False,
     included: bool | None = None,
     brand: str | None = None,
-    has_override: bool | None = None,
+    has_item_margin: bool | None = None,
     limit: int | None = Query(default=100, ge=1, le=200),
     cursor: str | None = None,
 ) -> list[CatalogItemOut]:
@@ -399,7 +511,7 @@ def list_items(
         no_group=no_group,
         included=included,
         brand=brand,
-        has_override=has_override,
+        has_item_margin=has_item_margin,
     )
     base = select(C).where(
         C.tenant_id == user.tenant_id, C.catalog_id == catalog_id, *_filter_clauses(flt)
@@ -420,7 +532,47 @@ def list_items(
         rows, limit=limit, key_of=lambda r: [r.page_no, r.position, r.id], response=response
     )
     cats = _category_names(session, user.tenant_id)
-    return [_item_out(catalog_id, it, cats) for it in page]
+    prods, _ = _product_maps(session, page)
+    return [_item_out(catalog_id, it, cats, prods) for it in page]
+
+
+def _regroup_rows(
+    session: SessionDep, tenant_id: str, item_ids: list[str], category: ItemCategory | None
+) -> None:
+    """Move the products behind these rows to `category` (re-issuing provisional codes)."""
+    tenant = session.get(Tenant, tenant_id)
+    assert tenant is not None
+    pids: list[str] = []
+    for k in range(0, len(item_ids), 500):
+        pids += [
+            pid
+            for (pid,) in session.execute(
+                select(SupplierCatalogItem.product_id).where(
+                    SupplierCatalogItem.id.in_(item_ids[k : k + 500]),
+                    SupplierCatalogItem.product_id.is_not(None),
+                )
+            )
+            if pid
+        ]
+    prods: list[CatalogProduct] = []
+    for k in range(0, len(pids), 500):
+        prods += list(
+            session.scalars(
+                select(CatalogProduct)
+                .where(CatalogProduct.id.in_(list(dict.fromkeys(pids))[k : k + 500]))
+                .order_by(CatalogProduct.code)
+            )
+        )
+    products_svc.regroup(session, tenant, prods, category)
+    # rows with no product (should not happen) still get the group
+    cat_id = category.id if category else None
+    session.execute(
+        update(SupplierCatalogItem)
+        .where(
+            SupplierCatalogItem.id.in_(item_ids), SupplierCatalogItem.product_id.is_(None)
+        )
+        .values(category_id=cat_id, suggested_group=None)
+    )
 
 
 def _apply_group(
@@ -444,13 +596,17 @@ def bulk_patch_items(
 
     C = SupplierCatalogItem
     values: dict[str, Any] = {}
-    if "group_name" in body.changes.model_fields_set:
+    regroup_to: ItemCategory | None = None
+    regroup = "group_name" in body.changes.model_fields_set
+    if regroup:
         _apply_group(session, user.tenant_id, values, body.changes.group_name)
+        if values["category_id"]:
+            regroup_to = session.get(ItemCategory, values["category_id"])
     if body.changes.included is not None:
         values["included"] = body.changes.included
-    reprice_needed = "multiplier_override" in body.changes.model_fields_set
+    reprice_needed = "item_margin_pct" in body.changes.model_fields_set
     if reprice_needed:
-        values["multiplier_override"] = body.changes.multiplier_override
+        values["item_margin_pct"] = body.changes.item_margin_pct
     if not values:
         raise HTTPException(status_code=422, detail="Nothing to change.")
 
@@ -461,7 +617,13 @@ def bulk_patch_items(
         assert body.filter is not None
         clauses.extend(_filter_clauses(body.filter))
 
-    target_ids = list(session.scalars(select(C.id).where(*clauses))) if reprice_needed else []
+    target_ids = (
+        list(session.scalars(select(C.id).where(*clauses))) if reprice_needed or regroup else []
+    )
+    if regroup:
+        _regroup_rows(session, user.tenant_id, target_ids, regroup_to)
+        values.pop("category_id", None)  # the products carry the group (and re-issued codes)
+        values.pop("suggested_group", None)
     result = session.execute(
         update(C).where(*clauses).values(**values).execution_options(synchronize_session=False)
     )
@@ -486,6 +648,9 @@ def patch_item(
 
     if data.get("display_name") is not None:
         item.display_name = data["display_name"].strip()
+        own = session.get(CatalogProduct, item.product_id) if item.product_id else None
+        if own is not None:  # remembered: the next PDF with this product shows the edited name
+            products_svc.rename_product(own, item.display_name)
     for field in ("brand", "size_text"):
         if field in data:
             setattr(item, field, (data[field] or "").strip() or None)
@@ -496,22 +661,24 @@ def patch_item(
     if "group_name" in data:
         values: dict[str, Any] = {}
         _apply_group(session, user.tenant_id, values, data["group_name"])
-        item.category_id = values["category_id"]
-        item.suggested_group = None
-    if "multiplier_override" in data:
-        item.multiplier_override = data["multiplier_override"]  # None clears it
+        target = session.get(ItemCategory, values["category_id"]) if values["category_id"] else None
+        _regroup_rows(session, user.tenant_id, [item.id], target)
+        session.refresh(item)
+    if "item_margin_pct" in data:
+        item.item_margin_pct = data["item_margin_pct"]  # None clears it
     if data.get("cost_price") is not None:
         item.cost_price = data["cost_price"]
-    if data.get("cost_price") is not None or "multiplier_override" in data:
+    if data.get("cost_price") is not None or "item_margin_pct" in data:
         item.sell_price = sell_price(
             item.cost_price,
-            effective_multiplier(item.multiplier_override, cat.multiplier),
+            effective_margin(item.item_margin_pct, cat.bulk_margin_pct),
             cat.rounding_step,
         )
     if data.keys() & _CUSTOMER_FIELDS:
         cc_svc.mark_stale(session, catalog_id)
     session.flush()
-    return _item_out(catalog_id, item, _category_names(session, user.tenant_id))
+    prods, _ = _product_maps(session, [item])
+    return _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
 
 
 @router.get("/{catalog_id}/groups", response_model=list[GroupSummary])
@@ -528,10 +695,18 @@ def list_groups(catalog_id: str, session: SessionDep, user: CatalogUser) -> list
         .group_by(C.category_id)
     ).all()
     cats = _category_names(session, user.tenant_id)
+    prefixes = dict(
+        session.execute(
+            select(ItemCategory.id, ItemCategory.code_prefix).where(
+                ItemCategory.tenant_id == user.tenant_id
+            )
+        ).all()
+    )
     out = [
         GroupSummary(
             category_id=cid,
             name=cats.get(cid, "") if cid else "No group",
+            code_prefix=prefixes.get(cid) if cid else None,
             item_count=int(n),
             included_count=int(inc or 0),
         )
@@ -540,6 +715,73 @@ def list_groups(catalog_id: str, session: SessionDep, user: CatalogUser) -> list
     # named groups A-Z, "No group" last
     out.sort(key=lambda g: (g.category_id is None, g.name.lower()))
     return out
+
+
+@router.post("/{catalog_id}/items/{item_id}/link-product", response_model=CatalogItemOut)
+def link_product(
+    catalog_id: str,
+    item_id: str,
+    body: LinkProductIn,
+    session: SessionDep,
+    user: CatalogWriteUser,
+) -> CatalogItemOut:
+    """Accept a suggestion: this row is the same product as an existing one, so it takes that
+    product's code, group and name. Only while this row's own product is provisional and
+    used by this row alone."""
+    _get_catalog(session, user.tenant_id, catalog_id)
+    item = _get_item(session, user.tenant_id, catalog_id, item_id)
+    target = session.scalar(
+        select(CatalogProduct).where(
+            CatalogProduct.id == body.product_id, CatalogProduct.tenant_id == user.tenant_id
+        )
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="Product not found")
+    own = session.get(CatalogProduct, item.product_id) if item.product_id else None
+    if own is not None and own.id != target.id:
+        shared = session.scalar(
+            select(func.count())
+            .select_from(SupplierCatalogItem)
+            .where(SupplierCatalogItem.product_id == own.id)
+        )
+        if own.code_locked or own.item_id or (shared or 0) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail="This row's code is already in use, so it can't be merged "
+                "into another product.",
+            )
+        if target.supplier_party_id is None and own.supplier_party_id is not None:
+            # the existing product learns this supplier's code, so re-imports find it
+            target.supplier_party_id = own.supplier_party_id
+            target.supplier_code = own.supplier_code
+            own.supplier_party_id = None
+            own.supplier_code = f"{own.supplier_code}~merged~{own.id[:8]}"
+            session.flush()
+    item.product_id = target.id
+    item.code = target.code
+    item.display_name = target.display_name
+    item.category_id = target.category_id
+    item.suggested_group = None
+    item.suggested_product_id = None
+    session.flush()
+    if own is not None and own.id != target.id:
+        session.delete(own)
+    cc_svc.mark_stale(session, catalog_id)
+    session.flush()
+    prods, _ = _product_maps(session, [item])
+    return _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
+
+
+@router.delete("/{catalog_id}/items/{item_id}/suggestion", response_model=CatalogItemOut)
+def dismiss_suggestion(
+    catalog_id: str, item_id: str, session: SessionDep, user: CatalogWriteUser
+) -> CatalogItemOut:
+    _get_catalog(session, user.tenant_id, catalog_id)
+    item = _get_item(session, user.tenant_id, catalog_id, item_id)
+    item.suggested_product_id = None
+    session.flush()
+    prods, _ = _product_maps(session, [item])
+    return _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
 
 
 # --------------------------------------------------------------------------
@@ -660,6 +902,7 @@ def make_labels(
     if not rows:
         raise HTTPException(status_code=422, detail="No items to print.")
     opts = _label_opts(body)
+    products_svc.lock_for_items(session, [r[0] for r in rows])  # first real use fixes the codes
     n_labels = len(rows) * opts.copies
     if n_labels > output_jobs.MAX_LABELS:
         raise HTTPException(
@@ -838,6 +1081,8 @@ def create_customer_catalog(
     title = (body.title or cat.title).strip()
     opts = _pdf_options(body)
     ids = [r[0] for r in rows]
+    if body.show_code:
+        products_svc.lock_for_items(session, ids)
 
     if len(ids) > cc_svc.SYNC_ITEM_LIMIT:
         job = cc_svc.create_job(

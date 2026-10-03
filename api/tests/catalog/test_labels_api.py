@@ -115,11 +115,11 @@ def test_ids_filter_and_copies(uploaded) -> None:
 def test_price_name_and_code_options_reach_the_pdf(uploaded) -> None:
     client, h, cat = uploaded
     cid = cat["id"]
-    client.patch(f"/api/supplier-catalogs/{cid}", headers=h, json={"multiplier": "1.25"})
+    client.patch(f"/api/supplier-catalogs/{cid}", headers=h, json={"bulk_margin_pct": "25"})
     first = _items(client, h, cid)[0]
     body = {"ids": [first["id"]], "show_price": True}
     text = _text(_labels(client, h, cid, body).content)
-    assert first["code"] in text and "Rs 374" in text  # 299 x 1.25 = 373.75 -> 374
+    assert first["code"] in text and "Rs 374" in text  # 299 + 25% = 373.75 -> 374
     assert first["display_name"][:12] in text
     plain = _text(_labels(client, h, cid, {"ids": [first["id"]], "show_name": False,
                                            "show_code": False}).content)

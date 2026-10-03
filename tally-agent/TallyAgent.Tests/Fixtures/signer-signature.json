@@ -1,0 +1,8 @@
+{
+  "_comment": "Made by api/tools/agent_release.py (the production signer, a throwaway key). Pins the signer -> agent wire format: the agent's ReleaseVerifier must accept exactly what the signer emits. Not a secret.",
+  "version": "9.9.9",
+  "sha256": "87c87f4215e4860bffd0ebd8bdf643a4364da28f9ed352bf4deae8077e50609f",
+  "size_bytes": 12345,
+  "signature": "oCgGZwbG0LcaWtuymm5R3Y4UeeOnF68zfvp//189XURMQ4puahK389nP+0lI6XKHbtL/qeAb2zyENdJt6IPiOA==",
+  "public_key_spki_base64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEw7/LVB8/kCUyB7OxoIWVfM5xmwKdiSYNntltEEIDTzt3dE8UYj4IFE4epDt1q1g7QQ1m4vcD3yJew7EQoNrG8g=="
+}

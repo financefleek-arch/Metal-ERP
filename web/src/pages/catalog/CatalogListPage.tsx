@@ -2,8 +2,9 @@ import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, apiUpload } from "../../lib/api";
+import { SupplierPicker, type SupplierChoice } from "../../components/catalog/SupplierPicker";
 import {
-  validCodePrefix,
+  marginLabel,
   type CatalogListItem,
   type CatalogStatus,
   type CatalogUploadOut,
@@ -23,13 +24,23 @@ const STATUS_CLASS: Record<CatalogStatus, string> = {
 
 const MAX_MB = 60;
 
+function importNote(c: CatalogUploadOut): string {
+  const parts: string[] = [];
+  if (c.matched_items > 0)
+    parts.push(`${c.matched_items} products were already known: same code, group and name.`);
+  if (c.new_products > 0) parts.push(`${c.new_products} are new.`);
+  if (c.suggestions > 0)
+    parts.push(`${c.suggestions} look like products you already have. Check the code column.`);
+  return parts.join(" ");
+}
+
 export function CatalogListPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [title, setTitle] = useState("");
-  const [prefix, setPrefix] = useState("");
+  const [supplier, setSupplier] = useState<SupplierChoice | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -38,19 +49,19 @@ export function CatalogListPage() {
     queryFn: () => api<CatalogListItem[]>("/supplier-catalogs"),
   });
 
-  const prefixBad = prefix.trim() !== "" && !validCodePrefix(prefix);
-
   const upload = useMutation({
     mutationFn: (file: File) => {
       const fd = new FormData();
       fd.append("file", file);
       if (title.trim()) fd.append("title", title.trim());
-      if (prefix.trim()) fd.append("code_prefix", prefix.trim());
+      if (supplier) fd.append("supplier_party_id", supplier.id);
       return apiUpload<CatalogUploadOut>("/supplier-catalogs", fd);
     },
     onSuccess: (c) => {
       qc.invalidateQueries({ queryKey: ["supplier-catalogs"] });
       if (c.already_exists) setNotice("You uploaded this file before. Opening that catalog.");
+      else if (c.matched_items > 0 || c.suggestions > 0)
+        sessionStorage.setItem(`catalog-import-note:${c.id}`, importNote(c));
       nav(`/catalogs/${c.id}`);
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Upload failed. Try again."),
@@ -61,8 +72,8 @@ export function CatalogListPage() {
     setNotice(null);
     const file = files?.[0];
     if (!file) return;
-    if (prefixBad) {
-      setErr("Fix the code prefix first: 2 to 8 letters or digits.");
+    if (!supplier) {
+      setErr("Pick the supplier first, so the same products keep the same codes next time.");
       return;
     }
     if (file.size > MAX_MB * 1024 * 1024) {
@@ -116,6 +127,16 @@ export function CatalogListPage() {
               Each product needs a photo with a price line under it, like “Rs 190 for 6 pcs”.
               Up to {MAX_MB} MB.
             </p>
+            <div className="mx-auto mt-3 max-w-sm text-left">
+              <label className="label" htmlFor="catalog-supplier">
+                Supplier
+              </label>
+              <SupplierPicker id="catalog-supplier" value={supplier} onPick={setSupplier} />
+              <p className="mt-1 text-xs text-muted">
+                Next time this supplier sends a catalog, products you already have keep their
+                code, group and name.
+              </p>
+            </div>
             <input
               ref={fileRef}
               id="catalog-file"
@@ -131,6 +152,7 @@ export function CatalogListPage() {
               <button
                 type="button"
                 className="btn-primary"
+                disabled={!supplier}
                 onClick={() => fileRef.current?.click()}
               >
                 Choose PDF
@@ -138,7 +160,7 @@ export function CatalogListPage() {
             </div>
             <details className="mt-3 text-left text-sm">
               <summary className="cursor-pointer text-center text-muted">Options</summary>
-              <div className="mx-auto mt-3 grid max-w-md grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="mx-auto mt-3 grid max-w-md grid-cols-1 gap-3">
                 <div>
                   <label className="label" htmlFor="catalog-title">
                     Catalog name
@@ -150,20 +172,6 @@ export function CatalogListPage() {
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                   />
-                </div>
-                <div>
-                  <label className="label" htmlFor="catalog-up-prefix">
-                    Item code prefix
-                  </label>
-                  <input
-                    id="catalog-up-prefix"
-                    className="field uppercase"
-                    placeholder="From settings"
-                    maxLength={8}
-                    value={prefix}
-                    onChange={(e) => setPrefix(e.target.value)}
-                  />
-                  {prefixBad && <p className="err">Use 2 to 8 letters or digits.</p>}
                 </div>
               </div>
             </details>
@@ -192,8 +200,8 @@ export function CatalogListPage() {
                 <th className="px-4 py-2 font-medium">Catalog</th>
                 <th className="px-4 py-2 text-right font-medium">Pages</th>
                 <th className="px-4 py-2 text-right font-medium">Items</th>
-                <th className="px-4 py-2 font-medium">Code prefix</th>
-                <th className="px-4 py-2 text-right font-medium">Multiplier</th>
+                <th className="px-4 py-2 font-medium">Supplier</th>
+                <th className="px-4 py-2 text-right font-medium">Bulk margin</th>
                 <th className="px-4 py-2 font-medium">Status</th>
               </tr>
             </thead>
@@ -208,9 +216,9 @@ export function CatalogListPage() {
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">{c.page_count}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{c.item_count}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{c.code_prefix}</td>
+                  <td className="px-4 py-3 text-xs">{c.supplier_name ?? <span className="text-muted">Not set</span>}</td>
                   <td className="px-4 py-3 text-right tabular-nums">
-                    ×{Number(c.multiplier).toFixed(2)}
+                    {marginLabel(c.bulk_margin_pct)}
                   </td>
                   <td className="px-4 py-3">
                     <span

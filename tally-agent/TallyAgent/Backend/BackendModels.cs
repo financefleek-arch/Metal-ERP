@@ -18,6 +18,20 @@ public sealed class CheckinRequest
     // connected | refused | no_company | unknown
     [JsonPropertyName("tally_reason")]
     public string? TallyReason { get; set; }
+
+    // Auto-update: what this build is, and (once, after a rolled-back or
+    // rejected update) which version failed and why.
+    [JsonPropertyName("agent_version")]
+    public string? AgentVersion { get; set; }
+
+    [JsonPropertyName("os_version")]
+    public string? OsVersion { get; set; }
+
+    [JsonPropertyName("update_failed_version")]
+    public string? UpdateFailedVersion { get; set; }
+
+    [JsonPropertyName("update_error")]
+    public string? UpdateError { get; set; }
 }
 
 public sealed class CheckinResponse
@@ -30,6 +44,29 @@ public sealed class CheckinResponse
 
     [JsonPropertyName("outbox")]
     public List<OutboxItem> Outbox { get; set; } = new();
+
+    [JsonPropertyName("update")]
+    public UpdateOffer? Update { get; set; }
+}
+
+/// <summary>A build the backend wants this agent on. Trust comes from
+/// <see cref="Signature"/>, verified against keys compiled into the agent.</summary>
+public sealed class UpdateOffer
+{
+    [JsonPropertyName("version")]
+    public string Version { get; set; } = "";
+
+    [JsonPropertyName("url")]
+    public string Url { get; set; } = "";
+
+    [JsonPropertyName("sha256")]
+    public string Sha256 { get; set; } = "";
+
+    [JsonPropertyName("size_bytes")]
+    public long SizeBytes { get; set; }
+
+    [JsonPropertyName("signature")]
+    public string Signature { get; set; } = "";
 }
 
 public sealed class OutboxItem

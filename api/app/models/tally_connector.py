@@ -92,6 +92,23 @@ class TallyCompany(PkUuidMixin, TimestampMixin, Base):
         DateTime(timezone=True)
     )
 
+    # --- supplier-catalog item push (S5) ---
+    # Tally stock group our new groups are created under (None = Primary).
+    stock_group_root: Mapped[str | None] = mapped_column(String(200))
+    # 'create_missing' | 'existing_only'
+    tally_group_create_policy: Mapped[str] = mapped_column(
+        String(20), default="create_missing", server_default="create_missing", nullable=False
+    )
+    # {item_category_id: Tally stock group name}: where a group of ours goes when the
+    # names differ.
+    stock_group_map: Mapped[dict] = mapped_column(_JSON, nullable=False, default=dict)
+    # What Tally had at the last "check Tally": [{name, parent}] and lower-case item names.
+    # Never guessed: a Create on an existing master alters it, so we only create what we
+    # have just seen is missing.
+    known_stock_groups: Mapped[list | None] = mapped_column(_JSON)
+    known_stock_items: Mapped[list | None] = mapped_column(_JSON)
+    known_stock_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
 
 class TallyLink(PkUuidMixin, Base):
     """Cross-reference: one Metal-ERP record <-> its Tally master.

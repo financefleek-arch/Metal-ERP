@@ -63,6 +63,7 @@ def agent_status(user: WriteUser, session: SessionDep) -> FirmTallyShopOut:
         agent_online=agent_online(shop),
         tally_status=shop.last_tally_status,
         tally_ok_at=shop.last_tally_ok_at,
+        agent_version=shop.agent_version,
     )
 
 

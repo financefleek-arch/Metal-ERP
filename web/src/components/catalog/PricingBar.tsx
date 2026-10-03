@@ -2,46 +2,47 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import {
-  percentLabel,
-  trimMultiplier,
-  validMultiplier,
+  marginExample,
+  trimMargin,
+  validMargin,
   type CatalogDetail,
   type RoundingStep,
 } from "../../lib/catalog";
 
-const QUICK = ["1.10", "1.20", "1.25", "1.30", "1.50"];
+const QUICK = ["10", "15", "20", "25", "30", "40", "50"];
 
-/** One multiplier for the whole catalog, plus the rounding step. Items with their own
- *  multiplier keep it. New prices are computed on the server. */
+/** One bulk margin for the whole catalog, plus the rounding step. Items with their own
+ *  (item-level) margin keep it. New prices are computed on the server. */
 export function PricingBar({
   catalog,
-  onResetOverrides,
+  onResetItemMargins,
   resetting,
 }: {
   catalog: CatalogDetail;
-  onResetOverrides: () => void;
+  onResetItemMargins: () => void;
   resetting: boolean;
 }) {
   const qc = useQueryClient();
-  const [mult, setMult] = useState(trimMultiplier(catalog.multiplier));
+  const [margin, setMargin] = useState(trimMargin(catalog.bulk_margin_pct));
   const [step, setStep] = useState<RoundingStep>(catalog.rounding_step as RoundingStep);
   const [err, setErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    setMult(trimMultiplier(catalog.multiplier));
+    setMargin(trimMargin(catalog.bulk_margin_pct));
     setStep(catalog.rounding_step as RoundingStep);
-  }, [catalog.multiplier, catalog.rounding_step]);
+  }, [catalog.bulk_margin_pct, catalog.rounding_step]);
 
-  const valid = validMultiplier(mult);
+  const valid = validMargin(margin);
   const dirty =
-    valid && (Number(mult) !== Number(catalog.multiplier) || step !== catalog.rounding_step);
+    valid &&
+    (Number(margin) !== Number(catalog.bulk_margin_pct) || step !== catalog.rounding_step);
 
   const save = useMutation({
     mutationFn: () =>
       api<CatalogDetail>(`/supplier-catalogs/${catalog.id}`, {
         method: "PATCH",
-        body: { multiplier: Number(mult).toFixed(3), rounding_step: step },
+        body: { bulk_margin_pct: Number(margin).toFixed(2), rounding_step: step },
       }),
     onSuccess: (c) => {
       setErr(null);
@@ -56,41 +57,46 @@ export function PricingBar({
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not save prices. Try again."),
   });
 
-  const pct = valid ? percentLabel(Number(mult)) : "";
-  const below = valid && Number(mult) < 1;
+  const example = valid ? marginExample(Number(margin)) : "";
+  const below = valid && Number(margin) < 0;
 
   return (
     <section className="card mb-4 p-4" aria-label="Pricing">
       <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
         <div>
-          <label className="label" htmlFor="price-mult">
-            Multiply supplier prices by
+          <label className="label" htmlFor="price-margin">
+            Bulk margin on supplier prices
           </label>
           <div className="flex items-center gap-2">
-            <span className="text-lg text-muted" aria-hidden>
-              ×
-            </span>
-            <input
-              id="price-mult"
-              className="field w-28 text-right font-mono tabular-nums"
-              inputMode="decimal"
-              aria-invalid={!valid && mult.trim() !== ""}
-              value={mult}
-              onChange={(e) => {
-                setMult(e.target.value);
-                setErr(null);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && dirty && !save.isPending) save.mutate();
-              }}
-            />
+            <div className="relative">
+              <input
+                id="price-margin"
+                className="field w-28 pr-7 text-right font-mono tabular-nums"
+                inputMode="decimal"
+                aria-invalid={!valid && margin.trim() !== ""}
+                value={margin}
+                onChange={(e) => {
+                  setMargin(e.target.value);
+                  setErr(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && dirty && !save.isPending) save.mutate();
+                }}
+              />
+              <span
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted"
+                aria-hidden
+              >
+                %
+              </span>
+            </div>
             <span
-              className={`min-w-[5.5rem] rounded-full px-2.5 py-1 text-center text-xs font-medium ${
+              className={`min-w-[8rem] rounded-full px-2.5 py-1 text-center text-xs font-medium ${
                 below ? "bg-[#f4e3df] text-danger" : "bg-accent-soft text-accent"
               }`}
               aria-live="polite"
             >
-              {pct || "—"}
+              {example || "—"}
             </span>
           </div>
         </div>
@@ -127,29 +133,27 @@ export function PricingBar({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5" aria-label="Common multipliers">
+        <div className="flex flex-wrap items-center gap-1.5" aria-label="Common margins">
           {QUICK.map((q) => (
             <button
               key={q}
               type="button"
               className="rounded-full border border-line px-2.5 py-1 font-mono text-xs text-muted hover:bg-ground"
-              onClick={() => setMult(trimMultiplier(q))}
+              onClick={() => setMargin(q)}
             >
-              ×{trimMultiplier(q)}
+              {q}%
             </button>
           ))}
         </div>
       </div>
 
       <p className="mt-3 text-sm text-muted">
-        New price = supplier price × multiplier, rounded. Supplier prices are never changed.
-        {below && (
-          <span className="ml-1 text-danger">This sells below the supplier price.</span>
-        )}
+        New price = supplier price + margin, rounded. Supplier prices are never changed.
+        {below && <span className="ml-1 text-danger">This sells below the supplier price.</span>}
       </p>
-      {!valid && mult.trim() !== "" && (
+      {!valid && margin.trim() !== "" && (
         <p className="err" role="alert">
-          Enter a number from 0.001 to 99.999, with up to 3 decimals.
+          Enter a margin from -99.99 to 1000, with up to 2 decimals.
         </p>
       )}
       {err && (
@@ -157,18 +161,18 @@ export function PricingBar({
           {err}
         </p>
       )}
-      {catalog.override_count > 0 && (
+      {catalog.item_margin_count > 0 && (
         <p className="mt-2 text-sm">
-          <span className="font-medium">{catalog.override_count}</span> item
-          {catalog.override_count === 1 ? " uses" : "s use"} their own multiplier and ignore this
-          one.{" "}
+          <span className="font-medium">{catalog.item_margin_count}</span> item
+          {catalog.item_margin_count === 1 ? " has" : "s have"} their own margin and ignore the bulk
+          margin.{" "}
           <button
             type="button"
             className="text-accent underline disabled:opacity-50"
             disabled={resetting}
-            onClick={onResetOverrides}
+            onClick={onResetItemMargins}
           >
-            Reset them to ×{trimMultiplier(catalog.multiplier)}
+            Reset them to {trimMargin(catalog.bulk_margin_pct)}%
           </button>
         </p>
       )}

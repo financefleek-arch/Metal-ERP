@@ -1,0 +1,104 @@
+name: Agent release
+
+# Builds the Windows Tally Agent and uploads it, UNSIGNED, to the R2 release store that
+# Metal ERP reads (see api/app/services/tally/agent_release.py). CI never signs and never
+# holds a signing key: signing is a deliberate step on the VPS (the key is a Vault KV secret
+# delivered to the metalerp-api container like every other secret).
+#
+#   1. Push a tag  agent-vX.Y.Z   -> this workflow: test, publish, smoke-test, package,
+#                                    upload agent-releases/X.Y.Z/{zip, pending.json}.
+#                                    Invisible to the API and to shops.
+#   2. On the VPS:  docker exec -it metalerp-api python -m tools.agent_release sign X.Y.Z
+#                                 -> re-hashes the zip, shows you the hash + git commit,
+#                                    asks you to confirm, signs, writes release.json.
+#                                    Shops pinned to X.Y.Z in the Ops console (canary) can update.
+#   3. On the VPS:  docker exec -it metalerp-api python -m tools.agent_release promote X.Y.Z
+#                                 -> latest.json: new installers ship it and every un-pinned
+#                                    agent updates itself on its next checkin.
+#
+# Repository secrets (Settings > Secrets and variables > Actions) - R2 write access only:
+#   AGENT_R2_ENDPOINT_URL        https://<account>.r2.cloudflarestorage.com
+#   AGENT_R2_ACCESS_KEY_ID       R2 token with write access to the bucket below
+#   AGENT_R2_SECRET_ACCESS_KEY
+#   AGENT_R2_BUCKET              the bucket Metal ERP uses as TALLY_R2_BUCKET (metalerp-tally)
+# Even a leaked token cannot make anything go live: only a signed release.json counts, and
+# agents reject anything not signed by our key.
+
+on:
+  push:
+    tags: ["agent-v*"]
+
+env:
+  AWS_DEFAULT_REGION: auto
+  AWS_ACCESS_KEY_ID: ${{ secrets.AGENT_R2_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AGENT_R2_SECRET_ACCESS_KEY }}
+  R2_ENDPOINT: ${{ secrets.AGENT_R2_ENDPOINT_URL }}
+  R2_BUCKET: ${{ secrets.AGENT_R2_BUCKET }}
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version from tag
+        run: |
+          ver="${GITHUB_REF_NAME#agent-v}"
+          [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "tag must be agent-vX.Y.Z, got $GITHUB_REF_NAME"; exit 1; }
+          echo "VERSION=$ver" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tests
+        run: dotnet test tally-agent/TallyAgent.slnx -c Release
+
+      - name: Publish (win-x64, self-contained)
+        run: >
+          dotnet publish tally-agent/TallyAgent/TallyAgent.csproj -c Release -r win-x64
+          --self-contained -p:Version=$VERSION -o out/publish
+
+      - name: Smoke test the published exe
+        # Same check the updater runs on a downloaded build: native sqlite loads,
+        # TLS stack initialises, and the exe reports the version we just stamped.
+        run: |
+          out/publish/TallyAgent.exe --selftest "$PWD/selftest.out"
+          reported="$(cat selftest.out)"
+          [ "$reported" = "$VERSION" ] || { echo "selftest reported '$reported', expected '$VERSION'"; exit 1; }
+
+      - name: Package
+        run: |
+          python tally-agent/tools/release.py --version "$VERSION" \
+            --publish-dir out/publish --scripts-dir tally-agent --out-dir out/release
+
+      - name: Refuse to overwrite an existing release
+        run: |
+          for f in pending.json release.json; do
+            if aws s3 ls "s3://$R2_BUCKET/agent-releases/$VERSION/$f" --endpoint-url "$R2_ENDPOINT" | grep -q .; then
+              echo "agent-releases/$VERSION/$f already exists - releases are immutable; bump the version"
+              exit 1
+            fi
+          done
+
+      - name: Upload to R2
+        run: |
+          aws s3 cp "out/release/tally-agent-$VERSION.zip" "s3://$R2_BUCKET/agent-releases/$VERSION/tally-agent-$VERSION.zip" --endpoint-url "$R2_ENDPOINT"
+          # manifest last: its presence tells the signer the upload is complete
+          aws s3 cp out/release/pending.json "s3://$R2_BUCKET/agent-releases/$VERSION/pending.json" --endpoint-url "$R2_ENDPOINT"
+          sha="$(python -c "import json;print(json.load(open('out/release/pending.json'))['sha256'])")"
+          echo "Uploaded $VERSION (unsigned). sha256 = $sha"
+          echo "Next: on the VPS run  docker exec -it metalerp-api python -m tools.agent_release sign $VERSION  and compare the hash."
+          {
+            echo "### Agent $VERSION uploaded (unsigned)"
+            echo "sha256: \`$sha\`"
+            echo "commit: \`$GITHUB_SHA\`"
+            echo "Next: on the VPS, \`tools.agent_release sign $VERSION\`, then \`promote $VERSION\` (docker exec -it metalerp-api python -m tools.agent_release ...)."
+          } >> "$GITHUB_STEP_SUMMARY"

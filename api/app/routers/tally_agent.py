@@ -13,6 +13,7 @@ reuses the existing `PlatformAdmin` gate, same as `/api/admin/*`.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, status
@@ -27,15 +28,19 @@ from app.schemas_tally_agent import (
     ShopCheckinIn,
     ShopCheckinOut,
     ShopStatusOut,
+    UpdateOfferOut,
     UploadConfirmIn,
     UploadConfirmOut,
     UploadRequestIn,
     UploadRequestOut,
 )
+from app.services.tally.agent_release import update_offer_for
 from app.services.tally.backup_retention import prune_confirmed_backups
 from app.services.tally.jobs import mark_job_sent, record_agent_status
 from app.services.tally.pull import process_pull_result
 from app.services.tally.push import process_push_result
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/tally-agent", tags=["tally-agent"])
 
@@ -58,6 +63,21 @@ def checkin(body: ShopCheckinIn, shop: ShopAuth, session: SessionDep) -> ShopChe
         )
         if body.tally_reachable:
             shop.last_tally_ok_at = now
+    if body.agent_version:
+        if body.agent_version != shop.agent_version:
+            # Moved to a new build (update landed, or first report): any old
+            # 'failed:<ver>' marker no longer applies.
+            shop.last_update_status = None
+            shop.agent_version = body.agent_version
+        shop.agent_version_at = now
+    if body.os_version:
+        shop.os_version = body.os_version
+    if body.update_failed_version:
+        shop.last_update_status = f"failed:{body.update_failed_version}"
+        shop.last_error = (
+            f"update to {body.update_failed_version} failed: {body.update_error or 'unknown'}"
+        )[:1000]
+        shop.last_error_at = now
     session.flush()
 
     outbox = list(
@@ -86,7 +106,18 @@ def checkin(body: ShopCheckinIn, shop: ShopAuth, session: SessionDep) -> ShopChe
         shop_id=shop.id,
         checked_in_at=now,
         outbox=[OutboxItemOut.model_validate(o) for o in outbox],
+        update=_update_offer(shop),
     )
+
+
+def _update_offer(shop: BackupShop) -> UpdateOfferOut | None:
+    """Never let the release store break a heartbeat: any failure = no offer."""
+    try:
+        offer = update_offer_for(shop)
+    except Exception:  # noqa: BLE001
+        log.warning("update offer lookup failed for shop %s", shop.id, exc_info=True)
+        return None
+    return UpdateOfferOut(**offer) if offer else None
 
 
 @router.post("/jobs/{job_id}/result", response_model=TallySyncJobOut)
@@ -103,7 +134,7 @@ def job_result(
     becomes a job `error`.
     """
     job = _job_for_shop(session, job_id, shop.id)
-    if job.kind in ("push_sales", "push_purchase"):
+    if job.kind in ("push_sales", "push_purchase", "push_items"):
         process_push_result(
             session,
             job,

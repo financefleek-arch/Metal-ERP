@@ -1,9 +1,9 @@
-"""Item-code allocation: `<PREFIX>-<6 digits>`, e.g. `GL-000412`.
+"""Item-code numbers: `<PREFIX>-<4+ digits>`, e.g. `BM-0042`.
 
-One counter per (tenant, prefix), row-locked on allocation, never reused:
-a code stays unique even after its item is deleted, and it is the barcode
-value printed on labels, so reuse would be a real-world hazard. The unique
-constraint on `supplier_catalog_item (tenant_id, code)` is the backstop.
+One counter per (tenant, prefix), row-locked on allocation, never reused: a code stays unique
+even after its product is deleted, and it is the barcode value printed on labels, so reuse would
+be a real-world hazard. The unique constraint on `catalog_product (tenant_id, code)` is the
+backstop. Which prefix to use (the group's code) is decided in `products.py`.
 """
 
 from __future__ import annotations
@@ -14,10 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import CodeSequence, Tenant
+from app.models import CodeSequence
 
 _PREFIX_RE = re.compile(r"[A-Z0-9]{2,8}")
-FALLBACK_PREFIX = "CT"
 
 
 def normalize_prefix(prefix: str | None) -> str | None:
@@ -28,23 +27,8 @@ def normalize_prefix(prefix: str | None) -> str | None:
     return p if _PREFIX_RE.fullmatch(p) else None
 
 
-def derive_prefix(title: str) -> str:
-    """First two letters/digits of the title ("Glassware Stock" -> "GL")."""
-    alnum = re.sub(r"[^A-Za-z0-9]", "", title).upper()
-    return alnum[:2] if len(alnum) >= 2 else FALLBACK_PREFIX
-
-
-def resolve_prefix(tenant: Tenant, title: str, requested: str | None = None) -> str:
-    """requested -> tenant default -> derived from the catalog title."""
-    return (
-        normalize_prefix(requested)
-        or normalize_prefix(tenant.catalog_code_prefix)
-        or derive_prefix(title)
-    )
-
-
 def format_code(prefix: str, number: int) -> str:
-    return f"{prefix}-{number:06d}"
+    return f"{prefix}-{number:04d}"
 
 
 def allocate_codes(session: Session, tenant_id: str, prefix: str, count: int) -> list[str]:

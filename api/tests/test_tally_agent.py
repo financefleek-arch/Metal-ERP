@@ -331,6 +331,12 @@ def test_provision_firm_agent_returns_key_once(client: TestClient) -> None:
         "agent_online": False,
         "tally_status": None,
         "tally_ok_at": None,
+        "agent_version": None,
+        "os_version": None,
+        "target_agent_version": None,
+        "installer_agent_version": None,
+        "latest_agent_version": None,
+        "update_status": None,
     }
 
     # the key baked into the installer actually works for agent auth

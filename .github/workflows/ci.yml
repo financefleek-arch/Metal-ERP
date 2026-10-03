@@ -61,6 +61,18 @@ jobs:
       - name: Tests
         run: pytest -q
 
+  agent:
+    # The Windows Tally Agent: build + unit tests (release-signature checks, the
+    # file swap/rollback logic, update staging incl. a real --selftest run).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Test
+        run: dotnet test tally-agent/TallyAgent.slnx -c Release
+
   web:
     runs-on: ubuntu-latest
     defaults:

@@ -12,8 +12,8 @@ import { useDebounced } from "../../lib/useDebounced";
 import {
   itemsQuery,
   money,
-  trimMultiplier,
-  validMultiplier,
+  trimMargin,
+  validMargin,
   type BulkChanges,
   type BulkTarget,
   type CatalogDetail,
@@ -24,10 +24,12 @@ import {
   type ItemPatch,
 } from "../../lib/catalog";
 import { Barcode } from "../../components/catalog/Barcode";
+import { SupplierPicker } from "../../components/catalog/SupplierPicker";
 import { CustomerCatalogDialog } from "../../components/catalog/CustomerCatalogDialog";
 import { CustomerCatalogsPanel } from "../../components/catalog/CustomerCatalogsPanel";
 import { EditableNumber, EditableText } from "../../components/catalog/Editable";
 import { LabelsDialog } from "../../components/catalog/LabelsDialog";
+import { TallyDialog } from "../../components/catalog/TallyDialog";
 import { GroupsPanel } from "../../components/catalog/GroupsPanel";
 import { PricingBar } from "../../components/catalog/PricingBar";
 
@@ -38,11 +40,11 @@ const CUSTOMER_FIELDS = [
   "cost_price",
   "included",
   "group_name",
-  "multiplier_override",
+  "item_margin_pct",
 ];
 
 type IncludedFilter = "all" | "yes" | "no";
-type MultFilter = "any" | "own" | "catalog";
+type MarginFilter = "any" | "item" | "bulk";
 type ItemPages = InfiniteData<Page<CatalogItem[]>, string | null>;
 
 // One column template for the header and every row, so columns line up. Below xl the row is
@@ -61,17 +63,20 @@ export function CatalogReviewPage() {
   const dq = useDebounced(q, 250);
   const [groupSel, setGroupSel] = useState<string>("all"); // "all" | "none" | category id
   const [incl, setIncl] = useState<IncludedFilter>("all");
-  const [multSel, setMultSel] = useState<MultFilter>("any");
+  const [marginSel, setMarginSel] = useState<MarginFilter>("any");
   const [showGroups, setShowGroups] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [allMatching, setAllMatching] = useState(false);
   const [bulkGroup, setBulkGroup] = useState("");
-  const [bulkMult, setBulkMult] = useState("");
+  const [bulkMargin, setBulkMargin] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
+  const [tallyOpen, setTallyOpen] = useState(false);
   const [ccOpen, setCcOpen] = useState(false);
+  const [pickSupplier, setPickSupplier] = useState(false);
+  const [importNote, setImportNote] = useState<string | null>(null);
 
   const filter: ItemFilter = useMemo(
     () => ({
@@ -79,9 +84,9 @@ export function CatalogReviewPage() {
       no_group: groupSel === "none" || undefined,
       category_id: groupSel !== "all" && groupSel !== "none" ? groupSel : undefined,
       included: incl === "all" ? undefined : incl === "yes",
-      has_override: multSel === "any" ? undefined : multSel === "own",
+      has_item_margin: marginSel === "any" ? undefined : marginSel === "item",
     }),
-    [dq, groupSel, incl, multSel],
+    [dq, groupSel, incl, marginSel],
   );
 
   const catalog = useQuery({
@@ -125,6 +130,20 @@ export function CatalogReviewPage() {
     return () => io.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage, rows.length]);
 
+  // the upload page leaves a one-time note about reused products and suggestions
+  useEffect(() => {
+    try {
+      const key = `catalog-import-note:${id}`;
+      const note = sessionStorage.getItem(key);
+      if (note) {
+        setImportNote(note);
+        sessionStorage.removeItem(key);
+      }
+    } catch {
+      /* storage can be blocked: the note is a convenience */
+    }
+  }, [id]);
+
   const onError = (e: unknown) =>
     setErr(e instanceof ApiError ? e.message : "That did not save. Try again.");
 
@@ -153,7 +172,7 @@ export function CatalogReviewPage() {
           : old,
       );
       if ("group_name" in v.body || "included" in v.body) refreshGroups();
-      if ("multiplier_override" in v.body)
+      if ("item_margin_pct" in v.body)
         qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
       // any edit that changes what a customer catalog prints makes it out of date
       if (CUSTOMER_FIELDS.some((f) => f in v.body))
@@ -175,11 +194,64 @@ export function CatalogReviewPage() {
       setSelected(new Set());
       setAllMatching(false);
       setBulkGroup("");
-      setBulkMult("");
+      setBulkMargin("");
       qc.invalidateQueries({ queryKey: ["catalog-items", id] });
       qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
       qc.invalidateQueries({ queryKey: ["customer-catalogs", id] });
       refreshGroups();
+    },
+    onError,
+  });
+
+  function replaceRow(updated: CatalogItem) {
+    qc.setQueriesData<ItemPages>({ queryKey: ["catalog-items", id] }, (old) =>
+      old
+        ? {
+            ...old,
+            pages: old.pages.map((p) => ({
+              ...p,
+              data: p.data.map((r) => (r.id === updated.id ? updated : r)),
+            })),
+          }
+        : old,
+    );
+  }
+
+  const linkProduct = useMutation({
+    mutationFn: (v: { itemId: string; productId: string }) =>
+      api<CatalogItem>(`/supplier-catalogs/${id}/items/${v.itemId}/link-product`, {
+        method: "POST",
+        body: { product_id: v.productId },
+      }),
+    onSuccess: (updated) => {
+      setErr(null);
+      replaceRow(updated);
+      refreshGroups();
+      qc.invalidateQueries({ queryKey: ["customer-catalogs", id] });
+    },
+    onError,
+  });
+
+  const dismissSuggestion = useMutation({
+    mutationFn: (itemId: string) =>
+      api<CatalogItem>(`/supplier-catalogs/${id}/items/${itemId}/suggestion`, {
+        method: "DELETE",
+      }),
+    onSuccess: (updated) => replaceRow(updated),
+    onError,
+  });
+
+  const setSupplier = useMutation({
+    mutationFn: (partyId: string) =>
+      api<CatalogListItem>(`/supplier-catalogs/${id}`, {
+        method: "PATCH",
+        body: { supplier_party_id: partyId },
+      }),
+    onSuccess: (c) => {
+      setErr(null);
+      setPickSupplier(false);
+      qc.setQueryData(["supplier-catalog", id], (old: unknown) => ({ ...(old as object), ...c }));
+      qc.invalidateQueries({ queryKey: ["supplier-catalogs"] });
     },
     onError,
   });
@@ -244,7 +316,7 @@ export function CatalogReviewPage() {
     filter.no_group ||
     filter.category_id ||
     incl !== "all" ||
-    multSel !== "any"
+    marginSel !== "any"
   );
 
   return (
@@ -269,8 +341,35 @@ export function CatalogReviewPage() {
           )}
           {cat && (
             <p className="px-1.5 text-sm text-muted">
-              {cat.item_count} items · {cat.page_count} pages · codes {cat.code_prefix}-000001
-              onward · {cat.source_filename}
+              {cat.item_count} items · {cat.page_count} pages · {cat.source_filename} ·{" "}
+              {cat.supplier_name ? (
+                <>from {cat.supplier_name}</>
+              ) : (
+                <button
+                  type="button"
+                  className="text-accent hover:underline"
+                  onClick={() => setPickSupplier((v) => !v)}
+                >
+                  Set supplier
+                </button>
+              )}
+            </p>
+          )}
+          {cat && !cat.supplier_name && pickSupplier && (
+            <div className="mt-1 max-w-sm px-1.5">
+              <SupplierPicker
+                value={null}
+                onPick={(s) => s && setSupplier.mutate(s.id)}
+                disabled={setSupplier.isPending}
+              />
+              <p className="mt-1 text-xs text-muted">
+                With a supplier, a later catalog from them reuses these codes.
+              </p>
+            </div>
+          )}
+          {importNote && (
+            <p className="mt-1 px-1.5 text-sm text-ok" role="status">
+              {importNote}
             </p>
           )}
         </div>
@@ -285,6 +384,9 @@ export function CatalogReviewPage() {
           </button>
           <button type="button" className="btn-ghost" onClick={() => setLabelsOpen(true)}>
             Print labels
+          </button>
+          <button type="button" className="btn-ghost" onClick={() => setTallyOpen(true)}>
+            Send to Tally
           </button>
           {confirmDelete ? (
             <span className="flex items-center gap-2 text-sm">
@@ -319,10 +421,10 @@ export function CatalogReviewPage() {
         <PricingBar
           catalog={cat}
           resetting={bulk.isPending}
-          onResetOverrides={() =>
+          onResetItemMargins={() =>
             bulk.mutate({
-              target: { filter: { has_override: true } },
-              changes: { multiplier_override: null },
+              target: { filter: { has_item_margin: true } },
+              changes: { item_margin_pct: null },
             })
           }
         />
@@ -381,18 +483,18 @@ export function CatalogReviewPage() {
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="cat-mult">
-            Multiplier
+          <label className="label" htmlFor="cat-margin">
+            Margin
           </label>
           <select
-            id="cat-mult"
-            className="field w-44"
-            value={multSel}
-            onChange={(e) => setMultSel(e.target.value as MultFilter)}
+            id="cat-margin"
+            className="field w-48"
+            value={marginSel}
+            onChange={(e) => setMarginSel(e.target.value as MarginFilter)}
           >
             <option value="any">Any</option>
-            <option value="own">Own multiplier</option>
-            <option value="catalog">Catalog multiplier</option>
+            <option value="item">Item-level margin</option>
+            <option value="bulk">Bulk margin</option>
           </select>
         </div>
       </div>
@@ -440,39 +542,39 @@ export function CatalogReviewPage() {
             </button>
           </span>
           <span className="flex items-center gap-2">
-            <label className="sr-only" htmlFor="bulk-mult">
-              Set multiplier
+            <label className="sr-only" htmlFor="bulk-margin">
+              Set item margin
             </label>
             <input
-              id="bulk-mult"
-              className="field h-9 w-28 text-right font-mono"
+              id="bulk-margin"
+              className="field h-9 w-32 text-right font-mono"
               inputMode="decimal"
-              placeholder="× own…"
-              aria-invalid={bulkMult.trim() !== "" && !validMultiplier(bulkMult)}
-              value={bulkMult}
-              onChange={(e) => setBulkMult(e.target.value)}
+              placeholder="Margin %…"
+              aria-invalid={bulkMargin.trim() !== "" && !validMargin(bulkMargin)}
+              value={bulkMargin}
+              onChange={(e) => setBulkMargin(e.target.value)}
             />
             <button
               type="button"
               className="btn-primary h-9"
-              disabled={!validMultiplier(bulkMult) || bulk.isPending}
+              disabled={!validMargin(bulkMargin) || bulk.isPending}
               onClick={() =>
                 bulk.mutate({
                   target: target(),
-                  changes: { multiplier_override: Number(bulkMult).toFixed(3) },
+                  changes: { item_margin_pct: Number(bulkMargin).toFixed(2) },
                 })
               }
             >
-              Set ×
+              Set margin
             </button>
           </span>
           <button
             type="button"
             className="btn-ghost h-9"
             disabled={bulk.isPending}
-            onClick={() => bulk.mutate({ target: target(), changes: { multiplier_override: null } })}
+            onClick={() => bulk.mutate({ target: target(), changes: { item_margin_pct: null } })}
           >
-            Clear ×
+            Clear margin
           </button>
           <button
             type="button"
@@ -503,6 +605,9 @@ export function CatalogReviewPage() {
           </button>
           <button type="button" className="btn-ghost h-9" onClick={() => setCcOpen(true)}>
             Customer catalog
+          </button>
+          <button type="button" className="btn-ghost h-9" onClick={() => setTallyOpen(true)}>
+            Send to Tally
           </button>
           <button
             type="button"
@@ -546,7 +651,7 @@ export function CatalogReviewPage() {
           <span>Item code</span>
           <span>Unit</span>
           <span className="text-right">Supplier price</span>
-          <span className="text-right">Own ×</span>
+          <span className="text-right">Item margin</span>
           <span className="text-right">New price</span>
           <span>Group</span>
           <span>Status</span>
@@ -558,6 +663,21 @@ export function CatalogReviewPage() {
           <p className="p-4 text-sm text-muted">
             {filtered ? "No items match these filters." : "This catalog has no items."}
           </p>
+        )}
+
+        {rows.length > 0 && (
+          <label className="flex items-center gap-3 border-b border-line bg-ground px-3 py-2.5 text-sm xl:hidden">
+            <input
+              type="checkbox"
+              checked={allLoadedSelected}
+              onChange={toggleAll}
+              aria-label="Select all loaded items"
+            />
+            <span className="font-medium">Select all {rows.length} shown</span>
+            {total !== null && total > rows.length && (
+              <span className="text-xs text-muted">of {total} matching</span>
+            )}
+          </label>
         )}
 
         <ul>
@@ -598,10 +718,56 @@ export function CatalogReviewPage() {
                   {r.brand ? ` · ${r.brand}` : ""}
                   {r.size_text ? ` · ${r.size_text}` : ""}
                   {r.carton_qty ? ` · carton of ${r.carton_qty}` : ""}
+                  {r.tally_status === "synced" ? (
+                    <span className="text-ok"> · in Tally</span>
+                  ) : r.tally_status === "error" ? (
+                    <span className="text-danger"> · Tally rejected it</span>
+                  ) : r.item_id ? (
+                    <span> · in your items</span>
+                  ) : null}
                 </p>
               </div>
               <div className={`min-w-0 px-1.5 ${DETAIL}`}>
-                <span className="font-mono text-xs">{r.code}</span>
+                <span className="font-mono text-xs">
+                  {r.code}
+                  <span
+                    className="ml-1 text-[10px] text-muted"
+                    title={
+                      r.code_locked
+                        ? "This code has been used (label, catalog or Tally). It will not change."
+                        : "Not used yet. It changes if you move the item to another group."
+                    }
+                  >
+                    {r.code_locked ? "🔒" : "draft"}
+                  </span>
+                </span>
+                {r.suggestion && (
+                  <div className="mt-1 rounded border border-accent/40 bg-accent-soft px-1.5 py-1 text-[11px]">
+                    <span>
+                      Same as <b className="font-mono">{r.suggestion.code}</b>?
+                    </span>
+                    <span className="ml-2 inline-flex gap-2">
+                      <button
+                        type="button"
+                        className="text-accent hover:underline"
+                        disabled={linkProduct.isPending}
+                        onClick={() =>
+                          linkProduct.mutate({ itemId: r.id, productId: r.suggestion!.product_id })
+                        }
+                      >
+                        Use it
+                      </button>
+                      <button
+                        type="button"
+                        className="text-muted hover:underline"
+                        disabled={dismissSuggestion.isPending}
+                        onClick={() => dismissSuggestion.mutate(r.id)}
+                      >
+                        Not the same
+                      </button>
+                    </span>
+                  </div>
+                )}
                 {r.barcode && (
                   <Barcode
                     pattern={r.barcode}
@@ -635,22 +801,25 @@ export function CatalogReviewPage() {
               </div>
               <div className={`flex items-center gap-1.5 xl:justify-end ${DETAIL}`}>
                 <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
-                  Own multiplier
+                  Item margin
                 </span>
                 <EditableNumber
-                  kind="mult"
+                  kind="margin"
                   allowEmpty
                   placeholder="—"
-                  label={`Own multiplier of ${r.code}`}
-                  value={r.multiplier_override ? trimMultiplier(r.multiplier_override) : ""}
+                  label={`Item margin of ${r.code}`}
+                  value={r.item_margin_pct !== null ? trimMargin(r.item_margin_pct) : ""}
                   onSave={(v) =>
                     patchItem.mutate({
                       itemId: r.id,
-                      body: { multiplier_override: v === "" ? null : Number(v).toFixed(3) },
+                      body: { item_margin_pct: v === "" ? null : Number(v).toFixed(2) },
                     })
                   }
-                  className={`w-16 ${r.multiplier_override ? "!bg-[#f1e7d6] border-line font-medium" : ""}`}
+                  className={`w-16 ${r.item_margin_pct !== null ? "!bg-[#f1e7d6] border-line font-medium" : ""}`}
                 />
+                <span className="text-xs text-muted" aria-hidden>
+                  %
+                </span>
               </div>
               <div className={`flex items-center gap-1.5 xl:justify-end ${DETAIL}`}>
                 <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
@@ -717,9 +886,25 @@ export function CatalogReviewPage() {
           selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
           filtered={filtered ? { count: total ?? 0, filter } : null}
           includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
-          onClose={() => setCcOpen(false)}
+          onClose={() => {
+            setCcOpen(false);
+            qc.invalidateQueries({ queryKey: ["catalog-items", id] }); // codes may now be locked
+          }}
         />
       )}
+      {tallyOpen && cat && (
+        <TallyDialog
+          catalogId={id}
+          selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
+          filtered={filtered ? { count: total ?? 0, filter } : null}
+          includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
+          onClose={() => {
+            setTallyOpen(false);
+            qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+          }}
+        />
+      )}
+
       {labelsOpen && cat && (
         <LabelsDialog
           catalogId={id}
@@ -727,7 +912,10 @@ export function CatalogReviewPage() {
           selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
           filtered={filtered ? { count: total ?? 0, filter } : null}
           includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
-          onClose={() => setLabelsOpen(false)}
+          onClose={() => {
+            setLabelsOpen(false);
+            qc.invalidateQueries({ queryKey: ["catalog-items", id] }); // codes may now be locked
+          }}
         />
       )}
 

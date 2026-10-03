@@ -77,6 +77,14 @@ def process_push_result(
     if job.status in ("ok", "error"):
         return
 
+    if job.kind == "push_items":  # supplier-catalog stock items (S5): own response rules
+        from app.services.catalog.tally_items import process_items_result
+
+        process_items_result(
+            session, job, ok=ok, tally_response=tally_response, agent_error=agent_error
+        )
+        return
+
     if not ok:
         complete_job_error(session, job, error=agent_error or "agent reported a failure")
         return

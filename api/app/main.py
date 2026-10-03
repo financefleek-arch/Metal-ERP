@@ -17,6 +17,7 @@ from app.routers import (
     admin,
     auth,
     catalog,
+    catalog_tally,
     invoices,
     inward,
     item_categories,
@@ -75,6 +76,7 @@ app.include_router(tally_agent.router)
 app.include_router(tally_self_serve.router)
 app.include_router(inward.router)
 app.include_router(catalog.router)
+app.include_router(catalog_tally.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.
     # Imported here (not at module top) so this dev tool can never affect

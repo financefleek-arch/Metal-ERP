@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { validMultiplier } from "../../lib/catalog";
+import { validMargin } from "../../lib/catalog";
 
 /** A text cell that saves on blur or Enter, and reverts on Escape. */
 export function EditableText({
@@ -53,7 +53,7 @@ export function EditableText({
   );
 }
 
-/** A number cell. `kind` decides validation: whole pack counts, money, or a multiplier.
+/** A number cell. `kind` decides validation: whole pack counts, money, or a margin percent.
  *  With `allowEmpty`, clearing the cell calls `onSave("")` (the caller treats it as "none"). */
 export function EditableNumber({
   value,
@@ -67,7 +67,7 @@ export function EditableNumber({
   value: string;
   onSave: (v: string) => void;
   label: string;
-  kind: "int" | "money" | "mult";
+  kind: "int" | "money" | "margin";
   className?: string;
   placeholder?: string;
   allowEmpty?: boolean;
@@ -81,7 +81,7 @@ export function EditableNumber({
 
   const valid = (s: string) => {
     if (kind === "int") return /^[1-9]\d{0,4}$/.test(s);
-    if (kind === "mult") return validMultiplier(s);
+    if (kind === "margin") return validMargin(s);
     return /^\d{1,13}(\.\d{1,2})?$/.test(s);
   };
 

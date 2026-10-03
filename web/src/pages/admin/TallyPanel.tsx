@@ -130,6 +130,17 @@ function AgentSection({
 }) {
   const [err, setErr] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [pin, setPin] = useState("");
+
+  const setTarget = useMutation({
+    mutationFn: (version: string | null) => adminApi.setFirmAgentTargetVersion(firmId, version),
+    onSuccess: () => {
+      setErr(null);
+      setPin("");
+      onChanged();
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not set the version"),
+  });
 
   const provision = useMutation({
     mutationFn: () => adminApi.provisionFirmAgent(firmId),
@@ -233,6 +244,72 @@ function AgentSection({
               typing needed. Rotating replaces the key and invalidates any
               copy already sent out.
             </p>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+              Agent version
+            </p>
+            <div className="mt-2 rounded-lg border border-line bg-ground/40 p-2.5 text-xs">
+              <p>
+                Running{" "}
+                <span className="font-mono font-semibold">{agent!.agent_version ?? "unknown (pre-update build)"}</span>
+                {agent!.latest_agent_version && (
+                  <>
+                    {" · "}latest released{" "}
+                    <span className="font-mono">{agent!.latest_agent_version}</span>
+                  </>
+                )}
+                {agent!.installer_agent_version && (
+                  <>
+                    {" · "}installer carries{" "}
+                    <span className="font-mono">{agent!.installer_agent_version}</span>
+                  </>
+                )}
+              </p>
+              {agent!.os_version && <p className="mt-0.5 text-[11px] text-muted">{agent!.os_version}</p>}
+              {agent!.update_status?.startsWith("failed:") && (
+                <p className="mt-1 text-[11px] text-danger">
+                  Update to {agent!.update_status.slice("failed:".length)} failed and was rolled back —
+                  not offered again until you re-pin or release a newer version.
+                </p>
+              )}
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  className="w-28 rounded border border-line bg-white px-2 py-1 font-mono text-xs"
+                  placeholder="1.2.3"
+                  value={pin}
+                  onChange={(e) => setPin(e.target.value.trim())}
+                />
+                <button
+                  className="rounded border border-line px-2.5 py-1 text-xs enabled:hover:bg-ground disabled:opacity-40"
+                  disabled={setTarget.isPending || !/^\d+\.\d+\.\d+$/.test(pin)}
+                  onClick={() => setTarget.mutate(pin)}
+                >
+                  Pin to version
+                </button>
+                {agent!.target_agent_version && (
+                  <button
+                    className="rounded border border-line px-2.5 py-1 text-xs enabled:hover:bg-ground disabled:opacity-40"
+                    disabled={setTarget.isPending}
+                    onClick={() => setTarget.mutate(null)}
+                  >
+                    Unpin (follow latest)
+                  </button>
+                )}
+              </div>
+              <p className="mt-1.5 max-w-prose text-[11px] text-muted">
+                {agent!.target_agent_version ? (
+                  <>
+                    Pinned to <span className="font-mono">{agent!.target_agent_version}</span>.{" "}
+                  </>
+                ) : (
+                  "Follows the latest released version. "
+                )}
+                Pin a not-yet-released version to canary it on this shop first, or an older one to
+                roll back. The agent updates itself within a minute or two.
+              </p>
+            </div>
           </div>
 
           <div className="mt-4">

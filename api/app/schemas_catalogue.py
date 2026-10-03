@@ -25,6 +25,8 @@ class CategoryIn(BaseModel):
 class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=60)
     sort: int | None = None
+    # Item-code prefix of this group (2-4 letters/digits). Fixed once a code uses it.
+    code_prefix: str | None = Field(default=None, min_length=2, max_length=4)
 
 
 class CategoryOut(BaseModel):
@@ -33,6 +35,7 @@ class CategoryOut(BaseModel):
     id: str
     name: str
     sort: int
+    code_prefix: str | None = None
     group_count: int = 0
     item_count: int = 0
 

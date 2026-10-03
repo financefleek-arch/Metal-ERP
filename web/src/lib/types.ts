@@ -104,6 +104,15 @@ export interface FirmTallyShop {
   agent_online: boolean;
   tally_status: TallyReachabilityStatus;
   tally_ok_at: string | null;
+  /** Agent versioning / auto-update. The pin + installer/latest versions are
+   *  only filled by the platform-admin route. */
+  agent_version?: string | null;
+  os_version?: string | null;
+  target_agent_version?: string | null;
+  installer_agent_version?: string | null;
+  latest_agent_version?: string | null;
+  /** "failed:<ver>" after an update was rolled back. */
+  update_status?: string | null;
 }
 
 /** Response of provision / rotate-key. The plaintext key is no longer

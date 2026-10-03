@@ -23,6 +23,15 @@ export function GroupsPanel({ catalogId, groups }: { catalogId: string; groups: 
   const onError = (e: unknown) =>
     setErr(e instanceof ApiError ? e.message : "That did not work. Try again.");
 
+  const setCode = useMutation({
+    mutationFn: (v: { id: string; code: string }) =>
+      api(`/item-categories/${v.id}`, { method: "PATCH", body: { code_prefix: v.code } }),
+    onSuccess: () => {
+      setErr(null);
+      refresh();
+    },
+    onError,
+  });
   const rename = useMutation({
     mutationFn: (v: { id: string; name: string }) =>
       api(`/item-categories/${v.id}`, { method: "PATCH", body: { name: v.name } }),
@@ -57,8 +66,9 @@ export function GroupsPanel({ catalogId, groups }: { catalogId: string; groups: 
     <section className="card mb-4 p-4" aria-label="Manage groups">
       <h2 className="font-serif text-lg font-semibold">Groups</h2>
       <p className="mt-1 text-sm text-muted">
-        A group is a product type, like Beer Mugs. Renaming or merging also updates your item
-        list. Deleting a group leaves its items without a group.
+        A group is a product type, like Beer Mugs. Its code starts every item code in the group
+        (BM-0042). The code can be changed until an item code uses it. Renaming or merging also
+        updates your item list. Deleting a group leaves its items without a group.
       </p>
       {err && (
         <p className="err" role="alert">
@@ -74,6 +84,21 @@ export function GroupsPanel({ catalogId, groups }: { catalogId: string; groups: 
                 value={g.name}
                 onSave={(name) => name && rename.mutate({ id: g.category_id!, name })}
                 className="font-medium"
+              />
+            </div>
+            <div className="w-16">
+              <EditableText
+                label={`Code for ${g.name}`}
+                value={g.code_prefix ?? ""}
+                placeholder="Code"
+                className="font-mono uppercase"
+                onSave={(code) => {
+                  if (!/^[A-Za-z0-9]{2,4}$/.test(code)) {
+                    setErr("A group code is 2 to 4 letters or digits.");
+                    return;
+                  }
+                  setCode.mutate({ id: g.category_id!, code });
+                }}
               />
             </div>
             <span className="w-24 text-right text-xs tabular-nums text-muted">

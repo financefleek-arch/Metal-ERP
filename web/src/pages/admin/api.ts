@@ -84,6 +84,13 @@ export const adminApi = {
       method: "POST",
     }),
 
+  /** Pin this firm's agent to a released version (canary / rollback); null = follow latest. */
+  setFirmAgentTargetVersion: (firmId: string, version: string | null) =>
+    api<FirmTallyShop>(`/admin/firms/${firmId}/tally-shop/target-version`, {
+      method: "PUT",
+      body: { version },
+    }),
+
   downloadFirmAgentInstaller: (firmId: string, filename: string) =>
     downloadFile(`/admin/firms/${firmId}/tally-shop/installer`, filename),
 

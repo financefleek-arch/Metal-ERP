@@ -8,17 +8,20 @@ export interface CatalogListItem {
   source_filename: string;
   page_count: number;
   item_count: number;
+  /** Prefix for products that have no group (the firm's "ungrouped" prefix). */
   code_prefix: string;
-  /** Decimal as a string, e.g. "1.250". */
-  multiplier: string;
+  supplier_party_id: string | null;
+  supplier_name: string | null;
+  /** Bulk margin in percent as a string, e.g. "25.00" (= +25%). */
+  bulk_margin_pct: string;
   rounding_step: number;
   status: CatalogStatus;
   created_at: string;
 }
 
 export interface CatalogDetail extends CatalogListItem {
-  /** Items that carry their own multiplier instead of the catalog's. */
-  override_count: number;
+  /** Items that carry their own (item-level) margin instead of the bulk margin. */
+  item_margin_count: number;
 }
 
 export interface CatalogUploadOut extends CatalogListItem {
@@ -27,13 +30,24 @@ export interface CatalogUploadOut extends CatalogListItem {
   /** Photos with no price line (blank filler cells) that were left out. */
   skipped_cells: number;
   warnings: string[];
+  /** Rows that reused a product (code, group, name) from an earlier catalog of this supplier. */
+  matched_items: number;
+  new_products: number;
+  /** Rows that look like a product you already have: confirm or dismiss. */
+  suggestions: number;
+}
+
+export interface ProductRef {
+  product_id: string;
+  code: string;
+  name: string;
 }
 
 export interface CatalogItem {
   id: string;
   page_no: number;
   position: number;
-  /** Our code, e.g. GL-000412. */
+  /** Our code: the group's code and a number, e.g. BM-0042. */
   code: string;
   supplier_code: string;
   display_name: string;
@@ -44,7 +58,8 @@ export interface CatalogItem {
   carton_qty: number | null;
   /** Decimals arrive as strings. Price is per pack, as the supplier quotes it. */
   cost_price: string;
-  multiplier_override: string | null;
+  /** The item's own margin in percent, or null when it uses the bulk margin. */
+  item_margin_pct: string | null;
   sell_price: string;
   category_id: string | null;
   category_name: string | null;
@@ -55,6 +70,11 @@ export interface CatalogItem {
   image_url: string | null;
   /** Code 128 bar pattern for `code` ('1' = bar, '0' = space); draw it with <Barcode>. */
   barcode: string | null;
+  product_id: string | null;
+  /** True once the code was used (label, customer catalog, item, Tally): it never changes. */
+  code_locked: boolean;
+  /** Another product that looks like the same thing: accept or dismiss. */
+  suggestion: ProductRef | null;
   item_id: string | null;
   tally_status: string;
 }
@@ -62,6 +82,7 @@ export interface CatalogItem {
 export interface GroupSummary {
   category_id: string | null;
   name: string;
+  code_prefix: string | null;
   item_count: number;
   included_count: number;
 }
@@ -72,8 +93,8 @@ export interface ItemFilter {
   no_group?: boolean;
   included?: boolean;
   brand?: string;
-  /** true = only items with their own multiplier; false = only those using the catalog's. */
-  has_override?: boolean;
+  /** true = only items with their own (item-level) margin; false = only those on the bulk margin. */
+  has_item_margin?: boolean;
 }
 
 export type ItemPatch = Partial<{
@@ -85,14 +106,14 @@ export type ItemPatch = Partial<{
   included: boolean;
   /** null or blank clears the group; a new name creates it. */
   group_name: string | null;
-  /** A number sets this item's own multiplier; null clears it. */
-  multiplier_override: string | null;
+  /** A number sets this item's own margin (%); null clears it. */
+  item_margin_pct: string | null;
 }>;
 
 export type BulkChanges = {
   group_name?: string | null;
   included?: boolean;
-  multiplier_override?: string | null;
+  item_margin_pct?: string | null;
 };
 
 export type RoundingStep = 1 | 5 | 10;
@@ -112,7 +133,7 @@ export function itemsQuery(filter: ItemFilter, cursor: string | null): string {
   else if (filter.category_id) p.set("category_id", filter.category_id);
   if (filter.included !== undefined) p.set("included", String(filter.included));
   if (filter.brand) p.set("brand", filter.brand);
-  if (filter.has_override !== undefined) p.set("has_override", String(filter.has_override));
+  if (filter.has_item_margin !== undefined) p.set("has_item_margin", String(filter.has_item_margin));
   if (cursor) p.set("cursor", cursor);
   return p.toString();
 }
@@ -122,24 +143,33 @@ export function validCodePrefix(v: string): boolean {
   return /^[A-Za-z0-9]{2,8}$/.test(v.trim());
 }
 
-/** Same rule as the server: 0.001 to 99.999, at most 3 decimals. */
-export function validMultiplier(v: string): boolean {
+/** Same rule as the server: -99.99 to 1000 percent, at most 2 decimals. */
+export function validMargin(v: string): boolean {
   const s = v.trim();
-  return /^\d{1,2}(\.\d{1,3})?$/.test(s) && Number(s) > 0 && Number(s) <= 99.999;
+  if (!/^[+-]?\d{1,4}(\.\d{1,2})?$/.test(s)) return false;
+  const n = Number(s);
+  return n >= -99.99 && n <= 1000;
 }
 
-/** "1.250" -> "1.25", "2.000" -> "2". */
-export function trimMultiplier(v: string): string {
+/** "25.00" -> "25", "12.50" -> "12.5", "-10.00" -> "-10". */
+export function trimMargin(v: string): string {
   const n = Number(v);
   return Number.isNaN(n) ? v : String(n);
 }
 
-/** What a multiplier means as a margin: 1.25 -> "+25%", 0.9 -> "-10%", 1 -> "no change". */
-export function percentLabel(mult: number): string {
-  if (!Number.isFinite(mult) || mult <= 0) return "";
-  const pct = Math.round((mult - 1) * 1000) / 10;
-  if (pct === 0) return "no change";
-  return `${pct > 0 ? "+" : ""}${pct}%`;
+/** What a margin does to a Rs 100 supplier price: 25 -> "Rs 100 -> Rs 125". */
+export function marginExample(pct: number): string {
+  if (!Number.isFinite(pct) || pct <= -100) return "";
+  const price = Math.round(100 * (100 + pct)) / 100;
+  return `₹100 → ₹${price}`;
+}
+
+/** "+25%", "-10%", "0%". */
+export function marginLabel(v: string | number): string {
+  const n = typeof v === "string" ? Number(v) : v;
+  if (!Number.isFinite(n)) return "";
+  const r = Math.round(n * 100) / 100;
+  return `${r > 0 ? "+" : ""}${r}%`;
 }
 
 /** "Pack of 6" / "Single piece": the unit the supplier's price is for. */
@@ -271,4 +301,79 @@ export const COLUMN_CHOICES: { value: CatalogColumns; name: string; detail: stri
 export function fileSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// --- S5: promote to items, push to Tally ---
+
+export interface PromoteOut {
+  total: number;
+  create: number;
+  link_existing: number;
+  reuse: number;
+  already: number;
+  /** Created with the code appended because another product has the same name. */
+  renamed: number;
+  examples: string[];
+}
+
+export interface TallySettings {
+  connected: boolean;
+  company_name: string | null;
+  stock_group_root: string | null;
+  tally_group_create_policy: "create_missing" | "existing_only";
+  /** {item_category_id: Tally stock group name} */
+  stock_group_map: Record<string, string>;
+  checked_at: string | null;
+  check_is_fresh: boolean;
+  known_groups: string[];
+}
+
+export interface TallyCheck {
+  id: string;
+  status: "queued" | "sent" | "running" | "ok" | "error";
+  error: string | null;
+  groups: number | null;
+  items: number | null;
+  linked: number | null;
+  created_at: string;
+}
+
+export interface PreflightCheck {
+  code: string;
+  ok: boolean;
+  message: string;
+  blocking: boolean;
+}
+
+export interface PreflightGroup {
+  category_id: string | null;
+  our_name: string;
+  tally_name: string;
+  status: "existing" | "create" | "missing";
+  item_count: number;
+}
+
+export interface TallyPreflight {
+  ok: boolean;
+  total: number;
+  to_push: number;
+  already_synced: number;
+  not_promoted: number;
+  batches: number;
+  root: string | null;
+  checked_at: string | null;
+  checks: PreflightCheck[];
+  groups: PreflightGroup[];
+  collisions: { item_id: string; code: string; name: string }[];
+}
+
+export interface TallyRun {
+  run_id: string | null;
+  state: "none" | "running" | "done" | "error" | "stopped";
+  batches: number;
+  batches_done: number;
+  total_items: number;
+  synced: number;
+  error: string | null;
+  updated_at: string | null;
 }

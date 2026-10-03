@@ -1,6 +1,7 @@
 # EXECUTION PLAN — Supplier Catalog: import, price, barcode, customer catalog, Tally
 
-Status: **S0 to S4 BUILT 2026-10-02 (uncommitted); S5 (promote + Tally import) next.** POC done and passed
+Status: **S0 to S4 BUILT, DEPLOYED AND TESTED by the user (2026-10-03). Pricing renamed to margin % (migration `0035`).
+Next: decide product identity / coding (section 16), then S5 (promote + Tally import).** POC done and passed
 (section 3). A feature-flagged module (`tenant.ext_supplier_catalog`) that
 borrows Inward Bill Import's plumbing but has its own tables. Visual for the
 workflow: `docs/visual-plan/supplier-catalog-workflow.html`.
@@ -501,3 +502,134 @@ after S4, and Tally after S5. S3 and S4 are independent of each other and can sw
 3. ~~Approve the `fleek-infra` request-size change~~ not needed (S0 check).
 4. Provide 1 to 2 catalogs from other suppliers (parser check).
 5. ~~Say go on S0~~ done. Say go on S1.
+
+## 16. Margin wording, and the coding / identity question (2026-10-03)
+
+### Done after the first live test
+- **Pricing is a margin %, called "margin" everywhere.** `bulk_margin_pct` (whole catalog) and
+  `item_margin_pct` (one item; null = uses the bulk margin) replace the multiplier. Meaning: a
+  markup on the supplier price, `new = supplier + margin %` (25 -> x1.25), range -99.99 to 1000,
+  2 decimals, negative = discount. Migration `0035` converts stored multipliers
+  (margin = (multiplier - 1) x 100), exact and reversible. An item margin of 0 is a real margin
+  (sold at the supplier price), not "none". Filter names: **Item-level margin / Bulk margin**
+  (`has_item_margin`); `item_margin_count` on the catalog; bulk actions "Set margin / Clear margin".
+- **Select all on mobile:** below xl the table header (with its checkbox) is hidden, so a
+  "Select all N shown" bar now sits above the list, with the "Select all N matching" link.
+
+### Open: product identity and a global coding strategy (proposal, awaiting decision)
+**Today:** the code is `<prefix>-<6 digits>`; the prefix is the request's, else the firm default, else
+the first two letters of the *catalog title*; one counter per (firm, prefix). Every upload gives every
+row a fresh code, even for a product that appeared in an earlier PDF. Groups are already shop-wide
+(item categories, matched by name). Catalog rows are not `Item`s until S5 promotes them.
+
+**Problem:** the same product in two PDFs gets two codes (two barcodes on the shelf, two Items after
+promote), and the prefix depends on how a file is named.
+
+**Principle:** the code belongs to the *product* (the shop's `Item`), not to the PDF row. A PDF row is
+one supplier's offer of a product.
+
+**Proposal**
+1. A product registry `catalog_product (firm, supplier, supplier_code) -> our code, group, name, item`,
+   with `supplier_catalog_item.product_id`. A new PDF row is matched first by (supplier, supplier code)
+   (exact); then by name against existing products and Items (exact -> alias -> fuzzy), shown as a
+   suggestion ("same as BM-0042?") to accept or reject. A match reuses the code, group and item margin
+   and creates no new code.
+2. **The supplier is chosen at upload** (pick or create a supplier party; party-dedupe guardrails
+   apply). `supplier_catalog.supplier_party_id` exists but nothing sets it today.
+3. Code format, decide one:
+   - **A. Shop-wide:** `<shop prefix>-<seq>`, one counter. Simple and stable; the group is not in the code.
+   - **B. By group:** `<group code>-<seq>` (Beer Mugs -> `BM-0042`). Readable. The group code is a short
+     code kept on the group (auto-suggested from its name, editable until first used); unclassified
+     items use a fallback code.
+4. **Stability:** a code is *provisional* until first real use (printed on a label, included in a
+   customer catalog, promoted, or sent to Tally), then **locked and never changes**. Before it is
+   locked, changing an item's group re-issues the code in the new group's series. After it is locked
+   the group may change but the code stays.
+5. The user's group choice (and name edits) are remembered per (supplier, supplier code), so the next PDF
+   applies them automatically, ahead of the rules.
+6. **S5 promote:** one `Item` per product; code -> `Item.barcode`/`sku` and the Tally part number; a
+   later PDF updates `last_purchase_rate` and flags `price_review_pending`; a matched product never
+   gets a second Item. Uniqueness is checked against existing `Item` codes too.
+7. S6 (re-import) becomes "link by (supplier, code)", not a "supersedes" chain.
+
+Effort: about 3 to 4 days (registry + matching + supplier at upload + group codes + lock). Nothing here
+is built until the choices above are made.
+
+
+## 17. Built: product identity and group codes, and S5 (2026-10-03)
+
+Proposal 16 was approved ("proceed with execution of this one including S5"). Both parts are
+built, tested and verified live. Migration head is now **0038** (0037 is the separate Tally
+agent update-tracking work).
+
+### Part I: product registry and group-based codes (migration 0036)
+
+- `catalog_product` is the shop's product: unique `(tenant, code)` and, when the supplier is
+  known, unique `(tenant, supplier, supplier code)`. The code lives here, not on the PDF row.
+  `supplier_catalog_item.product_id` links each row to it; the row's code is a copy.
+- Code = `<group code>-<4+ digits>`, e.g. `BM-0042`. The group code (`item_category.code_prefix`,
+  2-4 letters) is suggested from the group name the first time it is needed (Beer Mugs -> BM)
+  and is editable until a code with it exists (then 409). Ungrouped items use the firm prefix
+  (`tenant.catalog_code_prefix`, default `GEN`). One counter per (tenant, prefix), never reused.
+- **Provisional until first real use, then locked.** Locking happens on: labels printed,
+  customer catalog built with codes shown, promote, Tally push. While provisional, moving an
+  item to another group re-issues its code in that group's series; a locked code never changes.
+- Supplier is chosen at upload (required in the UI; optional in the API: without one, nothing
+  is matched). Re-upload from the same supplier reuses product, code, group and name. Edits to
+  name and group are remembered on the product. Deleting a catalog keeps its products.
+- Same normalised name on another product -> a **suggestion** on the row ("Same as BM-0042?
+  Use it / Not the same"). Accepting adopts that product's code and group; refused once the
+  row's own code is locked or used elsewhere.
+- Supplier can be attached later (`PATCH` with `supplier_party_id`) unless it would collide
+  with codes that supplier already has.
+- Migration 0036 back-fills one *locked* product per existing row; tested
+  (`test_migration_0036.py`). Known limitation: accepting a suggestion across suppliers means a
+  later re-import from the second supplier cannot match that row by supplier code (it suggests
+  again). An alias table would fix it; not built.
+
+### Part II: S5 promote and Tally push (migration 0038)
+
+- **Promote** (`services/catalog/promote.py`, `POST /{id}/promote[/preview]`): one `Item` per
+  product. Reuse the product's item (refresh its rate); else link an unlinked item with the
+  same normalised name (rates left alone); else create (name = display name, code -> barcode
+  and sku, rate = our new price, last purchase rate = supplier price, uom `nos`, source
+  `catalog`, confirmed). Products sharing a name get the code appended, "Name (BM-0042)",
+  because item and Tally names must be unique (36 of 76 jug items in the live test).
+- **Settings** on `tally_company`: `stock_group_root`, `tally_group_create_policy`
+  (`create_missing` | `existing_only`), `stock_group_map` (our group -> Tally group), plus what
+  the last check saw (`known_stock_groups`, `known_stock_items`, `known_stock_at`).
+- **Check Tally**: a `pull_masters` job with `entity_type='stock_check'`; the backend reads
+  stock groups and item names only (nothing is staged, so it does not collide with the masters
+  review screen). Must be under 30 minutes old to push. **Why:** a Create on an existing master
+  is an alter, so we only create what we have just seen is missing.
+- **Preflight** (`POST /{id}/tally/preflight`): company linked, agent online and Tally
+  reachable, check is fresh, all rows promoted, something to send, names within 99 characters,
+  **no name already in Tally** (blocker, never an overwrite), every group placeable, no push
+  running. The UI shows the list with the fix next to each failure.
+- **Push** (`services/catalog/tally_items.py`): XML via lxml (`UNIT Nos`, `STOCKGROUP`s parents
+  first, `STOCKITEM` with `PARENT`, `BASEUNITS`, `PARTNO`; never an alias), batches of 50, one
+  `tally_sync_job` (`kind='push_items'`, `entity_type='supplier_catalog'`) per batch, sequential:
+  the next batch is queued only when the previous one reports OK. Group creates go in batch 1
+  only. The first batch with an exception stops the run, marks its rows `error`, un-queues the
+  rest, and the message says how to clear Tally's exception masters. Re-running sends only rows
+  not yet `synced`. After the last batch a reconcile "check Tally" reads each new item's Tally
+  id into `item.tally_guid` + `tally_link`, so the items work on sales-invoice pushes.
+- Agent: `TallyMastersModule` gets `case "push_items"` (same transport as `push_sales`).
+  **The .NET agent was NOT rebuilt or released**: the csproj is mid-edit by the agent
+  update/delivery work and does not parse right now; the change is one `case` label. It needs a
+  release before a real shop can push items.
+- Web: `Send to Tally` dialog (scope, checklist, Add to item list, Check Tally, group table with
+  per-group mapping, group settings, progress, result), row chips "in your items / in Tally".
+
+### Verified live (dev TallyPrime 7.1, company "Fleek", agent loop emulated by `agent_sim.py`)
+
+110 items in 3 batches (50/50/10): all created, 258 stock items afterwards (148 + 110), new group
+created under the root, existing groups untouched, 110 of 110 codes present as part numbers,
+the reconcile check linked 110 `tally_guid`s. 2 items that already existed in Tally (left by the
+POC) were caught as collisions and left out. Then the UI end to end on 76 more (promote ->
+check -> group table -> send -> done), desktop and mobile.
+
+### Left in the dev Tally "Fleek" company (clear when convenient)
+Group `ZZTEST Catalog` (root for new groups), `Casseroles & Serveware` under it, 186 stock items
+from these runs (110 + 76) with codes like `JWS-0029`, plus the earlier POC leftovers.
+

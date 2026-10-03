@@ -28,6 +28,7 @@ from app.schemas_admin import (
     AdminUserCreate,
     AdminUserOut,
     AdminUserPatch,
+    AgentTargetVersionIn,
     FirmCreate,
     FirmDetail,
     FirmListItem,
@@ -295,7 +296,23 @@ def _shop_out(session: SessionDep, shop: BackupShop | None) -> FirmTallyShopOut:
         agent_online=agent_online(shop),
         tally_status=shop.last_tally_status,
         tally_ok_at=shop.last_tally_ok_at,
+        agent_version=shop.agent_version,
+        os_version=shop.os_version,
+        target_agent_version=shop.target_agent_version,
+        installer_agent_version=shop.installer_agent_version,
+        latest_agent_version=_latest_version_or_none(),
+        update_status=shop.last_update_status,
     )
+
+
+def _latest_version_or_none() -> str | None:
+    from app.services.tally.agent_release import get_latest_release
+
+    try:
+        rel = get_latest_release()
+    except Exception:  # noqa: BLE001 - a display field must never 500 the page
+        return None
+    return rel.version if rel else None
 
 
 def _firm_shop(session: SessionDep, firm_id: str) -> BackupShop | None:
@@ -392,6 +409,38 @@ def rotate_firm_tally_shop_key(
     assert key is not None
     ready = _cache_installer_or_503(session, shop, key)
     return FirmTallyShopProvisionResult(shop_id=shop.id, created=False, installer_ready=ready)
+
+
+@router.put(
+    "/firms/{firm_id}/tally-shop/target-version",
+    response_model=FirmTallyShopOut,
+)
+def set_firm_agent_target_version(
+    firm_id: str, body: AgentTargetVersionIn, session: SessionDep
+) -> FirmTallyShopOut:
+    """Pin this firm's agent to a released version (canary before promoting,
+    or a rollback), or clear the pin with `version: null`. The agent moves on
+    its next checkin; a version that doesn't exist in the release store is
+    rejected so a typo can't strand a shop."""
+    from app.services.tally.agent_release import get_release
+
+    _load_firm(session, firm_id)
+    shop = _firm_shop(session, firm_id)
+    if shop is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="This firm has no agent yet."
+        )
+    if body.version is not None and get_release(body.version) is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No published agent release {body.version}.",
+        )
+    shop.target_agent_version = body.version
+    # Re-targeting is an explicit ops decision: allow a previously failed
+    # version to be offered again.
+    shop.last_update_status = None
+    session.flush()
+    return _shop_out(session, shop)
 
 
 @router.get("/firms/{firm_id}/tally-shop/installer")

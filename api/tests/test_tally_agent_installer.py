@@ -31,7 +31,7 @@ def test_generate_appsettings_includes_tally_masters_block() -> None:
     # F1a's module must be configured by the download, not a hand-edit.
     assert agent["TallyMasters"] == {
         "Enabled": True,
-        "GatewayUrl": "http://localhost:9000",
+        "GatewayUrl": "http://127.0.0.1:9000",
         "ExportDir": "",
         "PollIntervalMinutes": 1,
     }

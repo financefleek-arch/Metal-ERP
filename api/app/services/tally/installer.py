@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.backup_storage import put_object
 from app.config import get_settings
 from app.models import BackupShop
-from app.services.tally_agent_installer import BuildNotAvailable, build_installer_zip
+from app.services.tally_agent_installer import BuildNotAvailable, build_installer
 
 __all__ = ["BuildNotAvailable", "build_and_cache_installer", "installer_r2_key", "installer_filename"]
 
@@ -36,17 +36,18 @@ def build_and_cache_installer(
 ) -> str:
     """Build the shop's installer zip and put it in R2. Returns the r2_key.
 
-    Raises `BuildNotAvailable` if the published agent build hasn't been
-    dropped at `settings.tally_agent_build_dir` yet — the caller should turn
+    Raises `BuildNotAvailable` if there is neither a promoted release in R2
+    nor a build dropped at `settings.tally_agent_build_dir` yet — the caller should turn
     that into a 503; the shop's agent identity still persists and a later
     rotate-key will build the zip once the build lands.
     """
-    zip_bytes = build_installer_zip(
+    built = build_installer(
         shop_api_key=plaintext_key,
         backend_base_url=get_settings().base_url,
     )
     key = installer_r2_key(shop)
-    put_object(key, zip_bytes, "application/zip")
+    put_object(key, built.zip_bytes, "application/zip")
     shop.installer_r2_key = key
+    shop.installer_agent_version = built.agent_version
     session.flush()
     return key

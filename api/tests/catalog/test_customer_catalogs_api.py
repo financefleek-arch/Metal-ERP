@@ -96,7 +96,7 @@ def test_file_download_has_a_versioned_name(uploaded) -> None:
 def test_the_pdf_shows_our_prices_and_never_the_cost_or_the_supplier(uploaded) -> None:
     client, h, cat = uploaded
     cid = cat["id"]
-    client.patch(f"/api/supplier-catalogs/{cid}", headers=h, json={"multiplier": "1.25"})
+    client.patch(f"/api/supplier-catalogs/{cid}", headers=h, json={"bulk_margin_pct": "25"})
     items = _items(client, h, cid)
     cc = _make(client, h, cid).json()
     text = _text(_file(client, h, cid, cc["id"]))
@@ -116,10 +116,11 @@ def test_the_pdf_shows_our_prices_and_never_the_cost_or_the_supplier(uploaded) -
 def test_options_reach_the_pdf(uploaded) -> None:
     client, h, cat = uploaded
     cid = cat["id"]
+    first_code = _items(client, h, cid)[0]["code"]
     base = _text(_file(client, h, cid, _make(client, h, cid).json()["id"]))
     no_code = _make(client, h, cid, {"show_code": False}).json()
-    assert "GL-000001" not in _text(_file(client, h, cid, no_code["id"]))
-    assert "GL-000001" in base
+    assert first_code not in _text(_file(client, h, cid, no_code["id"]))
+    assert first_code in base
 
     piece = _make(client, h, cid, {"price_basis": "piece"}).json()
     ptext = _text(_file(client, h, cid, piece["id"]))
@@ -217,7 +218,7 @@ def test_pricing_changes_make_every_version_stale_until_regenerated(uploaded) ->
     cid = cat["id"]
     v1 = _make(client, h, cid).json()
     assert not any(x["stale"] for x in _list(client, h, cid))
-    client.patch(f"/api/supplier-catalogs/{cid}", headers=h, json={"multiplier": "1.3"})
+    client.patch(f"/api/supplier-catalogs/{cid}", headers=h, json={"bulk_margin_pct": "30"})
     assert [x["stale"] for x in _list(client, h, cid)] == [True]
     v2 = _make(client, h, cid).json()
     states = {x["version"]: x["stale"] for x in _list(client, h, cid)}
@@ -232,7 +233,7 @@ def test_pricing_changes_make_every_version_stale_until_regenerated(uploaded) ->
         ({"pack_qty": 4}, True),
         ({"included": False}, True),
         ({"group_name": "New Group"}, True),
-        ({"multiplier_override": "1.9"}, True),
+        ({"item_margin_pct": "90"}, True),
         ({"brand": "Other"}, False),  # not printed on the customer catalog
         ({"size_text": "9 ML"}, False),
     ],
@@ -254,7 +255,7 @@ def test_bulk_edits_and_overrides_make_it_stale(uploaded) -> None:
     _make(client, h, cid)
     ids = [i["id"] for i in _items(client, h, cid)[:2]]
     client.patch(f"/api/supplier-catalogs/{cid}/items/bulk", headers=h,
-                 json={"ids": ids, "changes": {"multiplier_override": "1.5"}})
+                 json={"ids": ids, "changes": {"item_margin_pct": "50"}})
     assert _list(client, h, cid)[0]["stale"] is True
 
 
