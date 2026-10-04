@@ -30,6 +30,8 @@ import { CustomerCatalogsPanel } from "../../components/catalog/CustomerCatalogs
 import { EditableNumber, EditableText } from "../../components/catalog/Editable";
 import { LabelsDialog } from "../../components/catalog/LabelsDialog";
 import { TallyDialog } from "../../components/catalog/TallyDialog";
+import { PromoteDialog } from "../../components/catalog/PromoteDialog";
+import { ImageLightbox } from "../../components/catalog/ImageLightbox";
 import { GroupsPanel } from "../../components/catalog/GroupsPanel";
 import { PricingBar } from "../../components/catalog/PricingBar";
 
@@ -74,6 +76,8 @@ export function CatalogReviewPage() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [tallyOpen, setTallyOpen] = useState(false);
+  const [promoteOpen, setPromoteOpen] = useState(false);
+  const [zoomRow, setZoomRow] = useState<CatalogItem | null>(null);
   const [ccOpen, setCcOpen] = useState(false);
   const [pickSupplier, setPickSupplier] = useState(false);
   const [importNote, setImportNote] = useState<string | null>(null);
@@ -385,6 +389,9 @@ export function CatalogReviewPage() {
           <button type="button" className="btn-ghost" onClick={() => setLabelsOpen(true)}>
             Print labels
           </button>
+          <button type="button" className="btn-ghost" onClick={() => setPromoteOpen(true)}>
+            Add to items
+          </button>
           <button type="button" className="btn-ghost" onClick={() => setTallyOpen(true)}>
             Send to Tally
           </button>
@@ -606,6 +613,9 @@ export function CatalogReviewPage() {
           <button type="button" className="btn-ghost h-9" onClick={() => setCcOpen(true)}>
             Customer catalog
           </button>
+          <button type="button" className="btn-ghost h-9" onClick={() => setPromoteOpen(true)}>
+            Add to items
+          </button>
           <button type="button" className="btn-ghost h-9" onClick={() => setTallyOpen(true)}>
             Send to Tally
           </button>
@@ -695,14 +705,21 @@ export function CatalogReviewPage() {
                 onChange={() => toggleRow(r.id)}
               />
               {r.image_url ? (
-                <img
-                  src={r.image_url}
-                  alt={r.display_name}
-                  loading="lazy"
-                  className={`h-[68px] w-[102px] rounded border border-line object-cover ${
-                    r.included ? "" : "opacity-50"
-                  }`}
-                />
+                <button
+                  type="button"
+                  aria-label={`View photo of ${r.display_name}`}
+                  className="h-[68px] w-[102px] shrink-0 cursor-zoom-in rounded"
+                  onClick={() => setZoomRow(r)}
+                >
+                  <img
+                    src={r.image_url}
+                    alt={r.display_name}
+                    loading="lazy"
+                    className={`h-[68px] w-[102px] rounded border border-line object-cover ${
+                      r.included ? "" : "opacity-50"
+                    }`}
+                  />
+                </button>
               ) : (
                 <div className="h-[68px] w-[102px] rounded border border-line bg-ground" />
               )}
@@ -889,6 +906,26 @@ export function CatalogReviewPage() {
           onClose={() => {
             setCcOpen(false);
             qc.invalidateQueries({ queryKey: ["catalog-items", id] }); // codes may now be locked
+          }}
+        />
+      )}
+      {zoomRow?.image_url && (
+        <ImageLightbox
+          src={zoomRow.image_url}
+          title={zoomRow.display_name}
+          caption={`${zoomRow.code} · supplier ref ${zoomRow.supplier_code}`}
+          onClose={() => setZoomRow(null)}
+        />
+      )}
+      {promoteOpen && cat && (
+        <PromoteDialog
+          catalogId={id}
+          selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
+          filtered={filtered ? { count: total ?? 0, filter } : null}
+          includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
+          onClose={() => {
+            setPromoteOpen(false);
+            qc.invalidateQueries({ queryKey: ["catalog-items", id] });
           }}
         />
       )}

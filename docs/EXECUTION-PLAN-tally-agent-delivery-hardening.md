@@ -143,6 +143,18 @@ happening ("Waiting for TallyPrime...", batch X of N). See README "What happens 
 goes away mid-job". Tests: backend (`test_tally_items`, `test_tally_connector`), agent
 (`TallyMastersRetryTests`). Not verified live: an actual Tally close/reopen against a real shop.
 
+## Live result 2026-10-04: auto-update proven on a real machine
+
+Release **1.0.1** (the Tally-retry fix) was tagged, CI-built, signed, then reached the pilot PC by itself:
+download 21:11:40 -> staged + exit 21:11:50 -> scheduler restart 21:14:16 -> old build swapped the files
+and exited -> scheduler restart 21:15:03 on 1.0.1 (about 3.5 min, nobody at the shop). Ops console then
+showed Running 1.0.1, latest released 1.0.1, online, Tally connected. This also proves the real Task
+Scheduler restart (previously only emulated). Observation: restart-on-failure does not reliably fire for
+exit code 10, so each restart can wait for the 5-minute repeat tick (an update can take up to ~10 min).
+Possible polish: 1-minute repeat tick in install.ps1; do the swap in the staging process so there is one
+restart not two (only helps from the next release on). Still unproven live: rollback of a bad release,
+restart after a PC reboot, third-party AV, clean-PC install.
+
 ## Left for you (nothing here can be done from the repo)
 
 **Progress 2026-10-03:** signing key created in Vault (`secret/metalerp/core#agent_signing_key`, 184
