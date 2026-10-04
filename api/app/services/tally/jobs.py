@@ -46,31 +46,55 @@ from app.models import (
 # job.status values that mean "the agent still owes us a result"
 _NON_TERMINAL = ("queued", "sent", "running")
 
-# A job that has been `sent` this long with only "not ready" agent pings
-# (Tally closed / no company open) and no real result is auto-cancelled on
-# the next attempt, so a mis-timed job can't wedge the tenant forever. Same
-# window for pull and push in this slice — see the F1b-1 plan's Open
-# Question #3 on whether push should differ.
+# A job that has not reported back this long is given up on at the next attempt, so a mis-timed
+# or orphaned job can't wedge the tenant forever. Same window for pull and push (see the F1b-1
+# plan's Open Question #3 on whether push should differ). The agent itself retries a "Tally not
+# ready" job for ~8 minutes (TallyMastersModule.RetryWindow), so this stays above that.
 _STUCK_AFTER = timedelta(minutes=10)
+# A masters pull can legitimately run for a long while (big export + upload), so without a
+# "not ready" ping from the agent it gets a much longer ceiling before it is given up on.
+_PULL_CEILING = timedelta(minutes=30)
+_NOT_READY = ("no_company_loaded", "tally_unavailable")
 
 
 def _expire_stuck_job(session: Session, job: TallySyncJob) -> bool:
-    """Lazy auto-cancel: if `job` is `sent`, older than the window, and its
-    agent only ever reported a 'not ready' status, move it to `error` and
-    return True (the caller may then proceed with a fresh job). Works for
-    any `kind` — pull or push.
+    """Lazy auto-cancel of a job the agent never answered. Moves it to `error` and returns True
+    (the caller may then proceed with a fresh job). Works for any `kind`.
+
+    The backend hands a job to the agent exactly once, so a job whose agent was stopped, or
+    whose Tally stayed closed past the agent's retry window, would otherwise sit `sent` forever.
+    Expired when it is `queued`/`sent`, older than the window, and either the agent kept saying
+    "not ready" or (voucher pushes, which take seconds) it simply never reported back. A pull gets
+    the longer ceiling unless the agent said "not ready". A still-`queued` outbox item is
+    withdrawn so a returning agent does not run a job the shop was already told was cancelled.
     """
-    if job.status != "sent":
+    if job.status not in ("queued", "sent"):
         return False
     age = datetime.now(UTC) - _as_utc(job.created_at)
     if age < _STUCK_AFTER:
         return False
-    # only expire if the agent actually saw it and kept saying "not ready"
-    if job.last_agent_status not in ("no_company_loaded", "tally_unavailable"):
+    not_ready = job.last_agent_status in _NOT_READY
+    if job.kind == "pull_masters" and not not_ready and age < _PULL_CEILING:
         return False
+    if not_ready:
+        job.error = "Tally stayed unavailable — retried, then cancelled."
+    elif job.kind == "pull_masters":
+        job.error = (
+            "The Tally agent did not report back, so this was cancelled. Check that the agent "
+            "is running on the shop PC and TallyPrime is open, then try again."
+        )
+    else:
+        job.error = (
+            "The Tally agent did not report back, so this was cancelled. Check that the agent "
+            "is running and TallyPrime is open. TallyPrime may already have saved the voucher - "
+            "look for it in Tally before pushing again."
+        )
     job.status = "error"
-    job.error = "Tally stayed unavailable — retried, then cancelled."
     job.completed_at = datetime.now(UTC)
+    if job.outbox_item_id:
+        item = session.get(AgentOutboxItem, job.outbox_item_id)
+        if item is not None and item.status == "queued":
+            item.status = "expired"
     session.flush()
     return True
 

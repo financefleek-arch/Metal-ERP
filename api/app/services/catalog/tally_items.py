@@ -58,6 +58,12 @@ PRIMARY = "Primary"
 POLICIES = ("create_missing", "existing_only")
 _NON_TERMINAL = ("queued", "sent", "running")
 
+# A batch that has not reported back this long is given up on (the agent was stopped, or Tally
+# stayed closed / had no company open). The agent retries a "not ready" batch for ~8 minutes, so
+# this must stay comfortably above that. Same window as the other Tally job kinds (jobs.py).
+STALLED_AFTER = timedelta(minutes=10)
+_NOT_READY = ("no_company_loaded", "tally_unavailable")
+
 
 # --------------------------------------------------------------------------- data
 
@@ -375,13 +381,91 @@ def preflight(
         Check(
             "in_flight",
             not running,
-            "No other push is running." if not running else "A push to Tally is already running.",
+            "No other push is running."
+            if not running
+            else _in_flight_message(latest_run(session, tenant_id, catalog.id)),
         )
     )
     return pf, todo, creates
 
 
+def _as_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
+
+
+def _stalled_message(job: TallySyncJob, company_name: str | None) -> str:
+    """Why a batch was given up on, in words the shop can act on."""
+    name = f" {company_name}" if company_name else ""
+    if job.last_agent_status == "no_company_loaded":
+        return (
+            f"Tally has no company open, so this was cancelled. Open{name} in TallyPrime, "
+            "then send again."
+        )
+    if job.last_agent_status == "tally_unavailable":
+        return (
+            "TallyPrime was not reachable (closed, or not set to act as a server), so this was "
+            "cancelled. Open TallyPrime with your company, then send again."
+        )
+    return (
+        "The Tally agent did not report back, so this was cancelled. Check that the agent is "
+        "running on the shop PC and TallyPrime is open, then send again."
+    )
+
+
+def expire_stalled_run(
+    session: Session, tenant_id: str, catalog_id: str, now: datetime | None = None
+) -> int:
+    """Give up on a batch the agent never answered, so the run does not wedge forever.
+
+    The backend hands a Tally job to the agent exactly once, and an agent that was stopped (or
+    whose Tally was down for longer than it keeps retrying) never reports back. Left alone the
+    batch stays `sent`, its rows stay `queued`, and every new push is refused as "already
+    running". After `STALLED_AFTER` the batch is failed with a plain-language reason, the rows
+    that were not confirmed go back to unsent, and the queued outbox item is withdrawn so an agent
+    that comes back later does not run a batch the shop was already told was cancelled.
+
+    Items Tally may already have accepted are reconciled by the next "check Tally", and a re-send
+    skips whatever is already there. Returns how many batches were expired.
+    """
+    cutoff = (now or datetime.now(UTC)) - STALLED_AFTER
+    jobs = list(
+        session.scalars(
+            select(TallySyncJob).where(
+                TallySyncJob.tenant_id == tenant_id,
+                TallySyncJob.kind == KIND,
+                TallySyncJob.entity_type == ENTITY,
+                TallySyncJob.entity_id == catalog_id,
+                TallySyncJob.status.in_(("queued", "sent")),
+            )
+        )
+    )
+    expired = 0
+    for job in jobs:
+        if _as_utc(job.created_at) > cutoff:
+            continue
+        counts = dict(job.counts or {})
+        _set_rows(session, list(counts.get("item_ids") or []), "none")
+        _set_rows(session, list(counts.get("rest") or []), "none")
+        counts["rest"] = []
+        counts["sent"] = 0
+        counts["expired"] = True
+        company = session.get(TallyCompany, job.company_id)
+        complete_job_error(
+            session, job, error=_stalled_message(job, company.company_name if company else None)
+        )
+        job.counts = counts
+        if job.outbox_item_id:
+            item = session.get(AgentOutboxItem, job.outbox_item_id)
+            if item is not None and item.status == "queued":
+                item.status = "expired"
+        expired += 1
+    if expired:
+        session.flush()
+    return expired
+
+
 def run_in_flight(session: Session, tenant_id: str, catalog_id: str) -> bool:
+    expire_stalled_run(session, tenant_id, catalog_id)
     return (
         session.scalar(
             select(TallySyncJob.id).where(
@@ -679,9 +763,38 @@ class RunStatus:
     synced: int = 0
     error: str | None = None
     updated_at: datetime | None = None
+    # While running: set when the agent last reported Tally "not ready" for the current batch
+    # ("tally_unavailable" = TallyPrime closed / unreachable, "no_company_loaded" = no company
+    # open). The batch is being retried; it is cancelled automatically if this goes on.
+    waiting: str | None = None
+
+
+def _in_flight_message(run: RunStatus) -> str:
+    """The text of the 'a push is already running' blocker - what is actually happening."""
+    where = ""
+    if run.batches:
+        batch = min(run.batches_done + 1, run.batches)
+        where = (
+            f" (batch {batch} of {run.batches}, "
+            f"{run.synced} of {run.total_items} items sent)"
+        )
+    if run.waiting == "no_company_loaded":
+        return (
+            f"A push to Tally is already running{where} but Tally has no company open. Open your "
+            "company in TallyPrime and it carries on; if Tally stays unavailable it is cancelled "
+            "automatically after 10 minutes."
+        )
+    if run.waiting == "tally_unavailable":
+        return (
+            f"A push to Tally is already running{where} but TallyPrime is not reachable. Open "
+            "TallyPrime and it carries on; if Tally stays unavailable it is cancelled "
+            "automatically after 10 minutes."
+        )
+    return f"A push to Tally is already running{where}."
 
 
 def latest_run(session: Session, tenant_id: str, catalog_id: str) -> RunStatus:
+    expire_stalled_run(session, tenant_id, catalog_id)
     jobs = list(
         session.scalars(
             select(TallySyncJob)
@@ -716,6 +829,8 @@ def latest_run(session: Session, tenant_id: str, catalog_id: str) -> RunStatus:
     lc = last.counts or {}
     if last.status in _NON_TERMINAL:
         out.state = "running"
+        if last.last_agent_status in _NOT_READY:
+            out.waiting = last.last_agent_status
     elif last.status == "error":
         out.state, out.error = "error", last.error
     elif lc.get("stopped"):

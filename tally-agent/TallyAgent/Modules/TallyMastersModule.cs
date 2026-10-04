@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using TallyAgent.Backend;
 using TallyAgent.Tally;
 
 namespace TallyAgent.Modules;
@@ -26,16 +27,36 @@ namespace TallyAgent.Modules;
 /// enable "acts as Server" has no equivalent fallback for push (there is
 /// no manual-file path for vouchers in this slice).
 ///
-/// Two conditions are NOT errors for either action — they leave the job
-/// untouched so a later poll retries: the gateway is unreachable (Tally
-/// closed), and no company is loaded ("Could not find Company ''"). Only a
-/// genuine send/report failure posts an error result.
+/// Two conditions are NOT errors for either action: the gateway is unreachable
+/// (Tally closed) and no company is loaded ("Could not find Company ''"). The
+/// backend hands a Tally job to the agent exactly ONCE (it marks the outbox item
+/// `sent` at that checkin), so the agent itself must keep such a job and retry it
+/// every round until it succeeds or <see cref="RetryWindow"/> runs out - nothing
+/// upstream will redeliver it. Retrying is only done when the request provably
+/// never reached Tally (a connection-level failure, or no company open): a timeout
+/// or an HTTP error might mean Tally already processed it, so those are reported
+/// as an error and never replayed. The held jobs live in memory; if the agent is
+/// restarted they are lost and the backend cancels the stalled job after 10
+/// minutes so the user can send again. Only a genuine send/report failure posts an
+/// error result.
 /// </summary>
 public sealed class TallyMastersModule(
     IOptions<AgentOptions> options,
     TallyGatewayClient gateway) : IAgentModule
 {
     private readonly TallyMastersOptions? _opts = options.Value.TallyMasters;
+
+    /// <summary>How long a job that found Tally "not ready" is retried. Must stay below the
+    /// backend's 10-minute give-up window (tally_items.STALLED_AFTER / jobs._STUCK_AFTER).</summary>
+    internal static readonly TimeSpan RetryWindow = TimeSpan.FromMinutes(8);
+
+    private sealed record Held(OutboxItem Item, DateTimeOffset FirstSeen);
+
+    /// <summary>Time source; tests replace it to step past <see cref="RetryWindow"/>.</summary>
+    internal Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.UtcNow;
+
+    // job_id -> the job, kept until it finishes or RetryWindow passes.
+    private readonly Dictionary<string, Held> _held = new();
 
     public string Name => "tally";
     public TimeSpan PollInterval => TimeSpan.FromMinutes(_opts?.PollIntervalMinutes ?? 1);
@@ -67,9 +88,30 @@ public sealed class TallyMastersModule(
         // separate from "agent -> Fleek" which the checkin itself proves.
         await ProbeReachabilityAsync(ctx, log, ct);
 
-        var jobs = ctx.PendingOutbox
-            .Where(o => o.Module == "tally")
-            .ToList();
+        var now = Clock();
+        foreach (var o in ctx.PendingOutbox.Where(o => o.Module == "tally"))
+        {
+            var id = GetString(o.Payload, "job_id");
+            if (string.IsNullOrEmpty(id))
+            {
+                log.LogWarning("tally outbox item {Id} has no job_id — skipping", o.Id);
+                continue;
+            }
+            _held.TryAdd(id, new Held(o, now));
+        }
+        foreach (var (id, held) in _held.ToList())
+        {
+            if (now - held.FirstSeen > RetryWindow)
+            {
+                _held.Remove(id);
+                log.LogWarning(
+                    "Giving up on Tally job {Job} after {Minutes} min of Tally not being ready; "
+                    + "the backend will cancel it so it can be sent again",
+                    id, (int)RetryWindow.TotalMinutes);
+            }
+        }
+
+        var jobs = _held.Values.Select(h => h.Item).ToList();
 
         if (jobs.Count == 0)
         {
@@ -81,33 +123,37 @@ public sealed class TallyMastersModule(
         foreach (var item in jobs)
         {
             ct.ThrowIfCancellationRequested();
-            var jobId = GetString(item.Payload, "job_id");
-            if (string.IsNullOrEmpty(jobId))
-            {
-                log.LogWarning("tally outbox item {Id} has no job_id — skipping", item.Id);
-                continue;
-            }
+            var jobId = GetString(item.Payload, "job_id")!;
             var action = GetString(item.Payload, "action");
-            bool ok;
+            JobOutcome outcome;
             switch (action)
             {
                 case "pull_masters":
-                    ok = await ProcessPullAsync(
+                    outcome = await ProcessPullAsync(
                         ctx, log, jobId, GetString(item.Payload, "company_name") ?? "", ct);
                     break;
                 case "push_sales":
                 case "push_purchase":
                 case "push_items":
-                    ok = await ProcessPushAsync(
+                    outcome = await ProcessPushAsync(
                         ctx, log, jobId, GetString(item.Payload, "voucher_xml"), ct);
                     break;
                 default:
                     log.LogWarning(
                         "tally outbox item {Id} has unknown action {Action} — skipping",
                         item.Id, action);
+                    _held.Remove(jobId);
                     continue;
             }
-            anyError = anyError || !ok;
+
+            if (outcome == JobOutcome.Retry)
+            {
+                // Tally is not ready: keep the job, try again next round.
+                log.LogInformation("Tally job {Job} is waiting for Tally; will retry", jobId);
+                continue;
+            }
+            _held.Remove(jobId);
+            anyError = anyError || outcome == JobOutcome.Failed;
         }
 
         // "ok"/"idle" is set per-job inside each Process*Async; only escalate
@@ -137,7 +183,7 @@ public sealed class TallyMastersModule(
     /// <summary>Returns true if the job reached a definitive "ok" outcome
     /// this round (used only to pick the round's overall module status —
     /// a job left queued for retry, or a real error, both return false).</summary>
-    private async Task<bool> ProcessPullAsync(
+    private async Task<JobOutcome> ProcessPullAsync(
         AgentContext ctx, ILogger log, string jobId, string companyName, CancellationToken ct)
     {
         byte[]? xml = null;
@@ -157,7 +203,7 @@ public sealed class TallyMastersModule(
                 log.LogInformation("Tally has no company loaded — job {Job} will retry", jobId);
                 ctx.ReportModuleStatus(Name, "no_company_loaded");
                 await PingAsync(ctx, log, jobId, "no_company_loaded", ct);
-                return false;  // leave the job queued
+                return JobOutcome.Retry;  // keep the job; retried next round
             }
             if (!body.Contains("<STATUS>1</STATUS>", StringComparison.OrdinalIgnoreCase))
             {
@@ -176,7 +222,7 @@ public sealed class TallyMastersModule(
             if (string.IsNullOrWhiteSpace(_opts!.ExportDir))
             {
                 await PingAsync(ctx, log, jobId, "tally_unavailable", ct);
-                return false;
+                return JobOutcome.Retry;
             }
             // else: try the folder fallback below before giving up
         }
@@ -210,7 +256,7 @@ public sealed class TallyMastersModule(
             // status ping (if any) has already told the backend why.
             ctx.ReportModuleStatus(Name, "tally_unavailable");
             await PingAsync(ctx, log, jobId, "tally_unavailable", ct);
-            return false;
+            return JobOutcome.Retry;
         }
 
         // 3. upload + report
@@ -226,13 +272,13 @@ public sealed class TallyMastersModule(
                     await ctx.Backend.PostJobResultAsync(
                         jobId, "error", null, "upload-request returned no response", ct);
                     ctx.ReportModuleStatus(Name, "error");
-                    return false;
+                    return JobOutcome.Failed;
                 }
                 await ctx.Backend.PutFileAsync(req.PutUrl, tmp, ct);
                 await ctx.Backend.PostJobResultAsync(jobId, "ok", req.R2Key, null, ct);
                 log.LogInformation(
                     "Uploaded masters XML ({Bytes} bytes) for job {Job}", xml.Length, jobId);
-                return true;
+                return JobOutcome.Done;
             }
             finally
             {
@@ -251,7 +297,7 @@ public sealed class TallyMastersModule(
                 log.LogError(reportEx, "could not even post the error result for job {Job}", jobId);
             }
             ctx.ReportModuleStatus(Name, "error");
-            return false;
+            return JobOutcome.Failed;
         }
     }
 
@@ -264,7 +310,7 @@ public sealed class TallyMastersModule(
     /// "not reachable / no company" handling as pull, reusing the same
     /// status-ping vocabulary the backend already understands.
     /// </summary>
-    private async Task<bool> ProcessPushAsync(
+    private async Task<JobOutcome> ProcessPushAsync(
         AgentContext ctx, ILogger log, string jobId, string? voucherXml, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(voucherXml))
@@ -280,7 +326,7 @@ public sealed class TallyMastersModule(
                 log.LogError(ex, "could not report missing-voucher error for job {Job}", jobId);
             }
             ctx.ReportModuleStatus(Name, "error");
-            return false;
+            return JobOutcome.Failed;
         }
 
         string body;
@@ -288,12 +334,37 @@ public sealed class TallyMastersModule(
         {
             body = await gateway.ImportAsync(_opts!.GatewayUrl, voucherXml, ct);
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (HttpRequestException ex) when (ex.StatusCode is null)
         {
+            // No response at all (connection refused / reset before Tally answered): the
+            // batch never reached Tally, so it is safe to send it again next round.
             log.LogInformation(ex, "Tally gateway unreachable — push job {Job} will retry", jobId);
             ctx.ReportModuleStatus(Name, "tally_unavailable");
             await PingAsync(ctx, log, jobId, "tally_unavailable", ct);
-            return false;
+            return JobOutcome.Retry;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // Tally may have received - and even processed - this batch (a timeout, or an
+            // HTTP error status), so it must NOT be replayed: that could create duplicates.
+            // Tell the backend plainly and let the shop check Tally before sending again.
+            var timedOut = ex is TaskCanceledException;
+            var why = timedOut
+                ? "Tally did not answer in time. It may still have saved this batch - open Tally "
+                  + "and check before sending again."
+                : $"Tally answered with an error ({(int?)((HttpRequestException)ex).StatusCode}). "
+                  + "Check Tally before sending again.";
+            log.LogWarning(ex, "push job {Job} not retried automatically: {Why}", jobId, why);
+            ctx.ReportModuleStatus(Name, "error");
+            try
+            {
+                await ctx.Backend.PostJobResultAsync(jobId, "error", null, why, ct);
+            }
+            catch (Exception reportEx)
+            {
+                log.LogError(reportEx, "could not report the failed push for job {Job}", jobId);
+            }
+            return JobOutcome.Failed;
         }
 
         if (body.Contains("Could not find Company", StringComparison.OrdinalIgnoreCase))
@@ -301,7 +372,7 @@ public sealed class TallyMastersModule(
             log.LogInformation("Tally has no company loaded — push job {Job} will retry", jobId);
             ctx.ReportModuleStatus(Name, "no_company_loaded");
             await PingAsync(ctx, log, jobId, "no_company_loaded", ct);
-            return false;
+            return JobOutcome.Retry;
         }
 
         // Whatever Tally actually said — success, a LINEERROR, or something
@@ -312,13 +383,13 @@ public sealed class TallyMastersModule(
         {
             await ctx.Backend.PostJobResultAsync(jobId, "ok", null, null, ct, tallyResponse: body);
             log.LogInformation("Reported push result for job {Job} ({Bytes} bytes)", jobId, body.Length);
-            return true;
+            return JobOutcome.Done;
         }
         catch (Exception ex)
         {
             log.LogError(ex, "could not report push result for job {Job}", jobId);
             ctx.ReportModuleStatus(Name, "error");
-            return false;
+            return JobOutcome.Failed;
         }
     }
 
@@ -349,4 +420,15 @@ public sealed class TallyMastersModule(
             _ => v.ToString(),
         };
     }
+}
+
+/// <summary>What happened to one Tally job this round.</summary>
+internal enum JobOutcome
+{
+    /// <summary>Reached a definitive result (and it was reported to the backend).</summary>
+    Done,
+    /// <summary>Tally was not ready and the request never reached it: keep the job and retry.</summary>
+    Retry,
+    /// <summary>A real failure (already reported where possible): do not retry.</summary>
+    Failed,
 }

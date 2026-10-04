@@ -590,3 +590,114 @@ def test_products_stay_after_items_are_promoted(env: Env) -> None:
             select(SupplierCatalogItem).where(SupplierCatalogItem.catalog_id == env.cid)
         ).all()
         assert {r.item_id for r in rows} == {p.item_id for p in prods}
+
+
+# --- a push that Tally never answers (closed / disconnected / agent stopped) ----------------
+
+
+def _age_job(job_id: str, minutes: int) -> None:
+    with SessionLocal() as s:
+        job = s.get(TallySyncJob, job_id)
+        job.created_at = datetime.now(UTC) - timedelta(minutes=minutes)
+        s.commit()
+
+
+def _agent_not_ready(job_id: str, status: str) -> None:
+    from app.services.tally.jobs import record_agent_status
+
+    with SessionLocal() as s:
+        record_agent_status(s, s.get(TallySyncJob, job_id), status)
+        s.commit()
+
+
+def _in_flight_text(env: Env) -> str:
+    checks = {c["code"]: c["message"] for c in env.preflight()["checks"]}
+    return str(checks["in_flight"])
+
+
+def test_a_running_push_says_where_it_is(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ti, "BATCH_SIZE", 3)
+    _ready(env, monkeypatch)
+    env.post(f"/{env.cid}/tally/push", {"all_included": True})
+    text = _in_flight_text(env)
+    assert "already running" in text and "batch 1 of 2" in text and "0 of 4 items sent" in text
+    r = env.post(f"/{env.cid}/tally/push", {"all_included": True})
+    assert r.status_code == 422 and "already running" in r.json()["detail"]
+
+
+@pytest.mark.parametrize(
+    ("status", "words"),
+    [("tally_unavailable", "not reachable"), ("no_company_loaded", "no company open")],
+)
+def test_a_not_ready_agent_shows_waiting_not_sending(
+    env: Env, monkeypatch: pytest.MonkeyPatch, status: str, words: str
+) -> None:
+    _ready(env, monkeypatch)
+    env.post(f"/{env.cid}/tally/push", {"all_included": True})
+    _agent_not_ready(_push_jobs(env.tid)[0].id, status)
+
+    run = env.get(f"/{env.cid}/tally/run").json()
+    assert run["state"] == "running" and run["waiting"] == status
+    text = _in_flight_text(env)
+    assert "already running" in text and words in text and "10 minutes" in text
+
+
+def test_a_stalled_batch_is_cancelled_so_the_push_can_be_sent_again(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ready(env, monkeypatch)
+    env.post(f"/{env.cid}/tally/push", {"all_included": True})
+    job = _push_jobs(env.tid)[0]
+    _agent_not_ready(job.id, "tally_unavailable")
+    _age_job(job.id, 11)
+
+    run = env.get(f"/{env.cid}/tally/run").json()
+    assert run["state"] == "error"
+    assert "not reachable" in run["error"] and "send again" in run["error"]
+    assert {x["tally_status"] for x in env.rows()} == {"none"}  # nothing stays stuck as queued
+    with SessionLocal() as s:
+        j = s.get(TallySyncJob, job.id)
+        assert j.status == "error" and j.counts["expired"] is True
+        assert s.get(AgentOutboxItem, j.outbox_item_id).status == "expired"
+
+    # a late answer for the cancelled batch must not resurrect it
+    _reply(job.id, OK_XML.format(c=4, a=0))
+    assert {x["tally_status"] for x in env.rows()} == {"none"}
+
+    # ...and the shop can simply send again
+    assert env.post(f"/{env.cid}/tally/push", {"all_included": True}).status_code == 201
+
+
+def test_a_batch_nobody_picked_up_is_cancelled_with_an_agent_message(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ready(env, monkeypatch)
+    env.post(f"/{env.cid}/tally/push", {"all_included": True})
+    _age_job(_push_jobs(env.tid)[0].id, 11)  # the agent never pinged: it was stopped
+    run = env.get(f"/{env.cid}/tally/run").json()
+    assert run["state"] == "error" and "agent did not report back" in run["error"]
+
+
+def test_a_young_batch_is_left_alone(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    _ready(env, monkeypatch)
+    env.post(f"/{env.cid}/tally/push", {"all_included": True})
+    job = _push_jobs(env.tid)[0]
+    _agent_not_ready(job.id, "tally_unavailable")
+    _age_job(job.id, 5)
+    assert env.get(f"/{env.cid}/tally/run").json()["state"] == "running"
+    assert {x["tally_status"] for x in env.rows()} == {"queued"}
+
+
+def test_a_stall_in_a_later_batch_keeps_what_already_reached_tally(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ti, "BATCH_SIZE", 3)
+    _ready(env, monkeypatch)
+    env.post(f"/{env.cid}/tally/push", {"all_included": True})
+    _reply(_push_jobs(env.tid)[0].id, OK_XML.format(c=3, a=0))  # batch 1 landed
+    second = _push_jobs(env.tid)[1]
+    _age_job(second.id, 11)  # batch 2 never answered
+
+    run = env.get(f"/{env.cid}/tally/run").json()
+    assert run["state"] == "error" and run["synced"] == 3
+    assert sorted(x["tally_status"] for x in env.rows()) == ["none", "synced", "synced", "synced"]

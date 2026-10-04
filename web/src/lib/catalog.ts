@@ -377,4 +377,6 @@ export interface TallyRun {
   synced: number;
   error: string | null;
   updated_at: string | null;
+  /** while running: Tally is not ready and the batch is being retried */
+  waiting?: "tally_unavailable" | "no_company_loaded" | null;
 }

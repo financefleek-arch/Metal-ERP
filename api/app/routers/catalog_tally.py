@@ -272,6 +272,7 @@ def _run_out(run: ti.RunStatus) -> TallyRunOut:
         synced=run.synced,
         error=run.error,
         updated_at=run.updated_at,
+        waiting=run.waiting,
     )
 
 

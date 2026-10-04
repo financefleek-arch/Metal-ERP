@@ -130,6 +130,19 @@ the CI summary) -> `promote` -> pilot firm key rotated, installer rebuilt from t
 auto-update (1.0.0 -> 1.0.1 canary via pin), rollback on a real machine, Task Scheduler restart across
 logoff/reboot, third-party AV, a clean-PC install.
 
+## Follow-up 2026-10-04: jobs that Tally never answers
+
+Found by replaying "agent stopped / Tally disconnected midway" against the real backend: a Tally job is
+delivered to the agent once, the agent kept it only in memory and tried once, so a job that met a closed
+Tally was never resumed, and a stock-item push then sat `sent` forever and every new push was refused
+("A push to Tally is already running"). Fixed: the agent holds and retries "not ready" jobs for ~8 min
+(only when the request never reached Tally - never after a timeout / HTTP error), the backend cancels
+stalled jobs at 10 min (vouchers and stock items regardless of a ping; pulls after 30 min unless "not
+ready"), releases rows and withdraws the queued outbox item, and the dialog now says what is really
+happening ("Waiting for TallyPrime...", batch X of N). See README "What happens when Tally (or the agent)
+goes away mid-job". Tests: backend (`test_tally_items`, `test_tally_connector`), agent
+(`TallyMastersRetryTests`). Not verified live: an actual Tally close/reopen against a real shop.
+
 ## Left for you (nothing here can be done from the repo)
 
 **Progress 2026-10-03:** signing key created in Vault (`secret/metalerp/core#agent_signing_key`, 184

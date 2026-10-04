@@ -344,3 +344,6 @@ class TallyRunOut(BaseModel):
     synced: int
     error: str | None
     updated_at: datetime | None
+    # while running: "tally_unavailable" | "no_company_loaded" when Tally is not ready and the
+    # batch is being retried
+    waiting: str | None = None

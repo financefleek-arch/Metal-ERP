@@ -196,6 +196,27 @@ Key rotation (ordered so shops never trust less than they need): see the RUNBOOK
 stage the new key in `agent_signing_key_next`, ship a build trusting BOTH public keys signed with the
 current key, wait for every shop to be on it, then activate the new key.
 
+## What happens when Tally (or the agent) goes away mid-job
+
+Tally jobs (pull, sales / purchase voucher push, stock-item push) are handed to the agent **once**:
+the backend marks the outbox item `sent` at the checkin that delivers it and never redelivers it.
+So the agent keeps the job itself.
+
+| Situation | What happens |
+|---|---|
+| Tally closed / not acting as server / no company open when the job arrives | The agent pings "waiting" and **retries every minute for ~8 minutes**. When Tally is back the job completes by itself. The shop sees "Waiting for TallyPrime..." (not "Sending..."). |
+| Tally stays unavailable | The agent gives up at 8 min; the backend **cancels the job at 10 min** with a plain-language reason (the next status view or push attempt does it), releases the rows, and the shop can simply send again (a re-send skips what is already in Tally). |
+| The agent is stopped / restarted after receiving the job | The held job is in memory only, so it is lost; the backend cancels it after 10 min ("the agent did not report back"). Send again. |
+| The request timed out, or Tally answered an HTTP error | **Not retried** - Tally may already have processed it and a replay could duplicate vouchers. Reported to the backend as an error telling the shop to check Tally first. |
+| Connection refused / reset before Tally answered | Safe to replay (it never arrived): retried like "closed". |
+
+Cancelled jobs withdraw their still-queued outbox item (status `expired`) so an agent that comes
+back later does not run a job the shop was told was cancelled; a late result for a cancelled job
+is ignored. Voucher pushes are cancelled at 10 min even with no "not ready" ping from the agent;
+a masters pull (which can legitimately run long) only after 30 min unless the agent said "not
+ready". Code: `TallyMastersModule` (`RetryWindow`, held jobs), `services/tally/jobs.py`
+`_expire_stuck_job`, `services/catalog/tally_items.py` `expire_stalled_run`.
+
 ## Testing
 
 * **Unit tests:** `dotnet test tally-agent/TallyAgent.slnx` - signature verification (tamper /

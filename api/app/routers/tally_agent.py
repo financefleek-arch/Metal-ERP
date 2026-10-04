@@ -173,7 +173,10 @@ def job_status_ping(
     """Agent -> backend: a 'not ready' reason (Tally closed / no company
     open) instead of a real result. Records it so the Pull step indicator
     can show "Waiting on Tally" and the lazy auto-cancel has something to
-    key on. The job stays non-terminal — a later poll retries.
+    key on. The job stays non-terminal. NOTE the backend never redelivers it
+    (the outbox item was marked `sent` at the checkin that delivered it): the
+    agent keeps the job itself and retries for ~8 minutes, and the backend
+    cancels it after 10 (services/tally/jobs.py `_expire_stuck_job`).
     """
     job = _job_for_shop(session, job_id, shop.id)
     record_agent_status(session, job, body.agent_status)

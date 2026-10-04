@@ -484,13 +484,23 @@ function RunPanel({ run, onDone }: { run: TallyRun | undefined; onDone: () => vo
       {run.state === "running" && (
         <>
           <p className="font-medium">
-            Sending to Tally… batch {Math.min(run.batches_done + 1, run.batches)} of {run.batches}
+            {run.waiting ? "Waiting for TallyPrime… " : "Sending to Tally… "}
+            batch {Math.min(run.batches_done + 1, run.batches)} of {run.batches}
           </p>
+          {run.waiting && (
+            <p className="mt-1 text-sm text-warn">
+              {run.waiting === "no_company_loaded"
+                ? "TallyPrime is open but has no company loaded. Open your company and the send carries on by itself."
+                : "TallyPrime is not reachable. Open TallyPrime with your company and the send carries on by itself."}{" "}
+              If it stays unavailable the send is cancelled after 10 minutes and you can send again.
+            </p>
+          )}
           <div className="mt-2 h-2 overflow-hidden rounded bg-line" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
             <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
           </div>
           <p className="mt-1 text-sm text-muted">
-            {run.synced} of {run.total_items} items are in Tally. Keep TallyPrime open. You can close this window.
+            {run.synced} of {run.total_items} items are in Tally.{" "}
+            {run.waiting ? "" : "Keep TallyPrime open. "}You can close this window.
           </p>
         </>
       )}

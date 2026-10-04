@@ -497,6 +497,91 @@ def test_stuck_pull_is_lazily_auto_cancelled(client: TestClient) -> None:
         assert s.get(TallySyncJob, job_id).status == "error"
 
 
+def test_a_pull_the_agent_never_answered_gets_a_long_ceiling_then_is_cancelled(
+    client: TestClient,
+) -> None:
+    """No "not ready" ping at all (the agent was stopped): a big export can legitimately take a
+    while, so a pull is only given up on after the 30-minute ceiling, not the 10-minute window."""
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+    _link_company(client, tok, firm_id)
+    job_id = client.post(f"{_base(firm_id)}/pull-masters", headers=_auth(tok)).json()["id"]
+
+    def age(minutes: int) -> None:
+        with SessionLocal() as s:
+            s.get(TallySyncJob, job_id).created_at = datetime.now(UTC) - timedelta(minutes=minutes)
+            s.commit()
+
+    age(15)
+    assert client.post(f"{_base(firm_id)}/pull-masters", headers=_auth(tok)).status_code == 409
+    age(31)
+    assert client.post(f"{_base(firm_id)}/pull-masters", headers=_auth(tok)).status_code == 201
+    with SessionLocal() as s:
+        job = s.get(TallySyncJob, job_id)
+        assert job.status == "error" and "did not report back" in job.error
+
+
+def _orphan_job(
+    firm_id: str, shop_id: str, kind: str, status: str, entity_type: str
+) -> tuple[TallySyncJob, AgentOutboxItem]:
+    with SessionLocal() as s:
+        company = s.scalar(select(TallyCompany).where(TallyCompany.tenant_id == firm_id))
+        item = AgentOutboxItem(shop_id=shop_id, module="tally", payload={}, status="queued")
+        s.add(item)
+        s.flush()
+        job = TallySyncJob(
+            tenant_id=firm_id, company_id=company.id, direction="out", kind=kind,
+            status=status, entity_type=entity_type, entity_id="e-1", outbox_item_id=item.id,
+        )
+        s.add(job)
+        s.commit()
+        s.refresh(job)
+        s.refresh(item)
+        s.expunge_all()
+        return job, item
+
+
+def test_a_voucher_push_the_agent_never_answered_is_cancelled_with_a_check_tally_warning(
+    client: TestClient,
+) -> None:
+    """An agent that died after being handed a push (so it never pinged) used to wedge that
+    invoice's push forever; a voucher takes seconds, so the 10-minute window applies."""
+    from app.services.tally.jobs import _expire_stuck_job
+
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+    shop_id, _key = _link_company(client, tok, firm_id)
+    job0, item0 = _orphan_job(firm_id, shop_id, "push_sales", "sent", "invoice")
+
+    with SessionLocal() as s:
+        job = s.get(TallySyncJob, job0.id)
+        job.created_at = datetime.now(UTC) - timedelta(minutes=5)
+        assert _expire_stuck_job(s, job) is False  # young: left alone
+
+        job.created_at = datetime.now(UTC) - timedelta(minutes=11)
+        assert _expire_stuck_job(s, job) is True
+        assert job.status == "error" and job.completed_at is not None
+        assert "did not report back" in job.error and "look for it in Tally" in job.error
+        # a returning agent must not be handed the job the shop was told was cancelled
+        assert s.get(AgentOutboxItem, item0.id).status == "expired"
+
+
+def test_a_job_that_was_never_delivered_is_withdrawn_when_cancelled(client: TestClient) -> None:
+    from app.services.tally.jobs import _expire_stuck_job
+
+    tok = _admin_token(client)
+    firm_id = _make_firm(client, tok)
+    shop_id, _key = _link_company(client, tok, firm_id)
+    job0, item0 = _orphan_job(firm_id, shop_id, "push_purchase", "queued", "inward_bill")
+
+    with SessionLocal() as s:
+        job = s.get(TallySyncJob, job0.id)
+        job.created_at = datetime.now(UTC) - timedelta(minutes=12)
+        assert _expire_stuck_job(s, job) is True
+        assert job.status == "error"
+        assert s.get(AgentOutboxItem, item0.id).status == "expired"
+
+
 # --------------------------------------------------------------------------
 # XML download for a failed job
 # --------------------------------------------------------------------------

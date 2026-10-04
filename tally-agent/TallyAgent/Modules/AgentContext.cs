@@ -24,7 +24,10 @@ public sealed class AgentContext(
     // The outbox from the most recent checkin response. The host calls
     // checkin AFTER the module round, so a module sees the previous round's
     // outbox — one poll of latency, acceptable at the 1-minute checkin
-    // cadence (and the tally module's not-ready states retry anyway).
+    // cadence. The backend delivers a Tally job only ONCE (it flips the outbox item to
+    // `sent` at that checkin), so this list is replaced every checkin and a job that
+    // still needs work must be kept by the module itself - TallyMastersModule holds
+    // "Tally not ready" jobs and retries them (see its RetryWindow).
     private IReadOnlyList<OutboxItem> _pendingOutbox = Array.Empty<OutboxItem>();
 
     public IReadOnlyList<OutboxItem> PendingOutbox => _pendingOutbox;
