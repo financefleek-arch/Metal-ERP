@@ -59,12 +59,14 @@ from app.schemas_catalog import (
     LinkProductIn,
     OutputJobOut,
     ProductRef,
+    SupplierCatalogsOut,
 )
 from app.services.catalog import catalog_pdf as pdf_svc
 from app.services.catalog import customer_catalogs as cc_svc
 from app.services.catalog import image_url, output_jobs
 from app.services.catalog import labels as labels_svc
 from app.services.catalog import products as products_svc
+from app.services.catalog import suppliers as suppliers_svc
 from app.services.catalog.barcode import modules as barcode_modules
 from app.services.catalog.codes import normalize_prefix
 from app.services.catalog.extract_grid import NotACatalog
@@ -169,11 +171,38 @@ def _check_supplier(session: SessionDep, tenant_id: str, party_id: str) -> Party
     party = session.scalar(select(Party).where(Party.id == party_id, Party.tenant_id == tenant_id))
     if party is None:
         raise HTTPException(status_code=422, detail="That supplier was not found.")
+    if party.status != "active":
+        raise HTTPException(
+            status_code=422, detail=f"{party.legal_name} is archived. Restore it first."
+        )
     if party.role not in ("supplier", "both"):
         raise HTTPException(
             status_code=422, detail=f"{party.legal_name} is not marked as a supplier."
         )
     return party
+
+
+@router.get("/by-supplier/{party_id}", response_model=SupplierCatalogsOut)
+def catalogs_of_supplier(
+    party_id: str, session: SessionDep, user: CatalogUser
+) -> SupplierCatalogsOut:
+    """What we hold from one supplier: their catalogs and how many products."""
+    party = session.scalar(
+        select(Party).where(Party.id == party_id, Party.tenant_id == user.tenant_id)
+    )
+    if party is None:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    summary = suppliers_svc.supplier_summary(session, user.tenant_id, party_id)
+    items = []
+    for c in summary.catalogs:
+        row = CatalogListItem.model_validate(c, from_attributes=True)
+        row.supplier_name = party.legal_name
+        items.append(row)
+    return SupplierCatalogsOut(
+        catalogs=items,
+        product_count=summary.product_count,
+        promoted_count=summary.promoted_count,
+    )
 
 
 @router.post("", response_model=CatalogUploadOut, status_code=status.HTTP_201_CREATED)

@@ -141,7 +141,10 @@ export function PartyForm({
       qc.invalidateQueries({ queryKey: ["parties"] });
       onDeleted();
     },
-    onError: (e) => setErrMsg(e instanceof ApiError ? e.message : "Delete failed"),
+    onError: (e) => {
+      setSaveState("error"); // shown in the status line under the form
+      setErrMsg(e instanceof ApiError ? e.message : "Delete failed");
+    },
   });
 
   const setStatus = useMutation({
@@ -150,6 +153,10 @@ export function PartyForm({
     onSuccess: (p) => {
       qc.invalidateQueries({ queryKey: ["parties"] });
       onChanged(p);
+    },
+    onError: (e) => {
+      setSaveState("error");
+      setErrMsg(e instanceof ApiError ? e.message : "Could not change the status");
     },
   });
 

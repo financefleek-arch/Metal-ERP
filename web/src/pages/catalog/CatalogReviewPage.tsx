@@ -347,7 +347,16 @@ export function CatalogReviewPage() {
             <p className="px-1.5 text-sm text-muted">
               {cat.item_count} items · {cat.page_count} pages · {cat.source_filename} ·{" "}
               {cat.supplier_name ? (
-                <>from {cat.supplier_name}</>
+                <>
+                  from{" "}
+                  {cat.supplier_party_id ? (
+                    <Link to={`/parties/${cat.supplier_party_id}`} className="text-accent hover:underline">
+                      {cat.supplier_name}
+                    </Link>
+                  ) : (
+                    cat.supplier_name
+                  )}
+                </>
               ) : (
                 <button
                   type="button"

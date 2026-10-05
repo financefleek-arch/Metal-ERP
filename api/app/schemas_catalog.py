@@ -35,6 +35,13 @@ class CatalogListItem(BaseModel):
     created_at: datetime
 
 
+class SupplierCatalogsOut(BaseModel):
+    catalogs: list[CatalogListItem]
+    product_count: int
+    # products already in the item list
+    promoted_count: int
+
+
 class CatalogDetail(CatalogListItem):
     # Items that carry their own margin instead of the bulk margin.
     item_margin_count: int = 0

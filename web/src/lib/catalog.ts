@@ -380,3 +380,10 @@ export interface TallyRun {
   /** while running: Tally is not ready and the batch is being retried */
   waiting?: "tally_unavailable" | "no_company_loaded" | null;
 }
+
+export interface SupplierCatalogs {
+  catalogs: CatalogListItem[];
+  product_count: number;
+  /** Products already in the item list. */
+  promoted_count: number;
+}

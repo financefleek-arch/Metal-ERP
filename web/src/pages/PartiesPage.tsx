@@ -11,6 +11,8 @@ const PAGE_SIZE = 50;
 import { PartyForm } from "../components/PartyForm";
 import { NewPartyForm } from "../components/NewPartyForm";
 import { PartyAccountTab } from "../components/PartyAccountTab";
+import { PartyCatalogsTab } from "../components/catalog/PartyCatalogsTab";
+import { useAuth } from "../lib/auth";
 
 type Scope = "" | PartyRole | "incomplete" | "archived";
 
@@ -75,7 +77,8 @@ export function PartiesPage() {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
   const [scope, setScope] = useState<Scope>("");
-  const [detailTab, setDetailTab] = useState<"details" | "account">("details");
+  const [detailTab, setDetailTab] = useState<"details" | "account" | "catalogs">("details");
+  const { me } = useAuth();
   const isDesktop = useIsDesktop();
   // On mobile we show one pane at a time, driven by the route.
   const showDetailPane = isDesktop || isNew || !!selectedId;
@@ -226,7 +229,15 @@ export function PartiesPage() {
         )}
         {!isNew && selectedId && detail.data && (
           <div className="flex border-b border-line bg-card">
-            {(["details", "account"] as const).map((t) => (
+            {(
+              [
+                "details",
+                "account",
+                ...(me?.ext_supplier_catalog && detail.data.role !== "customer"
+                  ? (["catalogs"] as const)
+                  : []),
+              ] as const
+            ).map((t) => (
               <button
                 key={t}
                 className={`-mb-px flex-1 border-b-2 py-3 text-center text-sm md:flex-none md:px-5 ${
@@ -236,7 +247,7 @@ export function PartiesPage() {
                 }`}
                 onClick={() => setDetailTab(t)}
               >
-                {t === "details" ? "Details" : "Account"}
+                {t === "details" ? "Details" : t === "account" ? "Account" : "Catalogs"}
               </button>
             ))}
           </div>
@@ -256,6 +267,8 @@ export function PartiesPage() {
         ) : detail.data ? (
           detailTab === "account" ? (
             <PartyAccountTab party={detail.data} />
+          ) : detailTab === "catalogs" ? (
+            <PartyCatalogsTab party={detail.data} />
           ) : (
             <PartyForm
               key={detail.data.id}

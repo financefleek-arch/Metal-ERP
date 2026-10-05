@@ -29,6 +29,7 @@ from app.schemas import (
     PartyUpdate,
 )
 from app.schemas_payments import OpenInvoiceForAllocation
+from app.services.catalog.suppliers import catalog_ref_count
 from app.services.pagination import finish_page, paginate
 from app.services.parties import (
     SEARCH_RESULT_CAP,
@@ -369,6 +370,15 @@ def update_party(
                 ),
             )
 
+    if patch.get("role") == PartyRole.customer and catalog_ref_count(session, party.id) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"'{party.legal_name}' is the supplier on your product catalogs, so it "
+                "has to stay a supplier."
+            ),
+        )
+
     for field, value in patch.items():
         setattr(party, field, value)
     if addresses is not None:
@@ -387,6 +397,15 @@ def delete_party(party_id: str, user: WriteUser, session: SessionDep) -> None:
             detail=(
                 f"'{party.legal_name}' is on {refs} document"
                 f"{'s' if refs != 1 else ''}. Archive it instead."
+            ),
+        )
+    catalogs = catalog_ref_count(session, party.id)
+    if catalogs > 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"'{party.legal_name}' is the supplier on your product catalogs. "
+                "Archive it instead."
             ),
         )
     session.delete(party)

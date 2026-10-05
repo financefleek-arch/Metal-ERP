@@ -1,5 +1,5 @@
-import { useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, apiUpload } from "../../lib/api";
 import { SupplierPicker, type SupplierChoice } from "../../components/catalog/SupplierPicker";
@@ -42,6 +42,16 @@ export function CatalogListPage() {
   const [title, setTitle] = useState("");
   const [supplier, setSupplier] = useState<SupplierChoice | null>(null);
   const [noSupplier, setNoSupplier] = useState(false);
+
+  // Arriving from a supplier's party page: that supplier is already chosen.
+  const [params] = useSearchParams();
+  const presetSupplier = params.get("supplier");
+  useEffect(() => {
+    if (!presetSupplier) return;
+    api<{ id: string; legal_name: string }>(`/parties/${presetSupplier}`)
+      .then((p) => setSupplier({ id: p.id, name: p.legal_name }))
+      .catch(() => {});
+  }, [presetSupplier]);
   const [notice, setNotice] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -236,7 +246,15 @@ export function CatalogListPage() {
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums">{c.page_count}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{c.item_count}</td>
-                  <td className="px-4 py-3 text-xs">{c.supplier_name ?? <span className="text-muted">Not set</span>}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {c.supplier_party_id && c.supplier_name ? (
+                      <Link to={`/parties/${c.supplier_party_id}`} className="text-accent hover:underline">
+                        {c.supplier_name}
+                      </Link>
+                    ) : (
+                      <span className="text-muted">Not set</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-right tabular-nums">
                     {marginLabel(c.bulk_margin_pct)}
                   </td>

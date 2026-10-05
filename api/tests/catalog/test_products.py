@@ -454,3 +454,66 @@ def test_sample_pdf_with_supplier_then_reupload_of_a_variant_matches_everything(
     assert [i["code"] for i in _items(client, h, a["id"], limit=200)] == [
         i["code"] for i in _items(client, h, b["id"], limit=200)
     ]
+
+
+# --- suppliers are parties: guards and the per-supplier summary -------------------------
+
+
+def test_supplier_summary_lists_catalogs_and_product_counts(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    sup = _party(client, h, "Sugal Glass House")
+    other = _party(client, h, "Other Supplier")
+    empty = client.get(f"/api/supplier-catalogs/by-supplier/{sup}", headers=h).json()
+    assert empty == {"catalogs": [], "product_count": 0, "promoted_count": 0}
+
+    a = _upload(client, h, data=_cells("Z1", "Z2"), name="a.pdf", supplier_party_id=sup).json()
+    _upload(client, h, data=_cells("Y1"), name="b.pdf", supplier_party_id=other)
+    client.post(
+        f"/api/supplier-catalogs/{a['id']}/promote",
+        headers=h,
+        json={"ids": [_items(client, h, a["id"])[0]["id"]]},
+    )
+    out = client.get(f"/api/supplier-catalogs/by-supplier/{sup}", headers=h).json()
+    assert [c["id"] for c in out["catalogs"]] == [a["id"]]
+    assert out["catalogs"][0]["supplier_name"] == "Sugal Glass House"
+    assert out["product_count"] == 2 and out["promoted_count"] == 1
+
+
+def test_supplier_summary_is_tenant_scoped(catalog_client: CatalogEnv, client: TestClient) -> None:
+    from tests.catalog.conftest import auth, register
+
+    c, h, _ = catalog_client
+    other = auth(register(client, "other2@catalog.example.com"))
+    foreign = _party(client, other, "Foreign Supplier")
+    assert c.get(f"/api/supplier-catalogs/by-supplier/{foreign}", headers=h).status_code == 404
+
+
+def test_a_supplier_with_catalogs_cannot_be_deleted_or_made_customer_only(
+    catalog_client: CatalogEnv,
+) -> None:
+    client, h, _ = catalog_client
+    sup = _party(client, h, "Sugal Glass House")
+    _upload(client, h, data=_cells("Z1"), name="a.pdf", supplier_party_id=sup)
+    r = client.delete(f"/api/parties/{sup}", headers=h)
+    assert r.status_code == 409 and "catalogs" in r.json()["detail"]
+    r = client.patch(f"/api/parties/{sup}", headers=h, json={"role": "customer"})
+    assert r.status_code == 409
+    assert client.patch(f"/api/parties/{sup}", headers=h, json={"role": "both"}).status_code == 200
+    assert (
+        client.patch(f"/api/parties/{sup}", headers=h, json={"status": "archived"}).status_code
+        == 200
+    )
+
+
+def test_a_supplier_without_catalogs_can_still_be_deleted(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    sup = _party(client, h, "Unused Supplier")
+    assert client.delete(f"/api/parties/{sup}", headers=h).status_code == 204
+
+
+def test_an_archived_supplier_cannot_receive_a_new_catalog(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    sup = _party(client, h, "Sugal Glass House")
+    client.patch(f"/api/parties/{sup}", headers=h, json={"status": "archived"})
+    r = _upload(client, h, supplier_party_id=sup)
+    assert r.status_code == 422 and "archived" in r.json()["detail"]
