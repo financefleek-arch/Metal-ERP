@@ -41,6 +41,7 @@ export function CatalogListPage() {
   const [dragOver, setDragOver] = useState(false);
   const [title, setTitle] = useState("");
   const [supplier, setSupplier] = useState<SupplierChoice | null>(null);
+  const [noSupplier, setNoSupplier] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -72,7 +73,7 @@ export function CatalogListPage() {
     setNotice(null);
     const file = files?.[0];
     if (!file) return;
-    if (!supplier) {
+    if (!supplier && !noSupplier) {
       setErr("Pick the supplier first, so the same products keep the same codes next time.");
       return;
     }
@@ -131,11 +132,27 @@ export function CatalogListPage() {
               <label className="label" htmlFor="catalog-supplier">
                 Supplier
               </label>
-              <SupplierPicker id="catalog-supplier" value={supplier} onPick={setSupplier} />
+              {noSupplier ? (
+                <p className="rounded-md border border-line bg-card px-3 py-2 text-sm text-muted">
+                  No supplier. Every product gets a new code each time.
+                </p>
+              ) : (
+                <SupplierPicker id="catalog-supplier" value={supplier} onPick={setSupplier} />
+              )}
               <p className="mt-1 text-xs text-muted">
                 Next time this supplier sends a catalog, products you already have keep their
                 code, group and name.
               </p>
+              {!supplier && (
+                <label className="mt-2 flex items-center gap-2 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    checked={noSupplier}
+                    onChange={(e) => setNoSupplier(e.target.checked)}
+                  />
+                  Upload without a supplier
+                </label>
+              )}
             </div>
             <input
               ref={fileRef}
@@ -152,12 +169,15 @@ export function CatalogListPage() {
               <button
                 type="button"
                 className="btn-primary"
-                disabled={!supplier}
+                disabled={!supplier && !noSupplier}
                 onClick={() => fileRef.current?.click()}
               >
                 Choose PDF
               </button>
             </div>
+            {!supplier && !noSupplier && (
+              <p className="mt-2 text-xs text-muted">Pick a supplier above to choose a PDF.</p>
+            )}
             <details className="mt-3 text-left text-sm">
               <summary className="cursor-pointer text-center text-muted">Options</summary>
               <div className="mx-auto mt-3 grid max-w-md grid-cols-1 gap-3">
