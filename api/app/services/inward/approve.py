@@ -20,22 +20,28 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import (
     AuditLog,
     InwardBill,
+    InwardBillLine,
     Item,
+    ItemAlias,
     Party,
     PartyAddress,
     TallyLedgerConfig,
 )
 from app.models._mixins import (
     AddressType,
+    AliasSource,
+    Availability,
     InwardStatus,
     ItemSource,
     ItemType,
@@ -51,6 +57,7 @@ from app.reference import (
     validate_pincode,
     validate_state_code,
 )
+from app.services.catalog import price_points
 from app.services.inward.tally_xml import LedgerConfig, build_xml_bytes
 
 
@@ -223,7 +230,11 @@ def approve_bill(
 
         if item_id is not None:
             linked += 1
+            _remember(session, bill, line, item_id, now)
             linked_item = session.get(Item, item_id)
+            if linked_item is not None and linked_item.availability != Availability.discontinued:
+                # goods arrived: whatever the price list said, you have it now
+                linked_item.availability = Availability.in_stock
             if linked_item is not None and line.unit_rate is not None:
                 # item.last_purchase_rate is Mapped[float | None] (M1 convention)
                 linked_item.last_purchase_rate = float(line.unit_rate)
@@ -350,3 +361,41 @@ def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
         logging.getLogger("tally.approve_push").info(
             "tally push not enqueued for inward bill %s: %s", bill_id, exc
         )
+
+
+def _remember(
+    session: Session, bill: InwardBill, line: InwardBillLine, item_id: str, now: datetime
+) -> None:
+    """Approving a bill confirms its matches. Keep what was paid (price history), and the
+    wording of a line that a fuzzy or manual match resolved, so the next bill with the same
+    wording links straight to the item."""
+    if line.unit_rate is not None:
+        price_points.record_bill_prices(
+            session,
+            tenant_id=bill.tenant_id,
+            supplier_party_id=bill.matched_party_id,
+            bill_id=bill.id,
+            rows=[(item_id, Decimal(str(line.unit_rate)))],
+            on=bill.bill_date or now.date(),
+        )
+    if line.match_method in (MatchMethod.fuzzy, MatchMethod.llm, MatchMethod.manual):
+        item = session.get(Item, item_id)
+        key = normalize_name(line.description, load_synonym_map(session, bill.tenant_id))
+        if item is None or not key or key == item.name_normalized:
+            return
+        taken = session.scalar(
+            select(ItemAlias.id).where(
+                ItemAlias.tenant_id == bill.tenant_id, ItemAlias.alias_normalized == key
+            )
+        )
+        if taken is None:
+            session.add(
+                ItemAlias(
+                    tenant_id=bill.tenant_id,
+                    item_id=item_id,
+                    alias_text=line.description[:300],
+                    alias_normalized=key[:300],
+                    source=AliasSource.auto_from_purchase,
+                    last_used_at=now,
+                )
+            )

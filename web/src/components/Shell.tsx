@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import { JobsIndicator } from "./JobsIndicator";
 
 const baseNav = [
   { to: "/invoices", label: "Sales" },
@@ -15,12 +16,12 @@ export function Shell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Inward appears only when the tenant has ext_inward_import.
-  // Catalogs appears only when the tenant has ext_supplier_catalog.
+  // One door for a supplier's bills and price lists, when the tenant has either module.
   const nav = [
     ...baseNav,
-    ...(me?.ext_inward_import ? [{ to: "/inward", label: "Inward" }] : []),
-    ...(me?.ext_supplier_catalog ? [{ to: "/catalogs", label: "Catalogs" }] : []),
+    ...(me?.ext_inward_import || me?.ext_supplier_catalog
+      ? [{ to: "/documents", label: "Supplier documents" }]
+      : []),
   ];
 
   // Close the mobile drawer whenever the route changes.
@@ -51,6 +52,7 @@ export function Shell({ children }: { children: ReactNode }) {
 
         {/* desktop account cluster */}
         <div className="hidden items-center gap-4 text-sm md:flex">
+          {me?.ext_supplier_catalog && <JobsIndicator />}
           <span className="text-[#b9b3a7]">{me?.email}</span>
           <button onClick={logout} className="text-[#b9b3a7] hover:text-ground">
             Sign out

@@ -52,19 +52,20 @@ export function CatalogSettingsCard({ tenant }: { tenant: Tenant | undefined }) 
       <div className="mt-3 grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">
         <div>
           <label className="label" htmlFor="catalog-prefix">
-            Prefix for ungrouped items
+            Code prefix (optional)
           </label>
           <input
             id="catalog-prefix"
             className="field uppercase"
-            placeholder="GEN"
+            placeholder="none"
             maxLength={8}
             value={prefix}
             onChange={(e) => setPrefix(e.target.value)}
           />
           <p className="mt-1 text-xs text-muted">
-            Items in a group use the group's own code (Beer Mugs: BM-0042). Items with no
-            group use this prefix: {(prefix.trim() || "GEN").toUpperCase()}-0001.
+            Item codes are one running number for the whole firm and never change, for
+            example {(prefix.trim() || "").toUpperCase()}100234. The prefix is optional and only
+            affects new codes.
           </p>
           {prefixBad && <p className="err">Use 2 to 8 letters or digits.</p>}
         </div>

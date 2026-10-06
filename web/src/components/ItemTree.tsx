@@ -179,6 +179,14 @@ function LeafList({
               : "hover:bg-accent-soft"
           }`}
         >
+          {l.thumb_url && (
+            <img
+              src={l.thumb_url}
+              alt=""
+              loading="lazy"
+              className="h-6 w-6 shrink-0 rounded-sm border border-line object-cover"
+            />
+          )}
           <span>{useSizeLabel ? (l.size_label ?? l.name) : l.name}</span>
           {l.status === "unconfirmed" && (
             <span className="rounded-sm bg-[#f1e7d6] px-1 text-[8px] font-bold uppercase text-warn">

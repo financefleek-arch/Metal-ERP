@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { api, ApiError } from "../../lib/api";
 import type { BulkTarget, ItemFilter, PromoteOut } from "../../lib/catalog";
 
@@ -20,6 +21,7 @@ export function PromoteDialog({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
+  const nav = useNavigate();
   const [scope, setScope] = useState<Scope>(selection ? "selected" : "all");
   const [done, setDone] = useState<PromoteOut | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -111,6 +113,11 @@ export function PromoteDialog({
               )}
               {p.reuse > 0 && <li>{p.reuse} already have an item from another catalog (prices refreshed)</li>}
               {p.already > 0 && <li className="text-muted">{p.already} already added</li>}
+              {done && p.photos_queued > 0 && (
+                <li className="text-muted">
+                  {p.photos_queued} photos are being added to the items; they appear in a moment.
+                </li>
+              )}
               {p.renamed > 0 && (
                 <li className="text-muted">
                   {p.renamed} get their code added to the name, because another product has the same name
@@ -124,7 +131,19 @@ export function PromoteDialog({
         {err && <p className="err mt-3" role="alert">{err}</p>}
         <div className="mt-5 flex justify-end gap-2">
           {done ? (
-            <button type="button" className="btn-primary" onClick={onClose}>Done</button>
+            <>
+              <button type="button" className="btn-ghost" onClick={onClose}>Done</button>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={() => {
+                  onClose();
+                  nav(`/items?catalog=${catalogId}`);
+                }}
+              >
+                Open in Items
+              </button>
+            </>
           ) : (
             <button type="button" className="btn-primary" disabled={!p || todo === 0 || promote.isPending} onClick={() => promote.mutate()}>
               {promote.isPending ? "Adding…" : p && todo === 0 ? "Nothing to add" : `Add ${todo} to items`}

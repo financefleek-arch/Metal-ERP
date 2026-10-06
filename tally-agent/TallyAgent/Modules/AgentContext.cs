@@ -35,6 +35,18 @@ public sealed class AgentContext(
     public void SetPendingOutbox(IReadOnlyList<OutboxItem> outbox) =>
         _pendingOutbox = outbox ?? Array.Empty<OutboxItem>();
 
+    // A finished job can make the backend queue the next one (a push is sent in batches, one
+    // after another). Waiting out the normal minute-long checkin and poll intervals between
+    // every batch turns a few minutes of work into an hour, so a module that finished a job
+    // asks the host to check in and run again straight away.
+    private int _fastCycle;
+
+    /// <summary>Ask the host to check in and run the modules again right away.</summary>
+    public void RequestFastCycle() => Volatile.Write(ref _fastCycle, 1);
+
+    /// <summary>True once per request; the host calls this each loop.</summary>
+    public bool ConsumeFastCycle() => Interlocked.Exchange(ref _fastCycle, 0) == 1;
+
     public ILogger CreateLogger(string category) => loggerFactory.CreateLogger(category);
 
     /// <summary>Records this module's outcome for the next checkin call.</summary>

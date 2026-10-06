@@ -19,6 +19,22 @@ function supplierAddress(staged: Record<string, unknown> | null): string | null 
   return parts.length ? parts.join(", ") : null;
 }
 
+/** A second look from what we know of the supplier and the item. */
+function noteChip(flag: string | null | undefined, quoted: string | null | undefined) {
+  if (!flag) return null;
+  const text =
+    flag === "above_quote"
+      ? `above quote${quoted ? ` (${quoted})` : ""}`
+      : flag === "discontinued"
+        ? "item is discontinued"
+        : flag;
+  return (
+    <span className="ml-2 rounded-full bg-[#f1e7d6] px-2 py-0.5 text-[10px] text-warn" title="Check this line">
+      {text}
+    </span>
+  );
+}
+
 function flagChip(flag: string | null) {
   if (!flag) return null;
   const map: Record<string, string> = {
@@ -311,6 +327,7 @@ export function InwardReviewPane({ billId }: { billId: string }) {
                   </span>
                 )}
                 {flagChip(ln.review_flag)}
+                {noteChip(ln.note_flag, ln.quoted_rate)}
               </span>
             </div>
           </div>
@@ -354,6 +371,7 @@ export function InwardReviewPane({ billId }: { billId: string }) {
                 </span>
               )}
               {flagChip(ln.review_flag)}
+              {noteChip(ln.note_flag, ln.quoted_rate)}
             </span>
           </div>
         ))}

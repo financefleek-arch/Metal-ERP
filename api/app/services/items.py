@@ -58,6 +58,24 @@ def document_count(session: Session, item_id: str) -> int:
     return total
 
 
+def detach_catalog_links(
+    session: Session, item_ids: list[str], *, to_item_id: str | None = None
+) -> None:
+    """An item is being deleted (`to_item_id` None) or merged into another: point the price-list
+    products and rows that referenced it at the other item, or clear the link. Without this the
+    delete fails on the foreign key and a merge leaves the products pointing at a hidden item."""
+    from sqlalchemy import update
+
+    from app.models import CatalogProduct, SupplierCatalogItem
+
+    for i in range(0, len(item_ids), 500):
+        chunk = item_ids[i : i + 500]
+        for model in (CatalogProduct, SupplierCatalogItem):
+            session.execute(
+                update(model).where(model.item_id.in_(chunk)).values(item_id=to_item_id)
+            )
+
+
 def hsn_gst_rate(session: Session, code: str | None) -> Decimal | None:
     """The default GST rate for an HSN code, or None."""
     if not code:
@@ -73,7 +91,7 @@ def apply_search(
 ) -> Select:
     """Widen `stmt` (which selects Item) with:
 
-      - raw substring on name / alias / grade / size_text / HSN prefix
+      - raw substring on name / alias / grade / size_text / HSN prefix / code prefix
       - **normalized** substring: the query is run through the same
         `normalize_name` pipeline as `item.name_normalized`, so typing a
         synonym / misspelling ("karai", "zhula") matches an item stored
@@ -127,6 +145,9 @@ def apply_search(
         func.lower(func.coalesce(Item.grade, "")).like(like),
         func.lower(func.coalesce(Item.size_text, "")).like(like),
         func.coalesce(Item.hsn_code, "").like(f"{q}%"),
+        # the item's code, so a scanned barcode or a typed code finds it
+        func.coalesce(Item.sku, "").like(f"{q}%"),
+        func.coalesce(Item.barcode, "").like(f"{q}%"),
         alias_exists,
     ]
     if name_norm_hit is not None:

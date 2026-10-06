@@ -58,6 +58,8 @@ class CatalogEntry:
     price: Decimal  # our new price for one pack
     pack_qty: int
     image: bytes | None
+    # a small tag on the photo, for example "On order"
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -248,6 +250,12 @@ def _draw_cell(
         page.draw_rect(box, color=None, fill=(0.95, 0.95, 0.95))
         put_text(page, box.x0, box.y0 + ih / 2, "No photo", m.small_size, align="c",
                  width=box.width, color=MUTED)
+    if entry.note:
+        w = len(entry.note) * m.small_size * 0.58 + 10
+        tag = pymupdf.Rect(box.x0 + 3, box.y0 + 3, box.x0 + 3 + w, box.y0 + 5 + m.small_size + 3)
+        page.draw_rect(tag, color=None, fill=ACCENT)
+        put_text(page, tag.x0 + 5, tag.y1 - 3.5, latin1(entry.note), m.small_size,
+                 color=(1, 1, 1))
 
     ty = y + ih + 6 + m.name_size
     for line in wrap(latin1(entry.name) or entry.code, m.name_size, cw - 10, 2):

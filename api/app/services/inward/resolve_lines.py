@@ -26,6 +26,7 @@ from app.domain.units import is_mrp_uom
 from app.models import HsnCode
 from app.models._mixins import ItemSource, ItemStatus, ItemType, MatchMethod
 from app.services import llm
+from app.services.inward import supplier_match
 from app.services.item_resolution import resolve_item
 
 
@@ -82,6 +83,7 @@ def resolve_lines(
     session: Session,
     tenant_id: str,
     lines: list[Any],
+    supplier_party_id: str | None = None,
 ) -> list[LineResolution]:
     """`lines` items need `.sl_no`, `.description`, `.hsn`, `.uom` attributes
     (RawLine or the persisted InwardBillLine both fit).
@@ -89,9 +91,18 @@ def resolve_lines(
     synonyms = load_synonym_map(session, tenant_id)
     results: dict[int, LineResolution] = {}
     pending: list[_PendingLine] = []
+    # what this supplier already offered us: its own codes and wording beat a general guess
+    supplier_idx = supplier_match.build_index(session, tenant_id, supplier_party_id, synonyms)
 
     for ln in lines:
         lr = LineResolution(sl_no=ln.sl_no)
+        own = supplier_match.match(supplier_idx, ln.description, synonyms)
+        if own is not None:
+            lr.match_method = MatchMethod.code
+            lr.match_confidence = own[1]
+            lr.matched_item_id = own[0]
+            results[ln.sl_no] = lr
+            continue
         match = resolve_item(
             session, tenant_id, ln.description, ln.hsn, synonyms=synonyms
         )

@@ -5,6 +5,9 @@ import { useVocab } from "../lib/reference";
 import { uomDisplay } from "../lib/uom";
 import type { Item, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
+import { ItemPhoto } from "./ItemPhoto";
+import { ItemSourcesBlock } from "./ItemSourcesBlock";
+import { AVAILABILITY } from "../lib/items";
 
 type Fields = { [k: string]: string };
 
@@ -24,6 +27,8 @@ const TEXT_FIELDS = [
   "default_discount_pct",
   "price_min",
   "price_max",
+  "pack_qty",
+  "carton_qty",
   "notes",
 ] as const;
 
@@ -37,6 +42,7 @@ function toFields(it: Item): Fields {
     metal: it.metal ?? "",
     shape: it.shape ?? "",
     finish: it.finish ?? "",
+    availability: it.availability ?? "in_stock",
   };
   for (const k of TEXT_FIELDS) {
     const v = (it as unknown as Record<string, unknown>)[k];
@@ -72,6 +78,9 @@ function toBody(f: Fields) {
     default_discount_pct: num("default_discount_pct"),
     price_min: num("price_min"),
     price_max: num("price_max"),
+    availability: g("availability") || "in_stock",
+    pack_qty: num("pack_qty"),
+    carton_qty: num("carton_qty"),
     notes: str("notes"),
   };
 }
@@ -186,6 +195,8 @@ export function ItemForm({
 
   return (
     <div className="flex flex-col gap-4">
+      <ItemPhoto item={item} onChanged={onChanged} />
+      <ItemSourcesBlock itemId={item.id} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="font-serif text-lg font-semibold">{item.name}</h2>
@@ -194,7 +205,9 @@ export function ItemForm({
               ? "◆ from inward bill"
               : item.source === "auto_from_invoice"
                 ? "from an invoice"
-                : "added manually"}
+                : item.source === "catalog"
+                  ? "from a supplier price list"
+                  : "added manually"}
             {` · billed ${item.times_billed}×`}
             {item.last_purchase_rate != null &&
               ` · last purchased ₹${item.last_purchase_rate}`}
@@ -322,6 +335,39 @@ export function ItemForm({
           <HsnPicker
             value={v.hsn_code}
             onChange={(code) => patch({ hsn_code: code })}
+          />
+        </Field>
+      </Section>
+
+      {/* Availability and pack size */}
+      <Section title="Availability" note="a status, not a quantity: your Tally keeps the stock">
+        <Field label="Availability">
+          <select
+            className="field"
+            value={v.availability}
+            onChange={(e) => patch({ availability: e.target.value })}
+          >
+            {AVAILABILITY.map((a) => (
+              <option key={a.value} value={a.value}>
+                {a.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Pack size (pcs)">
+          <input
+            className="field font-mono"
+            inputMode="numeric"
+            value={v.pack_qty}
+            onChange={(e) => patch({ pack_qty: e.target.value.replace(/\D/g, "") })}
+          />
+        </Field>
+        <Field label="Carton size (pcs)">
+          <input
+            className="field font-mono"
+            inputMode="numeric"
+            value={v.carton_qty}
+            onChange={(e) => patch({ carton_qty: e.target.value.replace(/\D/g, "") })}
           />
         </Field>
       </Section>

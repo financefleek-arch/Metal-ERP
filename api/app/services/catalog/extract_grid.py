@@ -62,6 +62,8 @@ class ExtractResult:
     page_count: int = 0
     cells: list[Cell] = field(default_factory=list)
     skipped_no_price: int = 0  # photos with no price line (blank filler cells, logos)
+    # price lines ('for 6 pcs') on pages that no product photo claimed: products with no picture
+    unread_price_lines: int = 0
     warnings: list[str] = field(default_factory=list)
 
 
@@ -91,6 +93,7 @@ def extract(pdf: bytes) -> ExtractResult:
         if not photos:
             continue
         words = page.get_text("words")
+        read_before = len(out.cells)
         page_h = page.rect.height
 
         # reading order: rows top to bottom, then left to right
@@ -129,6 +132,9 @@ def extract(pdf: bytes) -> ExtractResult:
                     image_h=int(b["height"]),
                 )
             )
+        # price lines on this page beyond the products we read: products with no picture
+        lines_on_page = _count_pack_lines(words)
+        out.unread_price_lines += max(0, lines_on_page - (len(out.cells) - read_before))
 
     if not out.cells:
         raise NotACatalog(
@@ -203,3 +209,17 @@ def _split_code(lines: list[list[str]]) -> tuple[str | None, str]:
         name = " ".join(body).strip()
         return cand, (name or cand)
     return None, " ".join(" ".join(seg) for seg in lines).strip()
+
+
+def _count_pack_lines(words: list) -> int:
+    """How many "for N pcs" price lines a page has, from its word list (the text of a photo grid
+    comes out in pieces, so look for `for`, a number, then a unit)."""
+    n = 0
+    texts = [str(w[4]).lower() for w in words]
+    for i in range(len(texts) - 2):
+        if texts[i] == "for" and texts[i + 1].isdigit() and texts[i + 2].rstrip(".") in _PACK_UNITS:
+            n += 1
+    return n
+
+
+_PACK_UNITS = {"pc", "pcs", "piece", "pieces", "set", "sets", "no", "nos"}

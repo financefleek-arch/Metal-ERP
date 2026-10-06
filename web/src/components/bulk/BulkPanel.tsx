@@ -3,17 +3,24 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import { useVocab } from "../../lib/reference";
 import { uomDisplay } from "../../lib/uom";
+import { AVAILABILITY } from "../../lib/items";
 import type {
   BulkDeleteResult,
   BulkField,
   BulkUpdateResult,
   GroupOut,
   ItemCategoryRow,
+  ItemFilter,
   ItemListItem,
 } from "../../lib/types";
 import { PreviewTable, ResultSummary } from "./PreviewTable";
 
-export type BulkMode = "fields" | "category" | "delete";
+export type BulkMode = "fields" | "category" | "delete" | "availability" | "rename";
+
+/** What a bulk action covers: ticked ids, or everything matching a filter. */
+type Sel = { ids: string[]; filter?: ItemFilter; n: number };
+
+const selBody = (sel: Sel) => (sel.filter ? { filter: sel.filter } : { ids: sel.ids });
 
 /**
  * The bulk workspace: pick values → Preview (server dry-run) → Apply.
@@ -23,12 +30,17 @@ export type BulkMode = "fields" | "category" | "delete";
 export function BulkPanel({
   mode,
   ids,
+  filter,
+  total,
   items,
   onClose,
   onDone,
 }: {
   mode: BulkMode;
   ids: string[];
+  /** set when the selection is "everything matching this filter" */
+  filter?: ItemFilter;
+  total?: number;
   /** the selected rows we already hold, for names + type-aware skip hints */
   items: ItemListItem[];
   onClose: () => void;
@@ -36,13 +48,19 @@ export function BulkPanel({
 }) {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
+  const sel: Sel = { ids, filter, n: filter ? (total ?? 0) : ids.length };
+  const plural = sel.n === 1 ? "" : "s";
 
   const title =
     mode === "fields"
-      ? `Edit ${ids.length} item${ids.length === 1 ? "" : "s"}`
-      : mode === "category"
-        ? `Move ${ids.length} item${ids.length === 1 ? "" : "s"}`
-        : `Delete ${ids.length} item${ids.length === 1 ? "" : "s"}?`;
+      ? `Edit ${sel.n} item${plural}`
+      : mode === "rename"
+        ? `Find and replace in the names of ${sel.n} item${plural}`
+        : mode === "availability"
+        ? `Set availability for ${sel.n} item${plural}`
+        : mode === "category"
+          ? `Move ${sel.n} item${plural}`
+          : `Delete ${sel.n} item${plural}?`;
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["items"] });
@@ -61,13 +79,19 @@ export function BulkPanel({
       </div>
       {err && <p className="err">{err}</p>}
       {mode === "fields" && (
-        <FieldsFlow ids={ids} items={items} setErr={setErr} onDone={onDone} after={invalidate} />
+        <FieldsFlow sel={sel} items={items} setErr={setErr} onDone={onDone} after={invalidate} />
       )}
       {mode === "category" && (
-        <CategoryFlow ids={ids} setErr={setErr} onDone={onDone} after={invalidate} />
+        <CategoryFlow sel={sel} setErr={setErr} onDone={onDone} after={invalidate} />
       )}
       {mode === "delete" && (
-        <DeleteFlow ids={ids} setErr={setErr} onDone={onDone} after={invalidate} />
+        <DeleteFlow sel={sel} setErr={setErr} onDone={onDone} after={invalidate} />
+      )}
+      {mode === "rename" && (
+        <RenameFlow sel={sel} setErr={setErr} onDone={onDone} after={invalidate} />
+      )}
+      {mode === "availability" && (
+        <AvailabilityFlow sel={sel} setErr={setErr} onDone={onDone} after={invalidate} />
       )}
     </div>
   );
@@ -185,6 +209,14 @@ type FieldSpec = {
 };
 
 const FIELD_SPECS: FieldSpec[] = [
+  {
+    key: "availability",
+    label: "Availability",
+    kind: "select",
+    options: AVAILABILITY.map((a) => ({ value: a.value, label: a.label })),
+  },
+  { key: "pack_qty", label: "Pack size (pcs)", kind: "number" },
+  { key: "carton_qty", label: "Carton size (pcs)", kind: "number" },
   { key: "uom", label: "Unit (UOM)", kind: "vocab", vocab: "uoms" },
   { key: "purchase_uom", label: "Purchase unit", kind: "vocab", vocab: "uoms" },
   {
@@ -219,13 +251,13 @@ const FIELD_SPECS: FieldSpec[] = [
 ];
 
 function FieldsFlow({
-  ids,
+  sel,
   items,
   setErr,
   onDone,
   after,
 }: {
-  ids: string[];
+  sel: Sel;
   items: ItemListItem[];
   setErr: (s: string | null) => void;
   onDone: (s: string) => void;
@@ -248,7 +280,7 @@ function FieldsFlow({
     for (const k of enabled) fields[k] = values[k] ?? "";
     return api<BulkUpdateResult>(`/items/bulk?dry_run=${dryRun}`, {
       method: "PATCH",
-      body: { ids, fields, fields_set: [...enabled], notes_mode: notesMode },
+      body: { ...selBody(sel), fields, fields_set: [...enabled], notes_mode: notesMode },
     });
   };
   const { preview, setPreview, previewM, applyM } = useTwoStep(run, { setErr, onDone, after });
@@ -257,7 +289,7 @@ function FieldsFlow({
     return (
       <>
         <p className="text-xs text-muted">
-          {preview.changed} of {ids.length} items change. The rest already have these values.
+          {preview.changed} of {sel.n} items change. The rest already have these values.
         </p>
         <PreviewTable rows={preview.rows} />
         {preview.learned_rule_ids.length > 0 && (
@@ -280,7 +312,7 @@ function FieldsFlow({
   return (
     <>
       <p className="text-xs text-muted">
-        Turn on a field to set it for all {ids.length}. Anything left off is untouched.
+        Turn on a field to set it for all {sel.n}. Anything left off is untouched.
       </p>
       <div className="flex flex-col divide-y divide-line">
         {FIELD_SPECS.map((spec) => {
@@ -416,12 +448,12 @@ function FieldControl({
 // ---------------------------------------------------------------------------
 
 function CategoryFlow({
-  ids,
+  sel,
   setErr,
   onDone,
   after,
 }: {
-  ids: string[];
+  sel: Sel;
   setErr: (s: string | null) => void;
   onDone: (s: string) => void;
   after: () => void;
@@ -455,7 +487,7 @@ function CategoryFlow({
     }
     return api<BulkUpdateResult>(`/items/bulk?dry_run=${dryRun}`, {
       method: "PATCH",
-      body: { ids, fields, fields_set: fieldsSet },
+      body: { ...selBody(sel), fields, fields_set: fieldsSet },
     });
   };
   const { preview, setPreview, previewM, applyM } = useTwoStep(run, { setErr, onDone, after });
@@ -466,7 +498,7 @@ function CategoryFlow({
     return (
       <>
         <p className="text-xs text-muted">
-          {preview.changed} of {ids.length} items move.
+          {preview.changed} of {sel.n} items move.
           {preview.learned_rule_ids.length > 0 &&
             ` The classifier learns ${preview.learned_rule_ids.length} rule(s) from the unconfirmed ones.`}
         </p>
@@ -553,12 +585,12 @@ function CategoryFlow({
 // ---------------------------------------------------------------------------
 
 function DeleteFlow({
-  ids,
+  sel,
   setErr,
   onDone,
   after,
 }: {
-  ids: string[];
+  sel: Sel;
   setErr: (s: string | null) => void;
   onDone: (s: string) => void;
   after: () => void;
@@ -566,7 +598,7 @@ function DeleteFlow({
   const run = (dryRun: boolean, onBlocked: "skip" | "archive" = "skip") =>
     api<BulkDeleteResult>(`/items/bulk-delete?dry_run=${dryRun}`, {
       method: "POST",
-      body: { ids, on_blocked: onBlocked },
+      body: { ...selBody(sel), on_blocked: onBlocked },
     });
 
   const [preview, setPreview] = useState<BulkDeleteResult | null>(null);
@@ -642,6 +674,193 @@ function DeleteFlow({
           </button>
         </div>
       </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// flow 4: set availability (one choice, then preview and apply)
+// ---------------------------------------------------------------------------
+
+function AvailabilityFlow({
+  sel,
+  setErr,
+  onDone,
+  after,
+}: {
+  sel: Sel;
+  setErr: (s: string | null) => void;
+  onDone: (s: string) => void;
+  after: () => void;
+}) {
+  const [value, setValue] = useState<string>("in_stock");
+  const run = (dryRun: boolean) =>
+    api<BulkUpdateResult>(`/items/bulk?dry_run=${dryRun}`, {
+      method: "PATCH",
+      body: {
+        ...selBody(sel),
+        fields: { availability: value },
+        fields_set: ["availability"],
+      },
+    });
+  const { preview, setPreview, previewM, applyM } = useTwoStep(run, { setErr, onDone, after });
+
+  if (preview)
+    return (
+      <>
+        <p className="text-xs text-muted">
+          Will change {preview.changed} of {sel.n} items to{" "}
+          <b>{AVAILABILITY.find((a) => a.value === value)?.label}</b>. The rest already are.
+        </p>
+        <PreviewTable rows={preview.rows} />
+        <StepFooter
+          preview={preview}
+          onBack={() => setPreview(null)}
+          onPreview={() => previewM.mutate()}
+          onApply={() => applyM.mutate()}
+          previewing={previewM.isPending}
+          applying={applyM.isPending}
+          applyLabel={`Change ${preview.changed} item${preview.changed === 1 ? "" : "s"}`}
+        />
+      </>
+    );
+
+  return (
+    <>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="label">Mark them as</legend>
+        {AVAILABILITY.map((a) => (
+          <label
+            key={a.value}
+            className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm ${
+              value === a.value ? "border-accent bg-accent-soft" : "border-line"
+            }`}
+          >
+            <input
+              type="radio"
+              name="availability"
+              className="mt-1"
+              checked={value === a.value}
+              onChange={() => setValue(a.value)}
+            />
+            <span>
+              <b>{a.label}</b>
+              <span className="block text-xs text-muted">{a.hint}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+      <StepFooter
+        preview={null}
+        onBack={() => {}}
+        onPreview={() => previewM.mutate()}
+        onApply={() => {}}
+        previewing={previewM.isPending}
+        applying={false}
+        applyLabel=""
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// flow 5: find and replace in names
+// ---------------------------------------------------------------------------
+
+function RenameFlow({
+  sel,
+  setErr,
+  onDone,
+  after,
+}: {
+  sel: Sel;
+  setErr: (s: string | null) => void;
+  onDone: (s: string) => void;
+  after: () => void;
+}) {
+  const [find, setFind] = useState("");
+  const [replace, setReplace] = useState("");
+  const [caseSensitive, setCaseSensitive] = useState(false);
+  const [wholeWord, setWholeWord] = useState(false);
+  const run = (dryRun: boolean) =>
+    api<BulkUpdateResult>(`/items/bulk-rename?dry_run=${dryRun}`, {
+      method: "POST",
+      body: { ...selBody(sel), find, replace, case_sensitive: caseSensitive, whole_word: wholeWord },
+    });
+  const { preview, setPreview, previewM, applyM } = useTwoStep(run, { setErr, onDone, after });
+
+  if (preview)
+    return (
+      <>
+        <p className="text-xs text-muted">
+          Will rename {preview.changed} of {sel.n} items
+          {preview.errors > 0 ? `; ${preview.errors} cannot be renamed (see below)` : ""}.
+        </p>
+        <PreviewTable rows={preview.rows} />
+        <StepFooter
+          preview={preview}
+          onBack={() => setPreview(null)}
+          onPreview={() => previewM.mutate()}
+          onApply={() => applyM.mutate()}
+          previewing={previewM.isPending}
+          applying={applyM.isPending}
+          applyLabel={`Rename ${preview.changed} item${preview.changed === 1 ? "" : "s"}`}
+        />
+      </>
+    );
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label" htmlFor="rn-find">
+            Find
+          </label>
+          <input
+            id="rn-find"
+            className="field"
+            maxLength={100}
+            value={find}
+            onChange={(e) => setFind(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="rn-replace">
+            Replace with
+          </label>
+          <input
+            id="rn-replace"
+            className="field"
+            maxLength={100}
+            placeholder="leave empty to remove it"
+            value={replace}
+            onChange={(e) => setReplace(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={caseSensitive} onChange={(e) => setCaseSensitive(e.target.checked)} />
+          Match case
+        </label>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)} />
+          Whole word only
+        </label>
+      </div>
+      <p className="text-xs text-muted">
+        Extra spaces are tidied afterwards. A name that would clash with another item, or end up
+        empty, is left alone and listed in the preview.
+      </p>
+      <StepFooter
+        preview={null}
+        onBack={() => {}}
+        onPreview={() => find.trim() && previewM.mutate()}
+        onApply={() => {}}
+        previewing={previewM.isPending}
+        applying={false}
+        applyLabel=""
+      />
     </>
   );
 }

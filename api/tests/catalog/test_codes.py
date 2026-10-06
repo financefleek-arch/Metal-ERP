@@ -7,58 +7,56 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import CatalogProduct, SupplierCatalog, SupplierCatalogItem
-from app.services.catalog.codes import allocate_codes, format_code, normalize_prefix
+from app.models import CatalogProduct, SupplierCatalog, SupplierCatalogItem, Tenant
+from app.services.catalog.codes import allocate_codes, firm_prefix, format_code, normalize_prefix
 from tests.catalog.conftest import register, tenant_id_of
 
 
+def _tenant(session: Session, tenant_id: str) -> Tenant:
+    t = session.get(Tenant, tenant_id)
+    assert t is not None
+    return t
+
+
 def test_allocation_is_sequential_and_continues(session: Session, tenant_id: str) -> None:
-    first = allocate_codes(session, tenant_id, "GL", 3)
-    second = allocate_codes(session, tenant_id, "GL", 2)
-    assert first == ["GL-0001", "GL-0002", "GL-0003"]
-    assert second == ["GL-0004", "GL-0005"]
+    t = _tenant(session, tenant_id)
+    assert allocate_codes(session, t, 3) == ["100001", "100002", "100003"]
+    assert allocate_codes(session, t, 2) == ["100004", "100005"]
 
 
-def test_prefixes_are_independent(session: Session, tenant_id: str) -> None:
-    assert allocate_codes(session, tenant_id, "GL", 2) == ["GL-0001", "GL-0002"]
-    assert allocate_codes(session, tenant_id, "ST", 1) == ["ST-0001"]
-    assert allocate_codes(session, tenant_id, "GL", 1) == ["GL-0003"]
+def test_zero_count_allocates_nothing(session: Session, tenant_id: str) -> None:
+    t = _tenant(session, tenant_id)
+    assert allocate_codes(session, t, 0) == []
+    assert allocate_codes(session, t, 1) == ["100001"]  # counter untouched
+
+
+def test_negative_count_rejected(session: Session, tenant_id: str) -> None:
+    with pytest.raises(ValueError):
+        allocate_codes(session, _tenant(session, tenant_id), -1)
 
 
 def test_tenants_are_independent(session: Session, client: TestClient) -> None:
     a = tenant_id_of(client, register(client, "ta@catalog.example.com"))
     b = tenant_id_of(client, register(client, "tb@catalog.example.com"))
-    assert allocate_codes(session, a, "GL", 2) == ["GL-0001", "GL-0002"]
-    assert allocate_codes(session, b, "GL", 1) == ["GL-0001"]
+    assert allocate_codes(session, _tenant(session, a), 2) == ["100001", "100002"]
+    assert allocate_codes(session, _tenant(session, b), 1) == ["100001"]
 
 
-def test_prefix_is_normalised_so_gl_and_GL_share_a_counter(
+def test_the_firm_prefix_goes_in_front_and_changing_it_keeps_the_counter(
     session: Session, tenant_id: str
 ) -> None:
-    assert allocate_codes(session, tenant_id, "gl", 1) == ["GL-0001"]
-    assert allocate_codes(session, tenant_id, "GL", 1) == ["GL-0002"]
+    t = _tenant(session, tenant_id)
+    t.catalog_code_prefix = "ks"
+    assert firm_prefix(t) == "KS"
+    assert allocate_codes(session, t, 2) == ["KS100001", "KS100002"]
+    t.catalog_code_prefix = None
+    assert allocate_codes(session, t, 1) == ["100003"]  # one running number, prefix or not
 
 
-def test_zero_count_allocates_nothing(session: Session, tenant_id: str) -> None:
-    assert allocate_codes(session, tenant_id, "GL", 0) == []
-    assert allocate_codes(session, tenant_id, "GL", 1) == ["GL-0001"]  # counter untouched
-
-
-@pytest.mark.parametrize("bad", ["", "G", "TOOLONGPFX", "G-L", "G L", "ग्ल"])
-def test_invalid_prefix_rejected(session: Session, tenant_id: str, bad: str) -> None:
-    with pytest.raises(ValueError):
-        allocate_codes(session, tenant_id, bad, 1)
-
-
-def test_negative_count_rejected(session: Session, tenant_id: str) -> None:
-    with pytest.raises(ValueError):
-        allocate_codes(session, tenant_id, "GL", -1)
-
-
-def test_codes_past_four_digits_still_unique() -> None:
-    assert format_code("GL", 7) == "GL-0007"
-    assert format_code("GL", 9999) == "GL-9999"
-    assert format_code("GL", 10000) == "GL-10000"
+def test_codes_run_past_six_digits() -> None:
+    assert format_code("", 999999) == "999999"
+    assert format_code("", 1000000) == "1000000"
+    assert format_code("KS", 100234) == "KS100234"
 
 
 def test_normalize() -> None:
@@ -76,7 +74,6 @@ def _catalog(session: Session, tenant_id: str, sha: str = "a" * 64) -> SupplierC
         title="Glassware",
         source_filename="g.pdf",
         source_sha256=sha,
-        code_prefix="GL",
     )
     session.add(c)
     session.flush()
@@ -109,9 +106,9 @@ def _product(tenant_id: str, code: str, supplier_code: str = "A1") -> CatalogPro
 
 
 def test_duplicate_product_code_in_tenant_is_rejected(session: Session, tenant_id: str) -> None:
-    session.add(_product(tenant_id, "GL-0001", "A1"))
+    session.add(_product(tenant_id, "100001", "A1"))
     session.flush()
-    session.add(_product(tenant_id, "GL-0001", "A2"))
+    session.add(_product(tenant_id, "100001", "A2"))
     with pytest.raises(IntegrityError):
         session.flush()
     session.rollback()
@@ -119,9 +116,9 @@ def test_duplicate_product_code_in_tenant_is_rejected(session: Session, tenant_i
 
 def test_duplicate_supplier_code_in_catalog_is_rejected(session: Session, tenant_id: str) -> None:
     c = _catalog(session, tenant_id)
-    session.add(_item(tenant_id, c.id, "A1", "GL-0001"))
+    session.add(_item(tenant_id, c.id, "A1", "100001"))
     session.flush()
-    session.add(_item(tenant_id, c.id, "A1", "GL-0002"))
+    session.add(_item(tenant_id, c.id, "A1", "100002"))
     with pytest.raises(IntegrityError):
         session.flush()
     session.rollback()
@@ -131,8 +128,8 @@ def test_same_code_may_appear_in_two_catalogs(session: Session, tenant_id: str) 
     # one product can be offered in several catalogs: the code is not unique per row any more
     a = _catalog(session, tenant_id, "d" * 64)
     b = _catalog(session, tenant_id, "e" * 64)
-    session.add(_item(tenant_id, a.id, "A1", "GL-0001"))
-    session.add(_item(tenant_id, b.id, "A1", "GL-0001"))
+    session.add(_item(tenant_id, a.id, "A1", "100001"))
+    session.add(_item(tenant_id, b.id, "A1", "100001"))
     session.flush()
 
 
@@ -145,7 +142,7 @@ def test_same_file_twice_is_the_same_catalog(session: Session, tenant_id: str) -
 
 def test_deleting_a_catalog_removes_its_items(session: Session, tenant_id: str) -> None:
     c = _catalog(session, tenant_id, "c" * 64)
-    c.items.append(_item(tenant_id, c.id, "A1", "GL-0001"))
+    c.items.append(_item(tenant_id, c.id, "A1", "100001"))
     session.flush()
     session.delete(c)
     session.flush()

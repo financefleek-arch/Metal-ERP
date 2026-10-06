@@ -21,8 +21,9 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.models import ExtractionRun, InwardBill, InwardBillLine
-from app.models._mixins import ExtractionMethod, InwardStatus
+from app.models import ExtractionRun, InwardBill, InwardBillLine, Item
+from app.models._mixins import Availability, ExtractionMethod, InwardStatus
+from app.services.catalog import price_points
 from app.services.inward import einvoice_qr, extract_text
 from app.services.inward.reconcile import reconcile
 from app.services.inward.resolve_lines import resolve_lines
@@ -118,7 +119,9 @@ def run_extraction(session: Session, bill: InwardBill) -> InwardBill:
         bill.place_of_supply_state_code = sup.place_of_supply_state_code
 
         # lines
-        line_res = resolve_lines(session, bill.tenant_id, list(bill.lines))
+        line_res = resolve_lines(
+            session, bill.tenant_id, list(bill.lines), supplier_party_id=bill.matched_party_id
+        )
         by_sl = {lr.sl_no: lr for lr in line_res}
         for line in bill.lines:
             lr = by_sl.get(line.sl_no)
@@ -133,6 +136,7 @@ def run_extraction(session: Session, bill: InwardBill) -> InwardBill:
             line.matched_item_id = lr.matched_item_id
             line.new_item_staged_json = lr.new_item_staged
             line.review_flag = lr.review_flag
+            _note_from_history(session, bill, line)
 
         # confidence: field average, docked for unreconciled
         fc = raw.field_confidence
@@ -228,3 +232,24 @@ def _log_run(
             error=err,
         )
     )
+
+
+def _note_from_history(session: Session, bill: InwardBill, line: InwardBillLine) -> None:
+    """Flag a line worth a second look from what we know of the item and the supplier: it is
+    Discontinued, or the bill charges more than the supplier's latest quote."""
+    line.note_flag = None
+    line.quoted_rate = None
+    if not line.matched_item_id:
+        return
+    item = session.get(Item, line.matched_item_id)
+    if item is None:
+        return
+    if item.availability == Availability.discontinued:
+        line.note_flag = "discontinued"
+        return
+    quotes = price_points.latest_quote_for_item(
+        session, bill.tenant_id, item.id, bill.matched_party_id
+    )
+    if price_points.bill_flag(line.unit_rate, quotes) == "above":
+        line.note_flag = "above_quote"
+        line.quoted_rate = quotes[0]

@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, useLocation, Route, Routes } from "react-router-dom";
 import { useAuth } from "./lib/auth";
 import { Shell } from "./components/Shell";
 import { AuthPage } from "./pages/AuthPage";
@@ -13,10 +13,17 @@ import { CollectionsPage } from "./pages/CollectionsPage";
 import { InwardListPage } from "./pages/inward/InwardListPage";
 import { InwardSettingsPage } from "./pages/inward/InwardSettingsPage";
 import { InwardDebugPage } from "./pages/inward/InwardDebugPage";
-import { CatalogListPage } from "./pages/catalog/CatalogListPage";
+import { CustomerCatalogsPage } from "./pages/CustomerCatalogsPage";
+import { DocumentsPage } from "./pages/documents/DocumentsPage";
 import { CatalogReviewPage } from "./pages/catalog/CatalogReviewPage";
 import { AdminShell } from "./pages/admin/AdminShell";
 import { FirmsPage } from "./pages/admin/FirmsPage";
+
+/** The old price-list list now lives in Supplier documents (keeps ?supplier=...). */
+function CatalogsRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/documents${search}`} replace />;
+}
 
 function Loading() {
   return <div className="grid h-full place-items-center text-sm text-muted">Loading…</div>;
@@ -59,6 +66,7 @@ export function App() {
         <Route path="/parties/:id" element={<PartiesPage />} />
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/items/import" element={<ItemsImportPage />} />
+        {catalogs && <Route path="/items/catalogs" element={<CustomerCatalogsPage />} />}
         <Route path="/items/new" element={<ItemsPage />} />
         <Route path="/items/bulk" element={<ItemsPage />} />
         <Route path="/items/categories" element={<ItemsPage />} />
@@ -66,13 +74,14 @@ export function App() {
         <Route path="/items/:id" element={<ItemsPage />} />
 
         {/* Inward Bill Import — only when the tenant flag is on */}
-        {inward && <Route path="/inward" element={<InwardListPage />} />}
+        {(inward || catalogs) && <Route path="/documents" element={<DocumentsPage />} />}
+        {inward && <Route path="/inward" element={<Navigate to="/documents" replace />} />}
         {inward && <Route path="/inward/settings" element={<InwardSettingsPage />} />}
         {inward && <Route path="/inward/debug" element={<InwardDebugPage />} />}
         {inward && <Route path="/inward/:id" element={<InwardListPage />} />}
 
         {/* Supplier Catalog — only when the tenant flag is on */}
-        {catalogs && <Route path="/catalogs" element={<CatalogListPage />} />}
+        {catalogs && <Route path="/catalogs" element={<CatalogsRedirect />} />}
         {catalogs && <Route path="/catalogs/:id" element={<CatalogReviewPage />} />}
 
         <Route path="*" element={<Navigate to="/invoices" replace />} />

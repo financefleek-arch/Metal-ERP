@@ -17,16 +17,22 @@ Money = Annotated[Decimal, Field(max_digits=15, decimal_places=2)]
 # --------------------------------------------------------------------------
 
 
+Hsn = Annotated[str | None, Field(default=None, max_length=8, pattern=r"^\d{4,8}$")]
+GstRate = Annotated[Decimal | None, Field(default=None, ge=0, le=100, decimal_places=2)]
+
+
 class CategoryIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     sort: int = 0
+    hsn_code: Hsn = None
+    gst_rate: GstRate = None
 
 
 class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=60)
     sort: int | None = None
-    # Item-code prefix of this group (2-4 letters/digits). Fixed once a code uses it.
-    code_prefix: str | None = Field(default=None, min_length=2, max_length=4)
+    hsn_code: Hsn = None  # blank/null clears it
+    gst_rate: GstRate = None
 
 
 class CategoryOut(BaseModel):
@@ -35,9 +41,12 @@ class CategoryOut(BaseModel):
     id: str
     name: str
     sort: int
-    code_prefix: str | None = None
+    hsn_code: str | None = None
+    gst_rate: Decimal | None = None
     group_count: int = 0
     item_count: int = 0
+    # items in this group with no HSN, which "apply" would fill
+    items_without_hsn: int = 0
 
 
 class CategoryMergeIn(BaseModel):

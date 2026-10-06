@@ -20,14 +20,17 @@ const VERB: Record<BulkResult, string> = {
 
 /** The shared "here's exactly what happens" list — same for every bulk op,
  *  same shape for the dry-run preview and the applied result. */
+const SHOW = 200;
+
 export function PreviewTable({ rows }: { rows: BulkOutcome[] }) {
   if (rows.length === 0)
     return <p className="px-1 py-4 text-xs text-muted">Nothing to show.</p>;
+  const shown = rows.slice(0, SHOW);
   return (
     <div className="max-h-[46vh] overflow-y-auto rounded-lg border border-line md:max-h-none">
       <table className="w-full border-collapse text-xs">
         <tbody>
-          {rows.map((r) => (
+          {shown.map((r) => (
             <tr key={r.id} className="border-b border-line last:border-0">
               <td className="px-3 py-2 align-top font-medium">{r.name}</td>
               <td className={`px-3 py-2 align-top ${TONE[r.result]}`}>
@@ -38,6 +41,11 @@ export function PreviewTable({ rows }: { rows: BulkOutcome[] }) {
           ))}
         </tbody>
       </table>
+      {rows.length > SHOW && (
+        <p className="border-t border-line px-3 py-2 text-[11px] text-muted">
+          and {rows.length - SHOW} more, treated the same way
+        </p>
+      )}
     </div>
   );
 }

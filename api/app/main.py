@@ -7,6 +7,11 @@ serves the SPA.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import logging
+from collections.abc import AsyncIterator
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
@@ -17,13 +22,21 @@ from app.routers import (
     admin,
     auth,
     catalog,
+    catalog_review,
     catalog_tally,
+    customer_catalogs,
+    documents,
     invoices,
     inward,
     item_categories,
     item_groups,
+    item_labels,
+    item_sheet,
+    item_tally,
     items,
     items_import,
+    jobs,
+    media,
     parties,
     parties_import,
     payments,
@@ -37,7 +50,49 @@ from app.routers import (
 
 settings = get_settings()
 
+log = logging.getLogger("app")
+SWEEP_EVERY_SECONDS = 24 * 60 * 60
+
+
+def _sweep_photos() -> None:
+    """Delete photos nothing refers to any more, for every firm."""
+    from app.db import SessionLocal
+    from app.services import media as media_svc
+    from app.services.catalog.storage import get_storage
+
+    try:
+        storage = get_storage()
+    except Exception:  # noqa: BLE001 - storage not set up here: nothing to sweep
+        return
+    with SessionLocal() as s:
+        removed, freed = media_svc.sweep_orphans(s, storage)
+        s.commit()
+    if removed:
+        log.info("photo sweep: %d images removed, %d bytes freed", removed, freed)
+
+
+async def _sweep_loop() -> None:
+    await asyncio.sleep(300)  # let the app settle after a deploy
+    while True:
+        try:
+            await asyncio.to_thread(_sweep_photos)
+        except Exception:  # noqa: BLE001 - never let housekeeping stop the loop
+            log.exception("photo sweep failed")
+        await asyncio.sleep(SWEEP_EVERY_SECONDS)
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    task = None if settings.app_env == "test" else asyncio.create_task(_sweep_loop())
+    try:
+        yield
+    finally:
+        if task is not None:
+            task.cancel()
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Metal ERP API",
     version="0.1.0",
     docs_url="/api/docs",
@@ -77,6 +132,14 @@ app.include_router(tally_self_serve.router)
 app.include_router(inward.router)
 app.include_router(catalog.router)
 app.include_router(catalog_tally.router)
+app.include_router(catalog_review.router)
+app.include_router(customer_catalogs.router)
+app.include_router(documents.router)
+app.include_router(item_labels.router)
+app.include_router(item_sheet.router)
+app.include_router(item_tally.router)
+app.include_router(jobs.router)
+app.include_router(media.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.
     # Imported here (not at module top) so this dev tool can never affect

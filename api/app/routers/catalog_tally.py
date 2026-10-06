@@ -1,33 +1,33 @@
-"""Supplier Catalog S5: put chosen rows in the item master, then in Tally.
+"""Supplier Catalog S5: put chosen rows in the item master; Tally settings and "check Tally".
 
 Same gate as the rest of the catalog module (`ext_supplier_catalog`; owner/accountant write).
-Pushing goes through the Tally agent in small, sequential batches; see
-`services/catalog/tally_items.py` for why.
+Sending items to Tally starts from the Items page: see `routers/item_tally.py`.
 """
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy import select
 
 from app.deps import SessionDep
 from app.models import ItemCategory, SupplierCatalogItem, TallyCompany, TallySyncJob
 from app.routers.catalog import CatalogUser, CatalogWriteUser, _get_catalog, _label_rows
 from app.schemas_catalog import (
-    PreflightCheckOut,
-    PreflightCollisionOut,
-    PreflightGroupOut,
+    PromoteIn,
     PromoteOut,
     SelectionIn,
     TallyCheckOut,
-    TallyPreflightOut,
-    TallyPushIn,
-    TallyRunOut,
     TallySettingsIn,
     TallySettingsOut,
 )
+from app.services import audit
+from app.services import media as media_svc
 from app.services.catalog import promote as promote_svc
+from app.services.catalog import supplier_defaults as defaults_svc
 from app.services.catalog import tally_items as ti
+from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.tally.agent_health import assert_tally_reachable
 
 router = APIRouter(prefix="/api/supplier-catalogs", tags=["supplier-catalog-tally"])
@@ -62,6 +62,7 @@ def _promote_out(total: int, plan: promote_svc.PromotePlan) -> PromoteOut:
         already=plan.already,
         renamed=plan.renamed,
         examples=plan.examples,
+        created_item_ids=plan.created_ids,
     )
 
 
@@ -76,12 +77,36 @@ def promote_preview(
 
 @router.post("/{catalog_id}/promote", response_model=PromoteOut)
 def promote(
-    catalog_id: str, body: SelectionIn, session: SessionDep, user: CatalogWriteUser
+    catalog_id: str,
+    body: PromoteIn,
+    background: BackgroundTasks,
+    session: SessionDep,
+    user: CatalogWriteUser,
+    storage: Annotated[CatalogStorage, Depends(get_storage)],
 ) -> PromoteOut:
-    """Create (or link) one item per product. Also fixes each product's code for good."""
+    """Create (or link) one item per product, then copy each catalog photo onto its item in the
+    background (an item that already has a photo keeps it)."""
     _get_catalog(session, user.tenant_id, catalog_id)
     rows = _rows(session, user.tenant_id, catalog_id, body)
-    return _promote_out(len(rows), promote_svc.promote(session, user.tenant_id, rows))
+    plan = promote_svc.promote(session, user.tenant_id, rows)
+    if body.mark_in_stock:
+        defaults_svc.mark_in_stock(session, rows)
+    pairs = media_svc.items_needing_photos(session, user.tenant_id, rows)
+    audit.record(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        entity="supplier_catalog",
+        entity_id=catalog_id,
+        action="add_to_items",
+        after={"rows": len(rows), "created": plan.create, "linked": plan.link_existing},
+    )
+    out = _promote_out(len(rows), plan)
+    out.photos_queued = len(pairs)
+    if pairs:
+        session.commit()  # the background task reads these rows from its own session
+        background.add_task(media_svc.copy_catalog_photos, user.tenant_id, pairs, storage)
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -135,9 +160,7 @@ def put_tally_settings(
         company.tally_group_create_policy = body.tally_group_create_policy
     if "stock_group_map" in patch and body.stock_group_map is not None:
         valid = set(
-            session.scalars(
-                select(ItemCategory.id).where(ItemCategory.tenant_id == user.tenant_id)
-            )
+            session.scalars(select(ItemCategory.id).where(ItemCategory.tenant_id == user.tenant_id))
         )
         merged = dict(company.stock_group_map or {})
         for cid, name in body.stock_group_map.items():
@@ -184,99 +207,3 @@ def start_tally_check(session: SessionDep, user: CatalogWriteUser) -> TallyCheck
 def get_tally_check(session: SessionDep, user: CatalogUser) -> TallyCheckOut | None:
     job = ti.latest_check(session, user.tenant_id)
     return _check_out(job) if job is not None else None
-
-
-# --------------------------------------------------------------------------
-# push
-# --------------------------------------------------------------------------
-
-
-def _preflight_out(pf: ti.Preflight) -> TallyPreflightOut:
-    return TallyPreflightOut(
-        ok=pf.ok,
-        total=pf.total,
-        to_push=pf.to_push,
-        already_synced=pf.already_synced,
-        skipped_existing=pf.skipped_existing,
-        not_promoted=pf.not_promoted,
-        batches=pf.batches,
-        root=pf.root,
-        checked_at=pf.checked_at,
-        checks=[
-            PreflightCheckOut(code=c.code, ok=c.ok, message=c.message, blocking=c.blocking)
-            for c in pf.checks
-        ],
-        groups=[
-            PreflightGroupOut(
-                category_id=g.category_id,
-                our_name=g.our_name,
-                tally_name=g.tally_name,
-                status=g.status,
-                item_count=g.item_count,
-            )
-            for g in pf.groups
-        ],
-        collisions=[
-            PreflightCollisionOut(item_id=c.item_id, code=c.code, name=c.name)
-            for c in pf.collisions
-        ],
-    )
-
-
-@router.post("/{catalog_id}/tally/preflight", response_model=TallyPreflightOut)
-def tally_preflight(
-    catalog_id: str, body: TallyPushIn, session: SessionDep, user: CatalogUser
-) -> TallyPreflightOut:
-    cat = _get_catalog(session, user.tenant_id, catalog_id)
-    rows = _rows(session, user.tenant_id, catalog_id, body)
-    pf, _, _ = ti.preflight(
-        session, user.tenant_id, cat, rows,
-        include_synced=body.include_synced, skip_existing=body.skip_existing,
-    )
-    return _preflight_out(pf)
-
-
-@router.post(
-    "/{catalog_id}/tally/push", response_model=TallyRunOut, status_code=status.HTTP_201_CREATED
-)
-def tally_push(
-    catalog_id: str, body: TallyPushIn, session: SessionDep, user: CatalogWriteUser
-) -> TallyRunOut:
-    """Send the chosen items to Tally, a batch at a time. Poll `GET .../tally/run`."""
-    cat = _get_catalog(session, user.tenant_id, catalog_id)
-    rows = _rows(session, user.tenant_id, catalog_id, body)
-    pf, todo, creates = ti.preflight(
-        session, user.tenant_id, cat, rows,
-        include_synced=body.include_synced, skip_existing=body.skip_existing,
-    )
-    if pf.blockers:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=" ".join(b.message for b in pf.blockers),
-        )
-    if not todo:
-        raise HTTPException(status_code=422, detail="There is nothing to send.")
-    company = ti.get_company(session, user.tenant_id)
-    assert company is not None  # preflight confirmed it
-    ti.start_run(session, company, cat, todo, creates, pf.groups)
-    return _run_out(ti.latest_run(session, user.tenant_id, catalog_id))
-
-
-def _run_out(run: ti.RunStatus) -> TallyRunOut:
-    return TallyRunOut(
-        run_id=run.run_id,
-        state=run.state,
-        batches=run.batches,
-        batches_done=run.batches_done,
-        total_items=run.total_items,
-        synced=run.synced,
-        error=run.error,
-        updated_at=run.updated_at,
-        waiting=run.waiting,
-    )
-
-
-@router.get("/{catalog_id}/tally/run", response_model=TallyRunOut)
-def tally_run(catalog_id: str, session: SessionDep, user: CatalogUser) -> TallyRunOut:
-    _get_catalog(session, user.tenant_id, catalog_id)
-    return _run_out(ti.latest_run(session, user.tenant_id, catalog_id))

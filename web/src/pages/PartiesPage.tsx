@@ -233,7 +233,8 @@ export function PartiesPage() {
               [
                 "details",
                 "account",
-                ...(me?.ext_supplier_catalog && detail.data.role !== "customer"
+                ...((me?.ext_supplier_catalog || me?.ext_inward_import) &&
+                detail.data.role !== "customer"
                   ? (["catalogs"] as const)
                   : []),
               ] as const
@@ -247,7 +248,7 @@ export function PartiesPage() {
                 }`}
                 onClick={() => setDetailTab(t)}
               >
-                {t === "details" ? "Details" : t === "account" ? "Account" : "Catalogs"}
+                {t === "details" ? "Details" : t === "account" ? "Account" : "Documents"}
               </button>
             ))}
           </div>

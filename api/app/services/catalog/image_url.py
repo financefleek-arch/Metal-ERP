@@ -18,21 +18,23 @@ from app.config import get_settings
 _HOUR = 3600
 
 
-def _sig(item_id: str, exp: int) -> str:
+def _sig(item_id: str, exp: int, scope: str = "catalog-image") -> str:
     key = get_settings().jwt_secret.encode()
-    msg = f"catalog-image:{item_id}:{exp}".encode()
+    msg = f"{scope}:{item_id}:{exp}".encode()
     return hmac.new(key, msg, hashlib.sha256).hexdigest()[:32]
 
 
-def sign_query(item_id: str, now: float | None = None) -> str:
+def sign_query(item_id: str, now: float | None = None, scope: str = "catalog-image") -> str:
     """`e=<expiry>&s=<signature>` for the image URL of `item_id`."""
     t = time.time() if now is None else now
     exp = (int(t) // _HOUR + 2) * _HOUR  # valid for 1 to 2 hours
-    return f"e={exp}&s={_sig(item_id, exp)}"
+    return f"e={exp}&s={_sig(item_id, exp, scope)}"
 
 
-def verify(item_id: str, exp: int, sig: str, now: float | None = None) -> bool:
+def verify(
+    item_id: str, exp: int, sig: str, now: float | None = None, scope: str = "catalog-image"
+) -> bool:
     t = time.time() if now is None else now
     if exp < t:
         return False
-    return hmac.compare_digest(sig, _sig(item_id, exp))
+    return hmac.compare_digest(sig, _sig(item_id, exp, scope))

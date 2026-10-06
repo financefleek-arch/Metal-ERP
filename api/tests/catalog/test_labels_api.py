@@ -121,8 +121,11 @@ def test_price_name_and_code_options_reach_the_pdf(uploaded) -> None:
     text = _text(_labels(client, h, cid, body).content)
     assert first["code"] in text and "Rs 374" in text  # 299 + 25% = 373.75 -> 374
     assert first["display_name"][:12] in text
-    plain = _text(_labels(client, h, cid, {"ids": [first["id"]], "show_name": False,
-                                           "show_code": False}).content)
+    plain = _text(
+        _labels(
+            client, h, cid, {"ids": [first["id"]], "show_name": False, "show_code": False}
+        ).content
+    )
     assert plain.strip() == ""
 
 
@@ -130,8 +133,9 @@ def test_sheet_preset_pages_and_start_slot(uploaded) -> None:
     client, h, cat = uploaded
     r = _labels(client, h, cat["id"], {"all_included": True, "preset": "sheet_a4_3x8"})
     assert r.headers["X-Page-Count"] == "1" and r.headers["X-Label-Count"] == "24"
-    r = _labels(client, h, cat["id"],
-                {"all_included": True, "preset": "sheet_a4_3x8", "start_at": 2})
+    r = _labels(
+        client, h, cat["id"], {"all_included": True, "preset": "sheet_a4_3x8", "start_at": 2}
+    )
     assert r.headers["X-Page-Count"] == "2"
     doc = pymupdf.open(stream=r.content, filetype="pdf")
     assert len(doc) == 2 and round(doc[0].rect.width / 72 * 25.4) == 210
@@ -175,14 +179,20 @@ def test_too_many_labels_are_refused(uploaded, monkeypatch: pytest.MonkeyPatch) 
 def test_preview_is_a_png_of_the_first_item(uploaded) -> None:
     client, h, cat = uploaded
     items = _items(client, h, cat["id"])
-    r = client.post(f"/api/supplier-catalogs/{cat['id']}/labels/preview", headers=h,
-                    json={"ids": [items[1]["id"]], "show_price": True})
+    r = client.post(
+        f"/api/supplier-catalogs/{cat['id']}/labels/preview",
+        headers=h,
+        json={"ids": [items[1]["id"]], "show_price": True},
+    )
     assert r.status_code == 200 and r.headers["content-type"] == "image/png"
     assert r.headers["cache-control"] == "no-store"
     w, hgt = Image.open(io.BytesIO(r.content)).size
     assert 1.9 < w / hgt < 2.1  # 50 x 25 mm
-    empty = client.post(f"/api/supplier-catalogs/{cat['id']}/labels/preview", headers=h,
-                        json={"filter": {"q": "zzzzzz"}})
+    empty = client.post(
+        f"/api/supplier-catalogs/{cat['id']}/labels/preview",
+        headers=h,
+        json={"filter": {"q": "zzzzzz"}},
+    )
     assert empty.status_code == 422
 
 
@@ -237,8 +247,12 @@ def _insert_job(catalog_id: str, tenant_id: str, status: str, age_minutes: int =
 
     with SessionLocal() as s:
         job = CatalogOutputJob(
-            tenant_id=tenant_id, catalog_id=catalog_id, kind="labels", status=status,
-            params_json={}, total=10,
+            tenant_id=tenant_id,
+            catalog_id=catalog_id,
+            kind="labels",
+            status=status,
+            params_json={},
+            total=10,
         )
         s.add(job)
         s.flush()
@@ -352,6 +366,10 @@ def test_viewers_can_preview_but_not_print(uploaded) -> None:
     tok = client.post("/api/auth/login", json={"email": me["email"], "password": "s3cret-pass"})
     vh = auth(tok.json()["access_token"])
     cid = cat["id"]
-    assert client.post(f"/api/supplier-catalogs/{cid}/labels/preview", headers=vh,
-                       json={"all_included": True}).status_code == 200
+    assert (
+        client.post(
+            f"/api/supplier-catalogs/{cid}/labels/preview", headers=vh, json={"all_included": True}
+        ).status_code
+        == 200
+    )
     assert _labels(client, vh, cid, {"all_included": True}).status_code == 403

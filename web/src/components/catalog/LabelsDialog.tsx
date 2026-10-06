@@ -1,17 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
 import { useDebounced } from "../../lib/useDebounced";
 import {
   LABEL_PRESETS,
-  labelPages,
-  type BulkTarget,
-  type ItemFilter,
+  type CatalogSelection,
+  type LabelCheck,
   type LabelOptions,
   type LabelRequest,
   type OutputJob,
 } from "../../lib/catalog";
-
-type Scope = "selected" | "filtered" | "all";
 
 type Result =
   | { kind: "pdf"; blob: Blob; scanWarning: boolean }
@@ -42,8 +40,8 @@ async function postJson(path: string, body: unknown): Promise<Response> {
   });
 }
 
-async function requestLabels(catalogId: string, body: LabelRequest): Promise<Result> {
-  const res = await postJson(`/supplier-catalogs/${catalogId}/labels`, body);
+async function requestLabels(body: LabelRequest): Promise<Result> {
+  const res = await postJson("/item-labels", body);
   if (res.status === 202) return { kind: "job", job: (await res.json()) as OutputJob };
   if (!res.ok) throw await failure(res);
   return {
@@ -53,8 +51,8 @@ async function requestLabels(catalogId: string, body: LabelRequest): Promise<Res
   };
 }
 
-async function fetchJobFile(catalogId: string, jobId: string): Promise<Blob> {
-  const res = await fetch(`/api/supplier-catalogs/${catalogId}/outputs/${jobId}/file`, {
+async function fetchJobFile(jobId: string): Promise<Blob> {
+  const res = await fetch(`/api/item-labels/jobs/${jobId}/file`, {
     headers: authHeaders(),
   });
   if (!res.ok) throw await failure(res);
@@ -70,23 +68,17 @@ const DEFAULTS: LabelOptions = {
   start_at: 1,
 };
 
-/** Print barcode labels for the selected items, the current filter, or every included item. */
+/** Print barcode labels for the items chosen on the Items page. */
 export function LabelsDialog({
-  catalogId,
-  fileSlug,
   selection,
-  filtered,
-  includedTotal,
+  count,
   onClose,
 }: {
-  catalogId: string;
-  fileSlug: string;
-  selection: { count: number; target: BulkTarget } | null;
-  filtered: { count: number; filter: ItemFilter } | null;
-  includedTotal: number;
+  selection: CatalogSelection;
+  count: number;
   onClose: () => void;
 }) {
-  const [scope, setScope] = useState<Scope>(selection ? "selected" : "all");
+  const [assignCodes, setAssignCodes] = useState(true);
   const [opts, setOpts] = useState<LabelOptions>(DEFAULTS);
   const [phase, setPhase] = useState<"idle" | "working" | "done">("idle");
   const [job, setJob] = useState<OutputJob | null>(null);
@@ -98,33 +90,27 @@ export function LabelsDialog({
   const firstField = useRef<HTMLInputElement>(null);
 
   const sheet = opts.preset === "sheet_a4_3x8";
-  const itemCount =
-    scope === "selected" ? (selection?.count ?? 0) : scope === "filtered" ? (filtered?.count ?? 0) : includedTotal;
-  const labels = itemCount * opts.copies;
-  const pages = labelPages(labels, opts.preset, opts.start_at);
 
-  const request: LabelRequest = useMemo(() => {
-    const base: LabelRequest = { ...opts, start_at: sheet ? opts.start_at : 1 };
-    if (scope === "selected" && selection) {
-      return "ids" in selection.target
-        ? { ...base, ids: selection.target.ids }
-        : { ...base, filter: selection.target.filter };
-    }
-    if (scope === "filtered" && filtered) return { ...base, filter: filtered.filter };
-    return { ...base, all_included: true };
-  }, [opts, scope, selection, filtered, sheet]);
+  const request: LabelRequest = useMemo(
+    () => ({ ...opts, start_at: sheet ? opts.start_at : 1, selection, assign_codes: assignCodes }),
+    [opts, selection, sheet, assignCodes],
+  );
 
   // --- live preview of one label (server-rendered, so it is exactly what prints) ---
   const previewKey = useDebounced(JSON.stringify(request), 350);
+  const check = useQuery({
+    queryKey: ["item-labels-check", previewKey],
+    queryFn: () => api<LabelCheck>("/item-labels/check", { method: "POST", body: JSON.parse(previewKey) }),
+  });
+  const c = check.data;
+  const labels = c?.labels ?? 0;
+  const pages = c?.pages ?? 0;
   useEffect(() => {
     let cancelled = false;
     let url: string | null = null;
     (async () => {
       try {
-        const res = await postJson(
-          `/supplier-catalogs/${catalogId}/labels/preview`,
-          JSON.parse(previewKey),
-        );
+        const res = await postJson("/item-labels/preview", JSON.parse(previewKey));
         if (!res.ok) throw await failure(res);
         const blob = await res.blob();
         if (cancelled) return;
@@ -142,7 +128,7 @@ export function LabelsDialog({
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [previewKey, catalogId]);
+  }, [previewKey]);
 
   // --- poll a background job until it finishes, then fetch the file ---
   const jobId = job?.id;
@@ -151,10 +137,10 @@ export function LabelsDialog({
     if (!jobId || jobStatus === "done" || jobStatus === "error") return;
     const h = window.setInterval(async () => {
       try {
-        const j = await api<OutputJob>(`/supplier-catalogs/${catalogId}/outputs/${jobId}`);
+        const j = await api<OutputJob>(`/item-labels/jobs/${jobId}`);
         setJob(j);
         if (j.status === "done") {
-          const blob = await fetchJobFile(catalogId, jobId);
+          const blob = await fetchJobFile(jobId);
           setFileUrl(URL.createObjectURL(blob));
           setScanWarning(j.scan_warning);
           setPhase("done");
@@ -168,7 +154,7 @@ export function LabelsDialog({
       }
     }, 1000);
     return () => window.clearInterval(h);
-  }, [jobId, jobStatus, catalogId]);
+  }, [jobId, jobStatus]);
 
   // release the generated file when the dialog closes or is regenerated
   useEffect(() => {
@@ -200,7 +186,7 @@ export function LabelsDialog({
     setFileUrl(null);
     setJob(null);
     try {
-      const r = await requestLabels(catalogId, request);
+      const r = await requestLabels(request);
       if (r.kind === "pdf") {
         setFileUrl(URL.createObjectURL(r.blob));
         setScanWarning(r.scanWarning);
@@ -235,7 +221,8 @@ export function LabelsDialog({
               Print barcode labels
             </h2>
             <p className="mt-1 text-sm text-muted">
-              Each label carries a scannable barcode of the item code.
+              {count.toLocaleString("en-IN")} chosen item{count === 1 ? "" : "s"}. Each label carries a
+              scannable barcode of the item code.
             </p>
           </div>
           <button type="button" className="btn-ghost h-9 px-3" onClick={onClose}>
@@ -245,43 +232,36 @@ export function LabelsDialog({
 
         <div className="mt-4 grid gap-5 md:grid-cols-[1fr_16rem]">
           <div className="space-y-4">
-            <fieldset>
-              <legend className="label">Items</legend>
-              <div className="space-y-1.5 text-sm">
-                {selection && (
-                  <label className="flex items-center gap-2">
+            {c && (c.no_code > 0 || c.inactive > 0) && (
+              <div className="rounded-md border border-line bg-ground p-3 text-sm">
+                {c.no_code > 0 && (
+                  <label className="flex items-start gap-2">
                     <input
                       ref={firstField}
-                      type="radio"
-                      name="scope"
-                      checked={scope === "selected"}
-                      onChange={() => setScope("selected")}
+                      type="checkbox"
+                      className="mt-1"
+                      checked={assignCodes}
+                      onChange={(e) => {
+                        setAssignCodes(e.target.checked);
+                        setPhase("idle");
+                      }}
                     />
-                    Selected items ({selection.count})
+                    <span>
+                      {c.no_code} item{c.no_code === 1 ? " has" : "s have"} no code yet. Give{" "}
+                      {c.no_code === 1 ? "it" : "them"} the next code numbers now.
+                      <span className="block text-xs text-muted">
+                        Untick to leave {c.no_code === 1 ? "it" : "them"} out of this print.
+                      </span>
+                    </span>
                   </label>
                 )}
-                {filtered && (
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      name="scope"
-                      checked={scope === "filtered"}
-                      onChange={() => setScope("filtered")}
-                    />
-                    Items matching the current filter ({filtered.count})
-                  </label>
+                {c.inactive > 0 && (
+                  <p className="mt-1 text-xs text-muted">
+                    {c.inactive} archived or merged item{c.inactive === 1 ? " is" : "s are"} left out.
+                  </p>
                 )}
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="scope"
-                    checked={scope === "all"}
-                    onChange={() => setScope("all")}
-                  />
-                  All included items ({includedTotal})
-                </label>
               </div>
-            </fieldset>
+            )}
 
             <fieldset>
               <legend className="label">Label size</legend>
@@ -378,9 +358,15 @@ export function LabelsDialog({
                     checked={opts.show_price}
                     onChange={(e) => patch({ show_price: e.target.checked })}
                   />
-                  New price
+                  Price
                 </label>
               </div>
+              {opts.show_price && c && c.no_price > 0 && (
+                <p className="mt-1 text-xs text-warn">
+                  {c.no_price} item{c.no_price === 1 ? " has" : "s have"} no selling price and will print
+                  without one.
+                </p>
+              )}
             </fieldset>
           </div>
 
@@ -446,7 +432,7 @@ export function LabelsDialog({
                 >
                   Open PDF to print
                 </a>
-                <a className="btn-ghost" href={fileUrl} download={`labels-${fileSlug}.pdf`}>
+                <a className="btn-ghost" href={fileUrl} download="labels.pdf">
                   Download
                 </a>
               </div>

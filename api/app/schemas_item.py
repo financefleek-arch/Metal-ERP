@@ -9,9 +9,10 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
-from app.models._mixins import ItemSource, ItemStatus, ItemType
+from app.models._mixins import Availability, ItemSource, ItemStatus, ItemType
+from app.services.media_urls import media_url
 
 # Money / quantity as Decimal so we don't lose paise to float.
 Money = Annotated[Decimal, Field(max_digits=15, decimal_places=2)]
@@ -34,6 +35,9 @@ class ItemBase(BaseModel):
     size_label: str | None = Field(default=None, max_length=50)
     uom: str | None = Field(default=None, max_length=20)
     hsn_code: str | None = Field(default=None, max_length=8)
+    availability: Availability = Availability.in_stock
+    pack_qty: int | None = Field(default=None, ge=1, le=100000)
+    carton_qty: int | None = Field(default=None, ge=1, le=1000000)
 
     # metal-trade attributes
     metal: str | None = Field(default=None, max_length=20)
@@ -106,6 +110,9 @@ class ItemUpdate(BaseModel):
     price_min: Money | None = None
     price_max: Money | None = None
     status: ItemStatus | None = None
+    availability: Availability | None = None
+    pack_qty: int | None = Field(default=None, ge=1, le=100000)
+    carton_qty: int | None = Field(default=None, ge=1, le=1000000)
     notes: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
@@ -145,10 +152,38 @@ BULK_EDITABLE_FIELDS = frozenset(
         "group_id",
         "status",
         "notes",
+        "availability",
+        "pack_qty",
+        "carton_qty",
     }
 )
 
 MAX_BULK_IDS = 500
+# Selecting by filter has no tick limit, but a runaway filter is refused.
+MAX_BULK_FILTER = 20000
+
+
+class ItemFilter(BaseModel):
+    """Which items, by what they look like instead of by ticking rows. Every field optional;
+    all given fields must match."""
+
+    q: str | None = Field(default=None, max_length=100)
+    type: ItemType | None = None
+    status: ItemStatus | None = None
+    no_hsn: bool = False
+    price_review: bool = False
+    availability: list[Availability] | None = None
+    no_photo: bool = False
+    in_tally: bool | None = None
+    # in Tally, but at a different selling price than the item's rate now
+    tally_price_due: bool = False
+    # came from this supplier / this supplier catalog
+    supplier_id: str | None = None
+    catalog_id: str | None = None
+
+
+class ItemCountOut(BaseModel):
+    count: int
 
 
 class ItemBulkUpdate(BaseModel):
@@ -157,7 +192,9 @@ class ItemBulkUpdate(BaseModel):
     supplied `notes` value replaces or is appended as a new line.
     """
 
-    ids: list[str] = Field(min_length=1, max_length=MAX_BULK_IDS)
+    ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_BULK_IDS)
+    # or: everything matching a filter (exactly one of ids / filter)
+    filter: ItemFilter | None = None
     fields: ItemUpdate
     fields_set: list[str] = Field(
         min_length=1,
@@ -167,6 +204,8 @@ class ItemBulkUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _check_fields(self) -> ItemBulkUpdate:
+        if (self.ids is None) == (self.filter is None):
+            raise ValueError("send either ids or a filter, not both")
         chosen = set(self.fields_set)
         bad = chosen - BULK_EDITABLE_FIELDS
         if bad:
@@ -179,9 +218,33 @@ class ItemBulkUpdate(BaseModel):
 
 
 class ItemBulkDelete(BaseModel):
-    ids: list[str] = Field(min_length=1, max_length=MAX_BULK_IDS)
+    ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_BULK_IDS)
+    filter: ItemFilter | None = None
     # what to do with items that are on documents (can't be deleted)
     on_blocked: str = Field(default="skip", pattern="^(skip|archive)$")
+
+    @model_validator(mode="after")
+    def _one_selection(self) -> ItemBulkDelete:
+        if (self.ids is None) == (self.filter is None):
+            raise ValueError("send either ids or a filter, not both")
+        return self
+
+
+class ItemBulkRename(BaseModel):
+    """Find and replace in item names, for the chosen items (or everything a filter matches)."""
+
+    ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_BULK_IDS)
+    filter: ItemFilter | None = None
+    find: str = Field(min_length=1, max_length=100)
+    replace: str = Field(default="", max_length=100)
+    case_sensitive: bool = False
+    whole_word: bool = False
+
+    @model_validator(mode="after")
+    def _one_selection(self) -> ItemBulkRename:
+        if (self.ids is None) == (self.filter is None):
+            raise ValueError("send either ids or a filter, not both")
+        return self
 
 
 class BulkOutcome(BaseModel):
@@ -239,6 +302,42 @@ class ItemListItem(BaseModel):
     times_billed: int
     status: ItemStatus
     source: ItemSource
+    availability: Availability = Availability.in_stock
+    pack_qty: int | None = None
+    carton_qty: int | None = None
+    primary_media_id: str | None = Field(default=None, exclude=True)
+    tally_guid: str | None = Field(default=None, exclude=True)
+    tally_status: str = Field(default="none", exclude=True)
+    tally_price: Money | None = Field(default=None, exclude=True)
+    tally_seen_price: Money | None = Field(default=None, exclude=True)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def tally_state(self) -> str:
+        """none | queued | error | imported | synced | price_due | price_differs."""
+        if self.tally_status == "synced":
+            if self.default_rate is not None and (
+                self.tally_price is None or self.tally_price != self.default_rate
+            ):
+                return "price_due"
+            if self.tally_seen_price is not None and self.tally_seen_price != self.tally_price:
+                return "price_differs"
+            return "synced"
+        if self.tally_status in ("queued", "error"):
+            return self.tally_status
+        return "imported" if self.tally_guid else "none"
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def photo_url(self) -> str | None:
+        """The item's photo (about 1000 px), a signed URL that works in an <img> tag."""
+        return media_url(self.primary_media_id, "photo") if self.primary_media_id else None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def thumb_url(self) -> str | None:
+        """A small version for lists."""
+        return media_url(self.primary_media_id, "thumb") if self.primary_media_id else None
 
 
 class ItemOut(ItemListItem):

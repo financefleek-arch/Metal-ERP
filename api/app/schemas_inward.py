@@ -74,6 +74,9 @@ class InwardLineOut(BaseModel):
     matched_item_id: str | None
     new_item_staged_json: dict[str, Any] | None
     review_flag: str | None
+    # above_quote | discontinued: a second look from what we know of this supplier and item
+    note_flag: str | None = None
+    quoted_rate: Decimal | None = None
 
 
 class ReconciliationOut(BaseModel):

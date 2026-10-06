@@ -2,58 +2,39 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import type {
-  BulkTarget,
-  ItemFilter,
+  CatalogSelection,
   PreflightGroup,
-  PromoteOut,
   TallyCheck,
   TallyPreflight,
   TallyRun,
   TallySettings,
 } from "../../lib/catalog";
 
-type Scope = "selected" | "filtered" | "all";
-
 const errMsg = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
 
 /**
- * Put the chosen items in your item list, then send them to Tally as stock items.
+ * Send the chosen items to Tally as stock items.
  *
  * Everything that could go wrong is checked first (preflight) and shown as a list, each with
  * the action that fixes it. Nothing is sent until every blocking check passes.
  */
 export function TallyDialog({
-  catalogId,
   selection,
-  filtered,
-  includedTotal,
+  count,
   onClose,
 }: {
-  catalogId: string;
-  selection: { count: number; target: BulkTarget } | null;
-  filtered: { count: number; filter: ItemFilter } | null;
-  includedTotal: number;
+  selection: CatalogSelection;
+  count: number;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [scope, setScope] = useState<Scope>(selection ? "selected" : "all");
   const [includeSynced, setIncludeSynced] = useState(false);
   const [skipExisting, setSkipExisting] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
   const [started, setStarted] = useState(false);
   const [rootDraft, setRootDraft] = useState<string | null>(null);
 
-  const selReq = useMemo(() => {
-    if (scope === "selected" && selection)
-      return "ids" in selection.target
-        ? { ids: selection.target.ids }
-        : { filter: selection.target.filter };
-    if (scope === "filtered" && filtered) return { filter: filtered.filter };
-    return { all_included: true };
-  }, [scope, selection, filtered]);
-  const count =
-    scope === "selected" ? (selection?.count ?? 0) : scope === "filtered" ? (filtered?.count ?? 0) : includedTotal;
+  const selReq = useMemo(() => ({ selection }), [selection]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -70,20 +51,19 @@ export function TallyDialog({
   });
 
   // --- the checklist ---
-  const preKey = ["tally-preflight", catalogId, JSON.stringify(selReq), includeSynced, skipExisting] as const;
+  const preKey = ["tally-preflight", JSON.stringify(selReq), includeSynced, skipExisting] as const;
   const pre = useQuery({
     queryKey: preKey,
     queryFn: () =>
-      api<TallyPreflight>(`/supplier-catalogs/${catalogId}/tally/preflight`, {
+      api<TallyPreflight>("/item-tally/preflight", {
         method: "POST",
         body: { ...selReq, include_synced: includeSynced, skip_existing: skipExisting },
       }),
     enabled: !started,
   });
   const refresh = () => {
-    qc.invalidateQueries({ queryKey: ["tally-preflight", catalogId] });
+    qc.invalidateQueries({ queryKey: ["tally-preflight"] });
     qc.invalidateQueries({ queryKey: ["tally-settings"] });
-    qc.invalidateQueries({ queryKey: ["catalog-items", catalogId] });
   };
 
   // --- "check Tally" ---
@@ -111,21 +91,6 @@ export function TallyDialog({
     onError: (e) => setErr(errMsg(e, "Could not ask Tally. Try again.")),
   });
 
-  // --- add to item list ---
-  const promote = useMutation({
-    mutationFn: () =>
-      api<PromoteOut>(`/supplier-catalogs/${catalogId}/promote`, { method: "POST", body: selReq }),
-    onSuccess: (r) => {
-      setErr(null);
-      const bits = [`${r.create} new items`];
-      if (r.link_existing) bits.push(`${r.link_existing} matched an item you already had`);
-      if (r.renamed) bits.push(`${r.renamed} got their code added to the name because another product has the same name`);
-      setNote(`Added to your item list: ${bits.join(", ")}.`);
-      refresh();
-    },
-    onError: (e) => setErr(errMsg(e, "Could not add the items. Try again.")),
-  });
-
   // --- settings changes ---
   const saveSettings = useMutation({
     mutationFn: (body: Record<string, unknown>) =>
@@ -133,7 +98,7 @@ export function TallyDialog({
     onSuccess: (s) => {
       setErr(null);
       qc.setQueryData(["tally-settings"], s);
-      qc.invalidateQueries({ queryKey: ["tally-preflight", catalogId] });
+      qc.invalidateQueries({ queryKey: ["tally-preflight"] });
     },
     onError: (e) => setErr(errMsg(e, "Could not save that. Try again.")),
   });
@@ -141,33 +106,33 @@ export function TallyDialog({
   // --- the run ---
   const push = useMutation({
     mutationFn: () =>
-      api<TallyRun>(`/supplier-catalogs/${catalogId}/tally/push`, {
+      api<TallyRun>("/item-tally/push", {
         method: "POST",
         body: { ...selReq, include_synced: includeSynced, skip_existing: skipExisting },
       }),
     onSuccess: (r) => {
       setErr(null);
       setStarted(true);
-      qc.setQueryData(["tally-run", catalogId], r);
+      qc.setQueryData(["tally-run"], r);
     },
     onError: (e) => setErr(errMsg(e, "Could not start. Try again.")),
   });
   const run = useQuery({
-    queryKey: ["tally-run", catalogId],
-    queryFn: () => api<TallyRun>(`/supplier-catalogs/${catalogId}/tally/run`),
+    queryKey: ["tally-run"],
+    queryFn: () => api<TallyRun>("/item-tally/run"),
     enabled: started,
     refetchInterval: (q) => (q.state.data?.state === "running" ? 1500 : false),
   });
   const runState = run.data?.state;
   useEffect(() => {
-    if (runState && runState !== "running") qc.invalidateQueries({ queryKey: ["catalog-items", catalogId] });
-  }, [runState, qc, catalogId]);
+    if (runState && runState !== "running") qc.invalidateQueries({ queryKey: ["items"] });
+  }, [runState, qc]);
 
   const p = pre.data;
   const failing = p?.checks.filter((c) => !c.ok && c.blocking) ?? [];
   const failed = (code: string) => failing.some((c) => c.code === code);
   const s = settings.data;
-  const busy = push.isPending || promote.isPending || startCheck.isPending || checking;
+  const busy = push.isPending || startCheck.isPending || checking;
 
   return (
     <div
@@ -188,8 +153,8 @@ export function TallyDialog({
               Send to Tally
             </h2>
             <p className="mt-1 text-sm text-muted">
-              The items go into your item list, then into Tally as stock items with their code as
-              the part number.
+              {count.toLocaleString("en-IN")} chosen item{count === 1 ? "" : "s"} go into Tally as stock
+              items, with their code as the part number and your selling price.
             </p>
           </div>
           <button type="button" className="btn-ghost h-9 px-3" onClick={onClose}>
@@ -201,28 +166,6 @@ export function TallyDialog({
           <RunPanel run={run.data} onDone={onClose} />
         ) : (
           <>
-            <fieldset className="mt-4">
-              <legend className="label">Items</legend>
-              <div className="space-y-1.5 text-sm">
-                {selection && (
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="tscope" checked={scope === "selected"} onChange={() => setScope("selected")} />
-                    Selected items ({selection.count})
-                  </label>
-                )}
-                {filtered && (
-                  <label className="flex items-center gap-2">
-                    <input type="radio" name="tscope" checked={scope === "filtered"} onChange={() => setScope("filtered")} />
-                    Items matching the current filter ({filtered.count})
-                  </label>
-                )}
-                <label className="flex items-center gap-2">
-                  <input type="radio" name="tscope" checked={scope === "all"} onChange={() => setScope("all")} />
-                  All included items ({includedTotal})
-                </label>
-              </div>
-            </fieldset>
-
             <section className="mt-4" aria-label="Checks">
               <h3 className="label">Before sending</h3>
               {pre.isLoading && <p className="text-sm text-muted">Checking…</p>}
@@ -243,16 +186,10 @@ export function TallyDialog({
               )}
             </section>
 
-            {note && <p className="mt-3 text-sm text-ok" role="status">{note}</p>}
             {err && <p className="err mt-3" role="alert">{err}</p>}
 
             {/* the fix for each failing check */}
             <div className="mt-3 flex flex-wrap gap-2">
-              {failed("not_promoted") && (
-                <button type="button" className="btn-primary" disabled={busy} onClick={() => promote.mutate()}>
-                  {promote.isPending ? "Adding…" : `Add ${p?.not_promoted ?? ""} to your item list`}
-                </button>
-              )}
               {(failed("check_needed") || checkStatus === "error") && !failed("no_company") && (
                 <button type="button" className="btn-primary" disabled={busy || failed("agent")} onClick={() => startCheck.mutate()}>
                   {checking ? "Reading Tally…" : "Check Tally now"}
@@ -372,6 +309,7 @@ export function TallyDialog({
               <label className="mt-3 flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={includeSynced} onChange={(e) => setIncludeSynced(e.target.checked)} />
                 Send the {p.already_synced} already in Tally again (updates them)
+                {p.price_updates > 0 && ` · ${p.price_updates} of them are updated anyway, their price changed`}
               </label>
             )}
 
@@ -476,17 +414,40 @@ function GroupTable({
   );
 }
 
+function minutes(seconds: number): string {
+  if (seconds < 90) return "about a minute";
+  return `about ${Math.round(seconds / 60)} minutes`;
+}
+
 function RunPanel({ run, onDone }: { run: TallyRun | undefined; onDone: () => void }) {
+  // a clock that ticks, so "waiting" shows how long it has really been
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const h = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(h);
+  }, []);
   if (!run) return <p className="mt-4 text-sm text-muted">Starting…</p>;
   const pct = run.total_items ? Math.round((run.synced / run.total_items) * 100) : 0;
+  const since = run.updated_at ? Math.max(0, Math.round((now - Date.parse(run.updated_at + (run.updated_at.endsWith("Z") ? "" : "Z"))) / 1000)) : 0;
   return (
     <section className="mt-5" aria-live="polite" aria-label="Progress">
       {run.state === "running" && (
         <>
           <p className="font-medium">
-            {run.waiting ? "Waiting for TallyPrime… " : "Sending to Tally… "}
+            {run.waiting
+              ? "Waiting for TallyPrime… "
+              : run.phase === "waiting_agent"
+                ? "Waiting for the shop's agent… "
+                : "Sending to Tally… "}
             batch {Math.min(run.batches_done + 1, run.batches)} of {run.batches}
           </p>
+          {run.phase === "waiting_agent" && !run.waiting && (
+            <p className={`mt-1 text-sm ${since > 180 ? "text-warn" : "text-muted"}`}>
+              The agent on the shop PC picks up work about once a minute
+              {since > 5 ? ` (waiting ${since < 90 ? `${since}s` : `${Math.round(since / 60)} min`})` : ""}.
+              {since > 180 && " This is taking longer than usual: check that the shop PC is on and the agent is running."}
+            </p>
+          )}
           {run.waiting && (
             <p className="mt-1 text-sm text-warn">
               {run.waiting === "no_company_loaded"
@@ -499,7 +460,10 @@ function RunPanel({ run, onDone }: { run: TallyRun | undefined; onDone: () => vo
             <div className="h-full bg-accent transition-all" style={{ width: `${pct}%` }} />
           </div>
           <p className="mt-1 text-sm text-muted">
-            {run.synced} of {run.total_items} items are in Tally.{" "}
+            {run.synced} of {run.total_items} items are in Tally.
+            {run.eta_seconds != null && run.batches - run.batches_done > 0
+              ? ` About ${minutes(run.eta_seconds).replace("about ", "")} left.`
+              : ""}{" "}
             {run.waiting ? "" : "Keep TallyPrime open. "}You can close this window.
           </p>
         </>

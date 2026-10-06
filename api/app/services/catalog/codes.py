@@ -1,9 +1,11 @@
-"""Item-code numbers: `<PREFIX>-<4+ digits>`, e.g. `BM-0042`.
+"""Item codes: one firm-wide running number, e.g. `100234`.
 
-One counter per (tenant, prefix), row-locked on allocation, never reused: a code stays unique
-even after its product is deleted, and it is the barcode value printed on labels, so reuse would
-be a real-world hazard. The unique constraint on `catalog_product (tenant_id, code)` is the
-backstop. Which prefix to use (the group's code) is decided in `products.py`.
+A code is a stable identifier with no meaning: it never encodes the group or the supplier, so
+regrouping or renaming never touches it, and it is the barcode value printed on labels and the
+part number in Tally. One counter per firm, row-locked on allocation, never reused (a code stays
+unique even after its product is deleted). An optional firm prefix (`tenant.catalog_code_prefix`)
+is put in front at issue time, e.g. `KS100234`; changing the prefix later affects new codes only.
+The unique constraint on `catalog_product (tenant_id, code)` is the backstop.
 """
 
 from __future__ import annotations
@@ -14,8 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models import CodeSequence
+from app.models import CodeSequence, Tenant
 
+START = 100001  # six digits from the first code, no leading zeros to lose in a spreadsheet
+_COUNTER_KEY = ""  # one counter per firm; the prefix is applied at format time
 _PREFIX_RE = re.compile(r"[A-Z0-9]{2,8}")
 
 
@@ -27,45 +31,46 @@ def normalize_prefix(prefix: str | None) -> str | None:
     return p if _PREFIX_RE.fullmatch(p) else None
 
 
+def firm_prefix(tenant: Tenant) -> str:
+    return normalize_prefix(tenant.catalog_code_prefix) or ""
+
+
 def format_code(prefix: str, number: int) -> str:
-    return f"{prefix}-{number:04d}"
+    return f"{prefix}{number}"
 
 
-def allocate_codes(session: Session, tenant_id: str, prefix: str, count: int) -> list[str]:
+def allocate_codes(session: Session, tenant: Tenant, count: int) -> list[str]:
     """Reserve `count` consecutive codes and return them in order.
 
-    Locks the sequence row (FOR UPDATE on Postgres) so two uploads at once
-    get disjoint ranges. Caller commits.
+    Locks the counter row (FOR UPDATE on Postgres) so two uploads at once get disjoint
+    ranges. Caller commits.
     """
     if count < 0:
         raise ValueError("count must be >= 0")
-    p = normalize_prefix(prefix)
-    if p is None:
-        raise ValueError(f"invalid code prefix: {prefix!r}")
     if count == 0:
         return []
-
-    row = _locked_row(session, tenant_id, p)
+    row = _locked_row(session, tenant.id)
     start = row.next_value
     row.next_value = start + count
     session.flush()
-    return [format_code(p, n) for n in range(start, start + count)]
+    prefix = firm_prefix(tenant)
+    return [format_code(prefix, n) for n in range(start, start + count)]
 
 
-def _locked_row(session: Session, tenant_id: str, prefix: str) -> CodeSequence:
+def _locked_row(session: Session, tenant_id: str) -> CodeSequence:
     stmt = (
         select(CodeSequence)
-        .where(CodeSequence.tenant_id == tenant_id, CodeSequence.prefix == prefix)
+        .where(CodeSequence.tenant_id == tenant_id, CodeSequence.prefix == _COUNTER_KEY)
         .with_for_update()
     )
     row = session.scalar(stmt)
     if row is not None:
         return row
-    # First use of this prefix. A concurrent request may insert it at the same
-    # moment: the loser's insert violates the PK, so retry as a plain locked read.
+    # First use. A concurrent request may insert it at the same moment: the loser's insert
+    # violates the PK, so retry as a plain locked read.
     try:
         with session.begin_nested():
-            session.add(CodeSequence(tenant_id=tenant_id, prefix=prefix, next_value=1))
+            session.add(CodeSequence(tenant_id=tenant_id, prefix=_COUNTER_KEY, next_value=START))
     except IntegrityError:
         pass
     row = session.scalar(stmt)

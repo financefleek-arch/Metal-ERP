@@ -247,8 +247,13 @@ def test_bulk_item_margin_by_ids(uploaded) -> None:
 def test_bulk_item_margin_by_filter_then_clear(uploaded) -> None:
     client, h, cat = uploaded
     _patch_cat(client, h, cat["id"], {"bulk_margin_pct": "25"})
-    n = len(client.get(f"/api/supplier-catalogs/{cat['id']}/items", headers=h,
-                       params={"q": "beer", "limit": 200}).json())
+    n = len(
+        client.get(
+            f"/api/supplier-catalogs/{cat['id']}/items",
+            headers=h,
+            params={"q": "beer", "limit": 200},
+        ).json()
+    )
     body = {"filter": {"q": "beer"}, "changes": {"item_margin_pct": "80"}}
     assert _bulk(client, h, cat["id"], body).json() == {"updated": n}
     beer = [i for i in _items(client, h, cat["id"]) if i["item_margin_pct"] == "80.00"]
@@ -265,8 +270,12 @@ def test_bulk_item_margin_by_filter_then_clear(uploaded) -> None:
 def test_bulk_item_margin_and_group_together(uploaded) -> None:
     client, h, cat = uploaded
     ids = [i["id"] for i in _items(client, h, cat["id"])[:2]]
-    r = _bulk(client, h, cat["id"], {"ids": ids,
-              "changes": {"item_margin_pct": "100", "group_name": "Premium"}})
+    r = _bulk(
+        client,
+        h,
+        cat["id"],
+        {"ids": ids, "changes": {"item_margin_pct": "100", "group_name": "Premium"}},
+    )
     assert r.json() == {"updated": 2}
     first = _items(client, h, cat["id"])[0]
     assert (first["category_name"], first["item_margin_pct"]) == ("Premium", "100.00")
@@ -274,8 +283,11 @@ def test_bulk_item_margin_and_group_together(uploaded) -> None:
 
 def test_bulk_ignores_ids_from_another_catalog_when_repricing(catalog_client: Env) -> None:
     client, h, _ = catalog_client
-    a = client.post("/api/supplier-catalogs", headers=h,
-                    files={"file": ("a.pdf", SAMPLE_PDF.read_bytes(), "application/pdf")}).json()
+    a = client.post(
+        "/api/supplier-catalogs",
+        headers=h,
+        files={"file": ("a.pdf", SAMPLE_PDF.read_bytes(), "application/pdf")},
+    ).json()
     from tests.catalog.pdfs import TestCell, make_pdf
 
     other = make_pdf([[TestCell(code="Q1")]])
@@ -297,21 +309,33 @@ def test_detail_reports_how_many_items_have_their_own_margin(uploaded) -> None:
     assert client.get(url, headers=h).json()["item_margin_count"] == 0
     items = _items(client, h, cat["id"])
     _patch_item(client, h, cat["id"], items[0]["id"], {"item_margin_pct": "40"})
-    _bulk(client, h, cat["id"],
-          {"ids": [items[1]["id"], items[2]["id"]], "changes": {"item_margin_pct": "100"}})
+    _bulk(
+        client,
+        h,
+        cat["id"],
+        {"ids": [items[1]["id"], items[2]["id"]], "changes": {"item_margin_pct": "100"}},
+    )
     assert client.get(url, headers=h).json()["item_margin_count"] == 3
     repriced = _patch_cat(client, h, cat["id"], {"bulk_margin_pct": "10"})
     assert repriced.json()["item_margin_count"] == 3
-    _bulk(client, h, cat["id"],
-          {"filter": {"has_item_margin": True}, "changes": {"item_margin_pct": None}})
+    _bulk(
+        client,
+        h,
+        cat["id"],
+        {"filter": {"has_item_margin": True}, "changes": {"item_margin_pct": None}},
+    )
     assert client.get(url, headers=h).json()["item_margin_count"] == 0
 
 
 def test_has_item_margin_filter(uploaded) -> None:
     client, h, cat = uploaded
     items = _items(client, h, cat["id"])
-    _bulk(client, h, cat["id"],
-          {"ids": [items[0]["id"], items[1]["id"]], "changes": {"item_margin_pct": "70"}})
+    _bulk(
+        client,
+        h,
+        cat["id"],
+        {"ids": [items[0]["id"], items[1]["id"]], "changes": {"item_margin_pct": "70"}},
+    )
     base = f"/api/supplier-catalogs/{cat['id']}/items"
     own = client.get(base, headers=h, params={"has_item_margin": "true", "limit": 200}).json()
     rest = client.get(base, headers=h, params={"has_item_margin": "false", "limit": 200}).json()
@@ -327,19 +351,33 @@ def test_has_item_margin_filter(uploaded) -> None:
 def _make_catalog(session: Session, tenant_id: str, n: int, seed: int = 7) -> SupplierCatalog:
     rnd = random.Random(seed)
     cat = SupplierCatalog(
-        tenant_id=tenant_id, title="Synthetic", source_filename="s.pdf",
-        source_sha256="f" * 64, code_prefix="SY", bulk_margin_pct=Decimal("0"), rounding_step=1,
+        tenant_id=tenant_id,
+        title="Synthetic",
+        source_filename="s.pdf",
+        source_sha256="f" * 64,
+        bulk_margin_pct=Decimal("0"),
+        rounding_step=1,
     )
     session.add(cat)
     session.flush()
     for i in range(n):
         cost = Decimal(rnd.randint(1, 200000)) / 100
         own = Decimal(rnd.randint(-5000, 20000)) / 100 if i % 5 == 0 else None
-        session.add(SupplierCatalogItem(
-            tenant_id=tenant_id, catalog_id=cat.id, page_no=i // 12 + 1, position=i % 12 + 1,
-            supplier_code=f"S{i}", code=f"SY-{i + 1:06d}", name_raw="n", display_name="n",
-            cost_price=cost, item_margin_pct=own, sell_price=cost,
-        ))
+        session.add(
+            SupplierCatalogItem(
+                tenant_id=tenant_id,
+                catalog_id=cat.id,
+                page_no=i // 12 + 1,
+                position=i % 12 + 1,
+                supplier_code=f"S{i}",
+                code=f"SY-{i + 1:06d}",
+                name_raw="n",
+                display_name="n",
+                cost_price=cost,
+                item_margin_pct=own,
+                sell_price=cost,
+            )
+        )
     session.flush()
     return cat
 
@@ -379,8 +417,9 @@ def test_a_two_thousand_item_catalog_reprices_quickly(
     elapsed = time.time() - t
     assert r.status_code == 200
     assert elapsed < 5, f"repricing 2,000 items took {elapsed:.1f}s"
-    sample = client.get(f"/api/supplier-catalogs/{cat.id}/items", headers=h,
-                        params={"limit": 50}).json()
+    sample = client.get(
+        f"/api/supplier-catalogs/{cat.id}/items", headers=h, params={"limit": 50}
+    ).json()
     for it in sample:
         margin = it["item_margin_pct"] or "20"
         assert it["sell_price"] == _expected(it, margin, 5)

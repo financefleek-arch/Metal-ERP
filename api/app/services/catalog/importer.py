@@ -6,8 +6,8 @@ content-addressed keys under the catalog's id).
 
 Each row is matched to a *product* before it is given a code:
   1. same supplier + same supplier code  -> reuse that product (its code, group, name);
-  2. otherwise a new product, with a code in its group's series, and, if another product has the
-     same normalised name, a suggestion the user can accept or dismiss.
+  2. otherwise a new product with the next firm-wide code and, if another product has the same
+     normalised name, a suggestion the user can accept or dismiss.
 Without a supplier there is no key to match on: every row becomes a new product (still with
 name suggestions).
 """
@@ -17,6 +17,7 @@ from __future__ import annotations
 import re
 import uuid
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 from pathlib import PurePath
 
@@ -31,8 +32,7 @@ from app.models import (
     SupplierCatalogItem,
     Tenant,
 )
-from app.services.catalog import names, products
-from app.services.catalog.codes import normalize_prefix
+from app.services.catalog import image_check, names, price_points, products
 from app.services.catalog.extract_grid import extract
 from app.services.catalog.groups import find_category, get_or_create_category
 from app.services.catalog.pricing import sell_price
@@ -50,6 +50,8 @@ class ImportResult:
     matched_items: int = 0  # rows that reused a product from an earlier catalog
     new_products: int = 0
     suggestions: int = 0  # rows with a same-name product to confirm
+    price_changes: int = 0  # rows whose supplier price moved since the last list
+    unread_price_lines: int = 0  # price lines with no picture: those products were not read
 
 
 def default_title(filename: str) -> str:
@@ -79,14 +81,13 @@ def import_catalog(
     filename: str,
     data: bytes,
     title: str | None = None,
-    code_prefix: str | None = None,
     supplier_party_id: str | None = None,
+    group_map: dict[str, str] | None = None,
 ) -> ImportResult:
     """Create the catalog from `data`, or return the existing one for the same file.
 
     `supplier_party_id` is the supplier's party (already checked by the caller); it is what
-    lets a later PDF find the same products again. `code_prefix`, if given, is this catalog's
-    prefix for products that have no group; otherwise the firm's fallback prefix is used.
+    lets a later PDF find the same products again.
 
     Raises `NotACatalog` when no products can be read from the PDF.
     """
@@ -103,7 +104,6 @@ def import_catalog(
 
     catalog_id = str(uuid.uuid4())
     clean_title = (title or "").strip() or default_title(filename)
-    prefix = normalize_prefix(code_prefix) or products.fallback_prefix(tenant)
 
     raws = [c.name_raw for c in result.cells]
     sup_codes = [c.supplier_code for c in result.cells]
@@ -116,7 +116,6 @@ def import_catalog(
     )
     auto_create = tenant.catalog_group_create_policy == "auto"
     cat_cache: dict[str, ItemCategory] = {}
-    cat_by_id: dict[str, ItemCategory] = {}
 
     # --- pass 1: decide what every cell becomes -------------------------------------
     plans: list[_Plan] = []
@@ -128,35 +127,28 @@ def import_catalog(
             plans.append(_Plan(hit.display_name, carton, hit.category_id, None, hit))
             continue
         group = classify(cell.name_raw)
+        if group is not None and group_map:
+            group = group_map.get(" ".join(group.lower().split()), group)
         category_id: str | None = None
         suggested: str | None = None
         if group is not None:
             if auto_create:
                 cat = get_or_create_category(session, tenant.id, group, cat_cache)
                 category_id = cat.id
-                cat_by_id[cat.id] = cat
             else:
                 found = cat_cache.get(group.lower()) or find_category(session, tenant.id, group)
                 if found is not None:
                     cat_cache[group.lower()] = found
-                    cat_by_id[found.id] = found
                     category_id = found.id
                 else:
                     suggested = group
         plans.append(_Plan(display, carton, category_id, suggested, None))
 
-    # --- pass 2: issue codes for the new products, one block per group ---------------
-    by_group: dict[str | None, list[int]] = {}
-    for i, plan in enumerate(plans):
-        if plan.product is None:
-            by_group.setdefault(plan.category_id, []).append(i)
-    new_codes: dict[int, str] = {}
-    for category_id, idxs in by_group.items():
-        category = cat_by_id.get(category_id) if category_id else None
-        if category_id and category is None:  # defensive: a category we did not just look up
-            category = session.get(ItemCategory, category_id)
-        codes = products.issue_codes(session, tenant, category, len(idxs))
-        new_codes.update(zip(idxs, codes, strict=True))
+    # --- pass 2: issue codes for the new products, in reading order -------------------
+    new_idx = [i for i, plan in enumerate(plans) if plan.product is None]
+    new_codes: dict[int, str] = dict(
+        zip(new_idx, products.issue_codes(session, tenant, len(new_idx)), strict=True)
+    )
 
     # --- the catalog + one product per new row + the rows ----------------------------
     catalog = SupplierCatalog(
@@ -170,7 +162,6 @@ def import_catalog(
         source_key=source_key(tenant.id, catalog_id),
         page_count=result.page_count,
         item_count=len(result.cells),
-        code_prefix=prefix,
         bulk_margin_pct=Decimal("0.00"),
         rounding_step=1,
         status="extracting",
@@ -204,6 +195,7 @@ def import_catalog(
     )
 
     uploads: dict[str, tuple[bytes, str]] = {}
+    made: list[SupplierCatalogItem] = []
     matched = 0
     suggested_n = 0
     for cell, plan, new in zip(result.cells, plans, created, strict=True):
@@ -219,32 +211,54 @@ def import_catalog(
         key = image_key(tenant.id, catalog_id, sha_img, cell.image_ext)
         uploads[key] = (cell.image, _CONTENT_TYPES.get(cell.image_ext, "application/octet-stream"))
 
-        session.add(
-            SupplierCatalogItem(
-                tenant_id=tenant.id,
-                catalog_id=catalog_id,
-                product_id=prod.id,
-                suggested_product_id=sug.id if sug is not None else None,
-                page_no=cell.page_no,
-                position=cell.position,
-                supplier_code=cell.supplier_code,
-                code=prod.code,
-                name_raw=cell.name_raw,
-                display_name=prod.display_name[:300],
-                brand=names.brand_of(cell.name_raw, cell.supplier_code, brands),
-                size_text=names.size_of(prod.display_name),
-                pack_qty=cell.pack_qty,
-                carton_qty=plan.carton,
-                cost_price=cell.cost_price,
-                sell_price=sell_price(cell.cost_price, Decimal("0.00"), 1),
-                category_id=prod.category_id,
-                suggested_group=plan.suggested_group,
-                image_key=key,
-                image_w=cell.image_w,
-                image_h=cell.image_h,
-                image_sha256=sha_img,
-            )
+        row = SupplierCatalogItem(
+            tenant_id=tenant.id,
+            catalog_id=catalog_id,
+            product_id=prod.id,
+            suggested_product_id=sug.id if sug is not None else None,
+            page_no=cell.page_no,
+            position=cell.position,
+            supplier_code=cell.supplier_code,
+            code=prod.code,
+            name_raw=cell.name_raw,
+            display_name=prod.display_name[:300],
+            brand=names.brand_of(cell.name_raw, cell.supplier_code, brands),
+            size_text=names.size_of(prod.display_name),
+            pack_qty=cell.pack_qty,
+            carton_qty=plan.carton,
+            cost_price=cell.cost_price,
+            sell_price=sell_price(cell.cost_price, Decimal("0.00"), 1),
+            category_id=prod.category_id,
+            suggested_group=plan.suggested_group,
+            image_key=key,
+            image_w=cell.image_w,
+            image_h=cell.image_h,
+            image_sha256=sha_img,
+            image_flag=image_check.check(cell.image),
         )
+        session.add(row)
+        made.append(row)
+    session.flush()
+
+    # what changed since the last price list for these products, and remember this one's prices
+    prev = price_points.latest_quotes(
+        session,
+        tenant.id,
+        [r.product_id for r in made if r.product_id],
+        exclude_source_id=catalog_id,
+    )
+    changed_n = 0
+    for r in made:
+        r.price_change = price_points.change_of(prev.get(r.product_id or ""), r.cost_price)
+        changed_n += r.price_change in ("up", "down")
+    price_points.record_quotes(
+        session,
+        tenant_id=tenant.id,
+        supplier_party_id=supplier_party_id,
+        catalog_id=catalog_id,
+        rows=[(r.product_id, r.cost_price, r.pack_qty) for r in made if r.product_id],
+        on=date.today(),
+    )
     session.flush()
 
     storage.put_many(
@@ -261,4 +275,6 @@ def import_catalog(
         matched_items=matched,
         new_products=len(fresh),
         suggestions=suggested_n,
+        price_changes=changed_n,
+        unread_price_lines=result.unread_price_lines,
     )

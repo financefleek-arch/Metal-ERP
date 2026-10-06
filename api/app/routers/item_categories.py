@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select, update
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import CatalogProduct, Item, ItemCategory, ProductGroup, SupplierCatalogItem, Tenant
+from app.models import CatalogProduct, Item, ItemCategory, ProductGroup, SupplierCatalogItem
 from app.schemas_catalogue import (
     CategoryDeleteIn,
     CategoryIn,
@@ -18,8 +18,8 @@ from app.schemas_catalogue import (
     CategoryOut,
     CategoryUpdate,
 )
-from app.services.catalog.codes import normalize_prefix
-from app.services.catalog.products import fallback_prefix, prefix_in_use
+from app.services import audit
+from app.services.items import hsn_gst_rate
 
 router = APIRouter(prefix="/api/item-categories", tags=["item-categories"])
 
@@ -46,6 +46,28 @@ def _counts(session: SessionDep, tenant_id: str) -> dict[str, tuple[int, int]]:
     return {cid: (g.get(cid, 0), i.get(cid, 0)) for cid in set(g) | set(i)}
 
 
+def _out(session: SessionDep, tenant_id: str, c: ItemCategory) -> CategoryOut:
+    groups, items = _counts(session, tenant_id).get(c.id, (0, 0))
+    missing = session.scalar(
+        select(func.count()).select_from(Item).where(
+            Item.tenant_id == tenant_id,
+            Item.category_id == c.id,
+            Item.hsn_code.is_(None),
+            Item.merged_into_id.is_(None),
+        )
+    )
+    return CategoryOut(
+        id=c.id,
+        name=c.name,
+        sort=c.sort,
+        hsn_code=c.hsn_code,
+        gst_rate=c.gst_rate,
+        group_count=groups,
+        item_count=items,
+        items_without_hsn=int(missing or 0),
+    )
+
+
 def _owned(session: SessionDep, tenant_id: str, cat_id: str) -> ItemCategory:
     c = session.scalar(
         select(ItemCategory).where(
@@ -67,14 +89,30 @@ def list_categories(user: CurrentUser, session: SessionDep) -> list[CategoryOut]
         ).all()
     )
     counts = _counts(session, user.tenant_id)
+    missing: dict[str, int] = {
+        cid: n
+        for cid, n in session.execute(
+            select(Item.category_id, func.count())
+            .where(
+                Item.tenant_id == user.tenant_id,
+                Item.category_id.is_not(None),
+                Item.hsn_code.is_(None),
+                Item.merged_into_id.is_(None),
+            )
+            .group_by(Item.category_id)
+        ).all()
+        if cid is not None
+    }
     return [
         CategoryOut(
             id=c.id,
             name=c.name,
             sort=c.sort,
-            code_prefix=c.code_prefix,
+            hsn_code=c.hsn_code,
+            gst_rate=c.gst_rate,
             group_count=counts.get(c.id, (0, 0))[0],
             item_count=counts.get(c.id, (0, 0))[1],
+            items_without_hsn=missing.get(c.id, 0),
         )
         for c in cats
     ]
@@ -90,10 +128,16 @@ def create_category(body: CategoryIn, user: WriteUser, session: SessionDep) -> C
     )
     if dupe is not None:
         raise HTTPException(status_code=409, detail=f"Category '{body.name}' already exists")
-    c = ItemCategory(tenant_id=user.tenant_id, name=body.name.strip(), sort=body.sort)
+    c = ItemCategory(
+        tenant_id=user.tenant_id,
+        name=body.name.strip(),
+        sort=body.sort,
+        hsn_code=body.hsn_code,
+        gst_rate=body.gst_rate,
+    )
     session.add(c)
     session.flush()
-    return CategoryOut(id=c.id, name=c.name, sort=c.sort, code_prefix=c.code_prefix)
+    return _out(session, user.tenant_id, c)
 
 
 @router.patch("/{cat_id}", response_model=CategoryOut)
@@ -118,40 +162,47 @@ def update_category(
         c.name = patch["name"].strip()
     if "sort" in patch:
         c.sort = patch["sort"]
-    if patch.get("code_prefix") is not None:
-        _set_code_prefix(session, user.tenant_id, c, patch["code_prefix"])
+    if "hsn_code" in patch:
+        c.hsn_code = patch["hsn_code"] or None
+    if "gst_rate" in patch:
+        c.gst_rate = patch["gst_rate"]
     session.flush()
-    counts = _counts(session, user.tenant_id).get(c.id, (0, 0))
-    return CategoryOut(
-        id=c.id, name=c.name, sort=c.sort, code_prefix=c.code_prefix,
-        group_count=counts[0], item_count=counts[1],
-    )
+    return _out(session, user.tenant_id, c)
 
 
-def _set_code_prefix(session: SessionDep, tenant_id: str, c: ItemCategory, raw: str) -> None:
-    prefix = normalize_prefix(raw)
-    if prefix is None or len(prefix) > 4:
-        raise HTTPException(status_code=422, detail="Group code must be 2 to 4 letters or digits.")
-    if prefix == c.code_prefix:
-        return
-    if c.code_prefix and prefix_in_use(session, tenant_id, c.code_prefix):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Codes like {c.code_prefix}-0001 already exist, so this group's code is fixed.",
-        )
-    tenant = session.get(Tenant, tenant_id)
-    assert tenant is not None
-    clash = session.scalar(
-        select(ItemCategory.id).where(
-            ItemCategory.tenant_id == tenant_id,
-            ItemCategory.id != c.id,
-            ItemCategory.code_prefix == prefix,
+@router.post("/{cat_id}/apply-hsn")
+def apply_hsn(cat_id: str, user: WriteUser, session: SessionDep) -> dict[str, int]:
+    """Give the items in this group that have no HSN the group's HSN (and GST rate). Items that
+    already have an HSN are never changed."""
+    c = _owned(session, user.tenant_id, cat_id)
+    if not c.hsn_code:
+        raise HTTPException(status_code=422, detail="Set an HSN for this group first.")
+    rate = c.gst_rate if c.gst_rate is not None else hsn_gst_rate(session, c.hsn_code)
+    items = list(
+        session.scalars(
+            select(Item).where(
+                Item.tenant_id == user.tenant_id,
+                Item.category_id == c.id,
+                Item.hsn_code.is_(None),
+                Item.merged_into_id.is_(None),
+            )
         )
     )
-    taken = prefix == fallback_prefix(tenant) or prefix_in_use(session, tenant_id, prefix)
-    if clash is not None or taken:
-        raise HTTPException(status_code=409, detail=f"The code {prefix} is already taken.")
-    c.code_prefix = prefix
+    for it in items:
+        it.hsn_code = c.hsn_code
+        if rate is not None:
+            it.gst_rate = float(rate)
+    audit.record(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        entity="item_category",
+        entity_id=c.id,
+        action="apply_hsn",
+        after={"hsn": c.hsn_code, "updated": len(items)},
+    )
+    session.flush()
+    return {"updated": len(items)}
 
 
 def _repoint(session: SessionDep, tenant_id: str, src_id: str, target: str | None) -> None:
@@ -178,11 +229,7 @@ def merge_category(
     _repoint(session, user.tenant_id, src.id, dst.id)
     session.delete(src)
     session.flush()
-    counts = _counts(session, user.tenant_id).get(dst.id, (0, 0))
-    return CategoryOut(
-        id=dst.id, name=dst.name, sort=dst.sort, code_prefix=dst.code_prefix,
-        group_count=counts[0], item_count=counts[1],
-    )
+    return _out(session, user.tenant_id, dst)
 
 
 @router.delete("/{cat_id}", status_code=status.HTTP_204_NO_CONTENT)

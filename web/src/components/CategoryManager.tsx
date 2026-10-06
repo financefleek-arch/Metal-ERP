@@ -10,6 +10,7 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [taxOpen, setTaxOpen] = useState<string | null>(null);
 
   const cats = useQuery({
     queryKey: ["item-categories"],
@@ -84,7 +85,8 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
 
       <div className="card divide-y divide-[#f3eee4] overflow-hidden">
         {cats.data?.map((c) => (
-          <div key={c.id} className="flex items-center gap-2 px-3 py-2.5 text-sm md:py-2">
+          <div key={c.id}>
+          <div className="flex items-center gap-2 px-3 py-2.5 text-sm md:py-2">
             {editing === c.id ? (
               <>
                 <input
@@ -115,6 +117,13 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
                 </span>
                 <button
                   className="shrink-0 px-1 text-xs text-muted hover:text-ink"
+                  title="Default HSN and GST rate for items in this group"
+                  onClick={() => setTaxOpen((t) => (t === c.id ? null : c.id))}
+                >
+                  {c.hsn_code ? `HSN ${c.hsn_code}` : "HSN / GST"}
+                </button>
+                <button
+                  className="shrink-0 px-1 text-xs text-muted hover:text-ink"
                   onClick={() => {
                     setEditing(c.id);
                     setEditName(c.name);
@@ -140,8 +149,84 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
               </>
             )}
           </div>
+          {taxOpen === c.id && <TaxPanel cat={c} onChanged={invalidate} />}
+          </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/** The group's default HSN and GST rate: new items inherit them; "apply" fills existing items
+ *  that have no HSN. */
+function TaxPanel({ cat, onChanged }: { cat: ItemCategoryRow; onChanged: () => void }) {
+  const [hsn, setHsn] = useState(cat.hsn_code ?? "");
+  const [gst, setGst] = useState(cat.gst_rate ? String(Number(cat.gst_rate)) : "");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const save = useMutation({
+    mutationFn: () =>
+      api<ItemCategoryRow>(`/item-categories/${cat.id}`, {
+        method: "PATCH",
+        body: { hsn_code: hsn.trim() || null, gst_rate: gst === "" ? null : Number(gst).toFixed(2) },
+      }),
+    onSuccess: () => {
+      setErr(null);
+      setMsg("Saved.");
+      onChanged();
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not save. Use a 4 to 8 digit HSN."),
+  });
+  const apply = useMutation({
+    mutationFn: () => api<{ updated: number }>(`/item-categories/${cat.id}/apply-hsn`, { method: "POST" }),
+    onSuccess: (r) => {
+      setErr(null);
+      setMsg(`${r.updated} item${r.updated === 1 ? "" : "s"} updated.`);
+      onChanged();
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not apply."),
+  });
+  return (
+    <div className="flex flex-wrap items-end gap-3 bg-ground px-3 py-2.5 text-xs">
+      <div>
+        <label className="label" htmlFor={`hsn-${cat.id}`}>
+          HSN
+        </label>
+        <input
+          id={`hsn-${cat.id}`}
+          className="field h-8 w-28"
+          inputMode="numeric"
+          maxLength={8}
+          value={hsn}
+          onChange={(e) => setHsn(e.target.value.replace(/\D/g, ""))}
+        />
+      </div>
+      <div>
+        <label className="label" htmlFor={`gst-${cat.id}`}>
+          GST %
+        </label>
+        <select id={`gst-${cat.id}`} className="field h-8 w-24" value={gst} onChange={(e) => setGst(e.target.value)}>
+          <option value="">from HSN</option>
+          {[0, 5, 12, 18, 28].map((r) => (
+            <option key={r} value={r}>
+              {r}%
+            </option>
+          ))}
+        </select>
+      </div>
+      <button className="btn-primary h-8 px-3" disabled={save.isPending} onClick={() => save.mutate()}>
+        Save
+      </button>
+      {cat.hsn_code && cat.items_without_hsn > 0 && (
+        <button className="btn-ghost h-8 px-3" disabled={apply.isPending} onClick={() => apply.mutate()}>
+          Apply to {cat.items_without_hsn} items without HSN
+        </button>
+      )}
+      {msg && <span className="text-ok">{msg}</span>}
+      {err && <span className="text-danger">{err}</span>}
+      <p className="basis-full text-[11px] text-muted">
+        New items in this group get this HSN and GST rate. Items that already have an HSN are never changed.
+      </p>
     </div>
   );
 }

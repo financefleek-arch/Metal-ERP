@@ -7,6 +7,7 @@ import { StateSelect } from "../components/StateSelect";
 import { TallyConnectCard } from "../components/TallyConnectCard";
 import { TallyBackupsCard } from "../components/TallyBackupsCard";
 import { CatalogSettingsCard } from "../components/CatalogSettingsCard";
+import { PhotoUsageLine } from "../components/PhotoUsageLine";
 import { useAuth } from "../lib/auth";
 import { panError } from "../lib/reference";
 
@@ -103,7 +104,12 @@ export function FirmPage() {
 
       <TallyConnectCard />
       <TallyBackupsCard />
-      {me?.ext_supplier_catalog && <CatalogSettingsCard tenant={data} />}
+      {me?.ext_supplier_catalog && (
+        <>
+          <CatalogSettingsCard tenant={data} />
+          <PhotoUsageLine />
+        </>
+      )}
 
       <form onSubmit={onSubmit} className="card p-4 sm:p-6">
         <div className="grid grid-cols-1 gap-x-5 gap-y-4 sm:grid-cols-2">

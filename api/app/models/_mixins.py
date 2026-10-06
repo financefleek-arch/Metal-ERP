@@ -74,6 +74,15 @@ class ItemType(enum.StrEnum):
     mrp = "mrp"
 
 
+class Availability(enum.StrEnum):
+    """Whether the firm can offer an item. A status, not a quantity: Tally keeps the stock."""
+
+    in_stock = "in_stock"
+    expected = "expected"
+    out_of_stock = "out_of_stock"
+    discontinued = "discontinued"
+
+
 class ItemSource(enum.StrEnum):
     manual = "manual"
     auto_from_invoice = "auto_from_invoice"
@@ -140,6 +149,7 @@ class MatchMethod(enum.StrEnum):
     alias = "alias"
     fuzzy = "fuzzy"
     llm = "llm"
+    code = "code"  # the supplier's own code on the line, or the supplier's product name
     new = "new"
     manual = "manual"
 

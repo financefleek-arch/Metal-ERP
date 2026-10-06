@@ -8,11 +8,12 @@ supplier-catalog.md). Money is NUMERIC(15,2); margins NUMERIC(7,2) (percent).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -53,9 +54,6 @@ class SupplierCatalog(PkUuidMixin, TimestampMixin, Base):
     source_key: Mapped[str | None] = mapped_column(String(300))
     page_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     item_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-
-    # Item-code prefix for this catalog's auto-generated codes (e.g. "GL").
-    code_prefix: Mapped[str] = mapped_column(String(8), nullable=False)
 
     # One bulk margin (%) for the whole catalog; an item-level margin overrides it per item.
     bulk_margin_pct: Mapped[Decimal] = mapped_column(
@@ -126,6 +124,8 @@ class SupplierCatalogItem(PkUuidMixin, TimestampMixin, Base):
     image_w: Mapped[int | None] = mapped_column(Integer)
     image_h: Mapped[int | None] = mapped_column(Integer)
     image_sha256: Mapped[str | None] = mapped_column(String(64))
+    # small | odd_shape | blank | unreadable: the crop probably needs a look (see image_check)
+    image_flag: Mapped[str | None] = mapped_column(String(12))
 
     included: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
@@ -137,12 +137,16 @@ class SupplierCatalogItem(PkUuidMixin, TimestampMixin, Base):
 
     # S6: new | up | down | same | dropped
     price_change: Mapped[str | None] = mapped_column(String(8))
+    # The selling price last sent to Tally for this row (None = never). A different current
+    # price makes the row due for a price update.
+    tally_price: Mapped[Decimal | None] = mapped_column(_MONEY)
 
     catalog: Mapped[SupplierCatalog] = relationship(back_populates="items")
 
 
 class CodeSequence(Base):
-    """Next item-code number per (tenant, prefix). Row-locked on allocation;
+    """Next item-code number, one counter per firm (`prefix` is always empty; the firm's
+    optional code prefix is applied when a code is formatted). Row-locked on allocation;
     numbers are never reused, so a code stays unique even if its item is
     deleted. See `app/services/catalog/codes.py`.
     """
@@ -152,6 +156,47 @@ class CodeSequence(Base):
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), primary_key=True)
     prefix: Mapped[str] = mapped_column(String(8), primary_key=True)
     next_value: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+
+class SupplierCatalogDefault(PkUuidMixin, TimestampMixin, Base):
+    """What a supplier usually gets, applied to each new catalog imported from them."""
+
+    __tablename__ = "supplier_catalog_default"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "party_id", name="uq_supplier_catalog_default_party"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), nullable=False)
+    bulk_margin_pct: Mapped[Decimal | None] = mapped_column(_MARGIN)
+    rounding_step: Mapped[int | None] = mapped_column(Integer)
+    # our group name for what the rules suggest: {"beer mugs": "Drinkware"}
+    group_map: Mapped[dict] = mapped_column(_JSON, default=dict, nullable=False)
+    # promote every included row to an item right after an import
+    add_automatically: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ... and mark those items In stock (otherwise they start Out of stock)
+    mark_in_stock: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+
+class SupplierPricePoint(PkUuidMixin, TimestampMixin, Base):
+    """One observed price: what a supplier quoted in a price list, or what a bill charged."""
+
+    __tablename__ = "supplier_price_point"
+    __table_args__ = (
+        Index("ix_price_point_product", "tenant_id", "product_id", "source", "on_date"),
+        Index("ix_price_point_item", "tenant_id", "item_id", "source", "on_date"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    supplier_party_id: Mapped[str | None] = mapped_column(ForeignKey("party.id"))
+    product_id: Mapped[str | None] = mapped_column(ForeignKey("catalog_product.id"))
+    item_id: Mapped[str | None] = mapped_column(ForeignKey("item.id"))
+    # quote (a price list) | bill (an approved inward bill)
+    source: Mapped[str] = mapped_column(String(8), nullable=False)
+    source_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    price: Mapped[Decimal] = mapped_column(_MONEY, nullable=False)
+    pack_qty: Mapped[int | None] = mapped_column(Integer)
+    on_date: Mapped[date] = mapped_column(Date, nullable=False)
 
 
 class CatalogOutputJob(PkUuidMixin, TimestampMixin, Base):
@@ -165,12 +210,14 @@ class CatalogOutputJob(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "catalog_output_job"
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
-    catalog_id: Mapped[str] = mapped_column(
-        ForeignKey("supplier_catalog.id"), nullable=False, index=True
+    # The supplier catalog it belongs to (labels, today). Null for firm-level outputs built
+    # from the item list (customer catalogs).
+    catalog_id: Mapped[str | None] = mapped_column(
+        ForeignKey("supplier_catalog.id"), nullable=True, index=True
     )
     created_by: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"))
 
-    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # 'labels'
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # 'labels' | 'customer_catalog'
     params_json: Mapped[dict | None] = mapped_column(_JSON)
     status: Mapped[str] = mapped_column(String(10), default="queued", nullable=False)
     progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -182,31 +229,36 @@ class CatalogOutputJob(PkUuidMixin, TimestampMixin, Base):
 
 
 class CustomerCatalog(PkUuidMixin, TimestampMixin, Base):
-    """A generated, versioned customer-facing catalog PDF (the shop's prices).
+    """A generated customer-facing catalog PDF, built from items you have (your prices and photos).
 
-    A snapshot: it is marked `stale` when the catalog's prices or items change afterwards,
-    and the user regenerates to get the next version.
+    Firm-level: it belongs to no supplier catalog. Each build is a snapshot; rebuilding the same
+    `series_id` makes the next version from the stored selection (a filter is evaluated again, so
+    a "Winter range" picks up new items). It is out of date when a member item changed after the
+    build, or when a filter now matches different items; that is worked out when listing, not
+    stored.
     """
 
     __tablename__ = "customer_catalog"
     __table_args__ = (
-        UniqueConstraint("catalog_id", "version", name="uq_customer_catalog_version"),
+        UniqueConstraint("tenant_id", "series_id", "version", name="uq_customer_catalog_version"),
     )
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
-    catalog_id: Mapped[str] = mapped_column(
-        ForeignKey("supplier_catalog.id"), nullable=False, index=True
-    )
+    # Versions of one catalog share a series.
+    series_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     created_by: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"))
 
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     options_json: Mapped[dict | None] = mapped_column(_JSON)
+    # What was asked for: {"ids": [...]} or {"filter": {...}}. Rebuilds start from this.
+    selection_json: Mapped[dict | None] = mapped_column(_JSON)
+    # The items actually printed, in order: staleness is checked against them.
+    member_ids_json: Mapped[list | None] = mapped_column(_JSON)
     item_count: Mapped[int] = mapped_column(Integer, nullable=False)
     page_count: Mapped[int] = mapped_column(Integer, nullable=False)
     byte_size: Mapped[int] = mapped_column(Integer, nullable=False)
     pdf_key: Mapped[str] = mapped_column(String(300), nullable=False)
-    stale: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class CatalogProduct(PkUuidMixin, TimestampMixin, Base):
@@ -214,8 +266,7 @@ class CatalogProduct(PkUuidMixin, TimestampMixin, Base):
 
     The item code belongs here, not to a PDF row: a later PDF that offers the same product
     (same supplier + same supplier code) reuses this row and its code, group and name. The
-    code is *provisional* until first real use (printed, put in a customer catalog, promoted
-    to an item, sent to Tally); then `code_locked` is set and it never changes.
+    code is a firm-wide running number that never changes (see `services/catalog/codes.py`).
     """
 
     __tablename__ = "catalog_product"
@@ -239,7 +290,6 @@ class CatalogProduct(PkUuidMixin, TimestampMixin, Base):
     supplier_code: Mapped[str] = mapped_column(String(60), nullable=False)
 
     code: Mapped[str] = mapped_column(String(20), nullable=False)
-    code_locked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     category_id: Mapped[str | None] = mapped_column(ForeignKey("item_category.id"))
     display_name: Mapped[str] = mapped_column(String(300), nullable=False)

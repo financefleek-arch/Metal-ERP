@@ -16,7 +16,9 @@ from app.models.catalog import (
     CodeSequence,
     CustomerCatalog,
     SupplierCatalog,
+    SupplierCatalogDefault,
     SupplierCatalogItem,
+    SupplierPricePoint,
 )
 from app.models.common import HsnCode, NumberSequence, Synonym
 from app.models.invoice import Invoice, InvoiceLine
@@ -31,6 +33,7 @@ from app.models.inward import (
 from app.models.item import Item, ItemAlias, ProductGroup
 from app.models.item_category import ItemCategory
 from app.models.item_classify_rule import ItemClassifyRule
+from app.models.media import MediaAsset
 from app.models.party import Party, PartyAddress
 from app.models.payment import Payment, PaymentAllocation
 from app.models.tally_agent import AgentOutboxItem, BackupShop, BackupUpload
@@ -48,7 +51,10 @@ __all__ = [
     "CatalogOutputJob",
     "CatalogProduct",
     "CodeSequence",
+    "SupplierCatalogDefault",
+    "SupplierPricePoint",
     "CustomerCatalog",
+    "MediaAsset",
     "HsnCode",
     "NumberSequence",
     "Synonym",

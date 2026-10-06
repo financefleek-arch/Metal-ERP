@@ -91,6 +91,15 @@ public sealed class TallyAgentService(
                 markedHealthy = true;
             }
 
+            // A job just finished: check in now and run the Tally module again next loop, so a
+            // multi-batch push does not wait out a full interval between batches.
+            var fast = ctx.ConsumeFastCycle();
+            if (fast)
+            {
+                lastCheckin = DateTimeOffset.MinValue;
+                lastRun.Remove("tally");
+            }
+
             if (now - lastCheckin >= CheckinInterval)
             {
                 var failure = updatesOn ? updates.PendingFailure() : null;
@@ -136,7 +145,7 @@ public sealed class TallyAgentService(
 
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(15), stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(fast ? 1 : 15), stoppingToken);
             }
             catch (OperationCanceledException)
             {

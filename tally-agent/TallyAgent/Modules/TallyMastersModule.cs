@@ -154,6 +154,7 @@ public sealed class TallyMastersModule(
             }
             _held.Remove(jobId);
             anyError = anyError || outcome == JobOutcome.Failed;
+            ctx.RequestFastCycle(); // the backend may have queued the next batch of this run
         }
 
         // "ok"/"idle" is set per-job inside each Process*Async; only escalate

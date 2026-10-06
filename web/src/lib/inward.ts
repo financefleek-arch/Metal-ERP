@@ -9,7 +9,7 @@ export type InwardStatus =
   | "error";
 
 export type ExtractionMethod = "einvoice_qr" | "template" | "table" | "vision_llm";
-export type MatchMethod = "exact" | "alias" | "fuzzy" | "llm" | "new" | "manual";
+export type MatchMethod = "exact" | "alias" | "fuzzy" | "llm" | "code" | "new" | "manual";
 export type SupplyType = "intra" | "inter";
 
 export interface InwardBillListItem {
@@ -54,6 +54,9 @@ export interface InwardLine {
   matched_item_id: string | null;
   new_item_staged_json: Record<string, unknown> | null;
   review_flag: string | null;
+  /** above_quote | discontinued: worth a second look. */
+  note_flag?: string | null;
+  quoted_rate?: string | null;
 }
 
 export interface Reconciliation {

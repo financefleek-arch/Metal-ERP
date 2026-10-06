@@ -338,6 +338,8 @@ def _replace_extraction(
                 matched_item_id=ln.matched_item_id,
                 new_item_staged_json=ln.new_item_staged_json,
                 review_flag=ln.review_flag,
+                note_flag=ln.note_flag,
+                quoted_rate=ln.quoted_rate,
             )
         )
 

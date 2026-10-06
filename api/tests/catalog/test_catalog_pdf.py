@@ -25,18 +25,31 @@ from app.services.catalog.catalog_pdf import (
 from tests.catalog.pdfs import photo
 
 BRAND = Brand(
-    "Sample Traders", "Glassware Price List", phone="+91 98765 43210",
-    email="orders@sample.example.com", address="12 Market Road, Siliguri, 734005",
+    "Sample Traders",
+    "Glassware Price List",
+    phone="+91 98765 43210",
+    email="orders@sample.example.com",
+    address="12 Market Road, Siliguri, 734005",
 )
 TODAY = date(2026, 10, 2)
 PHOTO = photo((30, 120, 160))
 
 
-def entry(i: int, group: str | None = "Beer Mugs", price: str = "374", pack: int = 6,
-          image: bytes | None = PHOTO, name: str | None = None) -> CatalogEntry:
+def entry(
+    i: int,
+    group: str | None = "Beer Mugs",
+    price: str = "374",
+    pack: int = 6,
+    image: bytes | None = PHOTO,
+    name: str | None = None,
+) -> CatalogEntry:
     return CatalogEntry(
-        code=f"GL-{i:06d}", name=name or f"Deli Item {i}", group=group,
-        price=Decimal(price), pack_qty=pack, image=image,
+        code=f"GL-{i:06d}",
+        name=name or f"Deli Item {i}",
+        group=group,
+        price=Decimal(price),
+        pack_qty=pack,
+        image=image,
     )
 
 
@@ -68,7 +81,7 @@ def capacity(columns: int) -> int:
 
 def test_entries_carry_no_cost_or_supplier_fields() -> None:
     names = {f.name for f in dataclasses.fields(CatalogEntry)}
-    assert names == {"code", "name", "group", "price", "pack_qty", "image"}
+    assert names == {"code", "name", "group", "price", "pack_qty", "image", "note"}
 
 
 # --- cover -----------------------------------------------------------------------
@@ -290,8 +303,9 @@ def test_a_missing_photo_gets_a_placeholder() -> None:
 def test_long_names_never_spill_out_of_their_card(columns: int) -> None:
     long = "Extraordinarily Long Product Name With Many Words That Cannot Fit " * 3
     word = "Supercalifragilisticexpialidocious" * 4
-    doc = doc_of([entry(1, None, name=long), entry(2, None, name=word)], columns=columns,
-                 group_by="none")
+    doc = doc_of(
+        [entry(1, None, name=long), entry(2, None, name=word)], columns=columns, group_by="none"
+    )
     cw, _ = cp._geometry(columns)
     for block in doc[1].get_text("dict")["blocks"]:
         for line in block.get("lines", []):
@@ -315,8 +329,13 @@ def test_non_latin_names_do_not_break_the_page() -> None:
 
 def test_progress_reaches_the_total() -> None:
     seen: list[tuple[int, int]] = []
-    build(many(60, None), CatalogPdfOptions(group_by="none"), BRAND, TODAY,
-          lambda d, t: seen.append((d, t))).close()
+    build(
+        many(60, None),
+        CatalogPdfOptions(group_by="none"),
+        BRAND,
+        TODAY,
+        lambda d, t: seen.append((d, t)),
+    ).close()
     assert seen[0] == (25, 60) and seen[-1] == (60, 60)
 
 

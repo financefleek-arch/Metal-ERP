@@ -8,8 +8,6 @@ export interface CatalogListItem {
   source_filename: string;
   page_count: number;
   item_count: number;
-  /** Prefix for products that have no group (the firm's "ungrouped" prefix). */
-  code_prefix: string;
   supplier_party_id: string | null;
   supplier_name: string | null;
   /** Bulk margin in percent as a string, e.g. "25.00" (= +25%). */
@@ -22,6 +20,12 @@ export interface CatalogListItem {
 export interface CatalogDetail extends CatalogListItem {
   /** Items that carry their own (item-level) margin instead of the bulk margin. */
   item_margin_count: number;
+  /** Rows with a possible match to confirm. */
+  suggestion_count: number;
+  /** Rows whose supplier price went up or down since the last list. */
+  price_change_count: number;
+  /** Rows whose photo was flagged for a look. */
+  photo_check_count: number;
 }
 
 export interface CatalogUploadOut extends CatalogListItem {
@@ -35,19 +39,35 @@ export interface CatalogUploadOut extends CatalogListItem {
   new_products: number;
   /** Rows that look like a product you already have: confirm or dismiss. */
   suggestions: number;
+  /** Rows whose supplier price moved since the last list from this supplier. */
+  price_changes?: number;
+  /** Price lines on the PDF with no picture: those products were not read. */
+  unread_price_lines?: number;
 }
 
 export interface ProductRef {
   product_id: string;
   code: string;
   name: string;
+  /** Who offers the matched product. */
+  supplier_name: string | null;
 }
 
 export interface CatalogItem {
   id: string;
+  /** When the row last changed; sent back with an edit to detect a clash. */
+  updated_at: string | null;
+  /** Against the last price list from this supplier. */
+  price_change?: "new" | "up" | "down" | "same" | null;
+  previous_cost?: string | null;
+  /** small | odd_shape | blank | unreadable: this crop probably needs a look. */
+  image_flag?: string | null;
+  /** What the latest bill for this item charged. */
+  last_paid?: string | null;
+  last_paid_on?: string | null;
   page_no: number;
   position: number;
-  /** Our code: the group's code and a number, e.g. BM-0042. */
+  /** Our code: a firm-wide running number that never changes, e.g. 100234. */
   code: string;
   supplier_code: string;
   display_name: string;
@@ -71,8 +91,6 @@ export interface CatalogItem {
   /** Code 128 bar pattern for `code` ('1' = bar, '0' = space); draw it with <Barcode>. */
   barcode: string | null;
   product_id: string | null;
-  /** True once the code was used (label, customer catalog, item, Tally): it never changes. */
-  code_locked: boolean;
   /** Another product that looks like the same thing: accept or dismiss. */
   suggestion: ProductRef | null;
   item_id: string | null;
@@ -82,7 +100,6 @@ export interface CatalogItem {
 export interface GroupSummary {
   category_id: string | null;
   name: string;
-  code_prefix: string | null;
   item_count: number;
   included_count: number;
 }
@@ -95,6 +112,14 @@ export interface ItemFilter {
   brand?: string;
   /** true = only items with their own (item-level) margin; false = only those on the bulk margin. */
   has_item_margin?: boolean;
+  /** true = only rows with a possible match to confirm. */
+  has_suggestion?: boolean;
+  /** true = only rows not in your item list yet. */
+  not_added?: boolean;
+  /** true = only rows whose supplier price moved since the last list. */
+  price_changed?: boolean;
+  /** true = only rows whose photo was flagged for a look. */
+  photo_check?: boolean;
 }
 
 export type ItemPatch = Partial<{
@@ -108,6 +133,8 @@ export type ItemPatch = Partial<{
   group_name: string | null;
   /** A number sets this item's own margin (%); null clears it. */
   item_margin_pct: string | null;
+  /** true = this photo is fine: clears its flag. */
+  photo_ok: boolean;
 }>;
 
 export type BulkChanges = {
@@ -134,6 +161,10 @@ export function itemsQuery(filter: ItemFilter, cursor: string | null): string {
   if (filter.included !== undefined) p.set("included", String(filter.included));
   if (filter.brand) p.set("brand", filter.brand);
   if (filter.has_item_margin !== undefined) p.set("has_item_margin", String(filter.has_item_margin));
+  if (filter.has_suggestion) p.set("has_suggestion", "true");
+  if (filter.not_added) p.set("not_added", "true");
+  if (filter.price_changed) p.set("price_changed", "true");
+  if (filter.photo_check) p.set("photo_check", "true");
   if (cursor) p.set("cursor", cursor);
   return p.toString();
 }
@@ -212,10 +243,23 @@ export interface LabelOptions {
 }
 
 export type LabelRequest = LabelOptions & {
-  ids?: string[];
-  filter?: ItemFilter;
-  all_included?: boolean;
+  selection: CatalogSelection;
+  /** Items with no code get the next number; off leaves them out. */
+  assign_codes: boolean;
 };
+
+export interface LabelCheck {
+  selected: number;
+  printable: number;
+  labels: number;
+  pages: number;
+  /** printable items that have no code yet */
+  no_code: number;
+  /** archived or merged away */
+  inactive: number;
+  /** printable but without a selling rate (only counted when price is shown) */
+  no_price: number;
+}
 
 export interface OutputJob {
   id: string;
@@ -260,34 +304,46 @@ export type CatalogColumns = 2 | 3 | 4;
 export type GroupBy = "group" | "none";
 export type PriceBasis = "pack" | "piece";
 
-export interface CustomerCatalogOptions {
+export type CatalogSelection = { ids: string[] } | { filter: ItemFilter };
+
+export interface CatalogLayout {
   columns: CatalogColumns;
   group_by: GroupBy;
   show_code: boolean;
   price_basis: PriceBasis;
-  /** A contents page (needs grouping and at least two groups). */
   contents: boolean;
-  /** Cover title for customers; blank = the catalog's name. */
-  title: string;
+  include_expected: boolean;
+  label_expected: boolean;
 }
 
-export type CustomerCatalogRequest = Omit<CustomerCatalogOptions, "title"> & {
-  title?: string;
-  ids?: string[];
-  filter?: ItemFilter;
-  all_included?: boolean;
-};
+export interface CatalogRequest extends CatalogLayout {
+  selection: CatalogSelection;
+}
+
+export interface CatalogCheck {
+  selected: number;
+  included: number;
+  left_out_out_of_stock: number;
+  left_out_discontinued: number;
+  left_out_expected: number;
+  no_price: number;
+  missing_photos: number;
+  missing_photo_items: { item_id: string; name: string; code: string | null }[];
+}
 
 export interface CustomerCatalog {
   id: string;
+  series_id: string;
   version: number;
   title: string;
   options: Record<string, unknown>;
+  selection_kind: "ids" | "filter";
   item_count: number;
   page_count: number;
   byte_size: number;
-  /** Prices or items changed after this version was made: make a new one. */
-  stale: boolean;
+  /** Items or prices changed since this version: make a new one. null = replaced by a newer version. */
+  stale: boolean | null;
+  latest: boolean;
   created_at: string;
 }
 
@@ -314,6 +370,10 @@ export interface PromoteOut {
   /** Created with the code appended because another product has the same name. */
   renamed: number;
   examples: string[];
+  /** Catalog photos being copied onto the new items in the background. */
+  photos_queued: number;
+  /** Items this call created: what Undo removes. */
+  created_item_ids: string[];
 }
 
 export interface TallySettings {
@@ -359,7 +419,10 @@ export interface TallyPreflight {
   to_push: number;
   already_synced: number;
   skipped_existing: number;
-  not_promoted: number;
+  /** Already in Tally; re-sent only to update a changed selling price. */
+  price_updates: number;
+  /** archived or merged items in the selection: never sent */
+  inactive: number;
   batches: number;
   root: string | null;
   checked_at: string | null;
@@ -379,6 +442,11 @@ export interface TallyRun {
   updated_at: string | null;
   /** while running: Tally is not ready and the batch is being retried */
   waiting?: "tally_unavailable" | "no_company_loaded" | null;
+  /** What the current batch is doing. */
+  phase?: "waiting_agent" | "sending" | "waiting_tally" | null;
+  started_at?: string | null;
+  /** Rough seconds left, once a batch has finished. */
+  eta_seconds?: number | null;
 }
 
 export interface SupplierCatalogs {

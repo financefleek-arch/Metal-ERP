@@ -11,7 +11,7 @@ stock item. Promoting links each product to exactly one `Item`:
 
 Two products with the same display name (the supplier sells the same glass in several colours)
 cannot both be called that: items need unique names, in Tally too. They get the code appended,
-"Juice Glass 190 ML (JWG-0008)". Promoting also locks the product's code for good.
+"Juice Glass 190 ML (JWG-0008)".
 """
 
 from __future__ import annotations
@@ -24,9 +24,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
-from app.models import CatalogProduct, Item, SupplierCatalogItem
-from app.models._mixins import ItemSource, ItemStatus, ItemType
-from app.services.catalog import products as products_svc
+from app.models import CatalogProduct, Item, ItemCategory, SupplierCatalogItem
+from app.models._mixins import Availability, ItemSource, ItemStatus, ItemType
 
 _NAME_MAX = 300
 
@@ -41,6 +40,7 @@ class PromotePlan:
     already: int = 0  # this row is already promoted
     renamed: int = 0  # created with the code appended to keep names unique
     examples: list[str] = field(default_factory=list)  # a few names that will be linked
+    created_ids: list[str] = field(default_factory=list)  # items created by this call (for Undo)
 
 
 @dataclass
@@ -161,6 +161,10 @@ def promote(
                 category_id=prod.category_id,
                 uom="nos",
                 size_text=(row.size_text or None),
+                pack_qty=row.pack_qty or None,
+                carton_qty=row.carton_qty or None,
+                # price-list items are not stock until you mark them (in bulk) as in stock
+                availability=Availability.out_of_stock,
                 default_rate=_f(row.sell_price),
                 last_purchase_rate=_f(row.cost_price),
                 barcode=prod.code,
@@ -168,15 +172,25 @@ def promote(
                 source=ItemSource.catalog,
                 status=ItemStatus.confirmed,
             )
+            cat = session.get(ItemCategory, prod.category_id) if prod.category_id else None
+            if cat is not None and cat.hsn_code:  # the group's HSN / GST default
+                item.hsn_code = cat.hsn_code
+                if cat.gst_rate is not None:
+                    item.gst_rate = float(cat.gst_rate)
             session.add(item)
             session.flush()
             e.target = item
+            plan.created_ids.append(item.id)
         else:
             item = e.target
             assert item is not None
             if e.action == "reuse":  # our own item: the new offer's rates
                 item.default_rate = _f(row.sell_price)
                 item.last_purchase_rate = _f(row.cost_price)
+            if item.pack_qty is None and row.pack_qty:
+                item.pack_qty = row.pack_qty
+            if item.carton_qty is None and row.carton_qty:
+                item.carton_qty = row.carton_qty
             if not item.barcode:
                 item.barcode = prod.code
             if not item.sku:
@@ -185,7 +199,6 @@ def promote(
         prod.item_id = e.target.id
         row.item_id = e.target.id
     session.flush()
-    products_svc.lock_products(session, [e.product.id for e in entries])
     return plan
 
 

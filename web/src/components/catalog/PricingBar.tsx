@@ -51,10 +51,24 @@ export function PricingBar({
       qc.setQueryData(["supplier-catalog", catalog.id], c);
       qc.invalidateQueries({ queryKey: ["catalog-items", catalog.id] });
       qc.invalidateQueries({ queryKey: ["supplier-catalogs"] });
-      // new prices make existing customer catalogs out of date
-      qc.invalidateQueries({ queryKey: ["customer-catalogs", catalog.id] });
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not save prices. Try again."),
+  });
+
+  const [defaultSaved, setDefaultSaved] = useState(false);
+  const makeDefault = useMutation({
+    mutationFn: () =>
+      api(`/supplier-catalogs/suppliers/${catalog.supplier_party_id}/defaults`, {
+        method: "PUT",
+        body: { bulk_margin_pct: Number(margin).toFixed(2), rounding_step: step },
+      }),
+    onSuccess: () => {
+      setErr(null);
+      setDefaultSaved(true);
+      qc.invalidateQueries({ queryKey: ["supplier-defaults", catalog.supplier_party_id] });
+      window.setTimeout(() => setDefaultSaved(false), 2500);
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not save the default."),
   });
 
   const example = valid ? marginExample(Number(margin)) : "";
@@ -147,6 +161,20 @@ export function PricingBar({
         </div>
       </div>
 
+      {catalog.supplier_party_id && (
+        <p className="mt-2 text-sm">
+          <button
+            type="button"
+            className="text-accent underline disabled:opacity-50"
+            disabled={!valid || makeDefault.isPending}
+            onClick={() => makeDefault.mutate()}
+          >
+            Use {valid ? `${trimMargin(margin)}% rounded to Rs ${step}` : "this margin"} for this
+            supplier&apos;s next catalogs
+          </button>
+          {defaultSaved && <span className="ml-2 text-ok">Saved as the supplier&apos;s default.</span>}
+        </p>
+      )}
       <p className="mt-3 text-sm text-muted">
         New price = supplier price + margin, rounded. Supplier prices are never changed.
         {below && <span className="ml-1 text-danger">This sells below the supplier price.</span>}

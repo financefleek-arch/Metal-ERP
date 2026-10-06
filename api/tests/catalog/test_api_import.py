@@ -61,28 +61,18 @@ def test_upload_creates_catalog_with_items(uploaded) -> None:
     assert cat["page_count"] == 2
     assert cat["item_count"] == 24
     assert cat["title"] == "glassware"
-    assert cat["code_prefix"] == "GEN"  # fallback prefix for products with no group
     assert cat["supplier_party_id"] is None
     assert cat["bulk_margin_pct"] == "0.00"
     assert cat["already_exists"] is False
     assert len(_items(client, h, cat["id"], limit=200)) == 24
 
 
-def test_codes_are_group_based_and_sequential_in_reading_order(uploaded) -> None:
-    import re
-
+def test_codes_are_a_firm_wide_running_number_in_reading_order(uploaded) -> None:
     client, h, cat = uploaded
     items = _items(client, h, cat["id"], limit=200)
-    codes = [i["code"] for i in items]
-    assert len(set(codes)) == 24 and all(re.fullmatch(r"[A-Z]{2,4}-\d{4}", c) for c in codes)
-    by_group: dict[str, list[int]] = {}
-    for i in items:
-        by_group.setdefault(i["code"].split("-")[0], []).append(int(i["code"].split("-")[1]))
-    for nums in by_group.values():  # each group's series runs 1..n in reading order
-        assert nums == list(range(1, len(nums) + 1))
-    mug = next(i for i in items if i["supplier_code"] == "Y5813")
-    assert mug["code"].startswith("BM-")  # Beer Mugs
-    assert mug["code_locked"] is False and mug["product_id"]
+    codes = [int(i["code"]) for i in items]
+    assert codes == list(range(100001, 100025))  # six digits, no group in the code
+    assert all(i["product_id"] for i in items)
     assert items[0]["supplier_code"] == "AJ-1003"
     assert (items[0]["page_no"], items[0]["position"]) == (1, 1)
 
@@ -108,26 +98,22 @@ def test_same_file_twice_returns_the_existing_catalog(uploaded) -> None:
     assert r.json()["id"] == cat["id"]
     assert r.json()["already_exists"] is True
     assert len(client.get("/api/supplier-catalogs", headers=h).json()) == 1
-    # codes were not consumed again
-    again = _items(client, h, cat["id"], limit=200)
-    assert [i["code"] for i in again] == [i["code"] for i in _items(client, h, cat["id"], limit=200)]
+    # codes were not consumed again: the next new product carries on from 100025
     r2 = _upload(client, h, data=make_pdf([[TestCell(code="Q1")]]), name="q.pdf")
-    q = _items(client, h, r2.json()["id"])[0]["code"]
-    assert q.endswith("-0001") or int(q.split("-")[1]) > 0
+    assert _items(client, h, r2.json()["id"])[0]["code"] == "100025"
 
 
-def test_title_and_prefix_can_be_given(catalog_client: CatalogEnv) -> None:
+def test_title_can_be_given(catalog_client: CatalogEnv) -> None:
     client, h, _ = catalog_client
-    r = _upload(client, h, title="Kitchen Glass Aug", code_prefix="kg")
-    assert r.status_code == 201
-    assert (r.json()["title"], r.json()["code_prefix"]) == ("Kitchen Glass Aug", "KG")
+    r = _upload(client, h, title="Kitchen Glass Aug")
+    assert r.status_code == 201 and r.json()["title"] == "Kitchen Glass Aug"
 
 
-def test_tenant_default_prefix_is_used(catalog_client: CatalogEnv) -> None:
+def test_the_firm_prefix_is_put_in_front_of_new_codes(catalog_client: CatalogEnv) -> None:
     client, h, _ = catalog_client
     client.patch("/api/tenant", headers=h, json={"catalog_code_prefix": "ks"})
     r = _upload(client, h, name="whatever.pdf")
-    assert r.json()["code_prefix"] == "KS"
+    assert _items(client, h, r.json()["id"])[0]["code"] == "KS100001"
 
 
 def test_second_catalog_never_reuses_a_code(catalog_client: CatalogEnv) -> None:
@@ -147,8 +133,6 @@ def test_bad_uploads_are_rejected_with_clear_errors(catalog_client: CatalogEnv) 
     assert r.status_code == 415
     r = _upload(client, h, data=text_only_pdf())
     assert r.status_code == 422 and "No products found" in r.json()["detail"]
-    r = _upload(client, h, code_prefix="!")
-    assert r.status_code == 422
     assert client.get("/api/supplier-catalogs", headers=h).json() == []  # nothing half-created
 
 
@@ -290,13 +274,25 @@ def _patch(client: TestClient, h: dict[str, str], cid: str, iid: str, body: dict
 def test_edit_name_pack_and_flags(uploaded) -> None:
     client, h, cat = uploaded
     it = _items(client, h, cat["id"])[0]
-    r = _patch(client, h, cat["id"], it["id"], {
-        "display_name": "  Pudding Set 7 Pc  ", "pack_qty": 6, "included": False, "brand": " Deli "
-    })
+    r = _patch(
+        client,
+        h,
+        cat["id"],
+        it["id"],
+        {
+            "display_name": "  Pudding Set 7 Pc  ",
+            "pack_qty": 6,
+            "included": False,
+            "brand": " Deli ",
+        },
+    )
     assert r.status_code == 200, r.text
     out = r.json()
     assert (out["display_name"], out["pack_qty"], out["included"], out["brand"]) == (
-        "Pudding Set 7 Pc", 6, False, "Deli",
+        "Pudding Set 7 Pc",
+        6,
+        False,
+        "Deli",
     )
     # persisted
     assert _items(client, h, cat["id"])[0]["display_name"] == "Pudding Set 7 Pc"

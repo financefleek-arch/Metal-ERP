@@ -18,12 +18,14 @@ from sqlalchemy import (
     Numeric,
     String,
     UniqueConstraint,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 from app.models._mixins import (
     AliasSource,
+    Availability,
     ItemSource,
     ItemStatus,
     ItemType,
@@ -148,6 +150,31 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     )
     merged_into_id: Mapped[str | None] = mapped_column(ForeignKey("item.id"))
     tally_guid: Mapped[str | None] = mapped_column(String(64), index=True)
+    # Push state: none | queued | synced | error. `tally_price` is the selling price last sent;
+    # `tally_seen_price` what Tally showed at the last check (0 = no price there).
+    tally_status: Mapped[str] = mapped_column(
+        String(8), default="none", server_default="none", nullable=False
+    )
+    tally_price: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    tally_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    tally_seen_price: Mapped[float | None] = mapped_column(Numeric(15, 2))
+
+    # In stock / expected / out of stock / discontinued. Customer catalogs offer In stock by
+    # default. Items from a supplier price list start out of stock until marked.
+    availability: Mapped[Availability] = mapped_column(
+        String(12), default=Availability.in_stock, server_default="in_stock", nullable=False,
+        index=True,
+    )
+    # Pieces in one sale unit (a pack) and in a carton, for "for 7 pcs" and price per piece.
+    pack_qty: Mapped[int | None] = mapped_column(Integer)
+    carton_qty: Mapped[int | None] = mapped_column(Integer)
+
+    # The item's photo (a `media_asset`); one primary photo for now.
+    primary_media_id: Mapped[str | None] = mapped_column(ForeignKey("media_asset.id"), index=True)
+    # False for non-goods lines (transport, packing, services). Unused until stock is tracked.
+    is_stock: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
 
     # Stage 3+ — dormant.
     stock_tracking: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

@@ -238,7 +238,7 @@ export interface Tenant {
   document_label: string;
   gst_enabled: boolean;
   gstin: string | null;
-  /** Default item-code prefix for new supplier catalogs (null = derived). */
+  /** Optional prefix in front of new item codes (null = none). */
   catalog_code_prefix: string | null;
   /** 'auto' creates a missing group (category); 'suggest_only' leaves it blank. */
   catalog_group_create_policy: "auto" | "suggest_only";
@@ -397,11 +397,20 @@ export interface ImportCommitResult {
 
 export type ItemType = "bulk" | "mrp";
 export type ItemStatus = "unconfirmed" | "confirmed" | "archived";
-export type ItemSource = "manual" | "auto_from_invoice" | "auto_from_purchase" | "import";
+export type ItemSource =
+  | "manual"
+  | "auto_from_invoice"
+  | "auto_from_purchase"
+  | "import"
+  | "catalog";
+
+export type Availability = "in_stock" | "expected" | "out_of_stock" | "discontinued";
 
 export interface ItemListItem {
   id: string;
   name: string;
+  /** Our item code (for catalog items, the firm-wide running number). */
+  sku: string | null;
   item_type: ItemType;
   category: string | null;
   uom: string | null;
@@ -421,6 +430,62 @@ export interface ItemListItem {
   times_billed: number;
   status: ItemStatus;
   source: ItemSource;
+  /** The item's photo (about 1000 px) and a small version for lists; null when it has none. */
+  photo_url: string | null;
+  thumb_url: string | null;
+  availability: Availability;
+  /** Pieces in one sale unit, and in a carton. */
+  pack_qty: number | null;
+  carton_qty: number | null;
+  tally_state: TallyState;
+}
+
+/** Where an item stands with Tally. */
+export type TallyState =
+  | "none"
+  | "queued"
+  | "error"
+  | "imported"
+  | "synced"
+  | "price_due"
+  | "price_differs";
+
+/** Which items, by what they look like instead of by ticking rows. */
+export interface ItemFilter {
+  q?: string;
+  type?: ItemType;
+  status?: ItemStatus;
+  no_hsn?: boolean;
+  price_review?: boolean;
+  availability?: Availability[];
+  no_photo?: boolean;
+  in_tally?: boolean;
+  /** in Tally, but at a different selling price than the item's rate now */
+  tally_price_due?: boolean;
+  supplier_id?: string;
+  catalog_id?: string;
+}
+
+export interface ItemSources {
+  catalogs: {
+    catalog_id: string;
+    title: string;
+    supplier_party_id: string | null;
+    supplier_name: string | null;
+    supplier_code: string;
+    cost_price: string;
+    sell_price: string;
+  }[];
+  bills: {
+    bill_id: string;
+    bill_no: string | null;
+    bill_date: string | null;
+    status: string;
+    supplier_name: string | null;
+    quantity: string | null;
+    uom: string | null;
+    rate: string | null;
+  }[];
 }
 
 export interface Item extends ItemListItem {
@@ -480,7 +545,10 @@ export type BulkField =
   | "category_id"
   | "group_id"
   | "status"
-  | "notes";
+  | "notes"
+  | "availability"
+  | "pack_qty"
+  | "carton_qty";
 
 export type BulkResult =
   | "changed"
@@ -524,6 +592,9 @@ export interface ItemCategoryRow {
   sort: number;
   group_count: number;
   item_count: number;
+  hsn_code: string | null;
+  gst_rate: string | null;
+  items_without_hsn: number;
 }
 
 export interface GroupOut {
@@ -560,6 +631,7 @@ export interface TreeLeaf {
   size_label: string | null;
   default_rate: string | null;
   status: ItemStatus;
+  thumb_url?: string | null;
 }
 
 export interface TreeGroup {

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+
+from app.schemas_customer_catalog import CatalogSelection
 
 # Always serialised with fixed decimals, so the JSON is the same on every database
 # (SQLite drops trailing zeros; Postgres NUMERIC keeps them).
@@ -26,7 +28,6 @@ class CatalogListItem(BaseModel):
     source_filename: str
     page_count: int
     item_count: int
-    code_prefix: str
     supplier_party_id: str | None = None
     supplier_name: str | None = None
     bulk_margin_pct: MarginOut
@@ -45,6 +46,12 @@ class SupplierCatalogsOut(BaseModel):
 class CatalogDetail(CatalogListItem):
     # Items that carry their own margin instead of the bulk margin.
     item_margin_count: int = 0
+    # Rows with a possible match (same product from another supplier or file) to confirm.
+    suggestion_count: int = 0
+    # rows whose supplier price went up or down since the last list
+    price_change_count: int = 0
+    # rows whose photo was flagged for a look
+    photo_check_count: int = 0
 
 
 class CatalogUploadOut(CatalogListItem):
@@ -58,6 +65,10 @@ class CatalogUploadOut(CatalogListItem):
     new_products: int = 0
     # Rows that look like a product you already have (same name): confirm or dismiss.
     suggestions: int = 0
+    # Rows whose supplier price went up or down since the last list from this supplier.
+    price_changes: int = 0
+    # Price lines on the PDF with no picture: those products were not read; add them by hand.
+    unread_price_lines: int = 0
 
 
 # A margin in percent, at most 2 decimals: -99.99 (a discount) up to 1000. 25 = +25%.
@@ -81,6 +92,8 @@ class ProductRef(BaseModel):
     product_id: str
     code: str
     name: str
+    # who offers the matched product (so you can tell a cross-supplier match)
+    supplier_name: str | None = None
 
 
 class CatalogItemOut(BaseModel):
@@ -105,13 +118,22 @@ class CatalogItemOut(BaseModel):
     image_url: str | None
     # Code 128 bar pattern for `code` ('1' = bar, '0' = space), drawn as SVG in the browser.
     barcode: str | None
-    # The product this row is an offer of; it owns the code. A locked code never changes.
+    # The product this row is an offer of; it owns the code.
     product_id: str | None
-    code_locked: bool
     # Another product that looks like the same thing (same name): accept or dismiss.
     suggestion: ProductRef | None
     item_id: str | None
     tally_status: str
+    # when this row last changed: send it back as `expected_updated_at` to detect a clash
+    updated_at: datetime | None = None
+    # new | up | down | same, against the last price list from this supplier
+    price_change: str | None = None
+    previous_cost: Money | None = None
+    # small | odd_shape | blank | unreadable: this crop probably needs a look
+    image_flag: str | None = None
+    # what the latest bill for this item charged
+    last_paid: Money | None = None
+    last_paid_on: date | None = None
 
 
 class CatalogItemPatch(BaseModel):
@@ -128,6 +150,11 @@ class CatalogItemPatch(BaseModel):
     group_name: str | None = Field(default=None, max_length=120)
     # A number sets this item's own margin (%); null clears it (back to the bulk margin).
     item_margin_pct: Margin = None
+    # true = this photo is fine: clears the flag
+    photo_ok: bool | None = None
+    # The `updated_at` the editor saw. If the row has changed since (someone else edited it),
+    # the save is refused with 409 instead of silently overwriting their change.
+    expected_updated_at: datetime | None = None
 
 
 class ItemFilter(BaseModel):
@@ -138,6 +165,14 @@ class ItemFilter(BaseModel):
     brand: str | None = None
     # True = only items with their own (item-level) margin; False = only those on the bulk margin.
     has_item_margin: bool | None = None
+    # true = only rows that have a possible match with another product to confirm
+    has_suggestion: bool | None = None
+    # true = only rows not in your item list yet; false = only rows that are
+    not_added: bool | None = None
+    # true = only rows whose supplier price moved (up or down) since the last list
+    price_changed: bool | None = None
+    # true = only rows whose photo was flagged for a look
+    photo_check: bool | None = None
 
 
 class BulkChanges(BaseModel):
@@ -165,7 +200,6 @@ class BulkResult(BaseModel):
 class GroupSummary(BaseModel):
     category_id: str | None
     name: str
-    code_prefix: str | None = None
     item_count: int
     included_count: int
 
@@ -212,36 +246,6 @@ class OutputJobOut(BaseModel):
 # --------------------------------------------------------------------------
 
 
-class CustomerCatalogRequest(BaseModel):
-    """Which items go in, and how. Choose exactly one of `ids`, `filter`, `all_included`."""
-
-    ids: list[str] | None = Field(default=None, max_length=5000)
-    filter: ItemFilter | None = None
-    all_included: bool = False
-
-    columns: Literal[2, 3, 4] = 3
-    group_by: Literal["group", "none"] = "group"
-    show_code: bool = True
-    # 'pack' = the price for the pack as quoted; 'piece' = price per piece.
-    price_basis: Literal["pack", "piece"] = "pack"
-    contents: bool = True
-    # Cover title for customers. Defaults to the catalog's name.
-    title: str | None = Field(default=None, min_length=1, max_length=200)
-
-
-class CustomerCatalogOut(BaseModel):
-    id: str
-    version: int
-    title: str
-    options: dict[str, object]
-    item_count: int
-    page_count: int
-    byte_size: int
-    # True once prices or items changed after this version was made: regenerate.
-    stale: bool
-    created_at: datetime
-
-
 class LinkProductIn(BaseModel):
     product_id: str
 
@@ -259,6 +263,11 @@ class SelectionIn(BaseModel):
     all_included: bool = False
 
 
+class PromoteIn(SelectionIn):
+    # the new items count as In stock straight away (otherwise they start Out of stock)
+    mark_in_stock: bool = False
+
+
 class PromoteOut(BaseModel):
     total: int
     create: int
@@ -267,6 +276,50 @@ class PromoteOut(BaseModel):
     already: int
     renamed: int
     examples: list[str]
+    # catalog photos being copied onto their new items in the background
+    photos_queued: int = 0
+    # the items this call created (what Undo removes)
+    created_item_ids: list[str] = []
+
+
+class SupplierDefaultsIn(BaseModel):
+    """Only the fields sent change. A null margin or rounding means "no default"."""
+
+    bulk_margin_pct: Margin = None
+    rounding_step: Literal[1, 5, 10] | None = None
+    # supplier-suggested group (as the rules name it) -> our group name; blank name removes it
+    group_map: dict[str, str] | None = None
+    add_automatically: bool | None = None
+    mark_in_stock: bool | None = None
+
+
+class SupplierDefaultsOut(BaseModel):
+    bulk_margin_pct: str | None
+    rounding_step: int | None
+    group_map: dict[str, str]
+    add_automatically: bool
+    mark_in_stock: bool
+
+
+class PricesPreviewOut(BaseModel):
+    """Items whose selling rate differs from this price list's current selling price."""
+
+    total: int  # rows looked at that are in your item list
+    changing: int
+    examples: list[str]
+
+
+class PricesApplyOut(BaseModel):
+    updated: int
+
+
+class PromoteUndoIn(BaseModel):
+    item_ids: list[str] = Field(min_length=1, max_length=5000)
+
+
+class PromoteUndoOut(BaseModel):
+    removed: int
+    kept: int  # used on a document, edited since, or already sent to Tally: left alone
 
 
 class TallySettingsIn(BaseModel):
@@ -326,7 +379,9 @@ class TallyPreflightOut(BaseModel):
     to_push: int
     already_synced: int
     skipped_existing: int = 0
-    not_promoted: int
+    # already in Tally; re-sent only to update a changed selling price
+    price_updates: int = 0
+    inactive: int = 0  # archived or merged items in the selection: never sent
     batches: int
     root: str | None
     checked_at: datetime | None
@@ -335,7 +390,8 @@ class TallyPreflightOut(BaseModel):
     collisions: list[PreflightCollisionOut]
 
 
-class TallyPushIn(SelectionIn):
+class TallyPushIn(BaseModel):
+    selection: CatalogSelection
     # also re-send items already in Tally (an alter: use after changing names or codes)
     include_synced: bool = False
     # leave out items whose name already exists in Tally (never overwrite them)
@@ -354,3 +410,7 @@ class TallyRunOut(BaseModel):
     # while running: "tally_unavailable" | "no_company_loaded" when Tally is not ready and the
     # batch is being retried
     waiting: str | None = None
+    # waiting_agent | sending | waiting_tally while running
+    phase: str | None = None
+    started_at: datetime | None = None
+    eta_seconds: int | None = None

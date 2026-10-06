@@ -25,28 +25,17 @@ import {
 } from "../../lib/catalog";
 import { Barcode } from "../../components/catalog/Barcode";
 import { SupplierPicker } from "../../components/catalog/SupplierPicker";
-import { CustomerCatalogDialog } from "../../components/catalog/CustomerCatalogDialog";
-import { CustomerCatalogsPanel } from "../../components/catalog/CustomerCatalogsPanel";
 import { EditableNumber, EditableText } from "../../components/catalog/Editable";
-import { LabelsDialog } from "../../components/catalog/LabelsDialog";
-import { TallyDialog } from "../../components/catalog/TallyDialog";
 import { PromoteDialog } from "../../components/catalog/PromoteDialog";
 import { ImageLightbox } from "../../components/catalog/ImageLightbox";
 import { GroupsPanel } from "../../components/catalog/GroupsPanel";
 import { PricingBar } from "../../components/catalog/PricingBar";
-
-// Item fields a customer catalog prints; editing one makes existing versions out of date.
-const CUSTOMER_FIELDS = [
-  "display_name",
-  "pack_qty",
-  "cost_price",
-  "included",
-  "group_name",
-  "item_margin_pct",
-];
+import { ReplacePhoto } from "../../components/catalog/ReplacePhoto";
+import { CatalogQueueBar } from "../../components/catalog/CatalogQueueBar";
 
 type IncludedFilter = "all" | "yes" | "no";
 type MarginFilter = "any" | "item" | "bulk";
+type MatchFilter = "any" | "possible";
 type ItemPages = InfiniteData<Page<CatalogItem[]>, string | null>;
 
 // One column template for the header and every row, so columns line up. Below xl the row is
@@ -66,6 +55,10 @@ export function CatalogReviewPage() {
   const [groupSel, setGroupSel] = useState<string>("all"); // "all" | "none" | category id
   const [incl, setIncl] = useState<IncludedFilter>("all");
   const [marginSel, setMarginSel] = useState<MarginFilter>("any");
+  const [matchSel, setMatchSel] = useState<MatchFilter>("any");
+  const [notAdded, setNotAdded] = useState(false);
+  const [priceMoved, setPriceMoved] = useState(false);
+  const [photoCheck, setPhotoCheck] = useState(false);
   const [showGroups, setShowGroups] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [allMatching, setAllMatching] = useState(false);
@@ -74,11 +67,8 @@ export function CatalogReviewPage() {
   const [flash, setFlash] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [labelsOpen, setLabelsOpen] = useState(false);
-  const [tallyOpen, setTallyOpen] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [zoomRow, setZoomRow] = useState<CatalogItem | null>(null);
-  const [ccOpen, setCcOpen] = useState(false);
   const [pickSupplier, setPickSupplier] = useState(false);
   const [importNote, setImportNote] = useState<string | null>(null);
 
@@ -89,8 +79,12 @@ export function CatalogReviewPage() {
       category_id: groupSel !== "all" && groupSel !== "none" ? groupSel : undefined,
       included: incl === "all" ? undefined : incl === "yes",
       has_item_margin: marginSel === "any" ? undefined : marginSel === "item",
+      has_suggestion: matchSel === "possible" || undefined,
+      not_added: notAdded || undefined,
+      price_changed: priceMoved || undefined,
+      photo_check: photoCheck || undefined,
     }),
-    [dq, groupSel, incl, marginSel],
+    [dq, groupSel, incl, marginSel, matchSel, notAdded, priceMoved, photoCheck],
   );
 
   const catalog = useQuery({
@@ -156,12 +150,24 @@ export function CatalogReviewPage() {
     qc.invalidateQueries({ queryKey: ["item-categories"] });
   }
 
+  // One edit at a time (so your own quick edits never clash), each carrying the version of the
+  // row it was made on: if someone else changed the row meanwhile, the save is refused.
   const patchItem = useMutation({
-    mutationFn: (v: { itemId: string; body: ItemPatch }) =>
-      api<CatalogItem>(`/supplier-catalogs/${id}/items/${v.itemId}`, {
+    scope: { id: `catalog-edit-${id}` },
+    mutationFn: (v: { itemId: string; body: ItemPatch }) => {
+      let seen: string | null = null;
+      for (const [, data] of qc.getQueriesData<ItemPages>({ queryKey: ["catalog-items", id] })) {
+        const hit = data?.pages.flatMap((p) => p.data).find((r) => r.id === v.itemId);
+        if (hit) {
+          seen = hit.updated_at;
+          break;
+        }
+      }
+      return api<CatalogItem>(`/supplier-catalogs/${id}/items/${v.itemId}`, {
         method: "PATCH",
-        body: v.body,
-      }),
+        body: seen ? { ...v.body, expected_updated_at: seen } : v.body,
+      });
+    },
     onSuccess: (updated, v) => {
       setErr(null);
       qc.setQueriesData<ItemPages>({ queryKey: ["catalog-items", id] }, (old) =>
@@ -178,11 +184,13 @@ export function CatalogReviewPage() {
       if ("group_name" in v.body || "included" in v.body) refreshGroups();
       if ("item_margin_pct" in v.body)
         qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
-      // any edit that changes what a customer catalog prints makes it out of date
-      if (CUSTOMER_FIELDS.some((f) => f in v.body))
-        qc.invalidateQueries({ queryKey: ["customer-catalogs", id] });
     },
-    onError,
+    onError: (e) => {
+      onError(e);
+      if (e instanceof ApiError && e.status === 409) {
+        qc.invalidateQueries({ queryKey: ["catalog-items", id] }); // show what the other person did
+      }
+    },
   });
 
   const bulk = useMutation({
@@ -201,7 +209,6 @@ export function CatalogReviewPage() {
       setBulkMargin("");
       qc.invalidateQueries({ queryKey: ["catalog-items", id] });
       qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
-      qc.invalidateQueries({ queryKey: ["customer-catalogs", id] });
       refreshGroups();
     },
     onError,
@@ -231,7 +238,8 @@ export function CatalogReviewPage() {
       setErr(null);
       replaceRow(updated);
       refreshGroups();
-      qc.invalidateQueries({ queryKey: ["customer-catalogs", id] });
+      qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
+      qc.invalidateQueries({ queryKey: ["catalog-items", id] });
     },
     onError,
   });
@@ -241,7 +249,11 @@ export function CatalogReviewPage() {
       api<CatalogItem>(`/supplier-catalogs/${id}/items/${itemId}/suggestion`, {
         method: "DELETE",
       }),
-    onSuccess: (updated) => replaceRow(updated),
+    onSuccess: (updated) => {
+      replaceRow(updated);
+      qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
+      qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+    },
     onError,
   });
 
@@ -274,7 +286,7 @@ export function CatalogReviewPage() {
     mutationFn: () => api(`/supplier-catalogs/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["supplier-catalogs"] });
-      nav("/catalogs");
+      nav("/documents");
     },
     onError: (e) => {
       setConfirmDelete(false);
@@ -305,7 +317,7 @@ export function CatalogReviewPage() {
     return (
       <div className="max-w-xl">
         <p className="err">That catalog was not found.</p>
-        <Link to="/catalogs" className="text-sm text-accent hover:underline">
+        <Link to="/documents" className="text-sm text-accent hover:underline">
           Back to catalogs
         </Link>
       </div>
@@ -320,13 +332,14 @@ export function CatalogReviewPage() {
     filter.no_group ||
     filter.category_id ||
     incl !== "all" ||
-    marginSel !== "any"
+    marginSel !== "any" ||
+    matchSel !== "any"
   );
 
   return (
     <div>
       <div className="mb-1 text-sm">
-        <Link to="/catalogs" className="text-accent hover:underline">
+        <Link to="/documents" className="text-accent hover:underline">
           Supplier catalogs
         </Link>
       </div>
@@ -395,14 +408,8 @@ export function CatalogReviewPage() {
           >
             Manage groups
           </button>
-          <button type="button" className="btn-ghost" onClick={() => setLabelsOpen(true)}>
-            Print labels
-          </button>
           <button type="button" className="btn-ghost" onClick={() => setPromoteOpen(true)}>
             Add to items
-          </button>
-          <button type="button" className="btn-ghost" onClick={() => setTallyOpen(true)}>
-            Send to Tally
           </button>
           {confirmDelete ? (
             <span className="flex items-center gap-2 text-sm">
@@ -446,7 +453,21 @@ export function CatalogReviewPage() {
         />
       )}
 
-      <CustomerCatalogsPanel catalogId={id} onCreate={() => setCcOpen(true)} />
+      <CatalogQueueBar
+        catalogId={id}
+        groupSel={groupSel}
+        matchPossible={matchSel === "possible"}
+        notAdded={notAdded}
+        priceMoved={priceMoved}
+        priceMovedCount={catalog.data?.price_change_count ?? 0}
+        onPriceMoved={() => setPriceMoved((v) => !v)}
+        photoCheck={photoCheck}
+        photoCheckCount={catalog.data?.photo_check_count ?? 0}
+        onPhotoCheck={() => setPhotoCheck((v) => !v)}
+        onNeedGroup={() => setGroupSel((g) => (g === "none" ? "all" : "none"))}
+        onPossible={() => setMatchSel((m) => (m === "possible" ? "any" : "possible"))}
+        onNotAdded={() => setNotAdded((v) => !v)}
+      />
 
       {/* filters */}
       <div className="mb-3 flex flex-wrap items-end gap-3">
@@ -511,6 +532,22 @@ export function CatalogReviewPage() {
             <option value="any">Any</option>
             <option value="item">Item-level margin</option>
             <option value="bulk">Bulk margin</option>
+          </select>
+        </div>
+        <div>
+          <label className="label" htmlFor="cat-match">
+            Matches
+          </label>
+          <select
+            id="cat-match"
+            className="field w-52"
+            value={matchSel}
+            onChange={(e) => setMatchSel(e.target.value as MatchFilter)}
+          >
+            <option value="any">Any</option>
+            <option value="possible">
+              Possible matches{catalog.data ? ` (${catalog.data.suggestion_count})` : ""}
+            </option>
           </select>
         </div>
       </div>
@@ -616,17 +653,8 @@ export function CatalogReviewPage() {
           >
             Clear group
           </button>
-          <button type="button" className="btn-ghost h-9" onClick={() => setLabelsOpen(true)}>
-            Print labels
-          </button>
-          <button type="button" className="btn-ghost h-9" onClick={() => setCcOpen(true)}>
-            Customer catalog
-          </button>
           <button type="button" className="btn-ghost h-9" onClick={() => setPromoteOpen(true)}>
             Add to items
-          </button>
-          <button type="button" className="btn-ghost h-9" onClick={() => setTallyOpen(true)}>
-            Send to Tally
           </button>
           <button
             type="button"
@@ -713,6 +741,7 @@ export function CatalogReviewPage() {
                 checked={selected.has(r.id) || allMatching}
                 onChange={() => toggleRow(r.id)}
               />
+              <div>
               {r.image_url ? (
                 <button
                   type="button"
@@ -732,6 +761,30 @@ export function CatalogReviewPage() {
               ) : (
                 <div className="h-[68px] w-[102px] rounded border border-line bg-ground" />
               )}
+                {r.image_flag && (
+                  <p className="mt-0.5 w-[102px] text-center text-[10px] text-warn">
+                    {{ small: "Small picture", odd_shape: "Odd shape", blank: "Looks blank", unreadable: "Cannot read" }[
+                      r.image_flag
+                    ] ?? "Check photo"}{" "}
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => patchItem.mutate({ itemId: r.id, body: { photo_ok: true } })}
+                    >
+                      It is fine
+                    </button>
+                  </p>
+                )}
+                <ReplacePhoto
+                  catalogId={id}
+                  rowId={r.id}
+                  hasPhoto={!!r.image_url}
+                  onDone={() => {
+                    qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+                    qc.invalidateQueries({ queryKey: ["items"] });
+                  }}
+                />
+              </div>
               <div className="min-w-0">
                 <EditableText
                   label={`Name of ${r.code}`}
@@ -744,6 +797,14 @@ export function CatalogReviewPage() {
                   {r.brand ? ` · ${r.brand}` : ""}
                   {r.size_text ? ` · ${r.size_text}` : ""}
                   {r.carton_qty ? ` · carton of ${r.carton_qty}` : ""}
+                  {r.price_change === "up" || r.price_change === "down" ? (
+                    <span className={r.price_change === "up" ? "text-danger" : "text-ok"}>
+                      {` · price ${r.price_change === "up" ? "up" : "down"} from ₹${r.previous_cost ?? "?"}`}
+                    </span>
+                  ) : r.price_change === "new" && catalog.data?.supplier_party_id ? (
+                    <span> · new</span>
+                  ) : null}
+                  {r.last_paid ? ` · last bought at ₹${r.last_paid}` : ""}
                   {r.tally_status === "synced" ? (
                     <span className="text-ok"> · in Tally</span>
                   ) : r.tally_status === "error" ? (
@@ -754,25 +815,19 @@ export function CatalogReviewPage() {
                 </p>
               </div>
               <div className={`min-w-0 px-1.5 ${DETAIL}`}>
-                <span className="font-mono text-xs">
-                  {r.code}
-                  <span
-                    className="ml-1 text-[10px] text-muted"
-                    title={
-                      r.code_locked
-                        ? "This code has been used (label, catalog or Tally). It will not change."
-                        : "Not used yet. It changes if you move the item to another group."
-                    }
-                  >
-                    {r.code_locked ? "🔒" : "draft"}
-                  </span>
-                </span>
+                <span className="font-mono text-xs">{r.code}</span>
                 {r.suggestion && (
-                  <div className="mt-1 rounded border border-accent/40 bg-accent-soft px-1.5 py-1 text-[11px]">
-                    <span>
-                      Same as <b className="font-mono">{r.suggestion.code}</b>?
-                    </span>
-                    <span className="ml-2 inline-flex gap-2">
+                  <div className="mt-1 w-56 max-w-full rounded border border-accent/40 bg-accent-soft px-2 py-1.5 text-[11px] leading-snug">
+                    <p>
+                      Same as <b className="font-mono">{r.suggestion.code}</b>
+                      {" "}
+                      <span className="text-muted">
+                        {r.suggestion.name}
+                        {r.suggestion.supplier_name ? ` · ${r.suggestion.supplier_name}` : ""}
+                      </span>
+                      ?
+                    </p>
+                    <span className="mt-1 inline-flex gap-3">
                       <button
                         type="button"
                         className="text-accent hover:underline"
@@ -905,19 +960,6 @@ export function CatalogReviewPage() {
         {isFetchingNextPage && <p className="p-3 text-center text-sm text-muted">Loading more…</p>}
       </div>
 
-      {ccOpen && cat && (
-        <CustomerCatalogDialog
-          catalogId={id}
-          defaultTitle={cat.title}
-          selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
-          filtered={filtered ? { count: total ?? 0, filter } : null}
-          includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
-          onClose={() => {
-            setCcOpen(false);
-            qc.invalidateQueries({ queryKey: ["catalog-items", id] }); // codes may now be locked
-          }}
-        />
-      )}
       {zoomRow?.image_url && (
         <ImageLightbox
           src={zoomRow.image_url}
@@ -938,33 +980,6 @@ export function CatalogReviewPage() {
           }}
         />
       )}
-      {tallyOpen && cat && (
-        <TallyDialog
-          catalogId={id}
-          selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
-          filtered={filtered ? { count: total ?? 0, filter } : null}
-          includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
-          onClose={() => {
-            setTallyOpen(false);
-            qc.invalidateQueries({ queryKey: ["catalog-items", id] });
-          }}
-        />
-      )}
-
-      {labelsOpen && cat && (
-        <LabelsDialog
-          catalogId={id}
-          fileSlug={cat.title.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "catalog"}
-          selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
-          filtered={filtered ? { count: total ?? 0, filter } : null}
-          includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
-          onClose={() => {
-            setLabelsOpen(false);
-            qc.invalidateQueries({ queryKey: ["catalog-items", id] }); // codes may now be locked
-          }}
-        />
-      )}
-
       <p className="mt-2 text-xs text-muted">
         {total !== null
           ? `Showing ${rows.length} of ${total}${filtered ? " matching" : ""} items.`

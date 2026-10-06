@@ -7,34 +7,56 @@ hand-made item still passes through the review queue once.
 
 from __future__ import annotations
 
+import re
+from decimal import Decimal
+
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import Integer, case, func, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
-from app.models import Item, ItemAlias, ItemCategory, ProductGroup
-from app.models._mixins import ItemSource, ItemStatus, ItemType
+from app.models import (
+    InwardBill,
+    InwardBillLine,
+    Item,
+    ItemAlias,
+    ItemCategory,
+    Party,
+    ProductGroup,
+    SupplierCatalog,
+    SupplierCatalogItem,
+)
+from app.models._mixins import Availability, ItemSource, ItemStatus, ItemType
 from app.schemas_item import (
     BulkOutcome,
     ItemBulkDelete,
     ItemBulkDeleteResult,
+    ItemBulkRename,
     ItemBulkUpdate,
     ItemBulkUpdateResult,
+    ItemCountOut,
     ItemCreate,
+    ItemFilter,
     ItemListItem,
     ItemMergeIn,
     ItemOut,
     ItemUpdate,
 )
+from app.services import audit
 from app.services.catalogue.learn_from_recategorize import learn_from_recategorize
+from app.services.item_filter import filter_clauses as _filter_clauses
+from app.services.item_filter import filter_stmt as _filter_stmt
+from app.services.item_filter import resolve_ids as _ids_for
 from app.services.items import (
     SEARCH_RESULT_CAP,
     apply_search,
+    detach_catalog_links,
     document_count,
     hsn_gst_rate,
     rate_in_band,
 )
+from app.services.media_urls import media_url
 from app.services.pagination import finish_page, paginate
 
 router = APIRouter(prefix="/api/items", tags=["items"])
@@ -91,24 +113,32 @@ def list_items(
     status_: ItemStatus | None = Query(default=None, alias="status"),
     no_hsn: bool = Query(default=False),
     price_review: bool = Query(default=False),
+    availability: list[Availability] | None = Query(default=None),
+    no_photo: bool = Query(default=False),
+    in_tally: bool | None = Query(default=None),
+    tally_price_due: bool = Query(default=False),
+    supplier_id: str | None = Query(default=None, description="came from this supplier"),
+    catalog_id: str | None = Query(default=None, description="came from this price list"),
     limit: int | None = Query(
         default=None, ge=1, description="page size; omit for the whole list"
     ),
     cursor: str | None = Query(default=None, description="opaque next-page token"),
 ) -> list[ItemListItem]:
-    stmt = select(Item).where(
-        Item.tenant_id == user.tenant_id, Item.merged_into_id.is_(None)
+    flt = ItemFilter(
+        type=type_,
+        status=status_,
+        no_hsn=no_hsn,
+        price_review=price_review,
+        availability=availability,
+        no_photo=no_photo,
+        in_tally=in_tally,
+        tally_price_due=tally_price_due,
+        supplier_id=supplier_id,
+        catalog_id=catalog_id,
     )
-    if status_ is None:
-        stmt = stmt.where(Item.status != ItemStatus.archived)
-    else:
-        stmt = stmt.where(Item.status == status_)
-    if type_ is not None:
-        stmt = stmt.where(Item.item_type == type_)
-    if no_hsn:
-        stmt = stmt.where(Item.hsn_code.is_(None))
-    if price_review:
-        stmt = stmt.where(Item.price_review_pending.is_(True))
+    stmt = select(Item).where(
+        Item.tenant_id == user.tenant_id, Item.merged_into_id.is_(None), *_filter_clauses(flt)
+    )
 
     if q:
         # Search is ranked by a non-deterministic fuzzy score, so keyset
@@ -156,6 +186,7 @@ class TreeLeaf(BaseModel):
     size_label: str | None
     default_rate: str | None
     status: ItemStatus
+    thumb_url: str | None = None
 
 
 class TreeGroup(BaseModel):
@@ -298,6 +329,7 @@ def item_tree_leaves(
             size_label=it.size_label or it.size_text,
             default_rate=str(it.default_rate) if it.default_rate is not None else None,
             status=it.status,
+            thumb_url=media_url(it.primary_media_id, "thumb") if it.primary_media_id else None,
         )
         for it in rows
     ]
@@ -339,8 +371,16 @@ def create_item(body: ItemCreate, user: WriteUser, session: SessionDep) -> ItemO
         it.group_id = applied.group_id
         it.category_id = applied.category_id
     _apply_group_inheritance(session, user.tenant_id, it, body.model_fields_set)
+    group_rate = False
+    if it.category_id and not it.hsn_code and "hsn_code" not in body.model_fields_set:
+        cat = session.get(ItemCategory, it.category_id)
+        if cat is not None and cat.hsn_code:
+            it.hsn_code = cat.hsn_code
+            if cat.gst_rate is not None and "gst_rate" not in body.model_fields_set:
+                it.gst_rate = float(cat.gst_rate)
+                group_rate = True
     # HSN -> GST rate (data is right the day GST turns on; not printed in M1).
-    rate = hsn_gst_rate(session, it.hsn_code)
+    rate = None if group_rate else hsn_gst_rate(session, it.hsn_code)
     if rate is not None:
         it.gst_rate = float(rate)
     session.add(it)
@@ -418,7 +458,8 @@ def bulk_update(
     if not patch:
         raise HTTPException(status_code=422, detail="no fields to change")
 
-    found, missing = _bulk_items(session, user.tenant_id, body.ids)
+    all_ids = _ids_for(session, user.tenant_id, body.ids, body.filter)
+    found, missing = _bulk_items(session, user.tenant_id, all_ids)
     rows: list[BulkOutcome] = [
         BulkOutcome(id=mid, name="—", result="error", detail="not found") for mid in missing
     ]
@@ -506,7 +547,7 @@ def bulk_update(
     if dry_run:
         session.rollback()
 
-    order = {i: n for n, i in enumerate(body.ids)}
+    order = {i: n for n, i in enumerate(all_ids)}
     rows.sort(key=lambda r: order.get(r.id, 1_000_000))
     return ItemBulkUpdateResult(
         dry_run=dry_run,
@@ -514,6 +555,94 @@ def bulk_update(
         unchanged=unchanged,
         errors=sum(1 for r in rows if r.result == "error"),
         learned_rule_ids=sorted(set(learned)),
+        rows=rows,
+    )
+
+
+@router.post("/bulk-rename", response_model=ItemBulkUpdateResult)
+def bulk_rename(
+    body: ItemBulkRename,
+    user: WriteUser,
+    session: SessionDep,
+    dry_run: bool = Query(default=False),
+) -> ItemBulkUpdateResult:
+    """Find and replace in the names of many items. Spaces are tidied afterwards. A name that
+    would become empty, or would match another item's name, is reported and left alone; the
+    rest proceed. `dry_run=true` shows the same outcome without saving."""
+    flags = 0 if body.case_sensitive else re.IGNORECASE
+    needle = re.escape(body.find)
+    if body.whole_word:
+        needle = rf"(?<![\w]){needle}(?![\w])"
+    pattern = re.compile(needle, flags)
+
+    all_ids = _ids_for(session, user.tenant_id, body.ids, body.filter)
+    found, missing = _bulk_items(session, user.tenant_id, all_ids)
+    rows: list[BulkOutcome] = [
+        BulkOutcome(id=mid, name="—", result="error", detail="not found") for mid in missing
+    ]
+    changed = unchanged = 0
+    for it in found:
+        if it.merged_into_id is not None:
+            rows.append(BulkOutcome(id=it.id, name=it.name, result="skipped", detail="merged away"))
+            unchanged += 1
+            continue
+        new = " ".join(pattern.sub(lambda _m: body.replace, it.name).split())
+        if new == it.name:
+            unchanged += 1
+            continue
+        if not new:
+            rows.append(
+                BulkOutcome(id=it.id, name=it.name, result="error", detail="name would be empty")
+            )
+            continue
+        if len(new) > 200:
+            rows.append(
+                BulkOutcome(id=it.id, name=it.name, result="error", detail="name would be too long")
+            )
+            continue
+        key = _normalized(session, user.tenant_id, new)
+        clash = session.scalar(
+            select(Item).where(
+                Item.tenant_id == user.tenant_id, Item.id != it.id, Item.name_normalized == key
+            )
+        )
+        if not key or clash is not None:
+            rows.append(
+                BulkOutcome(
+                    id=it.id,
+                    name=it.name,
+                    result="error",
+                    detail=f"would match the existing item: {clash.name}" if clash else "no name",
+                )
+            )
+            continue
+        rows.append(
+            BulkOutcome(id=it.id, name=it.name, result="changed", detail=f"{it.name} → {new}")
+        )
+        # applied in a dry run too, then rolled back, so a later row sees this name as taken
+        it.name, it.name_normalized = new, key
+        session.flush()
+        changed += 1
+    if dry_run:
+        session.rollback()
+    elif changed:
+        audit.record(
+            session,
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            entity="item",
+            entity_id=user.tenant_id,
+            action="bulk_rename",
+            after={"find": body.find, "replace": body.replace, "changed": changed},
+        )
+    order = {i: n for n, i in enumerate(all_ids)}
+    rows.sort(key=lambda r: order.get(r.id, 1_000_000))
+    return ItemBulkUpdateResult(
+        dry_run=dry_run,
+        changed=changed,
+        unchanged=unchanged,
+        errors=sum(1 for r in rows if r.result == "error"),
+        learned_rule_ids=[],
         rows=rows,
     )
 
@@ -529,11 +658,13 @@ def bulk_delete(
     rule: it is `blocked`, or `archived` when `on_blocked=archive`. `dry_run`
     reports the deletable / blocked split without touching anything.
     """
-    found, missing = _bulk_items(session, user.tenant_id, body.ids)
+    all_ids = _ids_for(session, user.tenant_id, body.ids, body.filter)
+    found, missing = _bulk_items(session, user.tenant_id, all_ids)
     rows: list[BulkOutcome] = [
         BulkOutcome(id=mid, name="—", result="error", detail="not found") for mid in missing
     ]
     deleted = archived = blocked = 0
+    removable: list[str] = []
 
     for it in found:
         if it.merged_into_id is not None:
@@ -564,14 +695,16 @@ def bulk_delete(
                 blocked += 1
             continue
         if not dry_run:
+            removable.append(it.id)
             session.delete(it)
         rows.append(BulkOutcome(id=it.id, name=it.name, result="deleted", detail="never billed"))
         deleted += 1
 
     if not dry_run:
+        detach_catalog_links(session, removable)  # price lists keep working without the item
         session.flush()
 
-    order = {i: n for n, i in enumerate(body.ids)}
+    order = {i: n for n, i in enumerate(all_ids)}
     rows.sort(key=lambda r: order.get(r.id, 1_000_000))
     return ItemBulkDeleteResult(
         dry_run=dry_run,
@@ -648,6 +781,7 @@ def delete_item(item_id: str, user: WriteUser, session: SessionDep) -> None:
                 "Archive it instead."
             ),
         )
+    detach_catalog_links(session, [it.id])  # price lists keep working without the item
     session.delete(it)
 
 
@@ -699,6 +833,9 @@ def merge_item(
             il.update().where(il.c.item_id == loser.id).values(item_id=winner.id)
         )
 
+    detach_catalog_links(session, [loser.id], to_item_id=winner.id)
+    if winner.primary_media_id is None and loser.primary_media_id is not None:
+        winner.primary_media_id = loser.primary_media_id
     loser.merged_into_id = winner.id
     loser.status = ItemStatus.archived
     winner.times_billed += loser.times_billed
@@ -770,3 +907,90 @@ def resolve(
         weak=m.weak,
         candidates=candidates,
     )
+
+
+# --------------------------------------------------------------------------
+# selection count + where an item came from
+# --------------------------------------------------------------------------
+
+
+@router.post("/count", response_model=ItemCountOut)
+def count_matching(body: ItemFilter, user: CurrentUser, session: SessionDep) -> ItemCountOut:
+    """How many items a filter matches, for "select all N matching" and bulk previews."""
+    n = len(list(session.scalars(_filter_stmt(session, user.tenant_id, body)).unique().all()))
+    return ItemCountOut(count=n)
+
+
+class SourceCatalog(BaseModel):
+    catalog_id: str
+    title: str
+    supplier_party_id: str | None
+    supplier_name: str | None
+    supplier_code: str
+    cost_price: str
+    sell_price: str
+
+
+class SourceBill(BaseModel):
+    bill_id: str
+    bill_no: str | None
+    bill_date: str | None
+    status: str
+    supplier_name: str | None
+    quantity: str | None
+    uom: str | None
+    rate: str | None
+
+
+class ItemSourcesOut(BaseModel):
+    catalogs: list[SourceCatalog]
+    bills: list[SourceBill]
+
+
+@router.get("/{item_id}/sources", response_model=ItemSourcesOut)
+def item_sources(item_id: str, user: CurrentUser, session: SessionDep) -> ItemSourcesOut:
+    """"Came from": the supplier price lists and inward bills behind an item."""
+    it = _owned(session, user.tenant_id, item_id)
+    catalogs: list[SourceCatalog] = []
+    for row, cat in session.execute(
+        select(SupplierCatalogItem, SupplierCatalog)
+        .join(SupplierCatalog, SupplierCatalog.id == SupplierCatalogItem.catalog_id)
+        .where(SupplierCatalogItem.item_id == it.id, SupplierCatalog.tenant_id == user.tenant_id)
+        .order_by(SupplierCatalog.created_at.desc())
+    ):
+        supplier = session.get(Party, cat.supplier_party_id) if cat.supplier_party_id else None
+        catalogs.append(
+            SourceCatalog(
+                catalog_id=cat.id,
+                title=cat.title,
+                supplier_party_id=cat.supplier_party_id,
+                supplier_name=supplier.legal_name if supplier else None,
+                supplier_code=row.supplier_code,
+                cost_price=f"{row.cost_price:.2f}",
+                sell_price=f"{row.sell_price:.2f}",
+            )
+        )
+    bills: list[SourceBill] = []
+    for line, bill in session.execute(
+        select(InwardBillLine, InwardBill)
+        .join(InwardBill, InwardBill.id == InwardBillLine.inward_bill_id)
+        .where(InwardBillLine.matched_item_id == it.id, InwardBill.tenant_id == user.tenant_id)
+        .order_by(InwardBill.created_at.desc())
+    ):
+        bills.append(
+            SourceBill(
+                bill_id=bill.id,
+                bill_no=bill.bill_no,
+                bill_date=bill.bill_date.isoformat() if bill.bill_date else None,
+                status=str(bill.status),
+                supplier_name=bill.supplier_name,
+                quantity=(
+                    f"{Decimal(str(line.quantity)).normalize():f}"
+                    if line.quantity is not None
+                    else None
+                ),
+                uom=line.uom,
+                rate=f"{line.unit_rate:.2f}" if line.unit_rate is not None else None,
+            )
+        )
+    return ItemSourcesOut(catalogs=catalogs, bills=bills)

@@ -1,4 +1,8 @@
-"""Push promoted catalog items to Tally as stock items.
+"""Push items to Tally as stock items.
+
+The unit is an item (the Items page is where a push starts): its state lives on the item
+(`tally_status`, `tally_price`), whatever brought it in (a price list, a bill, by hand). The price
+sent is the item's own selling rate, never a catalog row's.
 
 The rules come from the live probes in the execution plan (section 3):
 
@@ -25,6 +29,7 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
 from fastapi import HTTPException
 from lxml import etree
@@ -34,11 +39,8 @@ from sqlalchemy.orm import Session
 from app.models import (
     AgentOutboxItem,
     BackupShop,
-    CatalogProduct,
     Item,
     ItemCategory,
-    SupplierCatalog,
-    SupplierCatalogItem,
     TallyCompany,
     TallyLink,
     TallySyncJob,
@@ -49,11 +51,15 @@ from tools.tally_import.parser import parse_stock_items
 
 log = logging.getLogger("tally.items")
 
-BATCH_SIZE = 50
+BATCH_SIZE = 100
+# Tally keeps a dated list of standard selling prices per item. Re-sending an item replaces the
+# list, so one fixed old date means "the current price" with no history to clutter. The date must
+# be the 1st or 2nd of a month on an unlicensed Tally, and anything later is dropped silently.
+STANDARD_PRICE_DATE = "20200401"
 STALE_AFTER = timedelta(minutes=30)
 NAME_MAX = 99  # Tally's own limit on a master name
 KIND = "push_items"
-ENTITY = "supplier_catalog"
+ENTITY = "items"  # entity_id = the firm: one push at a time per firm
 PRIMARY = "Primary"
 POLICIES = ("create_missing", "existing_only")
 _NON_TERMINAL = ("queued", "sent", "running")
@@ -101,7 +107,9 @@ class Preflight:
     to_push: int = 0
     already_synced: int = 0
     skipped_existing: int = 0
-    not_promoted: int = 0
+    # already in Tally, but their selling price has changed since: re-sent to update the price
+    price_updates: int = 0
+    inactive: int = 0  # archived or merged away: never sent
     batches: int = 0
     root: str | None = None
     checked_at: datetime | None = None
@@ -147,27 +155,33 @@ def check_is_fresh(company: TallyCompany, now: datetime | None = None) -> bool:
 
 @dataclass
 class _Row:
-    row: SupplierCatalogItem
-    item: Item | None
-    product: CatalogProduct | None
+    item: Item
 
 
-def load_rows(session: Session, rows: Sequence[SupplierCatalogItem]) -> list[_Row]:
-    item_ids = [r.item_id for r in rows if r.item_id]
-    prod_ids = [r.product_id for r in rows if r.product_id]
-    items: dict[str, Item] = {}
-    prods: dict[str, CatalogProduct] = {}
-    for i in range(0, len(item_ids), 500):
-        for it in session.scalars(select(Item).where(Item.id.in_(item_ids[i : i + 500]))):
-            items[it.id] = it
-    for i in range(0, len(prod_ids), 500):
-        for p in session.scalars(
-            select(CatalogProduct).where(CatalogProduct.id.in_(prod_ids[i : i + 500]))
-        ):
-            prods[p.id] = p
-    return [
-        _Row(r, items.get(r.item_id or ""), prods.get(r.product_id or "")) for r in rows
-    ]
+def load_rows(session: Session, items: Sequence[Item]) -> list[_Row]:
+    return [_Row(it) for it in items]
+
+
+def code_of(item: Item) -> str:
+    return (item.sku or item.barcode or "").strip()
+
+
+def price_for(item: Item) -> Decimal | None:
+    """The selling price Tally should show: the item's own rate. None = none."""
+    if item.default_rate is None:
+        return None
+    price = Decimal(str(item.default_rate)).quantize(Decimal("0.01"))
+    return price if price > 0 else None
+
+
+def price_changed(r: _Row) -> bool:
+    """Already in Tally, but with a different (or never sent) selling price."""
+    if r.item.tally_status != "synced":
+        return False
+    now_price = price_for(r.item)
+    if now_price is None:
+        return False
+    return r.item.tally_price is None or Decimal(str(r.item.tally_price)) != now_price
 
 
 def _category_names(session: Session, tenant_id: str) -> dict[str, str]:
@@ -189,7 +203,7 @@ def plan_groups(
     mapping: dict[str, str] = company.stock_group_map or {}
     counts: dict[str | None, int] = {}
     for r in rows:
-        counts[r.row.category_id] = counts.get(r.row.category_id, 0) + 1
+        counts[r.item.category_id] = counts.get(r.item.category_id, 0) + 1
 
     plans: list[GroupPlan] = []
     creates: list[tuple[str, str | None]] = []
@@ -234,8 +248,7 @@ def plan_groups(
 def preflight(
     session: Session,
     tenant_id: str,
-    catalog: SupplierCatalog,
-    rows: Sequence[SupplierCatalogItem],
+    rows: Sequence[Item],
     *,
     include_synced: bool = False,
     skip_existing: bool = False,
@@ -290,34 +303,35 @@ def preflight(
     )
 
     # --- what is selected
-    not_promoted = [r for r in loaded if r.item is None]
-    pf.not_promoted = len(not_promoted)
-    pf.checks.append(
-        Check(
-            "not_promoted",
-            not not_promoted,
-            "All selected products are in your item list."
-            if not not_promoted
-            else f"{len(not_promoted)} selected products are not in your item list yet. "
-            "Add them to your items first.",
-        )
-    )
-    ready = [r for r in loaded if r.item is not None]
-    pf.already_synced = sum(1 for r in ready if r.row.tally_status == "synced")
-    todo = [r for r in ready if include_synced or r.row.tally_status != "synced"]
+    ready = [r for r in loaded if r.item.merged_into_id is None and r.item.status != "archived"]
+    pf.inactive = len(loaded) - len(ready)
+    pf.already_synced = sum(1 for r in ready if r.item.tally_status == "synced")
+    todo = [
+        r for r in ready
+        if include_synced or r.item.tally_status != "synced" or price_changed(r)
+    ]
+    if not include_synced:
+        pf.price_updates = sum(1 for r in todo if r.item.tally_status == "synced")
     known_items = {n for n in (company.known_stock_items or [])}
     if skip_existing:
         # Leave out what Tally already has under the same name, so it is never overwritten.
         left_out = [
             r for r in todo
-            if r.item and r.row.tally_status != "synced" and _norm(r.item.name) in known_items
+            if r.item.tally_status != "synced" and _norm(r.item.name) in known_items
         ]
         pf.skipped_existing = len(left_out)
         todo = [r for r in todo if r not in left_out]
     pf.to_push = len(todo)
     pf.batches = -(-len(todo) // BATCH_SIZE) if todo else 0
     if todo:
-        pf.checks.append(Check("nothing_to_push", True, f"{len(todo)} items will be sent."))
+        extra = (
+            f" ({pf.price_updates} already in Tally, re-sent to update their price)"
+            if pf.price_updates
+            else ""
+        )
+        pf.checks.append(
+            Check("nothing_to_push", True, f"{len(todo)} items will be sent{extra}.")
+        )
     else:
         pf.checks.append(
             Check(
@@ -330,7 +344,7 @@ def preflight(
         )
 
     # --- names
-    too_long = [r for r in todo if r.item and len(r.item.name) > NAME_MAX]
+    too_long = [r for r in todo if len(r.item.name) > NAME_MAX]
     pf.checks.append(
         Check(
             "name_too_long",
@@ -342,9 +356,9 @@ def preflight(
         )
     )
     collisions = [
-        Collision(r.item.id, r.product.code if r.product else "", r.item.name)
+        Collision(r.item.id, code_of(r.item), r.item.name)
         for r in todo
-        if r.item and r.row.tally_status != "synced" and _norm(r.item.name) in known_items
+        if r.item.tally_status != "synced" and _norm(r.item.name) in known_items
     ]
     pf.collisions = collisions
     pf.checks.append(
@@ -375,15 +389,15 @@ def preflight(
         )
     )
 
-    # --- another push already running for this catalog
-    running = run_in_flight(session, tenant_id, catalog.id)
+    # --- another push already running for this firm
+    running = run_in_flight(session, tenant_id)
     pf.checks.append(
         Check(
             "in_flight",
             not running,
             "No other push is running."
             if not running
-            else _in_flight_message(latest_run(session, tenant_id, catalog.id)),
+            else _in_flight_message(latest_run(session, tenant_id)),
         )
     )
     return pf, todo, creates
@@ -412,9 +426,7 @@ def _stalled_message(job: TallySyncJob, company_name: str | None) -> str:
     )
 
 
-def expire_stalled_run(
-    session: Session, tenant_id: str, catalog_id: str, now: datetime | None = None
-) -> int:
+def expire_stalled_run(session: Session, tenant_id: str, now: datetime | None = None) -> int:
     """Give up on a batch the agent never answered, so the run does not wedge forever.
 
     The backend hands a Tally job to the agent exactly once, and an agent that was stopped (or
@@ -434,7 +446,7 @@ def expire_stalled_run(
                 TallySyncJob.tenant_id == tenant_id,
                 TallySyncJob.kind == KIND,
                 TallySyncJob.entity_type == ENTITY,
-                TallySyncJob.entity_id == catalog_id,
+                TallySyncJob.entity_id == tenant_id,
                 TallySyncJob.status.in_(("queued", "sent")),
             )
         )
@@ -464,15 +476,15 @@ def expire_stalled_run(
     return expired
 
 
-def run_in_flight(session: Session, tenant_id: str, catalog_id: str) -> bool:
-    expire_stalled_run(session, tenant_id, catalog_id)
+def run_in_flight(session: Session, tenant_id: str) -> bool:
+    expire_stalled_run(session, tenant_id)
     return (
         session.scalar(
             select(TallySyncJob.id).where(
                 TallySyncJob.tenant_id == tenant_id,
                 TallySyncJob.kind == KIND,
                 TallySyncJob.entity_type == ENTITY,
-                TallySyncJob.entity_id == catalog_id,
+                TallySyncJob.entity_id == tenant_id,
                 TallySyncJob.status.in_(_NON_TERMINAL),
             )
         )
@@ -495,11 +507,12 @@ def build_envelope(
     *,
     unit: str = "Nos",
     groups: Sequence[tuple[str, str | None]] = (),
-    items: Sequence[tuple[str, str, str]] = (),
+    items: Sequence[tuple] = (),
 ) -> bytes:
     """Import-Data envelope: one UNIT, STOCKGROUPs (parents first), then the STOCKITEMs.
 
-    `items` are (name, stock group, part number). Returns UTF-8 bytes.
+    `items` are (name, stock group, part number[, selling price]). The price, when given, goes
+    in as the item's standard selling price. Returns UTF-8 bytes.
     """
     env = etree.Element("ENVELOPE", nsmap={"UDF": "TallyUDF"})
     header = _sub(env, "HEADER")
@@ -524,25 +537,29 @@ def build_envelope(
         g = etree.SubElement(message(), "STOCKGROUP", NAME=name, ACTION="Create")
         _sub(g, "NAME", name)
         _sub(g, "PARENT", parent or "")
-    for name, group, part_no in items:
+    for name, group, part_no, *rest in items:
         si = etree.SubElement(message(), "STOCKITEM", NAME=name, ACTION="Create")
         _sub(si, "NAME", name)
         _sub(si, "PARENT", group)
         _sub(si, "BASEUNITS", unit)
         _sub(si, "PARTNO", part_no)
+        price = rest[0] if rest else None
+        if price is not None:
+            pl = _sub(si, "STANDARDPRICELIST.LIST")
+            _sub(pl, "DATE", STANDARD_PRICE_DATE)
+            _sub(pl, "RATE", f"{Decimal(price):.2f}/{unit}")
     return etree.tostring(env, encoding="UTF-8", xml_declaration=False)
 
 
 def _item_tuples(
     rows: Sequence[_Row], groups: Sequence[GroupPlan], root: str | None
-) -> list[tuple[str, str, str]]:
+) -> list[tuple[str, str, str, Decimal | None]]:
     by_cat = {g.category_id: g.tally_name for g in groups}
-    out: list[tuple[str, str, str]] = []
+    out: list[tuple[str, str, str, Decimal | None]] = []
     for r in rows:
         assert r.item is not None
-        group = by_cat.get(r.row.category_id) or root or PRIMARY
-        code = (r.product.code if r.product else None) or r.item.barcode or ""
-        out.append((r.item.name, group, code))
+        group = by_cat.get(r.item.category_id) or root or PRIMARY
+        out.append((r.item.name, group, code_of(r.item), price_for(r.item)))
     return out
 
 
@@ -552,20 +569,15 @@ def _item_tuples(
 def start_run(
     session: Session,
     company: TallyCompany,
-    catalog: SupplierCatalog,
     todo: Sequence[_Row],
     creates: Sequence[tuple[str, str | None]],
     groups: Sequence[GroupPlan],
 ) -> TallySyncJob:
     """Queue the first batch; the rest follow one by one as each batch reports back."""
-    ids = [r.row.id for r in todo]
+    ids = [r.item.id for r in todo]
     run_id = str(uuid.uuid4())
     batches = [ids[i : i + BATCH_SIZE] for i in range(0, len(ids), BATCH_SIZE)]
-    session.execute(
-        update(SupplierCatalogItem)
-        .where(SupplierCatalogItem.id.in_(ids))
-        .values(tally_status="queued")
-    )
+    _set_rows(session, ids, "queued")
     state = {
         "run": run_id,
         "batches": len(batches),
@@ -576,21 +588,18 @@ def start_run(
         ],
         "root": company.stock_group_root,
     }
-    return _enqueue_batch(session, company, catalog, state, 1, ids[:BATCH_SIZE], ids[BATCH_SIZE:])
+    return _enqueue_batch(session, company, state, 1, ids[:BATCH_SIZE], ids[BATCH_SIZE:])
 
 
 def _enqueue_batch(
     session: Session,
     company: TallyCompany,
-    catalog: SupplierCatalog,
     state: dict,
     batch_no: int,
     batch_ids: list[str],
     rest: list[str],
 ) -> TallySyncJob:
-    rows = list(
-        session.scalars(select(SupplierCatalogItem).where(SupplierCatalogItem.id.in_(batch_ids)))
-    )
+    rows = list(session.scalars(select(Item).where(Item.id.in_(batch_ids))))
     order = {rid: i for i, rid in enumerate(batch_ids)}
     rows.sort(key=lambda r: order[r.id])
     loaded = load_rows(session, rows)
@@ -598,6 +607,7 @@ def _enqueue_batch(
         GroupPlan(g["category_id"], "", g["tally_name"], "existing", 0) for g in state["groups"]
     ]
     items = _item_tuples(loaded, groups, state.get("root") and str(state["root"]) or None)
+    prices = {str(r.item.id): str(p) for r in loaded if (p := price_for(r.item)) is not None}
     creates = [(c[0], c[1]) for c in state["group_creates"]] if batch_no == 1 else []
     xml = build_envelope(company.company_name, groups=creates, items=items)
 
@@ -607,7 +617,7 @@ def _enqueue_batch(
         direction="out",
         kind=KIND,
         entity_type=ENTITY,
-        entity_id=catalog.id,
+        entity_id=company.tenant_id,
         status="queued",
         counts={
             **{k: state[k] for k in ("run", "batches", "total_items")},
@@ -615,6 +625,7 @@ def _enqueue_batch(
             "item_ids": batch_ids,
             "rest": rest,
             "expected": len(items),
+            "prices": prices,
             "state": state,
         },
     )
@@ -647,12 +658,15 @@ def _tag_int(root: etree._Element, tag: str) -> int:
 
 
 def _set_rows(session: Session, ids: Sequence[str], value: str) -> None:
+    """Set the Tally state of items. An item Tally already has stays synced through a price
+    update that is queued, fails or is cancelled: only first sends move between the states."""
     for i in range(0, len(ids), 500):
-        session.execute(
-            update(SupplierCatalogItem)
-            .where(SupplierCatalogItem.id.in_(list(ids[i : i + 500])))
-            .values(tally_status=value)
-        )
+        stmt = update(Item).where(Item.id.in_(list(ids[i : i + 500])))
+        if value == "queued":
+            stmt = stmt.where(Item.tally_status != "synced")
+        elif value in ("none", "error"):
+            stmt = stmt.where(Item.tally_status == "queued")
+        session.execute(stmt.values(tally_status=value))
 
 
 def _finish(job: TallySyncJob, status: str, counts: dict, error: str | None = None) -> None:
@@ -716,20 +730,26 @@ def process_items_result(
         return
 
     _set_rows(session, batch_ids, "synced")
+    sent_prices = counts.get("prices") or {}
+    now = datetime.now(UTC)
+    for i in range(0, len(batch_ids), 500):
+        for it in session.scalars(select(Item).where(Item.id.in_(batch_ids[i : i + 500]))):
+            p = sent_prices.get(it.id)
+            it.tally_price = Decimal(p) if p is not None else None
+            it.tally_pushed_at = now
+            it.tally_seen_price = None  # until the next check reads Tally back
     counts.update(created=created, altered=altered, rest=[], sent=len(batch_ids))
     state = counts.get("state") or {}
     company = session.get(TallyCompany, job.company_id)
-    catalog = session.get(SupplierCatalog, job.entity_id) if job.entity_id else None
     _finish(job, "ok", counts)
     session.flush()
 
-    if rest and company is not None and catalog is not None:
+    if rest and company is not None:
         try:
             assert_tally_reachable(session, company)
             _enqueue_batch(
                 session,
                 company,
-                catalog,
                 state,
                 int(counts["batch"]) + 1,
                 rest[:BATCH_SIZE],
@@ -767,6 +787,13 @@ class RunStatus:
     # ("tally_unavailable" = TallyPrime closed / unreachable, "no_company_loaded" = no company
     # open). The batch is being retried; it is cancelled automatically if this goes on.
     waiting: str | None = None
+    # What the current batch is doing: waiting_agent (queued, the shop's agent has not picked it
+    # up yet; it checks in about once a minute), sending (the agent has it, Tally is working),
+    # waiting_tally (Tally not ready), or None when not running.
+    phase: str | None = None
+    started_at: datetime | None = None
+    # Rough seconds left, from how long finished batches took. None until one has finished.
+    eta_seconds: int | None = None
 
 
 def _in_flight_message(run: RunStatus) -> str:
@@ -793,8 +820,8 @@ def _in_flight_message(run: RunStatus) -> str:
     return f"A push to Tally is already running{where}."
 
 
-def latest_run(session: Session, tenant_id: str, catalog_id: str) -> RunStatus:
-    expire_stalled_run(session, tenant_id, catalog_id)
+def latest_run(session: Session, tenant_id: str) -> RunStatus:
+    expire_stalled_run(session, tenant_id)
     jobs = list(
         session.scalars(
             select(TallySyncJob)
@@ -802,7 +829,7 @@ def latest_run(session: Session, tenant_id: str, catalog_id: str) -> RunStatus:
                 TallySyncJob.tenant_id == tenant_id,
                 TallySyncJob.kind == KIND,
                 TallySyncJob.entity_type == ENTITY,
-                TallySyncJob.entity_id == catalog_id,
+                TallySyncJob.entity_id == tenant_id,
             )
             .order_by(TallySyncJob.created_at.desc())
             .limit(400)
@@ -826,11 +853,26 @@ def latest_run(session: Session, tenant_id: str, catalog_id: str) -> RunStatus:
         synced=synced,
         updated_at=last.completed_at or last.created_at,
     )
+    out.started_at = mine[0].created_at
     lc = last.counts or {}
     if last.status in _NON_TERMINAL:
         out.state = "running"
         if last.last_agent_status in _NOT_READY:
             out.waiting = last.last_agent_status
+        if out.waiting:
+            out.phase = "waiting_tally"
+        elif last.status == "queued":
+            out.phase = "waiting_agent"
+        else:
+            out.phase = "sending"
+        took = [
+            (_as_utc(j.completed_at) - _as_utc(j.created_at)).total_seconds()
+            for j in mine
+            if j.status == "ok" and j.completed_at is not None
+        ]
+        left = out.batches - out.batches_done
+        if took and left > 0:
+            out.eta_seconds = int(sum(took) / len(took) * left)
     elif last.status == "error":
         out.state, out.error = "error", last.error
     elif lc.get("stopped"):
@@ -919,14 +961,11 @@ def apply_stock_check(session: Session, company: TallyCompany, raw: bytes) -> di
     linked = 0
     if guid_by_name:
         pushed = session.scalars(
-            select(Item)
-            .join(SupplierCatalogItem, SupplierCatalogItem.item_id == Item.id)
-            .where(
+            select(Item).where(
                 Item.tenant_id == company.tenant_id,
                 Item.tally_guid.is_(None),
-                SupplierCatalogItem.tally_status == "synced",
+                Item.tally_status == "synced",
             )
-            .distinct()
         )
         now = datetime.now(UTC)
         for item in pushed:
@@ -953,6 +992,16 @@ def apply_stock_check(session: Session, company: TallyCompany, raw: bytes) -> di
                 )
             )
             linked += 1
+    # Read the selling price back for items we sent: an unlicensed Tally drops a price list it
+    # does not like without a word, so what Tally shows is checked, not assumed.
+    seen_by_name = {_norm(i.name): i.selling_price for i in stock.items}
+    for item in session.scalars(
+        select(Item).where(Item.tenant_id == company.tenant_id, Item.tally_status == "synced")
+    ):
+        if _norm(item.name) in seen_by_name:
+            seen = seen_by_name[_norm(item.name)]
+            # 0 = Tally has the item but no selling price (a dropped price list shows up here)
+            item.tally_seen_price = Decimal(str(seen or 0)).quantize(Decimal("0.01"))
     session.flush()
     return {
         "groups": len(stock.groups),

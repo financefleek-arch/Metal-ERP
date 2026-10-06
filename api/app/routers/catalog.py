@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import re
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import (
@@ -34,7 +35,6 @@ from app.deps import SessionDep, get_current_user, require_write
 from app.models import (
     CatalogOutputJob,
     CatalogProduct,
-    CustomerCatalog,
     ItemCategory,
     Party,
     SupplierCatalog,
@@ -51,8 +51,6 @@ from app.schemas_catalog import (
     CatalogListItem,
     CatalogPatch,
     CatalogUploadOut,
-    CustomerCatalogOut,
-    CustomerCatalogRequest,
     GroupSummary,
     ItemFilter,
     LabelRequest,
@@ -61,14 +59,13 @@ from app.schemas_catalog import (
     ProductRef,
     SupplierCatalogsOut,
 )
-from app.services.catalog import catalog_pdf as pdf_svc
-from app.services.catalog import customer_catalogs as cc_svc
-from app.services.catalog import image_url, output_jobs
+from app.services import media as media_svc
+from app.services.catalog import image_url, output_jobs, price_points
 from app.services.catalog import labels as labels_svc
 from app.services.catalog import products as products_svc
+from app.services.catalog import supplier_defaults as defaults_svc
 from app.services.catalog import suppliers as suppliers_svc
 from app.services.catalog.barcode import modules as barcode_modules
-from app.services.catalog.codes import normalize_prefix
 from app.services.catalog.extract_grid import NotACatalog
 from app.services.catalog.groups import clean_group_name, get_or_create_category
 from app.services.catalog.importer import import_catalog
@@ -208,12 +205,12 @@ def catalogs_of_supplier(
 @router.post("", response_model=CatalogUploadOut, status_code=status.HTTP_201_CREATED)
 def upload_catalog(
     response: Response,
+    background: BackgroundTasks,
     session: SessionDep,
     user: CatalogWriteUser,
     storage: StorageDep,
     file: Annotated[UploadFile, File()],
     title: Annotated[str | None, Form()] = None,
-    code_prefix: Annotated[str | None, Form()] = None,
     supplier_party_id: Annotated[str | None, Form()] = None,
 ) -> CatalogUploadOut:
     data = file.file.read(MAX_UPLOAD_BYTES + 1)
@@ -226,8 +223,6 @@ def upload_catalog(
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Upload a PDF file."
         )
-    if code_prefix and code_prefix.strip() and normalize_prefix(code_prefix) is None:
-        raise HTTPException(status_code=422, detail="Code prefix must be 2 to 8 letters or digits.")
 
     supplier_id = (supplier_party_id or "").strip() or None
     if supplier_id:
@@ -235,6 +230,7 @@ def upload_catalog(
 
     tenant = session.get(Tenant, user.tenant_id)
     assert tenant is not None
+    defaults = defaults_svc.get(session, user.tenant_id, supplier_id) if supplier_id else None
     try:
         result = import_catalog(
             session,
@@ -244,11 +240,21 @@ def upload_catalog(
             filename=file.filename or "catalog.pdf",
             data=data,
             title=title,
-            code_prefix=code_prefix,
             supplier_party_id=supplier_id,
+            group_map=defaults_svc.group_lookup(defaults),
         )
     except NotACatalog as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if result.created and defaults is not None:
+        defaults_svc.apply_to_catalog(session, result.catalog, defaults)
+        plan = defaults_svc.add_automatically(session, result.catalog, defaults)
+        if plan is not None:
+            rows = [r for r in result.catalog.items if r.included]
+            pairs = media_svc.items_needing_photos(session, user.tenant_id, rows)
+            if pairs:
+                session.commit()  # the background task reads these rows from its own session
+                background.add_task(media_svc.copy_catalog_photos, user.tenant_id, pairs, storage)
 
     response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
     out = CatalogUploadOut.model_validate(result.catalog, from_attributes=True)
@@ -258,6 +264,8 @@ def upload_catalog(
     out.matched_items = result.matched_items
     out.new_products = result.new_products
     out.suggestions = result.suggestions
+    out.price_changes = result.price_changes
+    out.unread_price_lines = result.unread_price_lines
     if result.catalog.supplier_party_id:
         out.supplier_name = _supplier_names(session, {result.catalog.supplier_party_id}).get(
             result.catalog.supplier_party_id
@@ -276,6 +284,39 @@ def _detail(session: SessionDep, cat: SupplierCatalog) -> CatalogDetail:
     )
     out = CatalogDetail.model_validate(cat, from_attributes=True)
     out.item_margin_count = int(n or 0)
+    out.photo_check_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SupplierCatalogItem)
+            .where(
+                SupplierCatalogItem.catalog_id == cat.id,
+                SupplierCatalogItem.image_flag.is_not(None),
+            )
+        )
+        or 0
+    )
+    out.price_change_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SupplierCatalogItem)
+            .where(
+                SupplierCatalogItem.catalog_id == cat.id,
+                SupplierCatalogItem.price_change.in_(("up", "down")),
+            )
+        )
+        or 0
+    )
+    out.suggestion_count = int(
+        session.scalar(
+            select(func.count())
+            .select_from(SupplierCatalogItem)
+            .where(
+                SupplierCatalogItem.catalog_id == cat.id,
+                SupplierCatalogItem.suggested_product_id.is_not(None),
+            )
+        )
+        or 0
+    )
     if cat.supplier_party_id:
         out.supplier_name = _supplier_names(session, {cat.supplier_party_id}).get(
             cat.supplier_party_id
@@ -307,7 +348,6 @@ def patch_catalog(
     session.flush()
     if pricing_changed:
         reprice(session, cat)
-        cc_svc.mark_stale(session, cat.id)
     return _detail(session, cat)
 
 
@@ -377,11 +417,6 @@ def delete_catalog(
         if job.result_key:
             keys.add(job.result_key)
         session.delete(job)
-    for done in session.scalars(
-        select(CustomerCatalog).where(CustomerCatalog.catalog_id == cat.id)
-    ):
-        keys.add(done.pdf_key)
-        session.delete(done)
     session.delete(cat)
     session.flush()
     # leftover objects are harmless; the rows are already gone
@@ -392,17 +427,6 @@ def delete_catalog(
 # --------------------------------------------------------------------------
 # items
 # --------------------------------------------------------------------------
-
-
-# Item fields whose change makes an existing customer catalog out of date.
-_CUSTOMER_FIELDS = {
-    "display_name",
-    "pack_qty",
-    "cost_price",
-    "included",
-    "group_name",
-    "item_margin_pct",
-}
 
 
 def _like(value: str) -> str:
@@ -437,6 +461,16 @@ def _filter_clauses(f: ItemFilter) -> list[ColumnElement[bool]]:
         out.append(C.item_margin_pct.is_not(None))
     elif f.has_item_margin is False:
         out.append(C.item_margin_pct.is_(None))
+    if f.has_suggestion is True:
+        out.append(C.suggested_product_id.is_not(None))
+    if f.photo_check is True:
+        out.append(C.image_flag.is_not(None))
+    if f.price_changed is True:
+        out.append(C.price_change.in_(("up", "down")))
+    if f.not_added is True:
+        out.append(C.item_id.is_(None))
+    elif f.not_added is False:
+        out.append(C.item_id.is_not(None))
     return out
 
 
@@ -472,6 +506,55 @@ def _product_maps(
     return found, found
 
 
+def _name_suggestion_suppliers(
+    session: SessionDep, outs: list[CatalogItemOut], prods: dict[str, CatalogProduct]
+) -> None:
+    """Fill in who offers each suggested product."""
+    ids = {
+        prods[o.suggestion.product_id].supplier_party_id
+        for o in outs
+        if o.suggestion and o.suggestion.product_id in prods
+    }
+    names = _supplier_names(session, {i for i in ids if i})
+    for o in outs:
+        if o.suggestion and o.suggestion.product_id in prods:
+            sid = prods[o.suggestion.product_id].supplier_party_id
+            o.suggestion.supplier_name = names.get(sid) if sid else None
+
+
+def _changed_since(current: datetime, expected: datetime) -> bool:
+    """Has the row changed after the moment the editor saw it? (a second of slack covers
+    databases that keep whole seconds)"""
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=UTC)
+    if expected.tzinfo is None:
+        expected = expected.replace(tzinfo=UTC)
+    return abs((current - expected).total_seconds()) >= 1
+
+
+def _price_notes(
+    session: SessionDep,
+    tenant_id: str,
+    catalog_id: str,
+    pairs: list[tuple[CatalogItemOut, SupplierCatalogItem]],
+) -> None:
+    """Add the price history to rows already built: the price before, and what the last bill
+    charged."""
+    prev = price_points.latest_quotes(
+        session,
+        tenant_id,
+        [r.product_id for _, r in pairs if r.product_id],
+        exclude_source_id=catalog_id,
+    )
+    paid = price_points.last_paid(session, tenant_id, [r.item_id for _, r in pairs if r.item_id])
+    for out, row in pairs:
+        out.price_change = row.price_change
+        if row.product_id in prev and row.price_change in ("up", "down"):
+            out.previous_cost = prev[row.product_id]
+        if row.item_id in paid:
+            out.last_paid, out.last_paid_on = paid[row.item_id]
+
+
 def _item_out(
     catalog_id: str,
     it: SupplierCatalogItem,
@@ -479,7 +562,6 @@ def _item_out(
     prods: dict[str, CatalogProduct] | None = None,
 ) -> CatalogItemOut:
     prods = prods or {}
-    own = prods.get(it.product_id) if it.product_id else None
     sug = prods.get(it.suggested_product_id) if it.suggested_product_id else None
     return CatalogItemOut(
         id=it.id,
@@ -489,6 +571,8 @@ def _item_out(
         supplier_code=it.supplier_code,
         display_name=it.display_name,
         name_raw=it.name_raw,
+        updated_at=it.updated_at,
+        image_flag=it.image_flag,
         brand=it.brand,
         size_text=it.size_text,
         pack_qty=it.pack_qty,
@@ -502,13 +586,12 @@ def _item_out(
         included=it.included,
         image_url=(
             f"/api/supplier-catalogs/{catalog_id}/items/{it.id}/image"
-            f"?{image_url.sign_query(it.id)}"
+            f"?{image_url.sign_query(it.id)}&v={(it.image_sha256 or '')[:8]}"  # v: a new photo
             if it.image_key
             else None
         ),
         barcode=_barcode(it.code),
         product_id=it.product_id,
-        code_locked=bool(own.code_locked) if own else False,
         suggestion=(
             ProductRef(product_id=sug.id, code=sug.code, name=sug.display_name) if sug else None
         ),
@@ -529,6 +612,10 @@ def list_items(
     included: bool | None = None,
     brand: str | None = None,
     has_item_margin: bool | None = None,
+    has_suggestion: bool | None = None,
+    not_added: bool | None = None,
+    price_changed: bool | None = None,
+    photo_check: bool | None = None,
     limit: int | None = Query(default=100, ge=1, le=200),
     cursor: str | None = None,
 ) -> list[CatalogItemOut]:
@@ -541,6 +628,10 @@ def list_items(
         included=included,
         brand=brand,
         has_item_margin=has_item_margin,
+        has_suggestion=has_suggestion,
+        not_added=not_added,
+        price_changed=price_changed,
+        photo_check=photo_check,
     )
     base = select(C).where(
         C.tenant_id == user.tenant_id, C.catalog_id == catalog_id, *_filter_clauses(flt)
@@ -562,15 +653,16 @@ def list_items(
     )
     cats = _category_names(session, user.tenant_id)
     prods, _ = _product_maps(session, page)
-    return [_item_out(catalog_id, it, cats, prods) for it in page]
+    outs = [_item_out(catalog_id, it, cats, prods) for it in page]
+    _price_notes(session, user.tenant_id, catalog_id, list(zip(outs, page, strict=True)))
+    _name_suggestion_suppliers(session, outs, prods)
+    return outs
 
 
 def _regroup_rows(
     session: SessionDep, tenant_id: str, item_ids: list[str], category: ItemCategory | None
 ) -> None:
-    """Move the products behind these rows to `category` (re-issuing provisional codes)."""
-    tenant = session.get(Tenant, tenant_id)
-    assert tenant is not None
+    """Move the products behind these rows to `category`. Codes are untouched."""
     pids: list[str] = []
     for k in range(0, len(item_ids), 500):
         pids += [
@@ -592,7 +684,7 @@ def _regroup_rows(
                 .order_by(CatalogProduct.code)
             )
         )
-    products_svc.regroup(session, tenant, prods, category)
+    products_svc.regroup(session, prods, category)
     # rows with no product (should not happen) still get the group
     cat_id = category.id if category else None
     session.execute(
@@ -658,8 +750,6 @@ def bulk_patch_items(
     )
     if reprice_needed and target_ids:
         reprice(session, _get_catalog(session, user.tenant_id, catalog_id), target_ids)
-    if result.rowcount:  # type: ignore[attr-defined]
-        cc_svc.mark_stale(session, catalog_id)
     return BulkResult(updated=result.rowcount or 0)  # type: ignore[attr-defined]
 
 
@@ -674,6 +764,12 @@ def patch_item(
     cat = _get_catalog(session, user.tenant_id, catalog_id)
     item = _get_item(session, user.tenant_id, catalog_id, item_id)
     data = body.model_dump(exclude_unset=True)
+    expected = data.pop("expected_updated_at", None)
+    if expected is not None and _changed_since(item.updated_at, expected):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Someone else changed this row. It has been reloaded: check it and try again.",
+        )
 
     if data.get("display_name") is not None:
         item.display_name = data["display_name"].strip()
@@ -685,6 +781,8 @@ def patch_item(
             setattr(item, field, (data[field] or "").strip() or None)
     if data.get("pack_qty") is not None:
         item.pack_qty = data["pack_qty"]
+    if data.get("photo_ok"):
+        item.image_flag = None
     if data.get("included") is not None:
         item.included = data["included"]
     if "group_name" in data:
@@ -703,11 +801,11 @@ def patch_item(
             effective_margin(item.item_margin_pct, cat.bulk_margin_pct),
             cat.rounding_step,
         )
-    if data.keys() & _CUSTOMER_FIELDS:
-        cc_svc.mark_stale(session, catalog_id)
     session.flush()
     prods, _ = _product_maps(session, [item])
-    return _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
+    out = _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
+    _price_notes(session, user.tenant_id, catalog_id, [(out, item)])
+    return out
 
 
 @router.get("/{catalog_id}/groups", response_model=list[GroupSummary])
@@ -724,18 +822,10 @@ def list_groups(catalog_id: str, session: SessionDep, user: CatalogUser) -> list
         .group_by(C.category_id)
     ).all()
     cats = _category_names(session, user.tenant_id)
-    prefixes = dict(
-        session.execute(
-            select(ItemCategory.id, ItemCategory.code_prefix).where(
-                ItemCategory.tenant_id == user.tenant_id
-            )
-        ).all()
-    )
     out = [
         GroupSummary(
             category_id=cid,
             name=cats.get(cid, "") if cid else "No group",
-            code_prefix=prefixes.get(cid) if cid else None,
             item_count=int(n),
             included_count=int(inc or 0),
         )
@@ -773,7 +863,7 @@ def link_product(
             .select_from(SupplierCatalogItem)
             .where(SupplierCatalogItem.product_id == own.id)
         )
-        if own.code_locked or own.item_id or (shared or 0) > 1:
+        if own.item_id or (shared or 0) > 1:
             raise HTTPException(
                 status_code=409,
                 detail="This row's code is already in use, so it can't be merged "
@@ -795,10 +885,11 @@ def link_product(
     session.flush()
     if own is not None and own.id != target.id:
         session.delete(own)
-    cc_svc.mark_stale(session, catalog_id)
     session.flush()
     prods, _ = _product_maps(session, [item])
-    return _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
+    out = _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
+    _price_notes(session, user.tenant_id, catalog_id, [(out, item)])
+    return out
 
 
 @router.delete("/{catalog_id}/items/{item_id}/suggestion", response_model=CatalogItemOut)
@@ -810,7 +901,9 @@ def dismiss_suggestion(
     item.suggested_product_id = None
     session.flush()
     prods, _ = _product_maps(session, [item])
-    return _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
+    out = _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
+    _price_notes(session, user.tenant_id, catalog_id, [(out, item)])
+    return out
 
 
 # --------------------------------------------------------------------------
@@ -859,7 +952,7 @@ def _label_rows(
     session: SessionDep,
     tenant_id: str,
     catalog_id: str,
-    body: LabelRequest | CustomerCatalogRequest,
+    body: LabelRequest,
 ) -> list[tuple[str, str, str, Any]]:
     """(id, code, display_name, sell_price) of the chosen items, in catalog order."""
     chosen = [body.ids is not None, body.filter is not None, body.all_included]
@@ -931,7 +1024,6 @@ def make_labels(
     if not rows:
         raise HTTPException(status_code=422, detail="No items to print.")
     opts = _label_opts(body)
-    products_svc.lock_for_items(session, [r[0] for r in rows])  # first real use fixes the codes
     n_labels = len(rows) * opts.copies
     if n_labels > output_jobs.MAX_LABELS:
         raise HTTPException(
@@ -1031,180 +1123,3 @@ def get_output_file(
             "Content-Disposition": f'attachment; filename="labels-{_file_slug(cat.title)}.pdf"'
         },
     )
-
-
-# --------------------------------------------------------------------------
-# customer catalogs
-# --------------------------------------------------------------------------
-
-
-def _cc_out(row: CustomerCatalog) -> CustomerCatalogOut:
-    return CustomerCatalogOut(
-        id=row.id,
-        version=row.version,
-        title=row.title,
-        options=row.options_json or {},
-        item_count=row.item_count,
-        page_count=row.page_count,
-        byte_size=row.byte_size,
-        stale=row.stale,
-        created_at=row.created_at,
-    )
-
-
-def _pdf_options(body: CustomerCatalogRequest) -> pdf_svc.CatalogPdfOptions:
-    return pdf_svc.CatalogPdfOptions(
-        columns=body.columns,
-        group_by=body.group_by,
-        show_code=body.show_code,
-        price_basis=body.price_basis,
-        contents=body.contents,
-    )
-
-
-def _get_customer_catalog(
-    session: SessionDep, tenant_id: str, catalog_id: str, cc_id: str
-) -> CustomerCatalog:
-    row = session.scalar(
-        select(CustomerCatalog).where(
-            CustomerCatalog.id == cc_id,
-            CustomerCatalog.catalog_id == catalog_id,
-            CustomerCatalog.tenant_id == tenant_id,
-        )
-    )
-    if row is None:
-        raise HTTPException(status_code=404, detail="Customer catalog not found")
-    return row
-
-
-@router.post(
-    "/{catalog_id}/customer-catalogs",
-    response_model=None,
-    responses={
-        201: {"model": CustomerCatalogOut, "description": "Built; the new version."},
-        202: {"model": OutputJobOut, "description": "Too big to build now; poll the job."},
-    },
-)
-def create_customer_catalog(
-    catalog_id: str,
-    body: CustomerCatalogRequest,
-    background: BackgroundTasks,
-    session: SessionDep,
-    user: CatalogWriteUser,
-    storage: StorageDep,
-) -> Response:
-    """Make a customer catalog PDF (your prices only). Up to `SYNC_ITEM_LIMIT` items are
-    built in the request and returned as the new version; more run in the background."""
-    cat = _get_catalog(session, user.tenant_id, catalog_id)
-    rows = _label_rows(session, user.tenant_id, catalog_id, body)
-    if not rows:
-        raise HTTPException(status_code=422, detail="No items to include.")
-    if len(rows) > cc_svc.MAX_ITEMS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"That is {len(rows)} items. The limit is {cc_svc.MAX_ITEMS} per catalog: "
-            "select fewer items.",
-        )
-    tenant = session.get(Tenant, user.tenant_id)
-    assert tenant is not None
-    title = (body.title or cat.title).strip()
-    opts = _pdf_options(body)
-    ids = [r[0] for r in rows]
-    if body.show_code:
-        products_svc.lock_for_items(session, ids)
-
-    if len(ids) > cc_svc.SYNC_ITEM_LIMIT:
-        job = cc_svc.create_job(
-            session, catalog=cat, user_id=user.id, item_ids=ids, title=title, opts=opts
-        )
-        session.commit()  # the background task reads this row from its own session
-        background.add_task(cc_svc.run_catalog_pdf_job, job.id, storage)
-        return JSONResponse(status_code=202, content=_job_out(job).model_dump(mode="json"))
-
-    entries = cc_svc.load_entries(session, storage, user.tenant_id, catalog_id, ids)
-    pdf, pages = pdf_svc.render_pdf(
-        entries, opts, cc_svc.brand_for(tenant, title), cc_svc.today()
-    )
-    row = cc_svc.store(
-        session,
-        storage,
-        catalog=cat,
-        user_id=user.id,
-        title=title,
-        opts=opts,
-        pdf=pdf,
-        item_count=len(entries),
-        page_count=pages,
-    )
-    return JSONResponse(status_code=201, content=_cc_out(row).model_dump(mode="json"))
-
-
-@router.post("/{catalog_id}/customer-catalogs/preview")
-def preview_customer_catalog(
-    catalog_id: str, body: CustomerCatalogRequest, session: SessionDep, user: CatalogUser,
-    storage: StorageDep,
-) -> Response:
-    """The first product page as a PNG, from the first few chosen items."""
-    cat = _get_catalog(session, user.tenant_id, catalog_id)
-    rows = _label_rows(session, user.tenant_id, catalog_id, body)
-    if not rows:
-        raise HTTPException(status_code=422, detail="No items to preview.")
-    tenant = session.get(Tenant, user.tenant_id)
-    assert tenant is not None
-    entries = cc_svc.load_entries(
-        session, storage, user.tenant_id, catalog_id, [r[0] for r in rows[:60]]
-    )
-    png = pdf_svc.render_preview_png(
-        entries,
-        _pdf_options(body),
-        cc_svc.brand_for(tenant, (body.title or cat.title).strip()),
-        cc_svc.today(),
-    )
-    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
-
-
-@router.get("/{catalog_id}/customer-catalogs", response_model=list[CustomerCatalogOut])
-def list_customer_catalogs(
-    catalog_id: str, session: SessionDep, user: CatalogUser
-) -> list[CustomerCatalogOut]:
-    _get_catalog(session, user.tenant_id, catalog_id)
-    rows = session.scalars(
-        select(CustomerCatalog)
-        .where(
-            CustomerCatalog.catalog_id == catalog_id,
-            CustomerCatalog.tenant_id == user.tenant_id,
-        )
-        .order_by(CustomerCatalog.version.desc())
-    )
-    return [_cc_out(r) for r in rows]
-
-
-@router.get("/{catalog_id}/customer-catalogs/{cc_id}/file")
-def get_customer_catalog_file(
-    catalog_id: str, cc_id: str, session: SessionDep, user: CatalogUser, storage: StorageDep
-) -> Response:
-    row = _get_customer_catalog(session, user.tenant_id, catalog_id, cc_id)
-    try:
-        data = storage.get(row.pdf_key)
-    except Exception as exc:  # noqa: BLE001 - removed object
-        raise HTTPException(status_code=404, detail="That file is no longer available.") from exc
-    name = f"catalog-{_file_slug(row.title)}-v{row.version}.pdf"
-    return Response(
-        content=data,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{name}"'},
-    )
-
-
-@router.delete(
-    "/{catalog_id}/customer-catalogs/{cc_id}", status_code=status.HTTP_204_NO_CONTENT
-)
-def delete_customer_catalog(
-    catalog_id: str, cc_id: str, session: SessionDep, user: CatalogWriteUser, storage: StorageDep
-) -> None:
-    row = _get_customer_catalog(session, user.tenant_id, catalog_id, cc_id)
-    key = row.pdf_key
-    session.delete(row)
-    session.flush()
-    with contextlib.suppress(Exception):
-        storage.delete(key)

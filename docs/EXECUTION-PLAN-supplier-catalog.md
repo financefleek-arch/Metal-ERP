@@ -633,3 +633,15 @@ check -> group table -> send -> done), desktop and mobile.
 Group `ZZTEST Catalog` (root for new groups), `Casseroles & Serveware` under it, 186 stock items
 from these runs (110 + 76) with codes like `JWS-0029`, plus the earlier POC leftovers.
 
+## 18. Codes simplified to a firm-wide number (2026-10-05, supersedes the code parts of section 16 and 17)
+
+Group codes (`BM-0042`), the provisional/locked state, re-issuing on regroup, group-code editing
+and the per-catalog prefix are **removed**. A code is now one firm-wide running number from
+`100001` (optional firm prefix in front, `tenant.catalog_code_prefix`), never changes, and carries
+no group or supplier. Regrouping touches no code. Not in production, so nothing was preserved:
+migration `0039` renumbers every existing product per firm in creation order and carries the new
+codes to catalog rows and promoted items (barcode, sku), resets the counter, and drops
+`item_category.code_prefix`, `catalog_product.code_locked`, `supplier_catalog.code_prefix`.
+Items already pushed to Tally under old part numbers are re-sent. The 0036 back-fill test was
+deleted (its schema no longer exists); 0039 is plain SQL, checked with `alembic --sql`.
+

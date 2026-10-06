@@ -131,6 +131,9 @@ class InwardBillLine(PkUuidMixin, TimestampMixin, Base):
     new_item_staged_json: Mapped[dict[str, Any] | None] = mapped_column(_JSON)
     # 'unknown_hsn' | 'low_confidence' | 'ambiguous' | 'new'
     review_flag: Mapped[str | None] = mapped_column(String(20))
+    # A second look, from what we know of this supplier: above_quote | discontinued
+    note_flag: Mapped[str | None] = mapped_column(String(16))
+    quoted_rate: Mapped[Decimal | None] = mapped_column(_MONEY)
 
     bill: Mapped[InwardBill] = relationship(back_populates="lines")
 

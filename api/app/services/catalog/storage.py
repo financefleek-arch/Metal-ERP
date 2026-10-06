@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import uuid
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -89,7 +90,8 @@ class LocalStorage:
         if path.parent not in self._made:
             path.parent.mkdir(parents=True, exist_ok=True)
             self._made.add(path.parent)
-        tmp = path.with_name(path.name + ".tmp")
+        # unique temp name: two requests may write the same (content-addressed) file at once
+        tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex[:8]}.tmp")
         tmp.write_bytes(data)
         os.replace(tmp, path)  # atomic: a reader never sees half a file
 

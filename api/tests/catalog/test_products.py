@@ -126,166 +126,61 @@ def test_edits_are_remembered_for_the_next_pdf(catalog_client: CatalogEnv) -> No
     assert again["code"] == edited["code"]
 
 
-# --- group codes -----------------------------------------------------------------
+# --- group changes never touch codes --------------------------------------------------
 
 
-def test_group_gets_a_code_and_items_use_it(catalog_client: CatalogEnv) -> None:
+def test_groups_are_created_and_codes_carry_no_group(catalog_client: CatalogEnv) -> None:
     client, h, _ = catalog_client
     cat = _upload(client, h).json()
     groups = _groups(client, h, cat["id"])
-    mugs = next(g for g in groups if g["name"] == "Beer Mugs")
-    assert mugs["code_prefix"] == "BM"
+    assert "Beer Mugs" in [g["name"] for g in groups]
+    assert all("code_prefix" not in g for g in groups)
     cats = client.get("/api/item-categories", headers=h).json()
-    assert next(c for c in cats if c["name"] == "Beer Mugs")["code_prefix"] == "BM"
+    assert all("code_prefix" not in c for c in cats)
 
 
-def test_regrouping_a_provisional_item_reissues_its_code(catalog_client: CatalogEnv) -> None:
+def test_regrouping_an_item_keeps_its_code(catalog_client: CatalogEnv) -> None:
     client, h, _ = catalog_client
     cat = _upload(client, h, data=_cells("Z1", "Z2"), name="a.pdf").json()
     item = _items(client, h, cat["id"])[0]
-    old = item["code"]
     r = client.patch(
         f"/api/supplier-catalogs/{cat['id']}/items/{item['id']}",
         headers=h,
         json={"group_name": "Beer Mugs"},
     )
     assert r.status_code == 200, r.text
-    new = r.json()
-    assert new["category_name"] == "Beer Mugs"
-    assert new["code"].startswith("BM-") and new["code"] != old
-    # the product (and so the next catalog) carries the new code
-    assert _items(client, h, cat["id"])[0]["code"] == new["code"]
+    assert r.json()["category_name"] == "Beer Mugs" and r.json()["code"] == item["code"]
+    assert _items(client, h, cat["id"])[0]["code"] == item["code"]
 
 
-def test_regrouping_to_the_same_group_keeps_the_code(catalog_client: CatalogEnv) -> None:
-    client, h, _ = catalog_client
-    cat = _upload(client, h, data=_cells("Z1"), name="a.pdf").json()
-    item = _items(client, h, cat["id"])[0]
-    url = f"/api/supplier-catalogs/{cat['id']}/items/{item['id']}"
-    first = client.patch(url, headers=h, json={"group_name": "Beer Mugs"}).json()
-    second = client.patch(url, headers=h, json={"group_name": "Beer Mugs"}).json()
-    assert first["code"] == second["code"]
-
-
-def test_bulk_group_change_reissues_provisional_codes(catalog_client: CatalogEnv) -> None:
+def test_bulk_regroup_keeps_codes_and_follows_the_product(catalog_client: CatalogEnv) -> None:
     client, h, _ = catalog_client
     cat = _upload(client, h, data=_cells("Z1", "Z2", "Z3"), name="a.pdf").json()
-    items = _items(client, h, cat["id"])
+    before = _items(client, h, cat["id"])
     r = client.patch(
         f"/api/supplier-catalogs/{cat['id']}/items/bulk",
         headers=h,
-        json={"ids": [i["id"] for i in items], "changes": {"group_name": "Beer Mugs"}},
+        json={"ids": [i["id"] for i in before], "changes": {"group_name": "Beer Mugs"}},
     )
     assert r.status_code == 200 and r.json()["updated"] == 3
     after = _items(client, h, cat["id"])
-    assert [i["code"] for i in after] == ["BM-0001", "BM-0002", "BM-0003"]
+    assert [i["code"] for i in after] == [i["code"] for i in before]
     assert {i["category_name"] for i in after} == {"Beer Mugs"}
 
 
-def test_labels_lock_the_code_and_regroup_then_keeps_it(catalog_client: CatalogEnv) -> None:
+def test_a_regrouped_product_keeps_its_group_on_the_next_pdf(catalog_client: CatalogEnv) -> None:
     client, h, _ = catalog_client
-    cat = _upload(client, h, data=_cells("Z1", "Z2"), name="a.pdf").json()
-    items = _items(client, h, cat["id"])
-    locked, free = items[0], items[1]
-    r = client.post(
-        f"/api/supplier-catalogs/{cat['id']}/labels",
-        headers=h,
-        json={"ids": [locked["id"]], "preset": "roll_50x25"},
-    )
-    assert r.status_code == 200, r.text
-    after = _by_supplier_code(_items(client, h, cat["id"]))
-    assert after[locked["supplier_code"]]["code_locked"] is True
-    assert after[free["supplier_code"]]["code_locked"] is False
-
-    moved = client.patch(
-        f"/api/supplier-catalogs/{cat['id']}/items/{locked['id']}",
-        headers=h,
-        json={"group_name": "Beer Mugs"},
-    ).json()
-    assert moved["category_name"] == "Beer Mugs"
-    assert moved["code"] == locked["code"]  # printed on a label: never changes
-
-
-def test_customer_catalog_with_codes_locks_them(catalog_client: CatalogEnv) -> None:
-    client, h, _ = catalog_client
-    cat = _upload(client, h, data=_cells("Z1"), name="a.pdf").json()
-    r = client.post(
-        f"/api/supplier-catalogs/{cat['id']}/customer-catalogs",
-        headers=h,
-        json={"all_included": True, "show_code": True},
-    )
-    assert r.status_code == 201, r.text
-    assert _items(client, h, cat["id"])[0]["code_locked"] is True
-
-
-def test_customer_catalog_without_codes_does_not_lock(catalog_client: CatalogEnv) -> None:
-    client, h, _ = catalog_client
-    cat = _upload(client, h, data=_cells("Z1"), name="a.pdf").json()
-    r = client.post(
-        f"/api/supplier-catalogs/{cat['id']}/customer-catalogs",
-        headers=h,
-        json={"all_included": True, "show_code": False},
-    )
-    assert r.status_code == 201, r.text
-    assert _items(client, h, cat["id"])[0]["code_locked"] is False
-
-
-def test_group_code_can_be_changed_until_a_code_uses_it(catalog_client: CatalogEnv) -> None:
-    client, h, _ = catalog_client
-    cat = _upload(client, h, data=_cells("Z1"), name="a.pdf").json()
-    item = _items(client, h, cat["id"])[0]
+    sup = _party(client, h, "Sugal Glass House")
+    a = _upload(client, h, data=_cells("Z1"), name="a.pdf", supplier_party_id=sup).json()
+    item = _items(client, h, a["id"])[0]
     client.patch(
-        f"/api/supplier-catalogs/{cat['id']}/items/{item['id']}",
+        f"/api/supplier-catalogs/{a['id']}/items/{item['id']}",
         headers=h,
-        json={"group_name": "Beer Mugs"},
+        json={"group_name": "Tumblers"},
     )
-    bm = next(g for g in _groups(client, h, cat["id"]) if g["name"] == "Beer Mugs")
-    # a code BM-0001 exists, so BM is fixed
-    r = client.patch(
-        f"/api/item-categories/{bm['category_id']}", headers=h, json={"code_prefix": "BX"}
-    )
-    assert r.status_code == 409
-    # a fresh group with no codes yet can be renamed to any free code
-    c = client.post("/api/item-categories", headers=h, json={"name": "Spoons"}).json()
-    ok = client.patch(f"/api/item-categories/{c['id']}", headers=h, json={"code_prefix": "sp"})
-    assert ok.status_code == 200 and ok.json()["code_prefix"] == "SP"
-
-
-def test_group_code_validation_and_uniqueness(catalog_client: CatalogEnv) -> None:
-    client, h, _ = catalog_client
-    a = client.post("/api/item-categories", headers=h, json={"name": "Spoons"}).json()
-    b = client.post("/api/item-categories", headers=h, json={"name": "Forks"}).json()
-    assert (
-        client.patch(
-            f"/api/item-categories/{a['id']}", headers=h, json={"code_prefix": "S"}
-        ).status_code
-        == 422
-    )
-    assert (
-        client.patch(
-            f"/api/item-categories/{a['id']}", headers=h, json={"code_prefix": "S-P"}
-        ).status_code
-        == 422
-    )
-    assert (
-        client.patch(
-            f"/api/item-categories/{a['id']}", headers=h, json={"code_prefix": "SP"}
-        ).status_code
-        == 200
-    )
-    assert (
-        client.patch(
-            f"/api/item-categories/{b['id']}", headers=h, json={"code_prefix": "SP"}
-        ).status_code
-        == 409
-    )
-    # the firm's ungrouped prefix is reserved
-    assert (
-        client.patch(
-            f"/api/item-categories/{b['id']}", headers=h, json={"code_prefix": "GEN"}
-        ).status_code
-        == 409
-    )
+    b = _upload(client, h, data=_cells("Z1", "Z9"), name="b.pdf", supplier_party_id=sup).json()
+    again = _by_supplier_code(_items(client, h, b["id"]))["Z1"]
+    assert again["category_name"] == "Tumblers" and again["code"] == item["code"]
 
 
 def test_merging_groups_moves_the_products(catalog_client: CatalogEnv) -> None:
@@ -302,9 +197,7 @@ def test_merging_groups_moves_the_products(catalog_client: CatalogEnv) -> None:
     r = client.post(f"/api/item-categories/{src}/merge", headers=h, json={"into": other["id"]})
     assert r.status_code == 200, r.text
     moved = _items(client, h, cat["id"])[0]
-    assert moved["category_name"] == "Mugs"
-    # a re-import of the same product still finds it in the merged group
-    assert moved["code"].startswith("BM-")  # the code itself is not rewritten
+    assert moved["category_name"] == "Mugs" and moved["code"] == item["code"]
 
 
 # --- suggestions -----------------------------------------------------------------
@@ -356,15 +249,13 @@ def test_dismissing_a_suggestion_clears_it(catalog_client: CatalogEnv) -> None:
     assert _items(client, h, b["id"])[0]["suggestion"] is None
 
 
-def test_cannot_accept_a_suggestion_once_the_code_is_locked(catalog_client: CatalogEnv) -> None:
+def test_cannot_accept_a_suggestion_once_the_row_is_in_the_item_list(
+    catalog_client: CatalogEnv,
+) -> None:
     client, h, _ = catalog_client
     _, b = _two_suppliers(client, h)
     mine = _items(client, h, b["id"])[0]
-    client.post(
-        f"/api/supplier-catalogs/{b['id']}/labels",
-        headers=h,
-        json={"ids": [mine["id"]], "preset": "roll_50x25"},
-    )
+    client.post(f"/api/supplier-catalogs/{b['id']}/promote", headers=h, json={"ids": [mine["id"]]})
     r = client.post(
         f"/api/supplier-catalogs/{b['id']}/items/{mine['id']}/link-product",
         headers=h,
@@ -517,3 +408,24 @@ def test_an_archived_supplier_cannot_receive_a_new_catalog(catalog_client: Catal
     client.patch(f"/api/parties/{sup}", headers=h, json={"status": "archived"})
     r = _upload(client, h, supplier_party_id=sup)
     assert r.status_code == 422 and "archived" in r.json()["detail"]
+
+
+def test_possible_matches_filter_count_and_supplier_name(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    a, b = _two_suppliers(client, h)
+    detail = client.get(f"/api/supplier-catalogs/{b['id']}", headers=h).json()
+    assert detail["suggestion_count"] == 1
+    assert (
+        client.get(f"/api/supplier-catalogs/{a['id']}", headers=h).json()["suggestion_count"] == 0
+    )
+
+    only = _items(client, h, b["id"], has_suggestion="true")
+    assert len(only) == 1 and only[0]["suggestion"]["supplier_name"] == "Supplier One"
+    assert _items(client, h, a["id"], has_suggestion="true") == []
+
+    # dismissing removes it from the filter and the count
+    client.delete(f"/api/supplier-catalogs/{b['id']}/items/{only[0]['id']}/suggestion", headers=h)
+    assert _items(client, h, b["id"], has_suggestion="true") == []
+    assert (
+        client.get(f"/api/supplier-catalogs/{b['id']}", headers=h).json()["suggestion_count"] == 0
+    )
