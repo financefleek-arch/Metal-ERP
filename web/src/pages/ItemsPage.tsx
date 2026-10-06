@@ -16,6 +16,7 @@ import { PhotoBulkDialog } from "../components/PhotoBulkDialog";
 import { GroupForm } from "../components/GroupForm";
 import { CategoryManager } from "../components/CategoryManager";
 import { useAuth } from "../lib/auth";
+import { ShareLinkDialog } from "../components/catalog/ShareLinkDialog";
 import { PhotoQueueDialog } from "../components/PhotoQueueDialog";
 import { SheetImportDialog } from "../components/SheetImportDialog";
 import { TallyDialog } from "../components/catalog/TallyDialog";
@@ -117,6 +118,7 @@ export function ItemsPage() {
   const [tallyOpen, setTallyOpen] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const { me } = useAuth();
   const [q, setQ] = useState("");
@@ -458,6 +460,7 @@ export function ItemsPage() {
               onSetAvailability={() => openBulk("availability")}
               onMoveCategory={() => openBulk("category")}
               onDelete={() => openBulk("delete")}
+              onShareLink={me?.ext_supplier_catalog ? () => setShareOpen(true) : undefined}
               onSendToTally={me?.ext_supplier_catalog ? () => setTallyOpen(true) : undefined}
               onPrintLabels={me?.ext_supplier_catalog ? () => setLabelsOpen(true) : undefined}
               onMakeCatalog={me?.ext_supplier_catalog ? () => setCatalogOpen(true) : undefined}
@@ -662,6 +665,13 @@ export function ItemsPage() {
         </div>
       </div>
       {photosOpen && <PhotoBulkDialog onClose={() => setPhotosOpen(false)} />}
+      {shareOpen && (
+        <ShareLinkDialog
+          selection={allMatching ? { filter: itemFilter } : { ids: bulkIds }}
+          count={selectedCount}
+          onClose={() => setShareOpen(false)}
+        />
+      )}
       {queueOpen && <PhotoQueueDialog filter={itemFilter} onClose={() => setQueueOpen(false)} />}
       {sheetOpen && <SheetImportDialog onClose={() => setSheetOpen(false)} />}
       {exportErr && (

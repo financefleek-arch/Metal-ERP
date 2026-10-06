@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Customer ordering: visual review</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+  .serif { font-family: 'Fraunces', Georgia, serif; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 24px 60px; }
+  h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 34px 0 4px; }
+  p.lead { font-size: 14px; color: #6f685b; margin: 0 0 18px; max-width: 880px; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .cap { font-size: 12px; color: #8a8272; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+  .note { font-size: 12.5px; color: #6f685b; max-width: 300px; line-height: 1.5; margin-top: 10px; }
+  .note b { color: #23201b; }
+  /* phone */
+  .phone { width: 330px; border: 10px solid #23201b; border-radius: 34px; background: #fff; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .ph-bar { background: #23201b; color: #f4f1ec; padding: 12px 14px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .ph-body { padding: 12px; background: #f4f1ec; min-height: 560px; }
+  .chip { display: inline-block; font-size: 11.5px; padding: 5px 11px; border-radius: 999px; border: 1px solid #d8d1c4; background: #fff; color: #6f685b; margin: 0 5px 6px 0; }
+  .chip.on { background: #2f6f89; border-color: #2f6f89; color: #fff; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .card { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden; }
+  .img { height: 92px; display: grid; place-items: center; font-size: 11px; color: #8a8272; background: repeating-linear-gradient(45deg, #efe9df, #efe9df 8px, #f6f2ea 8px, #f6f2ea 16px); }
+  .card .t { padding: 7px 9px 3px; font-size: 12px; font-weight: 500; line-height: 1.3; }
+  .card .s { padding: 0 9px 7px; font-size: 11px; color: #8a8272; }
+  .price { font-weight: 600; color: #23201b; font-size: 13px; padding: 0 9px; }
+  .qty { display: flex; align-items: center; justify-content: space-between; padding: 7px 9px 9px; }
+  .qty button { width: 28px; height: 28px; border-radius: 7px; border: 1px solid #cbc4b8; background: #fff; font-size: 16px; line-height: 1; }
+  .qty .n { font-weight: 600; font-size: 14px; }
+  .add { margin: 0 9px 9px; border: 1px solid #2f6f89; color: #2f6f89; border-radius: 8px; text-align: center; padding: 7px; font-size: 12px; font-weight: 600; background: #fff; }
+  .cartbar { margin: 10px -12px -12px; background: #2f6f89; color: #fff; padding: 13px 16px; display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; }
+  .field { background: #fff; border: 1px solid #d8d1c4; border-radius: 8px; padding: 10px 11px; font-size: 13px; margin-bottom: 8px; color: #23201b; }
+  .field small { display: block; font-size: 10.5px; color: #8a8272; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+  .btn { background: #2f6f89; color: #fff; border-radius: 9px; text-align: center; padding: 12px; font-weight: 600; font-size: 14px; }
+  .btn.ghost { background: #fff; color: #2f6f89; border: 1px solid #2f6f89; }
+  .line { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; padding: 8px 0; border-bottom: 1px solid #ece6da; }
+  .muted { color: #8a8272; }
+  /* whatsapp */
+  .wa { background: #e7ded0; padding: 12px; min-height: 360px; }
+  .bubble { background: #fff; border-radius: 4px 12px 12px 12px; padding: 9px 11px; font-size: 12.5px; line-height: 1.45; max-width: 92%; box-shadow: 0 1px 1px rgba(0,0,0,.08); margin-bottom: 10px; }
+  .bubble .tm { text-align: right; font-size: 10px; color: #8a8272; margin-top: 3px; }
+  .bubble .link { color: #2f6f89; }
+  .bubble .btnrow { border-top: 1px solid #ece6da; margin: 8px -11px -9px; padding: 9px; text-align: center; color: #2f6f89; font-weight: 600; font-size: 12.5px; }
+  /* desktop */
+  .desk { width: 760px; background: #fff; border: 1px solid #e6e0d6; border-radius: 12px; overflow: hidden; }
+  .desk .bar { background: #23201b; color: #f4f1ec; padding: 12px 18px; font-size: 13px; display: flex; gap: 22px; align-items: center; }
+  .desk .bar .on { border-bottom: 2px solid #2f6f89; padding-bottom: 3px; }
+  .badge { background: #2f6f89; color: #fff; border-radius: 999px; font-size: 10.5px; padding: 1px 7px; margin-left: 4px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; padding: 8px 12px; border-bottom: 1px solid #e6e0d6; font-weight: 500; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f0ebe1; }
+  .st { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .st.new { background: #f1e7d6; color: #8a6420; }
+  .st.ok { background: #e6efe8; color: #3d7a4a; }
+  .st.gr { background: #efe9df; color: #6f685b; }
+  .warn { background: #faf4ec; border: 1px solid #e8d9bd; color: #7a5a1c; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; }
+  .dlg { width: 440px; background: #fff; border: 1px solid #e6e0d6; border-radius: 12px; padding: 18px; box-shadow: 0 8px 24px rgba(0,0,0,.1); }
+  .dlg h3 { margin: 0 0 4px; font-size: 17px; }
+  .urlbox { display: flex; gap: 8px; margin: 10px 0; }
+  .urlbox .u { flex: 1; font-family: monospace; font-size: 12px; background: #f4f1ec; border: 1px solid #e6e0d6; border-radius: 8px; padding: 9px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tpl { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.5; max-width: 420px; }
+  .tpl .nm { font-family: monospace; font-size: 11.5px; color: #2f6f89; font-weight: 600; }
+  .tpl .cat { font-size: 10.5px; background: #e6efe8; color: #3d7a4a; padding: 1px 7px; border-radius: 999px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="serif">Customer ordering: what goes where</h1>
+  <p class="lead">Decided: <b>anyone with the link can order</b>, the customer gives a <b>name and phone</b>, and every message back to the customer goes by <b>WhatsApp</b> (no customer app). The shop reviews each order before anything becomes an invoice. Mock data, not final copy. Review the flow, then tell me what to change.</p>
+
+  <h2 class="serif">1. The customer's side (opens from a WhatsApp link, on a phone)</h2>
+  <div class="row">
+    <div>
+      <p class="cap">Catalog page</p>
+      <div class="phone">
+        <div class="ph-bar"><span class="serif" style="font-size:15px;">Kumar Steel House</span><span style="font-size:12px;">Cart 0</span></div>
+        <div class="ph-body">
+          <div class="field" style="color:#8a8272;">Search items or codes</div>
+          <div><span class="chip on">All</span><span class="chip">Drinkware</span><span class="chip">Kitchen</span><span class="chip">Steel plates</span></div>
+          <div class="grid2" style="margin-top:6px;">
+            <div class="card"><div class="img">photo</div><div class="t">Beer Mug 480 ML</div><div class="s">Pack of 6 &middot; 100234</div><div class="price">&#8377;1,256 <span class="muted" style="font-weight:400;font-size:11px;">/ pack</span></div><div class="qty"><button>&minus;</button><span class="n">2</span><button>+</button></div></div>
+            <div class="card"><div class="img">photo</div><div class="t">Juice Glass 190 ML</div><div class="s">Pack of 6 &middot; 100235</div><div class="price">&#8377;190 <span class="muted" style="font-weight:400;font-size:11px;">/ pack</span></div><div class="add">Add</div></div>
+            <div class="card"><div class="img">photo</div><div class="t">Dessert Bowl Set 7 PC</div><div class="s">Pack of 7 &middot; 100301</div><div class="price">&#8377;299 <span class="muted" style="font-weight:400;font-size:11px;">/ set</span></div><div class="add">Add</div></div>
+            <div class="card"><div class="img">photo</div><div class="t">Steel Plate 11&quot;</div><div class="s">Pack of 12 &middot; 100417</div><div class="price">&#8377;840 <span class="muted" style="font-weight:400;font-size:11px;">/ pack</span></div><div class="add">Add</div></div>
+          </div>
+          <div class="cartbar"><span>1 item &middot; &#8377;2,512</span><span>View order &rsaquo;</span></div>
+        </div>
+      </div>
+      <p class="note"><b>Shows:</b> name, photo, code, selling price per pack, pack size. <b>Never shows:</b> cost, supplier, margin, stock count, other customers. Out-of-stock and discontinued items are hidden. Items &ldquo;on order&rdquo; appear only if the link allows it.</p>
+    </div>
+
+    <div>
+      <p class="cap">Review + who are you</p>
+      <div class="phone">
+        <div class="ph-bar"><span>&lsaquo; Your order</span><span class="muted" style="color:#b9b3a7;">Kumar Steel House</span></div>
+        <div class="ph-body">
+          <div class="card" style="padding:4px 12px;">
+            <div class="line"><span>Beer Mug 480 ML<br><span class="muted">2 packs &times; &#8377;1,256</span></span><b>&#8377;2,512</b></div>
+            <div class="line"><span>Juice Glass 190 ML<br><span class="muted">3 packs &times; &#8377;190</span></span><b>&#8377;570</b></div>
+            <div class="line" style="border:0;"><b>Total (before GST)</b><b>&#8377;3,082</b></div>
+          </div>
+          <div class="warn" style="margin:10px 0;">Minimum order &#8377;2,000 &check; &middot; Prices as per the shop&rsquo;s terms. The shop will confirm availability.</div>
+          <div class="field"><small>Your name</small>Ramesh Gupta</div>
+          <div class="field"><small>Phone (WhatsApp)</small>+91 98765 43210</div>
+          <div class="field"><small>Shop / firm (optional)</small>Gupta Traders</div>
+          <div class="field" style="color:#8a8272;"><small>Note (optional)</small>Deliver by Friday</div>
+          <div style="font-size:12px;margin:6px 0 10px;"><span style="display:inline-block;width:14px;height:14px;border:1px solid #2f6f89;background:#2f6f89;border-radius:3px;vertical-align:middle;margin-right:6px;"></span>Send me order updates on WhatsApp</div>
+          <div class="btn">Place order</div>
+        </div>
+      </div>
+      <p class="note"><b>The tick-box is the opt-in</b> Meta requires. No password, no sign-up. A hidden field and per-phone limits stop bots.</p>
+    </div>
+
+    <div>
+      <p class="cap">After placing, and what arrives on WhatsApp</p>
+      <div class="phone">
+        <div class="ph-bar"><span>Order placed</span><span></span></div>
+        <div class="ph-body" style="background:#fff;">
+          <div style="text-align:center;padding:24px 8px 10px;">
+            <div style="width:54px;height:54px;border-radius:50%;background:#e6efe8;color:#3d7a4a;display:grid;place-items:center;margin:0 auto 10px;font-size:26px;">&check;</div>
+            <div class="serif" style="font-size:19px;font-weight:600;">Order received</div>
+            <div class="muted" style="font-size:13px;margin-top:4px;">Order <b style="color:#23201b;">#ORD-0042</b><br>Kumar Steel House will confirm shortly.</div>
+          </div>
+          <div class="btn ghost" style="margin:14px 8px;">See order status</div>
+          <div class="muted" style="font-size:12px;text-align:center;">We&rsquo;ll message you on WhatsApp as it moves along.</div>
+        </div>
+      </div>
+      <div class="wa" style="margin-top:14px;border-radius:12px;">
+        <div class="bubble"><b>Order received</b><br>Hi Ramesh, Kumar Steel House has received your order <b>#ORD-0042</b> (2 items, &#8377;3,082). We will confirm availability shortly.<div class="btnrow">View order</div><div class="tm">10:42</div></div>
+        <div class="bubble"><b>Order confirmed</b><br>Hi Ramesh, your order <b>#ORD-0042</b> is confirmed. Invoice <b>1224</b> for &#8377;3,082 is attached.<div class="btnrow">View order</div><div class="tm">11:15</div></div>
+      </div>
+      <p class="note">Templates are <b>utility</b>: transactional wording only, no offers. Replies from the customer open a free 24-hour window.</p>
+    </div>
+  </div>
+
+  <h2 class="serif">2. The shop's side (the ERP on a computer or phone)</h2>
+  <div class="row">
+    <div>
+      <p class="cap">Orders list</p>
+      <div class="desk">
+        <div class="bar"><span class="serif" style="font-size:15px;">Metal ERP</span><span>Sales</span><span>Collections</span><span>Parties</span><span>Items</span><span class="on">Orders <span class="badge">3</span></span><span>Supplier documents</span></div>
+        <div style="padding:14px 18px 6px;"><span class="chip on">New 3</span><span class="chip">To invoice</span><span class="chip">Invoiced</span><span class="chip">Rejected</span><span class="chip">All</span></div>
+        <table>
+          <tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>When</th><th>Status</th></tr>
+          <tr><td><b>#ORD-0042</b></td><td>Ramesh Gupta &middot; Gupta Traders<br><span class="muted">+91 98765 43210</span></td><td>2</td><td>&#8377;3,082</td><td>10:42</td><td><span class="st new">New</span></td></tr>
+          <tr><td><b>#ORD-0041</b></td><td>Sita Devi<br><span class="muted">+91 91234 56789</span> <span class="st gr">new customer, confirm</span></td><td>5</td><td>&#8377;9,740</td><td>Yesterday</td><td><span class="st new">New</span></td></tr>
+          <tr><td><b>#ORD-0040</b></td><td>Mohan Stores<br><span class="muted">existing customer</span></td><td>8</td><td>&#8377;21,300</td><td>Mon</td><td><span class="st ok">Invoiced #1219</span></td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:22px;">
+    <div>
+      <p class="cap">Order review: edit, then one tap to a draft invoice</p>
+      <div class="desk" style="width:640px;">
+        <div style="padding:16px 18px;border-bottom:1px solid #e6e0d6;display:flex;justify-content:space-between;align-items:center;">
+          <div><div class="serif" style="font-size:18px;font-weight:600;">Order #ORD-0041</div><div class="muted" style="font-size:12.5px;">Sita Devi &middot; +91 91234 56789 &middot; placed yesterday 6:10 pm</div></div>
+          <span class="st new">New</span>
+        </div>
+        <div style="padding:12px 18px;"><div class="warn">New customer. A party named <b>Sita Stores</b> (+91 91234 56700) looks similar. <b>Use it</b> &middot; <b>Add as new customer</b></div></div>
+        <table>
+          <tr><th>Item</th><th>Qty</th><th>Rate</th><th>Amount</th><th></th></tr>
+          <tr><td>Beer Mug 480 ML <span class="muted">100234</span></td><td>2 packs</td><td>&#8377;1,256</td><td>&#8377;2,512</td><td class="muted">remove</td></tr>
+          <tr><td>Steel Plate 11&quot; <span class="muted">100417</span></td><td>4 packs</td><td>&#8377;840</td><td>&#8377;3,360</td><td class="muted">remove</td></tr>
+          <tr><td>Juice Glass 190 ML <span class="muted">100235</span> <span class="st gr">out of stock now</span></td><td>3 packs</td><td>&#8377;190</td><td>&#8377;570</td><td class="muted">remove</td></tr>
+        </table>
+        <div style="padding:12px 18px;font-size:12.5px;" class="muted">Customer note: &ldquo;Deliver by Friday&rdquo;</div>
+        <div style="padding:12px 18px;border-top:1px solid #e6e0d6;display:flex;gap:10px;justify-content:flex-end;">
+          <div class="btn ghost" style="padding:9px 16px;">Reject&hellip;</div>
+          <div class="btn" style="padding:9px 18px;">Create draft invoice</div>
+        </div>
+      </div>
+      <p class="note"><b>One tap</b> makes a <b>draft</b> sales invoice for the party with these lines and rates. It opens in the normal invoice editor; nothing is numbered until the shop finalizes it as today. Reject asks for a reason, which goes to the customer.</p>
+    </div>
+    <div>
+      <p class="cap">Making and sharing the link</p>
+      <div class="dlg">
+        <h3 class="serif">Share catalog with customers</h3>
+        <div class="muted" style="font-size:12.5px;">Steel range, October &middot; 214 items in stock</div>
+        <div class="urlbox"><div class="u">https://order.fleekfinance.in/c/k7Q2mXw9P</div><div class="btn" style="padding:8px 14px;font-size:12.5px;">Copy</div></div>
+        <div style="font-size:12.5px;line-height:2;">
+          <div>&#9745; Show items marked &ldquo;expected&rdquo; as <i>on order</i></div>
+          <div>&#9744; Link expires on <span class="muted">(never)</span></div>
+          <div>Minimum order <b>&#8377;2,000</b> &middot; Terms line <b>Prices exclude GST</b></div>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:12px;"><div class="btn ghost" style="padding:9px 14px;font-size:12.5px;">Send on WhatsApp</div><div class="btn ghost" style="padding:9px 14px;font-size:12.5px;">Stop sharing</div></div>
+        <div class="muted" style="font-size:12px;margin-top:10px;">Opened 38 times &middot; 5 orders</div>
+      </div>
+      <p class="note">The link always shows the catalog&rsquo;s <b>current</b> prices and availability. &ldquo;Stop sharing&rdquo; kills the link at once.</p>
+    </div>
+  </div>
+
+  <h2 class="serif">3. WhatsApp templates to submit now (utility)</h2>
+  <p class="lead">Approval takes days, so submit these first. Wording is transactional on purpose: promotional words would get them re-classified as marketing (dearer, capped).</p>
+  <div class="row">
+    <div class="tpl"><span class="nm">order_received</span><span class="cat">Utility</span><br>Hi {{1}}, {{2}} has received your order {{3}} ({{4}} items, &#8377;{{5}}). We will confirm availability shortly.<br><span class="muted">Button: View order (URL)</span></div>
+    <div class="tpl"><span class="nm">order_update</span><span class="cat">Utility</span><br>Hi {{1}}, your order {{2}} is {{3}}. {{4}}<br><span class="muted">{{3}} = confirmed / invoiced / could not be accepted &middot; {{4}} = invoice number and amount, or the shop&rsquo;s reason</span><br><span class="muted">Button: View order (URL)</span></div>
+    <div class="tpl"><span class="nm">new_order_alert</span><span class="cat">Utility</span><br>New order {{1}} from {{2}}: {{3}} items, &#8377;{{4}}. Open Metal ERP to review it.<br><span class="muted">Sent to the shop&rsquo;s own number</span></div>
+  </div>
+
+  <h2 class="serif">4. Questions for you</h2>
+  <ol style="font-size:14px;line-height:1.7;max-width:880px;color:#3b362e;">
+    <li><b>Quantities:</b> always whole <b>packs</b> (as shown), or should some items sell by the piece?</li>
+    <li><b>Prices:</b> the same price for everyone for now. OK, or do some customers need their own rate soon?</li>
+    <li><b>Minimum order and terms line:</b> per link (as drawn), or one setting for the whole shop?</li>
+    <li><b>Order number:</b> <i>ORD-0042</i> style, separate from invoice numbers. OK?</li>
+    <li><b>GST:</b> the customer page shows prices before GST with a terms line. Until GST billing is built, is that right?</li>
+  </ol>
+</div>
+</body>
+</html>

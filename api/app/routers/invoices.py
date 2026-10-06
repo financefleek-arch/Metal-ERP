@@ -12,13 +12,21 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
 from fastapi.responses import FileResponse
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import selectinload
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import Invoice, InvoiceLine, Party, Payment, PaymentAllocation, TallySyncJob
+from app.models import (
+    CustomerOrder,
+    Invoice,
+    InvoiceLine,
+    Party,
+    Payment,
+    PaymentAllocation,
+    TallySyncJob,
+)
 from app.models._mixins import AllocationType, DocType, InvoiceStatus, PaymentStatus, PdfStatus
 from app.models.whatsapp import WhatsappMessage
 from app.schemas_invoice import (
@@ -32,6 +40,7 @@ from app.schemas_invoice import (
     InvoiceWhatsappMessageOut,
     PartyBrief,
 )
+from app.services import order_notify
 from app.services.invoices.common import (
     download_name,
     finalize_blockers,
@@ -427,6 +436,12 @@ def delete_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> Non
             status_code=status.HTTP_409_CONFLICT,
             detail="cannot delete — a payment is recorded against this invoice; reverse it first",
         )
+    # an order that made this draft goes back to being an open order
+    session.execute(
+        update(CustomerOrder)
+        .where(CustomerOrder.invoice_id == inv.id)
+        .values(invoice_id=None, status="accepted")
+    )
     # a draft (never numbered) or a cancelled invoice (number already burned,
     # not reused) can be removed outright
     session.delete(inv)
@@ -438,7 +453,9 @@ def delete_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> Non
 
 
 @router.post("/{invoice_id}/finalize", response_model=FinalizeOut)
-def finalize(invoice_id: str, user: WriteUser, session: SessionDep) -> FinalizeOut:
+def finalize(
+    invoice_id: str, background: BackgroundTasks, user: WriteUser, session: SessionDep
+) -> FinalizeOut:
     inv = _load(session, user.tenant_id, invoice_id)
     try:
         result = finalize_invoice(session, inv, actor_user_id=user.id)
@@ -446,7 +463,18 @@ def finalize(invoice_id: str, user: WriteUser, session: SessionDep) -> FinalizeO
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.reasons
         ) from exc
+    # the order this invoice came from is now invoiced, and its customer is told
+    order_ids = list(
+        session.scalars(select(CustomerOrder.id).where(CustomerOrder.invoice_id == inv.id))
+    )
+    session.execute(
+        update(CustomerOrder).where(CustomerOrder.invoice_id == inv.id).values(status="invoiced")
+    )
     session.flush()
+    if order_ids:
+        session.commit()  # the background task reads these from its own session
+        for oid in order_ids:
+            background.add_task(order_notify.notify, oid, "invoiced")
     return FinalizeOut(
         id=inv.id,
         number=result.number,

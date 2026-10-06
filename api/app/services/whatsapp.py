@@ -51,6 +51,14 @@ TEMPLATE_BODY_PARAMS: dict[str, tuple[str, ...]] = {
     #   "Hello {{1}}, here is your account statement. Total due: ₹{{2}}.
     #    Please reply PAID once settled." + PDF document header.
     "account_statement": ("party_name", "total_due"),
+    # Customer ordering. Bodies:
+    #   order_received  "Hi {{1}}, {{2}} has received your order {{3}} ({{4}} items, ₹{{5}}). ..."
+    #   order_update    "Hi {{1}}, your order {{2}} is {{3}}. {{4}}"
+    #   new_order_alert "New order {{1}} from {{2}}: {{3}} items, ₹{{4}}. Open Metal ERP to review it."
+    # The first two end in a "View order" URL button whose variable is the order status token.
+    "order_received": ("customer_name", "shop_name", "order_number", "item_count", "total"),
+    "order_update": ("customer_name", "order_number", "status_word", "detail"),
+    "new_order_alert": ("order_number", "customer_name", "item_count", "total"),
 }
 
 
@@ -153,6 +161,7 @@ def _send_template_message(
     document_media_id: str | None,
     document_filename: str | None,
     lang_code: str = "en",
+    button_url_param: str | None = None,
 ) -> str:
     components: list[dict] = []
     if document_media_id:
@@ -175,6 +184,15 @@ def _send_template_message(
             {
                 "type": "body",
                 "parameters": [{"type": "text", "text": p} for p in body_params],
+            }
+        )
+    if button_url_param:  # a dynamic URL button: Meta appends this to the template's address
+        components.append(
+            {
+                "type": "button",
+                "sub_type": "url",
+                "index": "0",
+                "parameters": [{"type": "text", "text": button_url_param}],
             }
         )
 
@@ -532,6 +550,67 @@ def send_party_statement(
         session.flush()
         raise
 
+    msg.status = "sent"
+    msg.wa_message_id = wa_id
+    msg.sent_at = datetime.now(UTC)
+    session.flush()
+    return msg
+
+
+# --------------------------------------------------------------------------
+# customer orders
+# --------------------------------------------------------------------------
+
+
+def send_order_message(
+    session: Session,
+    *,
+    tenant_id: str,
+    order_id: str,
+    event: str,
+    template_name: str,
+    to_phone: str,
+    values: dict[str, str],
+    button_url_param: str | None = None,
+    party_id: str | None = None,
+) -> WhatsappMessage:
+    """Send one order template and keep a `whatsapp_message` row for it. Raises WhatsappError on
+    a Meta rejection (the row is left `failed` with the reason)."""
+    if template_name not in TEMPLATE_BODY_PARAMS:
+        raise WhatsappError(f"unknown template: {template_name!r}")
+    recipient = _phone_e164(to_phone)
+    if len(recipient) < 10:
+        raise WhatsappError(f"recipient phone looks invalid: {to_phone!r}")
+    cfg = get_config(session, tenant_id)
+    # Meta rejects newlines, tabs and long runs of spaces inside a variable
+    clean = {k: " ".join(str(v).split())[:200] for k, v in values.items()}
+    body_params = [clean[k] for k in TEMPLATE_BODY_PARAMS[template_name]]
+    msg = WhatsappMessage(
+        tenant_id=tenant_id,
+        party_id=party_id,
+        order_id=order_id,
+        order_event=event,
+        template_name=template_name,
+        to_phone=recipient,
+        status="pending",
+    )
+    session.add(msg)
+    session.flush()
+    try:
+        wa_id = _send_template_message(
+            cfg,
+            to_phone=recipient,
+            template_name=template_name,
+            body_params=body_params,
+            document_media_id=None,
+            document_filename=None,
+            button_url_param=button_url_param,
+        )
+    except WhatsappError as exc:
+        msg.status = "failed"
+        msg.error = str(exc)[:1000]
+        session.flush()
+        raise
     msg.status = "sent"
     msg.wa_message_id = wa_id
     msg.sent_at = datetime.now(UTC)

@@ -15,6 +15,7 @@ export function SelectionBar({
   onDelete,
   onMakeCatalog,
   onPrintLabels,
+  onShareLink,
   onSendToTally,
   onSelectAllMatching,
   onClear,
@@ -32,6 +33,7 @@ export function SelectionBar({
   /** present only when the firm has the catalog module */
   onMakeCatalog?: () => void;
   onPrintLabels?: () => void;
+  onShareLink?: () => void;
   onSendToTally?: () => void;
   onSelectAllMatching: () => void;
   onClear: () => void;
@@ -67,6 +69,14 @@ export function SelectionBar({
         >
           Category / group
         </button>
+        {onShareLink && (
+          <button
+            className="rounded-md border border-ground/40 bg-ground/10 px-2.5 py-1 text-[11px]"
+            onClick={onShareLink}
+          >
+            Share catalog link
+          </button>
+        )}
         {onSendToTally && (
           <button
             className="rounded-md border border-ground/40 bg-ground/10 px-2.5 py-1 text-[11px]"

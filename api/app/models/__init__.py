@@ -34,6 +34,7 @@ from app.models.item import Item, ItemAlias, ProductGroup
 from app.models.item_category import ItemCategory
 from app.models.item_classify_rule import ItemClassifyRule
 from app.models.media import MediaAsset
+from app.models.ordering import CatalogShareLink, CustomerOrder, CustomerOrderLine
 from app.models.party import Party, PartyAddress
 from app.models.payment import Payment, PaymentAllocation
 from app.models.tally_agent import AgentOutboxItem, BackupShop, BackupUpload
@@ -50,6 +51,9 @@ __all__ = [
     "BackupUpload",
     "CatalogOutputJob",
     "CatalogProduct",
+    "CatalogShareLink",
+    "CustomerOrder",
+    "CustomerOrderLine",
     "CodeSequence",
     "SupplierCatalogDefault",
     "SupplierPricePoint",

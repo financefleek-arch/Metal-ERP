@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../lib/api";
+import { ShareLinksPanel } from "../components/catalog/ShareLinksPanel";
 import { fileSize, type CustomerCatalog, type OutputJob } from "../lib/catalog";
 
 async function openFile(c: CustomerCatalog) {
@@ -148,6 +149,8 @@ export function CustomerCatalogsPage() {
           </div>
         ))}
       </div>
+
+      <ShareLinksPanel />
     </div>
   );
 }

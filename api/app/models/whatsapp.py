@@ -53,6 +53,11 @@ class WhatsappMessage(PkUuidMixin, TimestampMixin, Base):
     # payment_reminder). Deep-links the log row back to the document.
     invoice_id: Mapped[str | None] = mapped_column(ForeignKey("invoice.id"), index=True)
 
+    # Set when the message is about a customer order (order_received / order_update /
+    # new_order_alert); `order_event` says which moment: placed, accepted, rejected, invoiced.
+    order_id: Mapped[str | None] = mapped_column(ForeignKey("customer_order.id"), index=True)
+    order_event: Mapped[str | None] = mapped_column(String(20))
+
     template_name: Mapped[str] = mapped_column(String(80), nullable=False)
     to_phone: Mapped[str] = mapped_column(String(20), nullable=False)
     # Meta media id for the attached PDF, if any (from the /media upload).

@@ -6,6 +6,8 @@ multi-tenant is not a retrofit.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import (
     Boolean,
     ForeignKey,
@@ -83,6 +85,13 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     catalog_group_create_policy: Mapped[str] = mapped_column(
         String(12), default="auto", server_default="auto", nullable=False
     )
+
+    # Customer ordering (one setting for the whole shop): the smallest order value accepted,
+    # and one terms line shown on the customer catalog page.
+    order_min_value: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    order_terms_line: Mapped[str | None] = mapped_column(String(300))
+    # the shop's own WhatsApp number for new-order alerts (none = no alert)
+    order_alert_phone: Mapped[str | None] = mapped_column(String(20))
 
     users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
 

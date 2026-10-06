@@ -1112,3 +1112,9 @@ read** (vision extract + shop‑specific match + a correction learning loop).
   before the STOCKITEM block. Sales voucher keeps `PERSISTEDVIEW`.
 - Regression‑check with `scratchpad/{f1b,f5d}_e2e.py` (session scratchpad,
   not committed) — `--check` for readiness, `--no-pull` for a fast loop.
+
+---
+
+## Update 2026-10-06: items hub and supplier catalogs shipped
+
+Items became the hub of the product: supplier documents (price lists and bills) bring items in; customer catalogs, barcode labels, Tally stock-item push (with selling price read-back), photos and bulk edits start from an Items selection. Built and deployed (migration head 0048). Detail, gaps and lessons: `PLAN-erp-foundation-masters-documents-media.md` (Closeout). **Next direction: strengthen customer billing (sales invoices) and ordering** (customer ordering via a unique catalog URL is planned in `PLAN-customer-ordering.md`; also GST billing and multi-user roles) before further catalog polish; customer-catalog cover customisation is parked.

@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { JobsIndicator } from "./JobsIndicator";
 
@@ -17,8 +19,19 @@ export function Shell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // One door for a supplier's bills and price lists, when the tenant has either module.
-  const nav = [
+  // new customer orders waiting for review (the badge on Orders)
+  const orderCounts = useQuery({
+    queryKey: ["order-counts"],
+    queryFn: () => api<Record<string, number>>("/orders/counts"),
+    enabled: !!me?.ext_supplier_catalog,
+    refetchInterval: 30_000,
+    retry: false,
+  });
+  const newOrders = orderCounts.data?.new ?? 0;
+
+  const nav: { to: string; label: string; badge?: number }[] = [
     ...baseNav,
+    ...(me?.ext_supplier_catalog ? [{ to: "/orders", label: "Orders", badge: newOrders }] : []),
     ...(me?.ext_inward_import || me?.ext_supplier_catalog
       ? [{ to: "/documents", label: "Supplier documents" }]
       : []),
@@ -45,6 +58,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 }
               >
                 {n.label}
+                {n.badge ? <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-ground">{n.badge}</span> : null}
               </NavLink>
             ))}
           </nav>
@@ -106,6 +120,7 @@ export function Shell({ children }: { children: ReactNode }) {
               }
             >
               {n.label}
+              {n.badge ? <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-ground">{n.badge}</span> : null}
             </NavLink>
           ))}
         </div>

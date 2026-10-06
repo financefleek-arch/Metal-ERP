@@ -121,6 +121,11 @@ class TenantUpdate(BaseModel):
     document_label: str | None = Field(default=None, max_length=50)
     catalog_code_prefix: CatalogPrefix = None
     catalog_group_create_policy: Literal["auto", "suggest_only"] | None = None
+    order_min_value: Annotated[
+        Decimal | None, Field(ge=0, le=Decimal("99999999"), decimal_places=2)
+    ] = None
+    order_terms_line: str | None = Field(default=None, max_length=300)
+    order_alert_phone: Phone = None
 
 
 class TenantOut(BaseModel):
@@ -150,6 +155,9 @@ class TenantOut(BaseModel):
     gstin: str | None
     catalog_code_prefix: str | None = None
     catalog_group_create_policy: str = "auto"
+    order_min_value: Decimal | None = None
+    order_terms_line: str | None = None
+    order_alert_phone: str | None = None
 
 
 # --------------------------------------------------------------------------

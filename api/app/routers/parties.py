@@ -12,11 +12,18 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select, update
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
-from app.models import Party, PartyAddress, Tenant
+from app.models import (
+    CustomerOrder,
+    Party,
+    PartyAddress,
+    SupplierCatalogDefault,
+    SupplierPricePoint,
+    Tenant,
+)
 from app.models._mixins import PartyRole, PartyStatus
 from app.schemas import (
     PartyAddressIn,
@@ -408,6 +415,21 @@ def delete_party(party_id: str, user: WriteUser, session: SessionDep) -> None:
                 "Archive it instead."
             ),
         )
+    # things that merely mention this party: its price-list defaults go with it, history and
+    # order records stay but no longer point at it
+    session.execute(
+        delete(SupplierCatalogDefault).where(SupplierCatalogDefault.party_id == party.id)
+    )
+    session.execute(
+        update(SupplierPricePoint)
+        .where(SupplierPricePoint.supplier_party_id == party.id)
+        .values(supplier_party_id=None)
+    )
+    session.execute(
+        update(CustomerOrder)
+        .where(CustomerOrder.matched_party_id == party.id)
+        .values(matched_party_id=None)
+    )
     session.delete(party)
 
 

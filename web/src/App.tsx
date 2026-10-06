@@ -2,6 +2,9 @@ import { Navigate, useLocation, Route, Routes } from "react-router-dom";
 import { useAuth } from "./lib/auth";
 import { Shell } from "./components/Shell";
 import { AuthPage } from "./pages/AuthPage";
+import { PublicCatalogPage } from "./pages/public/PublicCatalogPage";
+import { PublicOrderPage } from "./pages/public/PublicOrderPage";
+import { OrdersPage } from "./pages/orders/OrdersPage";
 import { FirmPage } from "./pages/FirmPage";
 import { PartiesPage } from "./pages/PartiesPage";
 import { ItemsPage } from "./pages/ItemsPage";
@@ -31,6 +34,17 @@ function Loading() {
 
 export function App() {
   const { me, loading } = useAuth();
+  const { pathname } = useLocation();
+
+  // A customer opening a shop's catalog link: no login, no shell.
+  if (/^\/[co]\/[^/]+\/?$/.test(pathname)) {
+    return (
+      <Routes>
+        <Route path="/c/:token" element={<PublicCatalogPage />} />
+        <Route path="/o/:token" element={<PublicOrderPage />} />
+      </Routes>
+    );
+  }
 
   if (loading) return <Loading />;
   if (!me) return <AuthPage />;
@@ -67,6 +81,8 @@ export function App() {
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/items/import" element={<ItemsImportPage />} />
         {catalogs && <Route path="/items/catalogs" element={<CustomerCatalogsPage />} />}
+        {catalogs && <Route path="/orders" element={<OrdersPage />} />}
+        {catalogs && <Route path="/orders/:id" element={<OrdersPage />} />}
         <Route path="/items/new" element={<ItemsPage />} />
         <Route path="/items/bulk" element={<ItemsPage />} />
         <Route path="/items/categories" element={<ItemsPage />} />

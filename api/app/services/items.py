@@ -66,11 +66,16 @@ def detach_catalog_links(
     delete fails on the foreign key and a merge leaves the products pointing at a hidden item."""
     from sqlalchemy import update
 
-    from app.models import CatalogProduct, SupplierCatalogItem, SupplierPricePoint
+    from app.models import (
+        CatalogProduct,
+        CustomerOrderLine,
+        SupplierCatalogItem,
+        SupplierPricePoint,
+    )
 
     for i in range(0, len(item_ids), 500):
         chunk = item_ids[i : i + 500]
-        for model in (CatalogProduct, SupplierCatalogItem, SupplierPricePoint):
+        for model in (CatalogProduct, SupplierCatalogItem, SupplierPricePoint, CustomerOrderLine):
             session.execute(
                 update(model).where(model.item_id.in_(chunk)).values(item_id=to_item_id)
             )

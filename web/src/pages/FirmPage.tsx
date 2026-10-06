@@ -7,6 +7,7 @@ import { StateSelect } from "../components/StateSelect";
 import { TallyConnectCard } from "../components/TallyConnectCard";
 import { TallyBackupsCard } from "../components/TallyBackupsCard";
 import { CatalogSettingsCard } from "../components/CatalogSettingsCard";
+import { OrderSettingsCard } from "../components/OrderSettingsCard";
 import { PhotoUsageLine } from "../components/PhotoUsageLine";
 import { useAuth } from "../lib/auth";
 import { panError } from "../lib/reference";
@@ -107,6 +108,7 @@ export function FirmPage() {
       {me?.ext_supplier_catalog && (
         <>
           <CatalogSettingsCard tenant={data} />
+          <OrderSettingsCard tenant={data} />
           <PhotoUsageLine />
         </>
       )}

@@ -242,6 +242,11 @@ export interface Tenant {
   catalog_code_prefix: string | null;
   /** 'auto' creates a missing group (category); 'suggest_only' leaves it blank. */
   catalog_group_create_policy: "auto" | "suggest_only";
+  /** Smallest order accepted on a customer catalog link, and the terms line shown there. */
+  order_min_value: string | null;
+  order_terms_line: string | null;
+  /** The shop's own WhatsApp number for new-order alerts. */
+  order_alert_phone: string | null;
 }
 
 export interface PartyAddress {

@@ -37,10 +37,12 @@ from app.routers import (
     items_import,
     jobs,
     media,
+    orders,
     parties,
     parties_import,
     payments,
     reference,
+    share_links,
     tally,
     tally_agent,
     tally_self_serve,
@@ -139,6 +141,10 @@ app.include_router(item_labels.router)
 app.include_router(item_sheet.router)
 app.include_router(item_tally.router)
 app.include_router(jobs.router)
+app.include_router(orders.router)
+app.include_router(orders.public_router)
+app.include_router(share_links.router)
+app.include_router(share_links.public_router)
 app.include_router(media.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.

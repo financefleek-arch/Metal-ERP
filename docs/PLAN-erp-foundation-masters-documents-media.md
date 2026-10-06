@@ -1,6 +1,6 @@
 # Plan: item and supplier foundation, documents, and media (ERP-aligned)
 
-Status: PLAN, nothing here is built yet. Written 2026-10-05.
+Status: **BUILT (H1-H6 and MP), committed and deployed as of 2026-10-06** (migration head 0048). Written 2026-10-05; the sections below keep the original plan, the register and the per-slice build notes show what was done. See "Closeout" at the end for what is left, what was dropped or parked, and what comes next.
 Owner: Fleek. Supersedes nothing; it is the umbrella over
 `EXECUTION-PLAN-supplier-catalog.md` (built, section 17), `EXECUTION-PLAN-supplier-documents.md`
 (detail for workstreams B, C and F) and the Tally roadmap in `MASTER-tally-complement-saas.md`.
@@ -529,3 +529,28 @@ items), H5 (supplier defaults, queues, catalog-page fixes), H6 (bulk tools, poli
 - New API: `/api/item-sheet` (export, import), `/api/jobs/active`, `/api/documents` (detect, by-supplier), `POST /api/items/bulk-rename`, `POST /api/item-categories/{id}/apply-hsn`.
 - Daily photo sweep runs in the API process (asyncio task in the app lifespan, off in tests): there is still no real scheduler.
 - Still open: G22 variant attribute; G25 part deliveries; G26 inward storage move + one supplier resolver; reading price-list products that have no picture; G28 agent release (delivery owner); G29 dev Tally cleanup (you); G32 run migrations on a real Postgres and commit (you); parked G33-G35.
+
+## Closeout (2026-10-06)
+
+**Done:** every workstream above, including supplier documents (front door, supplier-code bill matching, price history). Production fixes found after deploy: price-history rows blocked deleting a merged product; two rows in one catalog could not both take the same product; HSN values must be in the HSN list (all fixed, with tests that now run on SQLite with foreign keys on).
+
+**Parked by decision**
+- **G35 customer-catalog cover customisation** (parked 2026-10-06). The cover is fixed: firm name, title, contact. If reopened, the likely asks are a logo, a "valid till" date, a terms line and a short message; none needs a data-model change beyond a few tenant/catalog fields.
+- G33 WhatsApp catalog sharing, G34 stock quantities and reconciliation (Tally stays the truth).
+
+**Dropped, with reasons**
+- Inward PDFs onto shared storage: the PDF is deleted at approve and the XML is the lasting file, so the move is risk without benefit.
+- One shared supplier resolver: price lists pick the supplier by hand and new suppliers already go through the party duplicate rules; bills read it from the PDF. They do not overlap.
+
+**Open, with what each needs**
+- G25 part deliveries (supplier side): would need a supplier purchase-order concept, which does not exist. Parked; it is not the next direction.
+- PDF products with a price line but no picture: counted and reported on upload, not read. Needs a real sample PDF that has them (none of the real samples do).
+- G28 agent release (delivery owner), G29 dev Tally cleanup (user), a live-Tally run of "Send to Tally" from Items (only a fake agent so far).
+
+**Next (user direction, 2026-10-06): strengthen billing, meaning sales invoices to customers (not supplier bills), and ordering, before any more catalog work.** "Ordering" is customer ordering: a unique catalog URL, the customer picks items and places an order, and an invoice is created. Planned in `PLAN-customer-ordering.md` (not built). Known candidates: GST billing (the `gst_enabled` flag is still decorative); multi-user roles and concurrent draft edits (a junior can bill, push to Tally and reverse); handwritten-bill capture; speech entry.
+
+**Lessons for new work**
+- The test database enforces foreign keys now. Every delete or merge must repoint or clear whatever references the row; a unique rule that two rows can collide on needs a pre-check that returns a clear message, and bulk actions must skip and count, not fail.
+- An item's HSN is a lookup (foreign key): validate against the list, never write free text.
+- Migrations 0039-0048 ran fine on the real deploy; the dev box has no usable Postgres, so check SQL with `alembic upgrade A:B --sql`.
+

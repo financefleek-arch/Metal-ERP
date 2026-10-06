@@ -1,5 +1,7 @@
 # EXECUTION PLAN — Supplier Catalog: import, price, barcode, customer catalog, Tally
 
+> **Superseded 2026-10-06:** the catalog work moved onto Items (items are the hub; customer catalogs, labels and the Tally push all start from an Items selection). Group-based codes in this document were replaced by one firm-wide running number. Current state: `PLAN-erp-foundation-masters-documents-media.md` (build notes and Closeout) and the memory file `catalog-arc-closeout-2026-10`.
+
 Status: **S0 to S4 BUILT, DEPLOYED AND TESTED by the user (2026-10-03). Pricing renamed to margin % (migration `0035`).
 Next: decide product identity / coding (section 16), then S5 (promote + Tally import).** POC done and passed
 (section 3). A feature-flagged module (`tenant.ext_supplier_catalog`) that

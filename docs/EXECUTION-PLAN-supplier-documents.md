@@ -1,6 +1,6 @@
 # Supplier documents: merging Inward bills and Supplier catalogs
 
-Status: PLAN, nothing built. Written 2026-10-05.
+Status: **BUILT 2026-10-06** (Phase 1 front door at `/documents`; Phase 2 supplier-code and remembered-wording bill matching; Phase 3 price history). Not built, by decision: moving inward PDFs to shared storage, one shared supplier resolver, part deliveries. Details and what came after: `PLAN-erp-foundation-masters-documents-media.md` (build notes and Closeout).
 
 ## 1. Goal
 
