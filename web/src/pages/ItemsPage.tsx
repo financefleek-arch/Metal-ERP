@@ -722,7 +722,7 @@ function ImportMenu({ onSheet, onExport }: { onSheet: () => void; onExport: () =
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1 min-w-[200px] overflow-hidden rounded-lg border border-line bg-card text-xs shadow-xl"
+          className="absolute left-0 z-20 mt-1 w-max min-w-[220px] max-w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-line bg-card text-xs shadow-xl"
         >
           {[
             ["From a supplier price list", "/documents"],
@@ -733,7 +733,7 @@ function ImportMenu({ onSheet, onExport }: { onSheet: () => void; onExport: () =
             <button
               key={to}
               role="menuitem"
-              className="block w-full px-3 py-2 text-left hover:bg-ground"
+              className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => go(to)}
             >
@@ -743,7 +743,7 @@ function ImportMenu({ onSheet, onExport }: { onSheet: () => void; onExport: () =
           <div className="border-t border-line" />
           <button
             role="menuitem"
-            className="block w-full px-3 py-2 text-left hover:bg-ground"
+            className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               setOpen(false);
@@ -754,7 +754,7 @@ function ImportMenu({ onSheet, onExport }: { onSheet: () => void; onExport: () =
           </button>
           <button
             role="menuitem"
-            className="block w-full px-3 py-2 text-left hover:bg-ground"
+            className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               setOpen(false);
