@@ -54,8 +54,8 @@ class _Entry:
     renamed: bool = False
 
 
-def _item_name(display: str, code: str) -> str:
-    return f"{display.strip()} ({code})"[:_NAME_MAX]
+def _item_name(display: str, tag: str) -> str:
+    return f"{display.strip()} ({tag.strip()})"[:_NAME_MAX]
 
 
 def _plan(
@@ -117,6 +117,7 @@ def _plan(
         )
     )
 
+    taken: set[str] = set()  # names given to renamed items in this pass
     for norm, group in by_norm.items():
         existing = existing_by_norm.get(norm)
         free_existing = existing is not None and existing.id not in linked_item_ids
@@ -131,8 +132,15 @@ def _plan(
         for e in group:
             e.action = "create"
             if clash:
-                e.name = _item_name(e.name, e.product.code)
-                e.norm = normalize_name(e.name, syn)
+                # tell them apart by the supplier's own code (it is what the shop and its bills
+                # call the product); our own code, always unique, when that would still clash
+                base = e.name
+                for tag in (e.product.supplier_code, e.product.code):
+                    e.name = _item_name(base, tag)
+                    e.norm = normalize_name(e.name, syn)
+                    if e.norm not in taken and e.norm not in existing_by_norm:
+                        break
+                taken.add(e.norm)
                 e.renamed = True
                 plan.renamed += 1
             plan.create += 1

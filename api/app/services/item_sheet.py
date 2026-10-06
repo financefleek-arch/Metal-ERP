@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Item, ItemCategory
 from app.models._mixins import Availability
+from app.services.items import hsn_exists
 
 HEADERS = [
     "Code",
@@ -299,6 +300,8 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
     if hsn:
         if not (hsn.isdigit() and 4 <= len(hsn) <= 8):
             raise ValueError("HSN must be 4 to 8 digits")
+        if not hsn_exists(session, hsn):
+            raise ValueError(f"HSN {hsn} is not in the HSN list")
         if hsn != (item.hsn_code or ""):
 
             def set_hsn(item=item, hsn=hsn) -> None:

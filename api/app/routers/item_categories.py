@@ -19,7 +19,7 @@ from app.schemas_catalogue import (
     CategoryUpdate,
 )
 from app.services import audit
-from app.services.items import hsn_gst_rate
+from app.services.items import hsn_exists, hsn_gst_rate
 
 router = APIRouter(prefix="/api/item-categories", tags=["item-categories"])
 
@@ -66,6 +66,16 @@ def _out(session: SessionDep, tenant_id: str, c: ItemCategory) -> CategoryOut:
         item_count=items,
         items_without_hsn=int(missing or 0),
     )
+
+
+def _check_hsn(session: SessionDep, code: str | None) -> None:
+    """An HSN on a group must be one from the reference list: items inherit it, and an item's HSN
+    is a lookup, never free text."""
+    if code and not hsn_exists(session, code):
+        raise HTTPException(
+            status_code=422,
+            detail=f"HSN {code} is not in the HSN list. Search for the code and pick one.",
+        )
 
 
 def _owned(session: SessionDep, tenant_id: str, cat_id: str) -> ItemCategory:
@@ -120,6 +130,7 @@ def list_categories(user: CurrentUser, session: SessionDep) -> list[CategoryOut]
 
 @router.post("", response_model=CategoryOut, status_code=status.HTTP_201_CREATED)
 def create_category(body: CategoryIn, user: WriteUser, session: SessionDep) -> CategoryOut:
+    _check_hsn(session, body.hsn_code)
     dupe = session.scalar(
         select(ItemCategory).where(
             ItemCategory.tenant_id == user.tenant_id,
@@ -163,6 +174,7 @@ def update_category(
     if "sort" in patch:
         c.sort = patch["sort"]
     if "hsn_code" in patch:
+        _check_hsn(session, patch["hsn_code"])
         c.hsn_code = patch["hsn_code"] or None
     if "gst_rate" in patch:
         c.gst_rate = patch["gst_rate"]
@@ -177,6 +189,7 @@ def apply_hsn(cat_id: str, user: WriteUser, session: SessionDep) -> dict[str, in
     c = _owned(session, user.tenant_id, cat_id)
     if not c.hsn_code:
         raise HTTPException(status_code=422, detail="Set an HSN for this group first.")
+    _check_hsn(session, c.hsn_code)
     rate = c.gst_rate if c.gst_rate is not None else hsn_gst_rate(session, c.hsn_code)
     items = list(
         session.scalars(

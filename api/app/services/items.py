@@ -66,14 +66,21 @@ def detach_catalog_links(
     delete fails on the foreign key and a merge leaves the products pointing at a hidden item."""
     from sqlalchemy import update
 
-    from app.models import CatalogProduct, SupplierCatalogItem
+    from app.models import CatalogProduct, SupplierCatalogItem, SupplierPricePoint
 
     for i in range(0, len(item_ids), 500):
         chunk = item_ids[i : i + 500]
-        for model in (CatalogProduct, SupplierCatalogItem):
+        for model in (CatalogProduct, SupplierCatalogItem, SupplierPricePoint):
             session.execute(
                 update(model).where(model.item_id.in_(chunk)).values(item_id=to_item_id)
             )
+
+
+def hsn_exists(session: Session, code: str | None) -> bool:
+    """Is this code in the HSN reference list? (`item.hsn_code` is a foreign key to it.)"""
+    if not code:
+        return False
+    return session.scalar(select(HsnCode.code).where(HsnCode.code == code)) is not None
 
 
 def hsn_gst_rate(session: Session, code: str | None) -> Decimal | None:

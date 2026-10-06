@@ -13,6 +13,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import Item
+from tests.catalog.conftest import seed_hsn
 from tests.catalog.pdfs import TestCell, make_pdf
 from tests.catalog.test_api_import import CatalogEnv, _items, _upload
 from tests.catalog.test_products import _party
@@ -35,6 +36,7 @@ def _pdf() -> bytes:
 @pytest.fixture
 def shop(catalog_client: CatalogEnv) -> tuple[TestClient, dict[str, str], str]:
     client, h, _ = catalog_client
+    seed_hsn("7013", "7010", "7615", "7323")
     return client, h, _party(client, h, "Sugal Glass House")
 
 
@@ -572,3 +574,13 @@ def test_backfill_gives_photoless_items_their_price_list_picture(shop) -> None:
     assert r.status_code == 200 and r.json() == {"queued": len(ids)}
     assert all(i.primary_media_id for i in _items_of(ids))  # the test client runs the task
     assert client.post(f"{BASE}/photos/backfill", headers=h).json() == {"queued": 0}
+
+
+def test_an_hsn_outside_the_list_is_refused_not_a_server_error(shop) -> None:
+    client, h, _ = shop
+    r = client.post("/api/item-categories", headers=h, json={"name": "Odd", "hsn_code": "99999999"})
+    assert r.status_code == 422 and "not in the HSN list" in r.json()["detail"]
+    cat = _cat(client, h, "Fine")
+    r = client.patch(f"/api/item-categories/{cat['id']}", headers=h, json={"hsn_code": "88888888"})
+    assert r.status_code == 422
+    assert client.get("/api/item-categories", headers=h).json()

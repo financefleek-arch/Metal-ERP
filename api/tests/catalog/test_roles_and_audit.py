@@ -12,7 +12,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import AuditLog, User
-from tests.catalog.conftest import auth
+from tests.catalog.conftest import auth, seed_hsn
 from tests.catalog.pdfs import TestCell, make_pdf
 from tests.catalog.test_api_import import CatalogEnv, _upload
 from tests.catalog.test_products import _party
@@ -23,6 +23,7 @@ BASE = "/api/supplier-catalogs"
 @pytest.fixture
 def shop(catalog_client: CatalogEnv) -> tuple[TestClient, dict[str, str], str, dict[str, Any]]:
     client, h, _ = catalog_client
+    seed_hsn("7013")
     sup = _party(client, h, "Sugal Glass House")
     pdf = make_pdf([[TestCell(code="B1", name_lines=["BEER MUG 480 ML", "COL BOX 6 PC"])]])
     cat = _upload(client, h, data=pdf, name="a.pdf", supplier_party_id=sup).json()

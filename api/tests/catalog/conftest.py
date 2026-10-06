@@ -80,3 +80,16 @@ def catalog_client(client: TestClient) -> tuple[TestClient, dict[str, str], str]
 def tenant_id(client: TestClient) -> str:
     """A bare tenant (flag off) for service-level tests."""
     return tenant_id_of(client, register(client, "svc@catalog.example.com"))
+
+
+def seed_hsn(*codes: str) -> None:
+    """Put codes in the HSN reference list (an item's HSN is a foreign key to it, and the test
+    database enforces foreign keys like production does)."""
+    from app.db import SessionLocal
+    from app.models import HsnCode
+
+    with SessionLocal() as s:
+        for c in codes:
+            if s.get(HsnCode, c) is None:
+                s.add(HsnCode(code=c, description=f"Test code {c}", chapter=c[:2]))
+        s.commit()

@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import Item
+from tests.catalog.conftest import seed_hsn
 from tests.catalog.test_api_import import CatalogEnv
 
 X = "/api/item-sheet"
@@ -20,6 +21,7 @@ X = "/api/item-sheet"
 @pytest.fixture
 def shop(catalog_client: CatalogEnv) -> tuple[TestClient, dict[str, str], list[dict]]:
     client, h, _ = catalog_client
+    seed_hsn("7013")
     cat = client.post("/api/item-categories", headers=h, json={"name": "Drinkware"}).json()
     items = []
     for name, sku, rate in (("Beer Mug", "100500", "1256"), ("Juice Glass", "100501", "190")):
@@ -193,3 +195,11 @@ def test_active_jobs_lists_running_work(shop) -> None:
         and jobs[0]["progress"] == 40
         and jobs[0]["total"] == 120
     )
+
+
+def test_a_sheet_hsn_outside_the_list_is_reported_on_its_row(shop) -> None:
+    client, h, items = shop
+    bad = _sheet([["100500", "", "", "", "", "", "99999999"]])
+    r = _post(client, h, bad, dry_run="false").json()
+    assert r["errors"] == 1 and "not in the HSN list" in r["rows"][0]["detail"]
+    assert _get(items[0]["id"]).hsn_code is None

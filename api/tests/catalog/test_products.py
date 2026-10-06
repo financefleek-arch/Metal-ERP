@@ -458,3 +458,33 @@ def test_accept_and_dismiss_matches_in_bulk(catalog_client: CatalogEnv) -> None:
         "done": 0,
         "skipped": 0,
     }
+
+
+def test_accepting_a_match_keeps_the_quote_history_of_the_row(catalog_client: CatalogEnv) -> None:
+    """The row's own provisional product is deleted on accept; its price history must move to
+    the product it merged into (production Postgres enforces the foreign key)."""
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import CatalogProduct, SupplierPricePoint
+
+    client, h, _ = catalog_client
+    a, b = _two_suppliers(client, h)
+    mine = _items(client, h, b["id"])[0]
+    with SessionLocal() as s:
+        before = s.scalar(
+            select(SupplierPricePoint).where(SupplierPricePoint.product_id == mine["product_id"])
+        )
+        assert before is not None  # the import recorded this row's quote
+    r = client.post(
+        f"/api/supplier-catalogs/{b['id']}/items/{mine['id']}/link-product",
+        headers=h,
+        json={"product_id": mine["suggestion"]["product_id"]},
+    )
+    assert r.status_code == 200, r.text
+    with SessionLocal() as s:
+        alive = set(s.scalars(select(CatalogProduct.id)))
+        points = list(s.scalars(select(SupplierPricePoint)))
+        assert points and all(p.product_id in alive for p in points if p.product_id)
+        moved = [p for p in points if p.product_id == mine["suggestion"]["product_id"]]
+        assert len(moved) == 2  # the other supplier's quote, and this row's

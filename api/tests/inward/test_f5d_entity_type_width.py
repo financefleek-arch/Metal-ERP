@@ -18,18 +18,23 @@ from .conftest import auth, enable_inward_flag, register
 
 
 @pytest.fixture
-def seeded_hsn() -> None:  # some inward tests import this; harmless no-op here
-    return None
+def seeded_hsn() -> None:
+    """The HSN the Sugal lines use must exist: item.hsn_code is a foreign key to the list."""
+    from app.models import HsnCode
+
+    with SessionLocal() as s:
+        if s.get(HsnCode, "21069092") is None:
+            s.add(HsnCode(code="21069092", description="Test code", chapter="21"))
+            s.commit()
 
 
 def test_approve_with_tally_company_and_matched_items(
-    client: TestClient, sugal_pdf_bytes: bytes
+    client: TestClient, sugal_pdf_bytes: bytes, seeded_hsn: None
 ) -> None:
     tok = register(client, "repro-f5d@x.example.com")
     enable_inward_flag(client, tok)
     h = auth(tok)
     tid = client.get("/api/auth/me", headers=h).json()["tenant_id"]
-
     # Tally company + ledger_map exactly like prod
     with SessionLocal() as s:
         shop = BackupShop(

@@ -88,6 +88,10 @@ def test_reclassify_backfill_assigns_and_confirms(session) -> None:  # type: ign
     client = TestClient(app)
     _token(client, "seed-3@x.example.com")
     tid = session.scalar(select(ItemCategory.tenant_id))
+    from app.models import HsnCode
+
+    session.add(HsnCode(code="76151030", description="Test code", chapter="76"))  # an FK target
+    session.commit()
 
     # a high-confidence item and an Other one, both unconfirmed
     kadai = Item(

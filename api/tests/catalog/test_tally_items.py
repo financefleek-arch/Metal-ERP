@@ -253,7 +253,7 @@ def test_promote_links_an_existing_item_with_the_same_name(env: Env) -> None:
         assert s.get(Item, linked["item_id"]).default_rate == rate_before  # the shop's own rate
 
 
-def test_same_name_products_get_the_code_appended(catalog_client: CatalogEnv) -> None:
+def test_same_name_products_are_told_apart_by_the_suppliers_code(catalog_client: CatalogEnv) -> None:
     client, h, tid = catalog_client
     sup = _party(client, h, "Sugal Glass House")
     pdf = make_pdf(
@@ -271,7 +271,7 @@ def test_same_name_products_get_the_code_appended(catalog_client: CatalogEnv) ->
     with SessionLocal() as s:
         names = [s.get(Item, r["item_id"]).name for r in rows]
     assert len(set(names)) == 2
-    assert all(r["code"] in n for r, n in zip(rows, names, strict=True))
+    assert all(r["supplier_code"] in n for r, n in zip(rows, names, strict=True))
 
 
 def test_two_catalogs_promoting_one_product_share_the_item(catalog_client: CatalogEnv) -> None:
@@ -920,3 +920,30 @@ def test_the_price_due_filter_finds_items_whose_tally_price_is_old(
     assert due() == 0
     _set_rates(env, "901")
     assert due() == 4
+
+
+def test_a_clashing_supplier_code_falls_back_to_our_code(catalog_client: CatalogEnv) -> None:
+    client, h, tid = catalog_client
+    s1 = _party(client, h, "Supplier One")
+    s2 = _party(client, h, "Supplier Two")
+    pdf = make_pdf(
+        [[TestCell(code="SAME1", name_lines=["DELI 190 ML JUICE GLASS", "COL BOX 6 PC"])]]
+    )
+    a = _upload(client, h, data=pdf, name="a.pdf", supplier_party_id=s1).json()
+    # a different file (so it is a new catalog) with the same name and the same supplier code
+    pdf2 = make_pdf(
+        [
+            [
+                TestCell(code="SAME1", name_lines=["DELI 190 ML JUICE GLASS", "COL BOX 6 PC"]),
+                TestCell(code="OTHER", name_lines=["PLAIN THING", "COL BOX 2 PC"]),
+            ]
+        ]
+    )
+    b = _upload(client, h, data=pdf2, name="b.pdf", supplier_party_id=s2).json()
+    ea, eb = Env(client, h, tid, a["id"]), Env(client, h, tid, b["id"])
+    _promote(ea)
+    out = _promote(eb)
+    assert out["create"] >= 1
+    with SessionLocal() as s:
+        names = [i.name for i in s.query(Item).filter_by(tenant_id=tid)]
+    assert len(names) == len(set(names))

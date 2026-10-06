@@ -22,11 +22,21 @@ os.environ.setdefault("APP_ENV", "test")
 from collections.abc import Iterator  # noqa: E402
 
 import pytest  # noqa: E402
+from sqlalchemy import event  # noqa: E402
 from sqlalchemy.orm import Session, sessionmaker  # noqa: E402
 
 import app.models  # noqa: F401,E402  (registers models on Base.metadata)
 from app.db import Base  # noqa: E402
 from app.db import engine as app_engine  # noqa: E402
+
+
+@event.listens_for(app_engine, "connect")
+def _enforce_foreign_keys(dbapi_conn, _record) -> None:  # type: ignore[no-untyped-def]
+    """SQLite ignores foreign keys unless asked: Postgres (production) does not, so a delete that
+    leaves a reference behind must fail here too."""
+    if app_engine.dialect.name == "sqlite":
+        dbapi_conn.execute("PRAGMA foreign_keys=ON")
+
 
 _SessionTest = sessionmaker(bind=app_engine, autoflush=False, expire_on_commit=False)
 

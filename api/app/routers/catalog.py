@@ -39,6 +39,7 @@ from app.models import (
     Party,
     SupplierCatalog,
     SupplierCatalogItem,
+    SupplierPricePoint,
     Tenant,
     User,
 )
@@ -877,6 +878,12 @@ def _apply_link(
     item.suggested_product_id = None
     session.flush()
     if own is not None and own.id != target.id:
+        # what this product was quoted before now belongs to the product it merged into
+        session.execute(
+            update(SupplierPricePoint)
+            .where(SupplierPricePoint.product_id == own.id)
+            .values(product_id=target.id)
+        )
         session.delete(own)
     session.flush()
 
