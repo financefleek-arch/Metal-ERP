@@ -90,6 +90,25 @@ export function CatalogQueueBar({
     },
     onError: (e) => setErr(errMsg(e, "Could not add the items. Try again.")),
   });
+  const matches = useMutation({
+    mutationFn: (action: "accept" | "dismiss") =>
+      api<{ done: number; skipped: number }>(`/supplier-catalogs/${catalogId}/matches/${action}`, {
+        method: "POST",
+        body: { filter: { has_suggestion: true } },
+      }).then((r) => ({ ...r, action })),
+    onSuccess: (r) => {
+      setErr(null);
+      setMsg(
+        r.action === "accept"
+          ? `${r.done} row${r.done === 1 ? "" : "s"} now use the existing product's code, group and name${
+              r.skipped ? `; ${r.skipped} left as they are (their code is already in use)` : ""
+            }.`
+          : `${r.done} suggested match${r.done === 1 ? "" : "es"} dismissed.`,
+      );
+      refresh();
+    },
+    onError: (e) => setErr(errMsg(e, "That did not work. Try again.")),
+  });
   const undo = useMutation({
     mutationFn: (ids: string[]) =>
       api<{ removed: number; kept: number }>(`/supplier-catalogs/${catalogId}/promote/undo`, {
@@ -142,6 +161,27 @@ export function CatalogQueueBar({
           Not in your items{c ? <span className="ml-1 tabular-nums opacity-70">{c.notAdded}</span> : null}
         </button>
         <span className="ml-auto flex flex-wrap gap-2">
+          {c && c.possible > 0 && (
+            <>
+              <button
+                type="button"
+                className="btn-ghost h-9"
+                disabled={matches.isPending}
+                title="Every row with a possible match takes the existing product's code, group and name"
+                onClick={() => matches.mutate("accept")}
+              >
+                Accept all {c.possible} matches
+              </button>
+              <button
+                type="button"
+                className="btn-ghost h-9"
+                disabled={matches.isPending}
+                onClick={() => matches.mutate("dismiss")}
+              >
+                Not the same for all
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="btn-primary h-9"

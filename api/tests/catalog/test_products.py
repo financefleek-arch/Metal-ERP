@@ -429,3 +429,32 @@ def test_possible_matches_filter_count_and_supplier_name(catalog_client: Catalog
     assert (
         client.get(f"/api/supplier-catalogs/{b['id']}", headers=h).json()["suggestion_count"] == 0
     )
+
+
+def test_accept_and_dismiss_matches_in_bulk(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    s1 = _party(client, h, "Supplier One")
+    s2 = _party(client, h, "Supplier Two")
+    a = _upload(client, h, data=_cells("A1", "A2"), name="a.pdf", supplier_party_id=s1).json()
+    # same names again from another supplier: every row has a possible match
+    b = _upload(client, h, data=_cells("B1", "B2"), name="b.pdf", supplier_party_id=s2).json()
+    url = f"/api/supplier-catalogs/{b['id']}/matches"
+    assert b["suggestions"] >= 1
+    rows = _items(client, h, b["id"], has_suggestion=True)
+    # dismiss one row only
+    r = client.post(f"{url}/dismiss", headers=h, json={"ids": [rows[0]["id"]]})
+    assert r.json() == {"done": 1, "skipped": 0}
+    left = _items(client, h, b["id"], has_suggestion=True)
+    assert len(left) == len(rows) - 1
+    # accept everything still suggested, by filter
+    r = client.post(f"{url}/accept", headers=h, json={"filter": {"has_suggestion": True}})
+    assert r.status_code == 200 and r.json()["done"] == len(left)
+    assert _items(client, h, b["id"], has_suggestion=True) == []
+    codes_a = {i["code"] for i in _items(client, h, a["id"])}
+    taken = [i for i in _items(client, h, b["id"]) if i["code"] in codes_a]
+    assert len(taken) == len(left)
+    # nothing left to do: a no-op, not an error
+    assert client.post(f"{url}/accept", headers=h, json={"all_included": True}).json() == {
+        "done": 0,
+        "skipped": 0,
+    }

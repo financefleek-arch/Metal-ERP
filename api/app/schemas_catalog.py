@@ -313,6 +313,12 @@ class PricesApplyOut(BaseModel):
     updated: int
 
 
+class MatchesOut(BaseModel):
+    done: int
+    # accepted matches that could not be applied (the row's code is already in use)
+    skipped: int
+
+
 class PromoteUndoIn(BaseModel):
     item_ids: list[str] = Field(min_length=1, max_length=5000)
 

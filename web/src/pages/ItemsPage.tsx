@@ -300,9 +300,9 @@ export function ItemsPage() {
         } w-full shrink-0 flex-col border-b border-line bg-ground md:flex md:w-[320px] md:border-b-0 md:border-r`}
       >
         <div className="flex flex-col gap-2 border-b border-line p-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <span className="text-sm font-semibold">Items</span>
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-1.5 [&_a]:whitespace-nowrap [&_button]:whitespace-nowrap">
               <ImportMenu
                 onSheet={() => setSheetOpen(true)}
                 onExport={() => void exportSheet()}

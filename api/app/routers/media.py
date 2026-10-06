@@ -6,6 +6,8 @@ write; anyone logged in reads.
 
 from __future__ import annotations
 
+import io
+import zipfile
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile, status
@@ -24,6 +26,10 @@ router = APIRouter(prefix="/api", tags=["media"])
 StorageDep = Annotated[CatalogStorage, Depends(get_storage)]
 
 _MAX_BULK = 200
+# A zip may hold more than one request's worth, but not without limit (a zip can hide a lot).
+_MAX_ZIP_IMAGES = 300
+_MAX_ZIP_BYTES = 150 * 1024 * 1024  # uncompressed, all images together
+_IMAGE_EXT = (".jpg", ".jpeg", ".png", ".webp")
 
 
 class PhotoOut(BaseModel):
@@ -156,6 +162,65 @@ def stage_photos(
     item's code, or its name). Nothing is attached yet: the caller reviews, then applies."""
     if len(files) > _MAX_BULK:
         raise HTTPException(status_code=422, detail=f"At most {_MAX_BULK} photos at a time.")
+    return _stage_named(session, user, storage, [(f.filename or "photo", _read(f)) for f in files])
+
+
+def _unzip_images(data: bytes) -> list[tuple[str, bytes]]:
+    """The pictures inside a zip, as (file name, bytes). Folders inside the zip are ignored (a
+    picture is matched by its file name), as are hidden and macOS metadata entries."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(data))
+    except zipfile.BadZipFile as exc:
+        raise HTTPException(status_code=422, detail="That is not a valid zip file.") from exc
+    out: list[tuple[str, bytes]] = []
+    total = 0
+    with zf:
+        for info in zf.infolist():
+            base = info.filename.replace("\\", "/").rsplit("/", 1)[-1]
+            if (
+                info.is_dir()
+                or not base
+                or base.startswith(".")
+                or "__MACOSX" in info.filename
+                or not base.lower().endswith(_IMAGE_EXT)
+            ):
+                continue
+            if info.file_size > media_svc.MAX_UPLOAD_BYTES:
+                out.append((base, b""))  # reported as too large by the staging step
+                continue
+            total += info.file_size
+            if total > _MAX_ZIP_BYTES:
+                raise HTTPException(
+                    status_code=413, detail="That zip is too large. Split it into smaller zips."
+                )
+            if len(out) >= _MAX_ZIP_IMAGES:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"That zip has more than {_MAX_ZIP_IMAGES} pictures. Split it up.",
+                )
+            out.append((base, zf.read(info)))
+    if not out:
+        raise HTTPException(status_code=422, detail="There are no pictures in that zip.")
+    return out
+
+
+@router.post("/items/photos/stage-zip", response_model=list[StagedPhoto])
+def stage_zip(
+    session: SessionDep,
+    user: WriteUser,
+    storage: StorageDep,
+    file: Annotated[UploadFile, File()],
+) -> list[StagedPhoto]:
+    """Like `stage`, for the pictures inside one zip (folders in it are fine)."""
+    data = file.file.read(_MAX_ZIP_BYTES + 1)
+    if len(data) > _MAX_ZIP_BYTES:
+        raise HTTPException(status_code=413, detail="That zip is too large. Split it up.")
+    return _stage_named(session, user, storage, _unzip_images(data))
+
+
+def _stage_named(
+    session: SessionDep, user: WriteUser, storage: StorageDep, files: list[tuple[str, bytes]]
+) -> list[StagedPhoto]:
     items = list(session.scalars(select(Item).where(Item.tenant_id == user.tenant_id)))
     by_code: dict[str, Item] = {}
     for it in items:
@@ -165,11 +230,14 @@ def stage_photos(
     syn = load_synonym_map(session, user.tenant_id)
     by_name = {it.name_normalized: it for it in items if it.name_normalized}
     out: list[StagedPhoto] = []
-    for f in files:
-        name = f.filename or "photo"
+    for name, raw in files:
         try:
+            if not raw:
+                raise media_svc.ImageRejected(
+                    f"That picture is over {media_svc.MAX_UPLOAD_BYTES // (1024 * 1024)} MB."
+                )
             asset = media_svc.ingest(
-                session, storage, user.tenant_id, _read(f), source="bulk", user_id=user.id
+                session, storage, user.tenant_id, raw, source="bulk", user_id=user.id
             )
         except media_svc.ImageRejected as exc:
             out.append(

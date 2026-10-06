@@ -10,7 +10,7 @@ import io
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
 
@@ -19,12 +19,14 @@ from app.models import Item, SupplierCatalogDefault, SupplierCatalogItem
 from app.routers.catalog import (
     CatalogUser,
     CatalogWriteUser,
+    _apply_link,
     _check_supplier,
     _get_catalog,
     _get_item,
     _label_rows,
 )
 from app.schemas_catalog import (
+    MatchesOut,
     PricesApplyOut,
     PricesPreviewOut,
     PromoteUndoIn,
@@ -289,3 +291,119 @@ def replace_photo(
             media_svc.set_item_photo(session, item, asset)
     session.flush()
     return {"ok": True}
+
+
+# --------------------------------------------------------------------------
+# possible matches, in bulk
+# --------------------------------------------------------------------------
+
+
+def _suggested_rows(
+    session: SessionDep, tenant_id: str, catalog_id: str, body: SelectionIn
+) -> list[SupplierCatalogItem]:
+    ids = [r[0] for r in _label_rows(session, tenant_id, catalog_id, body)]  # type: ignore[arg-type]
+    rows: list[SupplierCatalogItem] = []
+    for i in range(0, len(ids), 500):
+        rows += list(
+            session.scalars(
+                select(SupplierCatalogItem).where(
+                    SupplierCatalogItem.id.in_(ids[i : i + 500]),
+                    SupplierCatalogItem.suggested_product_id.is_not(None),
+                )
+            )
+        )
+    return rows
+
+
+@router.post("/{catalog_id}/matches/accept", response_model=MatchesOut)
+def accept_matches(
+    catalog_id: str, body: SelectionIn, session: SessionDep, user: CatalogWriteUser
+) -> MatchesOut:
+    """Accept the suggested match on every chosen row that has one: each takes the existing
+    product's code, group and name. A row whose code is already in use is left as it is and
+    counted. One bad row never stops the rest."""
+    _get_catalog(session, user.tenant_id, catalog_id)
+    done = skipped = 0
+    for row in _suggested_rows(session, user.tenant_id, catalog_id, body):
+        sp = session.begin_nested()
+        try:
+            _apply_link(session, user.tenant_id, row, str(row.suggested_product_id))
+            sp.commit()
+            done += 1
+        except HTTPException:
+            sp.rollback()
+            skipped += 1
+    audit.record(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        entity="supplier_catalog",
+        entity_id=catalog_id,
+        action="accept_matches",
+        after={"accepted": done, "skipped": skipped},
+    )
+    session.flush()
+    return MatchesOut(done=done, skipped=skipped)
+
+
+@router.post("/{catalog_id}/matches/dismiss", response_model=MatchesOut)
+def dismiss_matches(
+    catalog_id: str, body: SelectionIn, session: SessionDep, user: CatalogWriteUser
+) -> MatchesOut:
+    """Say "not the same" for every chosen row that has a suggested match."""
+    _get_catalog(session, user.tenant_id, catalog_id)
+    rows = _suggested_rows(session, user.tenant_id, catalog_id, body)
+    for row in rows:
+        row.suggested_product_id = None
+    audit.record(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        entity="supplier_catalog",
+        entity_id=catalog_id,
+        action="dismiss_matches",
+        after={"dismissed": len(rows)},
+    )
+    session.flush()
+    return MatchesOut(done=len(rows), skipped=0)
+
+
+# --------------------------------------------------------------------------
+# photos for items that were added before photos were copied
+# --------------------------------------------------------------------------
+
+
+@router.post("/photos/backfill")
+def backfill_photos(
+    background: BackgroundTasks,
+    session: SessionDep,
+    user: CatalogWriteUser,
+    storage: Annotated[CatalogStorage, Depends(get_storage)],
+) -> dict[str, int]:
+    """Give every item that has no photo the picture of the price-list row it came from (an item
+    that has its own photo is never touched). Runs in the background; returns how many."""
+    rows = list(
+        session.scalars(
+            select(SupplierCatalogItem)
+            .where(
+                SupplierCatalogItem.tenant_id == user.tenant_id,
+                SupplierCatalogItem.item_id.is_not(None),
+                SupplierCatalogItem.image_key.is_not(None),
+            )
+            .order_by(SupplierCatalogItem.created_at.desc())
+        )
+    )
+    pairs = media_svc.items_needing_photos(session, user.tenant_id, rows)
+    if pairs:
+        audit.record(
+            session,
+            tenant_id=user.tenant_id,
+            user_id=user.id,
+            entity="item",
+            entity_id=user.tenant_id,
+            action="backfill_photos",
+            after={"items": len(pairs)},
+        )
+        session.commit()  # the background task reads these rows from its own session
+        background.add_task(media_svc.copy_catalog_photos, user.tenant_id, pairs, storage)
+    return {"queued": len(pairs)}

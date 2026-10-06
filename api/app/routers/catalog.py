@@ -836,22 +836,15 @@ def list_groups(catalog_id: str, session: SessionDep, user: CatalogUser) -> list
     return out
 
 
-@router.post("/{catalog_id}/items/{item_id}/link-product", response_model=CatalogItemOut)
-def link_product(
-    catalog_id: str,
-    item_id: str,
-    body: LinkProductIn,
-    session: SessionDep,
-    user: CatalogWriteUser,
-) -> CatalogItemOut:
-    """Accept a suggestion: this row is the same product as an existing one, so it takes that
-    product's code, group and name. Only while this row's own product is provisional and
-    used by this row alone."""
-    _get_catalog(session, user.tenant_id, catalog_id)
-    item = _get_item(session, user.tenant_id, catalog_id, item_id)
+def _apply_link(
+    session: SessionDep, tenant_id: str, item: SupplierCatalogItem, product_id: str
+) -> None:
+    """This row is the same product as an existing one, so it takes that product's code, group
+    and name. Only while this row's own product is provisional and used by this row alone.
+    Raises 404 / 409 (nothing changed) when it cannot."""
     target = session.scalar(
         select(CatalogProduct).where(
-            CatalogProduct.id == body.product_id, CatalogProduct.tenant_id == user.tenant_id
+            CatalogProduct.id == product_id, CatalogProduct.tenant_id == tenant_id
         )
     )
     if target is None:
@@ -886,6 +879,20 @@ def link_product(
     if own is not None and own.id != target.id:
         session.delete(own)
     session.flush()
+
+
+@router.post("/{catalog_id}/items/{item_id}/link-product", response_model=CatalogItemOut)
+def link_product(
+    catalog_id: str,
+    item_id: str,
+    body: LinkProductIn,
+    session: SessionDep,
+    user: CatalogWriteUser,
+) -> CatalogItemOut:
+    """Accept a suggestion for one row."""
+    _get_catalog(session, user.tenant_id, catalog_id)
+    item = _get_item(session, user.tenant_id, catalog_id, item_id)
+    _apply_link(session, user.tenant_id, item, body.product_id)
     prods, _ = _product_maps(session, [item])
     out = _item_out(catalog_id, item, _category_names(session, user.tenant_id), prods)
     _price_notes(session, user.tenant_id, catalog_id, [(out, item)])

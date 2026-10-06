@@ -193,6 +193,27 @@ export function CatalogReviewPage() {
     },
   });
 
+  // accept / dismiss the suggested match on the chosen rows
+  const matchesBulk = useMutation({
+    mutationFn: (action: "accept" | "dismiss") =>
+      api<{ done: number; skipped: number }>(`/supplier-catalogs/${id}/matches/${action}`, {
+        method: "POST",
+        body: target(),
+      }).then((r) => ({ ...r, action })),
+    onSuccess: (r) => {
+      setErr(null);
+      setFlash(
+        r.action === "accept"
+          ? `${r.done} matched${r.skipped ? `, ${r.skipped} could not be (code already in use)` : ""}.`
+          : `${r.done} suggested matches dismissed.`,
+      );
+      qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+      qc.invalidateQueries({ queryKey: ["catalog-queues", id] });
+      qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
+    },
+    onError,
+  });
+
   const bulk = useMutation({
     mutationFn: (v: { target: BulkTarget; changes: BulkChanges }) =>
       api<{ updated: number }>(`/supplier-catalogs/${id}/items/bulk`, {
@@ -653,6 +674,23 @@ export function CatalogReviewPage() {
           >
             Clear group
           </button>
+          <button
+            type="button"
+            className="btn-ghost h-9"
+            disabled={matchesBulk.isPending}
+            title="For the chosen rows that have a possible match"
+            onClick={() => matchesBulk.mutate("accept")}
+          >
+            Accept matches
+          </button>
+          <button
+            type="button"
+            className="btn-ghost h-9"
+            disabled={matchesBulk.isPending}
+            onClick={() => matchesBulk.mutate("dismiss")}
+          >
+            Not the same
+          </button>
           <button type="button" className="btn-ghost h-9" onClick={() => setPromoteOpen(true)}>
             Add to items
           </button>
@@ -813,11 +851,8 @@ export function CatalogReviewPage() {
                     <span> · in your items</span>
                   ) : null}
                 </p>
-              </div>
-              <div className={`min-w-0 px-1.5 ${DETAIL}`}>
-                <span className="font-mono text-xs">{r.code}</span>
                 {r.suggestion && (
-                  <div className="mt-1 w-56 max-w-full rounded border border-accent/40 bg-accent-soft px-2 py-1.5 text-[11px] leading-snug">
+                  <div className="mx-1.5 mt-1.5 max-w-md rounded border border-accent/40 bg-accent-soft px-2 py-1.5 text-[11px] leading-snug">
                     <p>
                       Same as <b className="font-mono">{r.suggestion.code}</b>
                       {" "}
@@ -849,6 +884,9 @@ export function CatalogReviewPage() {
                     </span>
                   </div>
                 )}
+              </div>
+              <div className={`min-w-0 px-1.5 ${DETAIL}`}>
+                <span className="font-mono text-xs">{r.code}</span>
                 {r.barcode && (
                   <Barcode
                     pattern={r.barcode}

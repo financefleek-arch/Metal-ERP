@@ -342,3 +342,59 @@ def test_the_item_model_has_the_stock_flag_default_true(catalog_client: CatalogE
     item = _item(client, h)
     with SessionLocal() as s:
         assert s.get(Item, item["id"]).is_stock is True
+
+
+def _zip(entries: dict[str, bytes]) -> bytes:
+    import io as _io
+    import zipfile as _zf
+
+    buf = _io.BytesIO()
+    with _zf.ZipFile(buf, "w") as z:
+        for name, data in entries.items():
+            z.writestr(name, data)
+    return buf.getvalue()
+
+
+def test_a_zip_is_staged_like_loose_files(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    a = _item(client, h, "Beer Mug 480 ML", sku="100234")
+    data = _zip(
+        {
+            "photos/100234.jpg": _img(600, 400),  # folders inside the zip do not matter
+            "photos/sub/mystery.png": _img(600, 400, "PNG", color=(70, 70, 70)),
+            "__MACOSX/photos/._100234.jpg": b"junk",
+            ".hidden.jpg": b"junk",
+            "notes.txt": b"not a picture",
+            "photos/broken.jpg": b"nope",
+        }
+    )
+    r = client.post(
+        "/api/items/photos/stage-zip",
+        headers=h,
+        files={"file": ("photos.zip", data, "application/zip")},
+    )
+    assert r.status_code == 200, r.text
+    by_name = {s["file_name"]: s for s in r.json()}
+    assert set(by_name) == {"100234.jpg", "mystery.png", "broken.jpg"}
+    assert by_name["100234.jpg"]["match"]["item_id"] == a["id"]
+    assert by_name["mystery.png"]["match"] is None and by_name["mystery.png"]["media_id"]
+    assert by_name["broken.jpg"]["error"]
+
+
+def test_bad_zips_are_refused(catalog_client: CatalogEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    client, h, _ = catalog_client
+
+    def post(data: bytes):
+        return client.post(
+            "/api/items/photos/stage-zip",
+            headers=h,
+            files={"file": ("p.zip", data, "application/zip")},
+        )
+
+    assert post(b"not a zip").status_code == 422
+    assert post(_zip({"readme.txt": b"hi"})).status_code == 422  # no pictures
+    import app.routers.media as media_router
+
+    monkeypatch.setattr(media_router, "_MAX_ZIP_IMAGES", 1)
+    two = _zip({"a.jpg": _img(600, 400), "b.jpg": _img(600, 400, color=(1, 2, 3))})
+    assert post(two).status_code == 422

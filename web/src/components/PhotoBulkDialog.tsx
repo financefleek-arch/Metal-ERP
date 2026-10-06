@@ -12,7 +12,8 @@ interface Staged {
   error: string | null;
 }
 
-const ACCEPT = "image/jpeg,image/png,image/webp";
+const ACCEPT = "image/jpeg,image/png,image/webp,.zip,application/zip";
+const IMAGE_RE = /\.(jpe?g|png|webp)$/i;
 const BATCH = 100;
 
 /** Add photos to many items at once. Files are matched by name (the item's code, or its name);
@@ -20,6 +21,8 @@ const BATCH = 100;
 export function PhotoBulkDialog({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
+  const [dragOver, setDragOver] = useState(false);
   const [staged, setStaged] = useState<Staged[]>([]);
   // user choices: media_id -> item id | "" (skip). Defaults come from the match.
   const [choice, setChoice] = useState<Record<string, string>>({});
@@ -35,14 +38,26 @@ export function PhotoBulkDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function stage(files: FileList | null) {
+  async function stage(files: File[] | FileList | null) {
     if (!files || files.length === 0) return;
     setErr(null);
     setResult(null);
     setBusy(true);
     try {
       const all: Staged[] = [];
-      const list = Array.from(files);
+      const picked = Array.from(files);
+      // a zip is unpacked on the server; pictures go in groups; anything else is ignored
+      const zips = picked.filter((f) => /\.zip$/i.test(f.name));
+      const list = picked.filter((f) => IMAGE_RE.test(f.name));
+      if (zips.length === 0 && list.length === 0) {
+        setErr("Choose pictures, a folder of pictures, or a zip of pictures.");
+        return;
+      }
+      for (const z of zips) {
+        const fd = new FormData();
+        fd.append("file", z);
+        all.push(...(await apiUpload<Staged[]>("/items/photos/stage-zip", fd)));
+      }
       for (let i = 0; i < list.length; i += BATCH) {
         const fd = new FormData();
         list.slice(i, i + BATCH).forEach((f) => fd.append("files", f));
@@ -122,16 +137,52 @@ export function PhotoBulkDialog({ onClose }: { onClose: () => void }) {
           }}
         />
 
+        <input
+          ref={folderRef}
+          type="file"
+          multiple
+          // @ts-expect-error webkitdirectory is a non-standard but widely supported attribute
+          webkitdirectory=""
+          className="sr-only"
+          aria-label="Choose a folder of photos"
+          onChange={(e) => {
+            void stage(e.target.files);
+            e.target.value = "";
+          }}
+        />
+
         {staged.length === 0 && (
-          <div className="mt-4 rounded-lg border-2 border-dashed border-line p-6 text-center">
+          <div
+            className={`mt-4 rounded-lg border-2 border-dashed p-6 text-center ${
+              dragOver ? "border-accent bg-accent-soft" : "border-line"
+            }`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              void droppedFiles(e.dataTransfer).then((f) => stage(f));
+            }}
+          >
             {busy ? (
               <p className="text-sm text-muted" role="status">Reading photos…</p>
             ) : (
               <>
-                <button type="button" className="btn-primary" onClick={() => fileRef.current?.click()}>
-                  Choose photos
-                </button>
-                <p className="mt-2 text-xs text-muted">JPG, PNG or WebP, up to 10 MB each.</p>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button type="button" className="btn-primary" onClick={() => fileRef.current?.click()}>
+                    Choose photos or a zip
+                  </button>
+                  <button type="button" className="btn-ghost" onClick={() => folderRef.current?.click()}>
+                    Choose a folder
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-muted">
+                  Or drop pictures, a folder or a zip here. JPG, PNG or WebP, up to 10 MB each; a zip up to 300
+                  pictures.
+                </p>
               </>
             )}
           </div>
@@ -250,4 +301,28 @@ function ItemPicker({ onPick, onCancel }: { onPick: (it: ItemListItem) => void; 
       )}
     </div>
   );
+}
+
+/** Everything that was dropped: files, plus the files inside any dropped folder. */
+async function droppedFiles(dt: DataTransfer): Promise<File[]> {
+  const entries = [...dt.items]
+    .map((i) => (i.kind === "file" ? i.webkitGetAsEntry?.() : null))
+    .filter((e): e is FileSystemEntry => !!e);
+  if (entries.length === 0) return Array.from(dt.files);
+  const out: File[] = [];
+  const walk = async (entry: FileSystemEntry): Promise<void> => {
+    if (entry.isFile) {
+      out.push(await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej)));
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      // readEntries returns a page at a time: keep going until it is empty
+      for (;;) {
+        const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
+        if (batch.length === 0) break;
+        for (const child of batch) await walk(child);
+      }
+    }
+  };
+  for (const e of entries) await walk(e);
+  return out;
 }

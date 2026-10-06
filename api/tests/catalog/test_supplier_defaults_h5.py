@@ -556,3 +556,19 @@ def test_price_lines_with_no_picture_are_counted(shop) -> None:
     assert cat["unread_price_lines"] == 1
     again = _upload(client, h, data=_pdf(), name="a.pdf", supplier_party_id=sup).json()
     assert again["unread_price_lines"] == 0
+
+
+def test_backfill_gives_photoless_items_their_price_list_picture(shop) -> None:
+    client, h, sup = shop
+    cat = _upload(client, h, data=_pdf(), name="a.pdf", supplier_party_id=sup).json()
+    out = client.post(f"{BASE}/{cat['id']}/promote", headers=h, json={"all_included": True}).json()
+    ids = out["created_item_ids"]
+    with SessionLocal() as s:  # as if they were added before photos were copied
+        for it in s.scalars(select(Item).where(Item.id.in_(ids))):
+            it.primary_media_id = None
+        s.commit()
+    assert all(i.primary_media_id is None for i in _items_of(ids))
+    r = client.post(f"{BASE}/photos/backfill", headers=h)
+    assert r.status_code == 200 and r.json() == {"queued": len(ids)}
+    assert all(i.primary_media_id for i in _items_of(ids))  # the test client runs the task
+    assert client.post(f"{BASE}/photos/backfill", headers=h).json() == {"queued": 0}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, apiPage, apiUpload } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import type { ItemFilter, ItemListItem } from "../lib/types";
 
 const PAGE = 50;
@@ -25,6 +26,8 @@ function query(f: ItemFilter, cursor: string | null): string {
  */
 export function PhotoQueueDialog({ filter, onClose }: { filter: ItemFilter; onClose: () => void }) {
   const qc = useQueryClient();
+  const { me } = useAuth();
+  const [fillMsg, setFillMsg] = useState<string | null>(null);
   const camera = useRef<HTMLInputElement>(null);
   const file = useRef<HTMLInputElement>(null);
   const [queue, setQueue] = useState<ItemListItem[]>([]);
@@ -141,6 +144,25 @@ export function PhotoQueueDialog({ filter, onClose }: { filter: ItemFilter; onCl
     }
   }
 
+  // items added from a price list before photos were copied over
+  async function fillFromLists() {
+    setErr(null);
+    try {
+      const r = await api<{ queued: number }>("/supplier-catalogs/photos/backfill", { method: "POST" });
+      setFillMsg(
+        r.queued
+          ? `Copying ${r.queued} pictures from your price lists. This takes a moment: reopen the queue shortly.`
+          : "No price-list pictures to copy.",
+      );
+      window.setTimeout(() => {
+        void load();
+        qc.invalidateQueries({ queryKey: ["items"] });
+      }, 4000);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Could not copy the pictures.");
+    }
+  }
+
   const left = Math.max(0, (total ?? 0) - (picked ? 0 : 0));
 
   return (
@@ -170,6 +192,16 @@ export function PhotoQueueDialog({ filter, onClose }: { filter: ItemFilter; onCl
             Done
           </button>
         </div>
+
+        {me?.ext_supplier_catalog && (
+          <p className="mt-2 text-xs text-muted">
+            Added from a price list and still no photo?{" "}
+            <button type="button" className="text-accent underline" onClick={() => void fillFromLists()}>
+              Fill from price lists
+            </button>
+            {fillMsg && <span className="ml-1 text-ok">{fillMsg}</span>}
+          </p>
+        )}
 
         <form
           className="mt-3 flex gap-2"
