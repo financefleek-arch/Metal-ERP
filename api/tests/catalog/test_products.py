@@ -488,3 +488,41 @@ def test_accepting_a_match_keeps_the_quote_history_of_the_row(catalog_client: Ca
         assert points and all(p.product_id in alive for p in points if p.product_id)
         moved = [p for p in points if p.product_id == mine["suggestion"]["product_id"]]
         assert len(moved) == 2  # the other supplier's quote, and this row's
+
+
+def test_two_rows_cannot_both_take_the_same_product_in_one_catalog(
+    catalog_client: CatalogEnv,
+) -> None:
+    """Both rows suggest the same existing product: the first takes it, the second is left as it
+    is (the catalog allows one row per code), in bulk and one by one."""
+    client, h, _ = catalog_client
+    s1 = _party(client, h, "Supplier One")
+    s2 = _party(client, h, "Supplier Two")
+    _upload(client, h, data=_cells("A1"), name="a.pdf", supplier_party_id=s1)
+    # two rows in one catalog with the same name: both suggest the one existing product
+    b = _upload(client, h, data=_cells("B1", "B2"), name="b.pdf", supplier_party_id=s2).json()
+    rows = _items(client, h, b["id"], has_suggestion=True)
+    assert (
+        len(rows) == 2
+        and rows[0]["suggestion"]["product_id"] == rows[1]["suggestion"]["product_id"]
+    )
+    url = f"/api/supplier-catalogs/{b['id']}"
+    one = client.post(
+        f"{url}/items/{rows[0]['id']}/link-product",
+        headers=h,
+        json={"product_id": rows[0]["suggestion"]["product_id"]},
+    )
+    assert one.status_code == 200
+    two = client.post(
+        f"{url}/items/{rows[1]['id']}/link-product",
+        headers=h,
+        json={"product_id": rows[1]["suggestion"]["product_id"]},
+    )
+    assert two.status_code == 409 and "already is that product" in two.json()["detail"]
+    # in bulk: nothing blows up, the loser is counted
+    b2 = _upload(client, h, data=_cells("C1", "C2"), name="c.pdf", supplier_party_id=s2).json()
+    out = client.post(
+        f"/api/supplier-catalogs/{b2['id']}/matches/accept", headers=h, json={"all_included": True}
+    )
+    assert out.status_code == 200, out.text
+    assert out.json()["done"] + out.json()["skipped"] == 2

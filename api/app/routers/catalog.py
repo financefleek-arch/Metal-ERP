@@ -850,6 +850,20 @@ def _apply_link(
     )
     if target is None:
         raise HTTPException(status_code=404, detail="Product not found")
+    if item.product_id != target.id:
+        twin = session.scalar(
+            select(SupplierCatalogItem.id).where(
+                SupplierCatalogItem.catalog_id == item.catalog_id,
+                SupplierCatalogItem.id != item.id,
+                SupplierCatalogItem.code == target.code,
+            )
+        )
+        if twin is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Another row in this catalog already is that product, so this one "
+                "cannot take its code.",
+            )
     own = session.get(CatalogProduct, item.product_id) if item.product_id else None
     if own is not None and own.id != target.id:
         shared = session.scalar(

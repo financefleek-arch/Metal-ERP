@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.deps import SessionDep
 from app.models import Item, SupplierCatalogDefault, SupplierCatalogItem
@@ -330,7 +331,7 @@ def accept_matches(
             _apply_link(session, user.tenant_id, row, str(row.suggested_product_id))
             sp.commit()
             done += 1
-        except HTTPException:
+        except (HTTPException, IntegrityError):
             sp.rollback()
             skipped += 1
     audit.record(
