@@ -213,7 +213,15 @@ def _send_template_message(
         timeout=_TIMEOUT,
     )
     if resp.status_code >= 400:
-        raise WhatsappError(f"send failed: {resp.status_code} {resp.text[:400]}")
+        reason = resp.text[:400]
+        try:  # lead with Meta's own short reason, which names the parameter at fault
+            err = resp.json()["error"]
+            reason = " - ".join(
+                x for x in (err.get("message"), (err.get("error_data") or {}).get("details")) if x
+            )
+        except (KeyError, TypeError, ValueError):
+            pass
+        raise WhatsappError(f"send failed: {resp.status_code} {reason}"[:600])
     try:
         return resp.json()["messages"][0]["id"]
     except (KeyError, IndexError, ValueError) as exc:
