@@ -1,6 +1,6 @@
 # Plan: customer ordering (catalog link, cart, order, invoice)
 
-Status: **O0 done (all decisions settled); O1 BUILT 2026-10-06** (share links + public read-only catalog page; migration 0049). O2 onward not built. Written 2026-10-06. Next direction after the items and
+Status: **O0 to O4 BUILT 2026-10-06** (share links, public catalog page, cart, order placing, order numbers, status page, shop inbox with review and draft invoice, WhatsApp notifications; migrations 0049, 0050, 0051). Not built: O5 (per-customer prices, personal links, installable app). Written 2026-10-06. Next direction after the items and
 supplier-catalog arc (see `PLAN-erp-foundation-masters-documents-media.md`, Closeout).
 
 ## 1. What the user asked for
@@ -93,7 +93,7 @@ step (see `invoice-finalized-immutable`); an order creates a **draft** that the 
 | **O5** | Per-customer prices, min order and terms, installable web app (PWA) | later |
 
 Meta WhatsApp templates (for example `order_received`, `order_update`) are needed for any message
-**we** start; they take days to approve and the two catalog templates are still unsubmitted.
+**we** start; they take days to approve. (The invoice, payment reminder and account statement templates are already approved; only the three order templates remain.)
 Start that in O0.
 
 ## 8. Risks
@@ -144,6 +144,21 @@ Start that in O0.
 - **Tokens** are 96-bit random, stored as issued (D11). Photos load through the existing signed media URLs.
 - **Tests:** 12 in `tests/catalog/test_share_links.py`; full suite passes with foreign keys on. Browser-verified (shop dialog, link, logged-out phone view, bad link, panel, Firm card).
 - **Known limits:** the rate limiter is per API process; the page loads the whole catalog at once (cap 3,000 items); photos on newly added items arrive after the background copy.
+
+## 12. O2 build notes (2026-10-06)
+- **Customer:** on `/c/<token>` add whole packs (stepper), review, give name + phone (+ optional firm, note), tick the WhatsApp opt-in, place the order. Cart and details are kept in the browser only. The confirmation shows `ORD-0042` and a status link `/o/<token>`; the status page refreshes itself.
+- **Server decides everything:** price from the item (a forged rate is ignored), only items the link offers right now, whole packs 1 to 999, at most 100 lines, shop-wide minimum order, a double tap returns the same order (2-minute window on phone + basket), items that went out of stock answer 409 with their names (the page removes them and says so).
+- **Abuse limits:** hidden honeypot field, 10 orders per hour per address and 5 per hour per phone (in-process), 60 status views a minute.
+- **Numbering:** `ORD-0001...` from a counter per shop (`code_sequence`, prefix ORD, row-locked), separate from invoice numbers.
+- **Customer match:** the phone is matched to an existing party and only suggested; the shop confirms on review.
+- **FK safety:** deleting an item, a customer or a supplier no longer breaks on orders, price history or defaults (references cleared; order lines keep their name and rate).
+
+## 13. Meta template sample values (for the submission form)
+Meta asks for an example for every variable. Use realistic values; no ₹ sign or thousands comma in amount variables.
+- `order_received`: "Hi {{1}}, {{2}} has received your order {{3}} ({{4}} items, ₹{{5}}). We will confirm availability shortly." Samples: 1 = Ramesh, 2 = Kumar Steel House, 3 = ORD-0042, 4 = 2, 5 = 3082.00. Button: Visit website, Dynamic, `https://<site>/o/{{1}}`, sample `Ab12Cd34Ef56`.
+- `order_update`: "Hi {{1}}, your order {{2}} is {{3}}. {{4}}" Samples: 1 = Ramesh, 2 = ORD-0042, 3 = confirmed, 4 = Invoice 1224 for ₹3082.00 is attached. Same button.
+- `new_order_alert`: "New order {{1}} from {{2}}: {{3}} items, ₹{{4}}. Open Metal ERP to review it." Samples: 1 = ORD-0042, 2 = Ramesh Gupta, 3 = 2, 4 = 3082.00. No button.
+- Category Utility; no promotional words. In WhatsApp Manager the URL button is "Add button > Visit website".
 
 ## 14. O3 and O4 build notes (2026-10-06)
 **O3: the shop reviews the order and makes a draft invoice**

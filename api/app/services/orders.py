@@ -9,6 +9,7 @@ creates an invoice; the shop reviews first.
 from __future__ import annotations
 
 import hashlib
+import re
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -97,6 +98,14 @@ def clean_phone(raw: str) -> str:
         raise HTTPException(status_code=422, detail="Enter a valid phone number.") from exc
     if not phone:
         raise HTTPException(status_code=422, detail="Enter your phone number.")
+    # A customer is messaged on WhatsApp, so a typo (an 11th digit) must not slip through as a
+    # "valid" number: Indian mobiles are 10 digits starting 6-9, and anything else needs its +code.
+    if not phone.startswith("+") or (
+        phone.startswith("+91") and not re.fullmatch(r"\+91[6-9]\d{9}", phone)
+    ):
+        raise HTTPException(
+            status_code=422, detail="Enter a 10-digit mobile number, for example 98765 43210."
+        )
     return phone
 
 

@@ -122,6 +122,7 @@ def test_accept_reject_and_invoice_each_send_one_update(shop, sent) -> None:
     client.post(f"{url}/accept", headers=h)
     upd = sent[-1]
     assert upd["template_name"] == "order_update"
+    assert upd["button_url_param"] is None  # the approved template has no button
     assert upd["body_params"] == [
         "Ramesh",
         "ORD-0001",
@@ -191,3 +192,15 @@ def test_a_retry_after_a_failure_can_send_but_a_success_is_not_repeated(
     assert len(sent) == 1
     order_notify.notify(oid, "placed")  # a second call for the same event
     assert len(sent) == 1
+
+
+def test_a_mistyped_customer_phone_is_refused_not_sent_into_the_void() -> None:
+    from fastapi import HTTPException
+
+    from app.services.orders import clean_phone
+
+    assert clean_phone("98509 96362") == "+919850996362"  # 10 digits
+    assert clean_phone("+44 7700 900123") == "+447700900123"  # abroad, with its code
+    for bad in ("98509996362", "1234567890", "98765"):  # 11 digits, not a mobile, too short
+        with pytest.raises(HTTPException):
+            clean_phone(bad)
