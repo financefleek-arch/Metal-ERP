@@ -136,7 +136,7 @@ def notify(order_id: str, event: str) -> None:
                             "status_word": text[0],
                             "detail": text[1],
                         },
-                        None,  # order_update has no button; only order_received does
+                        order.status_token,  # the approved template's "View Order" button
                     )
     except Exception:  # noqa: BLE001 - a notification must never break the order flow
         log.exception("order notification failed (%s, %s)", order_id, event)

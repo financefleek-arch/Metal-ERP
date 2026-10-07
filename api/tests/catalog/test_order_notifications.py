@@ -122,7 +122,7 @@ def test_accept_reject_and_invoice_each_send_one_update(shop, sent) -> None:
     client.post(f"{url}/accept", headers=h)
     upd = sent[-1]
     assert upd["template_name"] == "order_update"
-    assert upd["button_url_param"] is None  # the approved template has no button
+    assert upd["button_url_param"]  # the approved template has a "View Order" URL button
     assert upd["body_params"] == [
         "Ramesh",
         "ORD-0001",
