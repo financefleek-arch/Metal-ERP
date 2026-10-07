@@ -18,7 +18,7 @@ export interface Me {
 // --- platform admin (/api/admin/*) ---
 
 /** Roles the operator may assign to a firm user. */
-export type AssignableRole = "owner" | "accountant" | "viewer";
+export type AssignableRole = "owner" | "accountant" | "counter" | "viewer";
 
 export interface AdminUser {
   id: string;
@@ -36,6 +36,7 @@ export interface FirmListItem {
   gst_enabled: boolean;
   ext_inward_import: boolean;
   ext_supplier_catalog: boolean;
+  reminder_auto_allowed: boolean;
   user_count: number;
   active_user_count: number;
   created_at: string;
@@ -48,6 +49,7 @@ export interface FirmDetail {
   gst_enabled: boolean;
   ext_inward_import: boolean;
   ext_supplier_catalog: boolean;
+  reminder_auto_allowed: boolean;
   created_at: string;
   users: AdminUser[];
 }
@@ -215,6 +217,28 @@ export interface TallyPushBlockers {
   blockers: { code: string; message: string }[];
 }
 
+export interface Reminder {
+  id: string;
+  party_id: string;
+  party_name: string;
+  phone: string | null;
+  kind: "invoice" | "statement";
+  invoice_numbers: number[];
+  amount: string;
+  oldest_overdue_days: number;
+  stage_days: number;
+  proposed_on: string;
+  status: "proposed" | "failed" | "sent" | "skipped";
+  error: string | null;
+}
+
+export interface SendRemindersResult {
+  sent: number;
+  failed: number;
+  skipped: number;
+  reminders: Reminder[];
+}
+
 export interface Tenant {
   id: string;
   legal_name: string;
@@ -247,6 +271,14 @@ export interface Tenant {
   order_terms_line: string | null;
   /** The shop's own WhatsApp number for new-order alerts. */
   order_alert_phone: string | null;
+  reminder_enabled: boolean;
+  reminder_auto_send: boolean;
+  /** Fleek's per-firm switch: false = automatic sending is refused and stopped */
+  reminder_auto_allowed: boolean;
+  /** days past due at which a reminder is proposed, e.g. "7,15,30" */
+  reminder_days: string;
+  /** a bill is overdue this many days after its date */
+  default_credit_days: number;
 }
 
 export interface PartyAddress {
@@ -817,6 +849,9 @@ export interface Invoice {
   finalize_blockers: string[];
   created_at: string;
   updated_at: string;
+  /** who prepared the draft / saved it last (email) */
+  created_by: string | null;
+  last_edited_by: string | null;
   /** Only set once status === "final"; null on draft/cancelled. */
   paid_amount: string | null;
   balance_due: string | null;

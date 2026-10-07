@@ -88,6 +88,7 @@ export function PartiesPage() {
 
   const list = useInfiniteQuery({
     queryKey: ["parties", dq, scope],
+    refetchOnWindowFocus: false,
     queryFn: ({ pageParam }) =>
       apiPage<PartyListItem[]>(`/parties?${buildQuery(dq, scope, pageParam)}`),
     initialPageParam: null as string | null,

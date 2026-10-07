@@ -73,12 +73,28 @@ def require_write(user: CurrentUser) -> User:
     if user.role not in _WRITE_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This action requires owner or accountant role",
+            detail="Only an owner or accountant can do this",
         )
     return user
 
 
 WriteUser = Annotated[User, Depends(require_write)]
+
+# A counter prepares drafts, parties and orders; an accountant finalizes, takes payments, pushes to
+# Tally and changes settings (WriteUser). Viewer reads only.
+_DRAFT_ROLES = _WRITE_ROLES | {UserRole.counter}
+
+
+def require_draft(user: CurrentUser) -> User:
+    if user.role not in _DRAFT_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your role can only view this",
+        )
+    return user
+
+
+DraftUser = Annotated[User, Depends(require_draft)]
 
 
 def get_shop(

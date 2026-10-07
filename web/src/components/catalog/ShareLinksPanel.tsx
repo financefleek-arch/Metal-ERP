@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
-import { copyText, linkUrl, whatsappShare, type ShareLink } from "./ShareLinkDialog";
+import type { ShareLink } from "./ShareLinkDialog";
+import { copyText, linkUrl, whatsappShare } from "./shareLinkUtils";
 
 /** The shop's public catalog links: copy, send, stop, resume. */
 export function ShareLinksPanel() {

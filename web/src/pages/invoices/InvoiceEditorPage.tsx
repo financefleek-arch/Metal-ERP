@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
@@ -9,6 +9,8 @@ import { PRIMARY_UOMS, isWeightUom, normalizeUom } from "../../lib/units.generat
 import { uomDisplay } from "../../lib/uom";
 import { normalizePhone, phoneError } from "../../lib/reference";
 import { lastSeenLabel } from "../../lib/format";
+import { useAuth } from "../../lib/auth";
+import { canDraft, canWrite } from "../../lib/roles";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import { WhatsappLog } from "../../components/WhatsappStatus";
 import { TallyPushPanel } from "../../components/TallySyncStatus";
@@ -243,6 +245,10 @@ export function InvoiceEditorPage() {
   const qc = useQueryClient();
   const { id } = useParams();
   const isNew = !id;
+  const { me } = useAuth();
+  // a counter prepares drafts; only an owner or accountant finalizes, takes money and pushes to Tally
+  const mayFinalize = canWrite(me?.role);
+  const mayEdit = canDraft(me?.role);
 
   const detail = useQuery({
     queryKey: ["invoice", id],
@@ -271,6 +277,15 @@ export function InvoiceEditorPage() {
   const [err, setErr] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // The saved version (`updated_at`) this screen was built from: a save presents it, and the
+  // server refuses the save if someone else has saved since.
+  const baseline = useRef<{ id: string; v: string } | null>(null);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
+  const forceHydrate = useRef(false);
+  const [hydrateTick, setHydrateTick] = useState(0);
+  /** a newer saved copy of this draft that we did not load because there are unsaved edits */
+  const [theirs, setTheirs] = useState<Invoice | null>(null);
   const [payingOpen, setPayingOpen] = useState(false);
   const [waOpen, setWaOpen] = useState(false);
   /** cash-and-carry: record a payment right after finalize, no dialog needed
@@ -281,11 +296,27 @@ export function InvoiceEditorPage() {
   const inv = detail.data;
   const finalized = inv?.status === "final";
   const cancelled = inv?.status === "cancelled";
-  const readOnly = finalized || cancelled;
+  const readOnly = finalized || cancelled || !mayEdit;
 
   // hydrate from a loaded draft/invoice
   useEffect(() => {
     if (!inv) return;
+    const force = forceHydrate.current;
+    forceHydrate.current = false;
+    const last = baseline.current;
+    if (
+      !force &&
+      inv.status === "draft" &&
+      dirtyRef.current &&
+      last?.id === inv.id &&
+      last.v !== inv.updated_at
+    ) {
+      // someone else saved while we have unsaved edits: ask, never overwrite
+      setTheirs(inv);
+      return;
+    }
+    baseline.current = { id: inv.id, v: inv.updated_at };
+    setTheirs(null);
     setPartyId(inv.party_id ?? "");
     setPartyLabel(inv.party?.legal_name ?? "");
     setDate(inv.date);
@@ -303,7 +334,7 @@ export function InvoiceEditorPage() {
     );
     setCurSeg(loaded.reduce((m, r) => Math.max(m, r.segmentNo || 1), 1));
     setDirty(false);
-  }, [inv]);
+  }, [inv, hydrateTick]);
 
   // whenever a party is selected (from a loaded invoice or the picker), fetch
   // its full record so the "Bill to" block knows locked vs. editable.
@@ -431,6 +462,7 @@ export function InvoiceEditorPage() {
         weighment_slips: slips
           .filter((s) => remap.has(s.seg))
           .map((s) => ({ seg: remap.get(s.seg)!, recorded_kg: s.recorded_kg })),
+        expected_updated_at: !isNew && baseline.current?.id === id ? baseline.current.v : undefined,
       };
       if (isNew) return api<Invoice>("/invoices", { method: "POST", body });
       return api<Invoice>(`/invoices/${id}`, { method: "PUT", body });
@@ -446,8 +478,24 @@ export function InvoiceEditorPage() {
       if (isNew) nav(`/invoices/${saved.id}`, { replace: true });
       else qc.setQueryData(["invoice", id], saved);
     },
-    onError: (e) => setErr(e instanceof ApiError ? e.message : "Save failed"),
+    onError: (e) => {
+      if (e instanceof ApiError && (e.detail as { code?: string } | undefined)?.code === "draft_changed") {
+        // fetch their version; the effect above then offers the choice instead of an error
+        void detail.refetch();
+        return;
+      }
+      setErr(e instanceof ApiError ? e.message : "Save failed");
+    },
   });
+
+  function loadTheirVersion() {
+    forceHydrate.current = true;
+    setHydrateTick((t) => t + 1);
+  }
+  function keepMineAndOverwrite() {
+    if (theirs) baseline.current = { id: theirs.id, v: theirs.updated_at };
+    setTheirs(null);
+  }
 
   const finalize = useMutation({
     mutationFn: async () => {
@@ -619,6 +667,14 @@ export function InvoiceEditorPage() {
               · {statusLabel}
             </span>
           </h1>
+          {inv?.created_by && (
+            <span className="hidden text-xs text-muted sm:inline">
+              Prepared by {inv.created_by}
+              {inv.last_edited_by && inv.last_edited_by !== inv.created_by
+                ? `, last edited by ${inv.last_edited_by}`
+                : ""}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           {!readOnly && (
@@ -634,6 +690,8 @@ export function InvoiceEditorPage() {
               >
                 {save.isPending ? "Saving…" : "Save draft"}
               </button>
+              {mayFinalize ? (
+              <>
               <div className="flex items-center gap-1.5" title="Record a cash payment against this invoice right after it's finalized — for customers who pay on the spot">
                 <div className="inline-flex overflow-hidden rounded-md border border-line">
                   {(["none", "full", "partial"] as const).map((m) => (
@@ -673,6 +731,17 @@ export function InvoiceEditorPage() {
                     : "Finalizing…"
                   : "Finalize"}
               </button>
+              </>
+              ) : (
+                <>
+                  <button className="btn-ghost h-9 px-4 text-sm" disabled>
+                    Finalize
+                  </button>
+                  <span className="max-w-[16rem] self-center text-xs text-muted">
+                    Only an accountant can finalize. Save it and tell them it is ready.
+                  </span>
+                </>
+              )}
             </>
           )}
           {finalized && (
@@ -680,6 +749,7 @@ export function InvoiceEditorPage() {
               <button className="btn-ghost h-9 px-4 text-sm" onClick={openPdf}>
                 Download PDF
               </button>
+              {mayFinalize && (
               <button
                 className="btn-ghost h-9 px-4 text-sm"
                 onClick={() => setWaOpen(true)}
@@ -692,7 +762,8 @@ export function InvoiceEditorPage() {
               >
                 Send on WhatsApp
               </button>
-              {inv?.pdf_status !== "rendered" && (
+              )}
+              {mayFinalize && inv?.pdf_status !== "rendered" && (
                 <button
                   className="btn-ghost h-9 px-4 text-sm"
                   onClick={() => rerender.mutate()}
@@ -706,6 +777,30 @@ export function InvoiceEditorPage() {
         </div>
       </div>
 
+      {theirs && (
+        <div
+          role="alert"
+          className="rounded-md border border-[#e8d9bd] bg-[#faf4ec] px-3 py-3 text-sm text-[#6d4f16]"
+        >
+          <b>
+            {theirs.last_edited_by && theirs.last_edited_by !== me?.email
+              ? theirs.last_edited_by
+              : "You, in another window,"}{" "}
+            changed this draft at{" "}
+            {new Date(theirs.updated_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}.
+          </b>{" "}
+          Your screen still shows the older version, so saving now would replace their changes.
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button className="btn-primary h-9 px-3 text-xs" onClick={loadTheirVersion}>
+              Load their version
+            </button>
+            <button className="btn-ghost h-9 px-3 text-xs" onClick={keepMineAndOverwrite}>
+              Keep mine and overwrite
+            </button>
+          </div>
+          <p className="mt-1.5 text-xs">Loading their version discards the edits you made on this screen.</p>
+        </div>
+      )}
       {err && <p className="err whitespace-pre-wrap">{err}</p>}
       {savedNote && !err && (
         <p className="rounded-md bg-[#eef3ee] px-3 py-2 text-xs text-ok">{savedNote}</p>
@@ -717,9 +812,9 @@ export function InvoiceEditorPage() {
       )}
 
       {finalized && inv && (
-        <WhatsappLog invoiceId={inv.id} onResend={() => setWaOpen(true)} />
+        <WhatsappLog invoiceId={inv.id} onResend={mayFinalize ? () => setWaOpen(true) : undefined} />
       )}
-      {finalized && inv && (
+      {finalized && inv && mayFinalize && (
         <TallyPushPanel
           statusUrl={`/tally/invoices/${inv.id}/push-status`}
           pushUrl={`/tally/invoices/${inv.id}/push`}
@@ -1043,19 +1138,25 @@ export function InvoiceEditorPage() {
                   </div>
                 </div>
               </div>
-              <button
-                className="btn-ghost mt-3 h-9 w-full text-xs"
-                onClick={() => setPayingOpen(true)}
-              >
-                + Record payment
-              </button>
+              {mayFinalize && (
+                <button
+                  className="btn-ghost mt-3 h-9 w-full text-xs"
+                  onClick={() => setPayingOpen(true)}
+                >
+                  + Record payment
+                </button>
+              )}
             </div>
           )}
 
           {!readOnly && (
             <div className="mt-4 rounded-md border border-line bg-ground p-3 text-xs">
               <div className="font-semibold">
-                {localBlockers.length ? "Blocking finalize" : "Ready to finalize"}
+                {localBlockers.length
+                  ? "Blocking finalize"
+                  : mayFinalize
+                    ? "Ready to finalize"
+                    : "Ready for an accountant to finalize"}
               </div>
               <ul className="mt-1 space-y-0.5 text-muted">
                 {localBlockers.length ? (

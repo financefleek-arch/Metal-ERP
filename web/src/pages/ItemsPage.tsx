@@ -155,6 +155,7 @@ export function ItemsPage() {
 
   const list = useInfiniteQuery({
     queryKey: ["items", filterKey],
+    refetchOnWindowFocus: false, // every loaded page would refetch
     queryFn: ({ pageParam }) =>
       apiPage<ItemListItem[]>(`/items?${buildQuery(itemFilter, pageParam)}`),
     initialPageParam: null as string | null,

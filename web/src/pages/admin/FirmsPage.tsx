@@ -10,7 +10,7 @@ import type {
 import { adminApi } from "./api";
 import { TallyPanel } from "./TallyPanel";
 
-const ROLES: AssignableRole[] = ["accountant", "owner", "viewer"];
+const ROLES: AssignableRole[] = ["accountant", "owner", "counter", "viewer"];
 
 export function FirmsPage() {
   const qc = useQueryClient();
@@ -432,6 +432,7 @@ function FirmFields({
   const [gst, setGst] = useState(firm.gst_enabled);
   const [inward, setInward] = useState(firm.ext_inward_import);
   const [catalog, setCatalog] = useState(firm.ext_supplier_catalog);
+  const [autoRem, setAutoRem] = useState(firm.reminder_auto_allowed);
   const [err, setErr] = useState<string | null>(null);
 
   const dirty =
@@ -439,7 +440,8 @@ function FirmFields({
     city.trim() !== (firm.city ?? "") ||
     gst !== firm.gst_enabled ||
     inward !== firm.ext_inward_import ||
-    catalog !== firm.ext_supplier_catalog;
+    catalog !== firm.ext_supplier_catalog ||
+    autoRem !== firm.reminder_auto_allowed;
 
   const save = useMutation({
     mutationFn: () =>
@@ -449,6 +451,7 @@ function FirmFields({
         gst_enabled: gst,
         ext_inward_import: inward,
         ext_supplier_catalog: catalog,
+        reminder_auto_allowed: autoRem,
       }),
     onSuccess: onSaved,
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Save failed"),
@@ -492,6 +495,11 @@ function FirmFields({
           label="Supplier Catalog"
           on={catalog}
           onToggle={() => setCatalog((v) => !v)}
+        />
+        <Toggle
+          label="Automatic reminders allowed"
+          on={autoRem}
+          onToggle={() => setAutoRem((v) => !v)}
         />
         <button
           className="btn-ghost ml-auto"

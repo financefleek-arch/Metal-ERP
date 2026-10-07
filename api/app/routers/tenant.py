@@ -7,7 +7,7 @@ the rest (address, bank block, document label, ...) during onboarding.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Tenant
@@ -31,7 +31,20 @@ def update_tenant(
     body: TenantUpdate, user: WriteUser, session: SessionDep
 ) -> Tenant:
     tenant = _load(session, user.tenant_id)
+    if body.reminder_auto_send and not tenant.reminder_auto_allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Automatic reminders are not switched on for your firm. Please contact Fleek.",
+        )
+    not_nullable = {
+        "reminder_enabled",
+        "reminder_auto_send",
+        "reminder_days",
+        "default_credit_days",
+    }
     for field, value in body.model_dump(exclude_unset=True).items():
+        if value is None and field in not_nullable:
+            continue  # an explicit null means "leave it", not "erase it"
         setattr(tenant, field, value)
     session.flush()
     return tenant

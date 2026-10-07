@@ -109,6 +109,8 @@ class InvoiceUpdate(BaseModel):
     invoice_discount: Money | None = None
     lines: list[InvoiceLineIn] | None = None
     weighment_slips: list[WeighmentSlipIn] | None = None
+    # the `updated_at` this edit was made from; a mismatch means someone else saved in between
+    expected_updated_at: datetime_t | None = None
 
 
 # --------------------------------------------------------------------------
@@ -196,6 +198,9 @@ class InvoiceOut(BaseModel):
 
     created_at: datetime_t
     updated_at: datetime_t
+    # who prepared the draft and who saved it last (email), for the accountant who finalizes it
+    created_by: str | None = None
+    last_edited_by: str | None = None
 
 
 class InvoiceListItem(BaseModel):

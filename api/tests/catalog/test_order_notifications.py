@@ -153,8 +153,8 @@ def test_a_rejection_carries_the_reason(shop, sent) -> None:
     assert sent[-1]["body_params"] == [
         "Ramesh",
         "ORD-0001",
-        "could not be accepted",
-        "Out of stock this month",
+        "cancelled",
+        "Reason: Out of stock this month.",
     ]
 
 

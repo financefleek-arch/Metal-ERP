@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
+from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,6 +43,7 @@ from app.routers import (
     parties_import,
     payments,
     reference,
+    reminders,
     share_links,
     tally,
     tally_agent,
@@ -83,13 +85,45 @@ async def _sweep_loop() -> None:
         await asyncio.sleep(SWEEP_EVERY_SECONDS)
 
 
+REMINDER_CHECK_EVERY_SECONDS = 60 * 60
+REMINDER_FROM_HOUR_IST = 9  # proposals are ready by the start of the working day
+REMINDER_UNTIL_HOUR_IST = 19  # automatic sends only inside working hours
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+async def _reminder_loop() -> None:
+    """Hourly, from 09:00 India time: propose payment reminders for firms that switched them on,
+    and (09:00-19:00 only) send them for firms that allow it. Proposing is idempotent, so
+    repeating it or running two copies is harmless."""
+    from app.services import reminders as reminders_svc
+
+    await asyncio.sleep(120)
+    while True:
+        try:
+            hour = datetime.now(_IST).hour
+            if hour >= REMINDER_FROM_HOUR_IST:
+                made = await asyncio.to_thread(
+                    reminders_svc.run_daily,
+                    auto_send_allowed=hour < REMINDER_UNTIL_HOUR_IST,
+                )
+                if made:
+                    log.info("payment reminders proposed: %d", made)
+        except Exception:  # noqa: BLE001 - never let the scheduler die
+            log.exception("reminder run failed")
+        await asyncio.sleep(REMINDER_CHECK_EVERY_SECONDS)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    task = None if settings.app_env == "test" else asyncio.create_task(_sweep_loop())
+    tasks = (
+        []
+        if settings.app_env == "test"
+        else [asyncio.create_task(_sweep_loop()), asyncio.create_task(_reminder_loop())]
+    )
     try:
         yield
     finally:
-        if task is not None:
+        for task in tasks:
             task.cancel()
 
 
@@ -142,6 +176,7 @@ app.include_router(item_sheet.router)
 app.include_router(item_tally.router)
 app.include_router(jobs.router)
 app.include_router(orders.router)
+app.include_router(reminders.router)
 app.include_router(orders.public_router)
 app.include_router(share_links.router)
 app.include_router(share_links.public_router)

@@ -65,6 +65,9 @@ class Invoice(PkUuidMixin, TimestampMixin, Base):
     ship_to_addr_id: Mapped[str | None] = mapped_column(ForeignKey("party_address.id"))
 
     notes: Mapped[str | None] = mapped_column(Text)
+    # who prepared the draft and who touched it last (a counter drafts, an accountant finalizes)
+    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"))
+    last_edited_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"))
     terms_snapshot: Mapped[str | None] = mapped_column(Text)
     declaration_snapshot: Mapped[str | None] = mapped_column(Text)
 

@@ -9,7 +9,7 @@ reusing the number.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import selectinload
 
-from app.deps import CurrentUser, SessionDep, WriteUser
+from app.deps import CurrentUser, DraftUser, SessionDep, WriteUser
 from app.models import (
     CustomerOrder,
     Invoice,
@@ -26,8 +26,16 @@ from app.models import (
     Payment,
     PaymentAllocation,
     TallySyncJob,
+    User,
 )
-from app.models._mixins import AllocationType, DocType, InvoiceStatus, PaymentStatus, PdfStatus
+from app.models._mixins import (
+    AllocationType,
+    DocType,
+    InvoiceStatus,
+    PaymentStatus,
+    PdfStatus,
+    UserRole,
+)
 from app.models.whatsapp import WhatsappMessage
 from app.schemas_invoice import (
     DuplicateOut,
@@ -56,21 +64,49 @@ router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 _EDITABLE_STATUSES = {InvoiceStatus.draft}
 
 
-def _load(session: SessionDep, tenant_id: str, invoice_id: str) -> Invoice:
-    inv = session.scalar(
+def _load(session: SessionDep, tenant_id: str, invoice_id: str, *, lock: bool = False) -> Invoice:
+    stmt = (
         select(Invoice)
         .where(Invoice.id == invoice_id, Invoice.tenant_id == tenant_id)
         .options(selectinload(Invoice.lines))
     )
+    if lock and session.bind is not None and session.bind.dialect.name == "postgresql":
+        # two saves at the same instant queue up, so the second sees the first's stamp
+        stmt = stmt.with_for_update(of=Invoice)
+    inv = session.scalar(stmt)
     if inv is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
     return inv
 
 
-def _owned_party(session: SessionDep, tenant_id: str, party_id: str) -> Party:
-    p = session.scalar(
-        select(Party).where(Party.id == party_id, Party.tenant_id == tenant_id)
+def _utc_naive(dt: datetime) -> datetime:
+    return dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _check_not_changed_by_someone_else(
+    session: SessionDep, inv: Invoice, expected: datetime | None, user: User
+) -> None:
+    """Refuse a save made from a stale copy of the draft, naming who changed it and when.
+
+    `expected` is the `updated_at` the editor loaded. A client that does not send it is not
+    protected (old clients keep working); the web editor always sends it."""
+    if expected is None or _utc_naive(expected) == _utc_naive(inv.updated_at):
+        return
+    editor = session.get(User, inv.last_edited_by_user_id) if inv.last_edited_by_user_id else None
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail={
+            "code": "draft_changed",
+            "message": "Someone else changed this draft since you opened it.",
+            "edited_by": (editor.email if editor and editor.id != user.id else None),
+            "edited_by_you": bool(editor and editor.id == user.id),
+            "edited_at": inv.updated_at.isoformat(),
+        },
     )
+
+
+def _owned_party(session: SessionDep, tenant_id: str, party_id: str) -> Party:
+    p = session.scalar(select(Party).where(Party.id == party_id, Party.tenant_id == tenant_id))
     if p is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Party not found")
     return p
@@ -104,7 +140,9 @@ def _slips_payload(slips: list | None) -> list | None:
     return [{"seg": int(s.seg), "recorded_kg": str(s.recorded_kg)} for s in slips]
 
 
-def _payment_fields(session: SessionDep, inv: Invoice) -> tuple[Decimal | None, Decimal | None, str | None]:
+def _payment_fields(
+    session: SessionDep, inv: Invoice
+) -> tuple[Decimal | None, Decimal | None, str | None]:
     """paid_amount / balance_due / payment_status — only computed for a
     finalized invoice (draft/cancelled have no frozen grand_total to bill
     against, so these stay None rather than reporting pointless zeros).
@@ -121,6 +159,11 @@ def _payment_fields(session: SessionDep, inv: Invoice) -> tuple[Decimal | None, 
     else:
         label = "partial"
     return paid, balance, label
+
+
+def _email(session: SessionDep, user_id: str | None) -> str | None:
+    u = session.get(User, user_id) if user_id else None
+    return u.email if u else None
 
 
 def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
@@ -154,6 +197,8 @@ def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
         payment_status=payment_status,
         created_at=inv.created_at,
         updated_at=inv.updated_at,
+        created_by=_email(session, inv.created_by_user_id),
+        last_edited_by=_email(session, inv.last_edited_by_user_id),
     )
 
 
@@ -218,9 +263,7 @@ def list_invoices(
         .subquery()
     )
     wa_sq = (
-        select(wa_ranked.c.invoice_id, wa_ranked.c.wa_status)
-        .where(wa_ranked.c.rn == 1)
-        .subquery()
+        select(wa_ranked.c.invoice_id, wa_ranked.c.wa_status).where(wa_ranked.c.rn == 1).subquery()
     )
 
     # One Tally push status per invoice for the list column (F1b-1), same
@@ -248,9 +291,7 @@ def list_invoices(
     )
 
     stmt = (
-        select(
-            Invoice, Party.legal_name, paid_sq.c.paid, wa_sq.c.wa_status, tally_sq.c.job_status
-        )
+        select(Invoice, Party.legal_name, paid_sq.c.paid, wa_sq.c.wa_status, tally_sq.c.job_status)
         .outerjoin(Party, Party.id == Invoice.party_id)
         .outerjoin(paid_sq, paid_sq.c.invoice_id == Invoice.id)
         .outerjoin(wa_sq, wa_sq.c.invoice_id == Invoice.id)
@@ -323,7 +364,7 @@ def list_invoices(
 
 
 @router.post("", response_model=InvoiceOut, status_code=status.HTTP_201_CREATED)
-def create_invoice(body: InvoiceCreate, user: WriteUser, session: SessionDep) -> InvoiceOut:
+def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) -> InvoiceOut:
     if body.party_id:
         _owned_party(session, user.tenant_id, body.party_id)
     d = body.date or date.today()
@@ -341,6 +382,8 @@ def create_invoice(body: InvoiceCreate, user: WriteUser, session: SessionDep) ->
         weighment_slips=_slips_payload(body.weighment_slips),
         status=InvoiceStatus.draft,
         pdf_status=PdfStatus.none,
+        created_by_user_id=user.id,
+        last_edited_by_user_id=user.id,
     )
     _apply_lines(inv, body.lines)
     session.add(inv)
@@ -375,14 +418,15 @@ def list_invoice_whatsapp(
 
 @router.put("/{invoice_id}", response_model=InvoiceOut)
 def update_invoice(
-    invoice_id: str, body: InvoiceUpdate, user: WriteUser, session: SessionDep
+    invoice_id: str, body: InvoiceUpdate, user: DraftUser, session: SessionDep
 ) -> InvoiceOut:
-    inv = _load(session, user.tenant_id, invoice_id)
+    inv = _load(session, user.tenant_id, invoice_id, lock=True)
     if inv.status not in _EDITABLE_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"invoice is {inv.status} and cannot be edited",
         )
+    _check_not_changed_by_someone_else(session, inv, body.expected_updated_at, user)
 
     if body.party_id is not None and body.party_id != (inv.party_id or ""):
         if body.party_id:
@@ -406,13 +450,23 @@ def update_invoice(
     if body.weighment_slips is not None:
         inv.weighment_slips = _slips_payload(body.weighment_slips)
 
+    # an edit that only changed lines would not touch the invoice row, so stamp it ourselves:
+    # this is the value the next editor must present to prove it saw this version
+    inv.updated_at = datetime.now(UTC)
+    inv.last_edited_by_user_id = user.id
     session.flush()
     return _out(session, inv)
 
 
 @router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> None:
+def delete_invoice(invoice_id: str, user: DraftUser, session: SessionDep) -> None:
     inv = _load(session, user.tenant_id, invoice_id)
+    can_remove_cancelled = user.role in (UserRole.owner, UserRole.accountant)
+    if inv.status == InvoiceStatus.cancelled and not can_remove_cancelled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only an owner or accountant can remove a cancelled invoice",
+        )
     if inv.status == InvoiceStatus.final:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -508,7 +562,7 @@ def cancel_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> Inv
 
 
 @router.post("/{invoice_id}/duplicate", response_model=DuplicateOut, status_code=201)
-def duplicate_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> DuplicateOut:
+def duplicate_invoice(invoice_id: str, user: DraftUser, session: SessionDep) -> DuplicateOut:
     src = _load(session, user.tenant_id, invoice_id)
     d = date.today()
     clone = Invoice(
@@ -525,6 +579,8 @@ def duplicate_invoice(invoice_id: str, user: WriteUser, session: SessionDep) -> 
         weighment_slips=list(src.weighment_slips) if src.weighment_slips else None,
         status=InvoiceStatus.draft,
         pdf_status=PdfStatus.none,
+        created_by_user_id=user.id,
+        last_edited_by_user_id=user.id,
     )
     for ln in sorted(src.lines, key=lambda x: x.sl_no):
         clone.lines.append(
@@ -559,9 +615,7 @@ def get_pdf(invoice_id: str, user: CurrentUser, session: SessionDep) -> FileResp
 
     if not inv.pdf_path or not Path(inv.pdf_path).exists():
         raise HTTPException(status_code=404, detail="PDF not available — try re-render")
-    return FileResponse(
-        inv.pdf_path, media_type="application/pdf", filename=download_name(inv)
-    )
+    return FileResponse(inv.pdf_path, media_type="application/pdf", filename=download_name(inv))
 
 
 @router.post("/{invoice_id}/rerender", response_model=InvoiceOut)

@@ -7,7 +7,9 @@ import { App } from "./App";
 import "./index.css";
 
 const qc = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  // Refresh on return to the tab (stale after 20s) so a second tab or a message that landed while
+  // away shows up without a page reload. Long infinite lists opt out individually.
+  defaultOptions: { queries: { retry: 1, staleTime: 20_000, refetchOnWindowFocus: true } },
 });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

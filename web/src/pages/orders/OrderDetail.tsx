@@ -18,7 +18,7 @@ const TONE: Record<Order["status"], string> = {
 const LABEL: Record<Order["status"], string> = { new: "New", accepted: "Accepted", invoiced: "Invoiced", rejected: "Rejected" };
 
 /** One order, for review: who it is, what they want, what changed since, and what to do next. */
-export function OrderDetail({ order: o }: { order: Order }) {
+export function OrderDetail({ order: o, onChanged }: { order: Order; onChanged?: () => void }) {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const [qty, setQty] = useState<Record<string, number>>({});
@@ -42,6 +42,7 @@ export function OrderDetail({ order: o }: { order: Order }) {
   }, [o.id]);
 
   const refresh = (fresh?: Order) => {
+    onChanged?.();
     if (fresh) qc.setQueryData(["order", o.id], fresh);
     qc.invalidateQueries({ queryKey: ["orders"] });
     qc.invalidateQueries({ queryKey: ["order-counts"] });

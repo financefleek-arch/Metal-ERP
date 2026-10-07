@@ -31,7 +31,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.sql.elements import ColumnElement
 
-from app.deps import SessionDep, get_current_user, require_write
+from app.deps import SessionDep, get_current_user, require_draft, require_write
 from app.models import (
     CatalogOutputJob,
     CatalogProduct,
@@ -100,7 +100,14 @@ def require_catalog_write(
     return _gate(session, user)
 
 
+def require_catalog_draft(
+    session: SessionDep, user: Annotated[User, Depends(require_draft)]
+) -> User:
+    return _gate(session, user)
+
+
 CatalogUser = Annotated[User, Depends(require_catalog)]
+CatalogDraftUser = Annotated[User, Depends(require_catalog_draft)]
 CatalogWriteUser = Annotated[User, Depends(require_catalog_write)]
 StorageDep = Annotated[CatalogStorage, Depends(get_storage)]
 

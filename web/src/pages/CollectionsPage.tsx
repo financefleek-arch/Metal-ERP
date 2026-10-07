@@ -5,6 +5,9 @@ import { inr } from "../lib/previewTotal";
 import { useDebounced } from "../lib/useDebounced";
 import { PaymentDialog } from "../components/PaymentDialog";
 import { StatementSendDialog } from "../components/StatementSendDialog";
+import { RemindersPanel } from "../components/RemindersPanel";
+import { useAuth } from "../lib/auth";
+import { canWrite } from "../lib/roles";
 import type { AgeingBucket, AgeingRow, CollectionsRow } from "../lib/types";
 
 /** Scope chips are radio-exclusive. "owes"/"overdue" read the ageing
@@ -39,6 +42,7 @@ function initials(name: string): string {
 }
 
 export function CollectionsPage() {
+  const { me } = useAuth();
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
   const [scope, setScope] = useState<Scope>("owes");
@@ -101,6 +105,8 @@ export function CollectionsPage() {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
       <h1 className="font-serif text-lg font-semibold">Collections</h1>
+
+      {canWrite(me?.role) && <RemindersPanel />}
 
       <div className="flex flex-wrap gap-1.5">
         {SCOPES.map((s) => (

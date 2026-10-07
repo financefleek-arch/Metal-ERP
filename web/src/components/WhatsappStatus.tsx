@@ -84,7 +84,7 @@ export function WhatsappLog({
     refetchInterval: (query) => {
       const rows = query.state.data ?? [];
       return rows.some((r) => r.status === "pending" || r.status === "sent")
-        ? 15_000
+        ? 5_000
         : false;
     },
   });

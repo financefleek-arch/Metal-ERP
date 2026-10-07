@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -367,8 +368,12 @@ def send_invoice(
     *,
     template_name: str,
     to_phone: str | None = None,
+    amount_override: Decimal | None = None,
 ) -> WhatsappMessage:
     """Send `invoice` (as `template_name`, with its PDF attached) over WhatsApp.
+
+    `amount_override` replaces the invoice total in the message, for a reminder that should quote
+    what is still owed rather than the whole bill.
 
     `to_phone` given  → send to that number, an explicit operator choice; the
                         party's stored phone is not consulted. `party_name` in
@@ -408,7 +413,7 @@ def send_invoice(
 
     cfg = get_config(session, invoice.tenant_id)
 
-    grand_total = invoice.grand_total
+    grand_total = amount_override if amount_override is not None else invoice.grand_total
     # {{3}} is declared as a Number variable in the WhatsApp template, so it
     # must be a bare numeric string — no ₹, no thousands separators. The ₹
     # symbol lives in the template's static text ("Amount: ₹{{3}}").

@@ -72,6 +72,7 @@ def _detail(firm: Tenant) -> FirmDetail:
         gst_enabled=firm.gst_enabled,
         ext_inward_import=firm.ext_inward_import,
         ext_supplier_catalog=firm.ext_supplier_catalog,
+        reminder_auto_allowed=firm.reminder_auto_allowed,
         created_at=firm.created_at,
         users=[AdminUserOut.model_validate(u) for u in _firm_users(firm)],
     )
@@ -115,6 +116,7 @@ def list_firms(session: SessionDep, q: str | None = Query(default=None)) -> list
                 gst_enabled=f.gst_enabled,
                 ext_inward_import=f.ext_inward_import,
                 ext_supplier_catalog=f.ext_supplier_catalog,
+                reminder_auto_allowed=f.reminder_auto_allowed,
                 user_count=len(users),
                 active_user_count=sum(1 for u in users if u.is_active),
                 created_at=f.created_at,
@@ -163,6 +165,8 @@ def update_firm(firm_id: str, body: FirmPatch, session: SessionDep) -> FirmDetai
         firm.ext_inward_import = data["ext_inward_import"]
     if "ext_supplier_catalog" in data and data["ext_supplier_catalog"] is not None:
         firm.ext_supplier_catalog = data["ext_supplier_catalog"]
+    if "reminder_auto_allowed" in data and data["reminder_auto_allowed"] is not None:
+        firm.reminder_auto_allowed = data["reminder_auto_allowed"]
     session.flush()
     return _detail(firm)
 
@@ -495,7 +499,7 @@ def create_firm_user(
     if body.role not in ASSIGNABLE_ROLES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Role must be owner, accountant, or viewer",
+            detail="Role must be owner, accountant, counter, or viewer",
         )
 
     email = body.email.lower().strip()
@@ -537,7 +541,7 @@ def update_firm_user(
     if new_role is not None and new_role not in ASSIGNABLE_ROLES:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Role must be owner, accountant, or viewer",
+            detail="Role must be owner, accountant, counter, or viewer",
         )
 
     # Last-active-owner guard: block a change that would leave the firm with

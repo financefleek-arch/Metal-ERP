@@ -379,7 +379,8 @@ function GroupTable({
                           const v = (draft[g.category_id!] ?? g.tally_name).trim();
                           if (v && v !== g.tally_name) onMap(g.category_id!, v);
                           setDraft((d) => {
-                            const { [g.category_id!]: _drop, ...rest } = d;
+                            const rest = { ...d };
+                            delete rest[g.category_id!];
                             return rest;
                           });
                         }}

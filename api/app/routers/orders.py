@@ -14,7 +14,7 @@ from sqlalchemy import select
 
 from app.deps import SessionDep
 from app.models import CustomerOrder, Invoice, Item, Party, Tenant, WhatsappMessage
-from app.routers.catalog import CatalogUser, CatalogWriteUser
+from app.routers.catalog import CatalogDraftUser, CatalogUser
 from app.routers.invoices import create_invoice
 from app.schemas_invoice import InvoiceCreate, InvoiceLineIn
 from app.services import audit, order_notify, share_links
@@ -373,7 +373,7 @@ def _audit(session: SessionDep, user, o: CustomerOrder, action: str, **after: ob
 
 @router.put("/{order_id}/lines", response_model=OrderOut)
 def edit_order(
-    order_id: str, body: LinesBody, session: SessionDep, user: CatalogWriteUser
+    order_id: str, body: LinesBody, session: SessionDep, user: CatalogDraftUser
 ) -> OrderOut:
     o = _owned(session, user.tenant_id, order_id)
     svc.edit_lines(session, o, {ln.item_id: ln.qty for ln in body.lines})
@@ -383,7 +383,7 @@ def edit_order(
 
 @router.post("/{order_id}/accept", response_model=OrderOut)
 def accept_order(
-    order_id: str, background: BackgroundTasks, session: SessionDep, user: CatalogWriteUser
+    order_id: str, background: BackgroundTasks, session: SessionDep, user: CatalogDraftUser
 ) -> OrderOut:
     o = _owned(session, user.tenant_id, order_id)
     svc.set_status(session, o, "accepted")
@@ -399,7 +399,7 @@ def reject_order(
     body: RejectBody,
     background: BackgroundTasks,
     session: SessionDep,
-    user: CatalogWriteUser,
+    user: CatalogDraftUser,
 ) -> OrderOut:
     o = _owned(session, user.tenant_id, order_id)
     svc.set_status(session, o, "rejected", reason=body.reason)
@@ -411,7 +411,7 @@ def reject_order(
 
 @router.post("/{order_id}/customer", response_model=OrderOut)
 def set_customer(
-    order_id: str, body: CustomerBody, session: SessionDep, user: CatalogWriteUser
+    order_id: str, body: CustomerBody, session: SessionDep, user: CatalogDraftUser
 ) -> OrderOut:
     """Confirm who the customer is: an existing customer, or a new one made from the order."""
     o = _owned(session, user.tenant_id, order_id)
@@ -421,7 +421,7 @@ def set_customer(
 
 
 @router.post("/{order_id}/invoice", response_model=OrderOut)
-def make_invoice(order_id: str, session: SessionDep, user: CatalogWriteUser) -> OrderOut:
+def make_invoice(order_id: str, session: SessionDep, user: CatalogDraftUser) -> OrderOut:
     """Make a DRAFT sales invoice from this order. The shop finalizes it as usual: nothing is
     numbered here, and the order is marked invoiced only when the invoice is finalized."""
     o = _owned(session, user.tenant_id, order_id)

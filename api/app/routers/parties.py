@@ -14,12 +14,13 @@ from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, func, or_, select, update
 
-from app.deps import CurrentUser, SessionDep, WriteUser
+from app.deps import CurrentUser, DraftUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import (
     CustomerOrder,
     Party,
     PartyAddress,
+    PaymentReminder,
     SupplierCatalogDefault,
     SupplierPricePoint,
     Tenant,
@@ -240,7 +241,7 @@ def list_parties(
 )
 def create_party(
     body: PartyCreate,
-    user: WriteUser,
+    user: DraftUser,
     session: SessionDep,
     force: bool = Query(
         default=False,
@@ -328,7 +329,7 @@ def get_party(party_id: str, user: CurrentUser, session: SessionDep) -> PartyOut
 def update_party(
     party_id: str,
     body: PartyUpdate,
-    user: WriteUser,
+    user: DraftUser,
     session: SessionDep,
     force: bool = Query(
         default=False, description="proceed past a *fuzzy* rename duplicate warning"
@@ -430,6 +431,7 @@ def delete_party(party_id: str, user: WriteUser, session: SessionDep) -> None:
         .where(CustomerOrder.matched_party_id == party.id)
         .values(matched_party_id=None)
     )
+    session.execute(delete(PaymentReminder).where(PaymentReminder.party_id == party.id))
     session.delete(party)
 
 

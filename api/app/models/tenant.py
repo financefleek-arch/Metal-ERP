@@ -16,6 +16,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
+    true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,6 +94,24 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     order_terms_line: Mapped[str | None] = mapped_column(String(300))
     # the shop's own WhatsApp number for new-order alerts (none = no alert)
     order_alert_phone: Mapped[str | None] = mapped_column(String(20))
+
+    # Payment reminders: proposed daily, sent only when the shop approves. Off until switched on.
+    reminder_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    # True = reminders that have just come due go out without approval (see services/reminders.py)
+    reminder_auto_send: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    # Fleek's switch for this firm: when off, automatic sending is refused and stops, whatever the
+    # shop chose. On by default; the shop still has to opt in with `reminder_auto_send`.
+    reminder_auto_allowed: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    # days past due at which a reminder becomes due, comma separated ("7,15,30")
+    reminder_days: Mapped[str] = mapped_column(
+        String(40), default="7,15,30", server_default="7,15,30", nullable=False
+    )
 
     users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
 

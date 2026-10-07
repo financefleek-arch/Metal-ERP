@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import type { CatalogSelection } from "../../lib/catalog";
+import { copyText, linkUrl, whatsappShare } from "./shareLinkUtils";
 
 export interface ShareLink {
   id: string;
@@ -16,23 +17,6 @@ export interface ShareLink {
   last_viewed_at: string | null;
   created_at: string;
   selection_kind: "ids" | "filter";
-}
-
-export const linkUrl = (l: Pick<ShareLink, "path">) => `${window.location.origin}${l.path}`;
-
-/** A WhatsApp click-to-chat link carrying the catalog URL (opens the shop's own WhatsApp). */
-export const whatsappShare = (l: ShareLink, firm?: string) =>
-  `https://wa.me/?text=${encodeURIComponent(
-    `${firm ? `${firm}: ` : ""}${l.title}\n${linkUrl(l)}`,
-  )}`;
-
-export async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Make a public link to the chosen items. Customers who open it see the items as they are now. */

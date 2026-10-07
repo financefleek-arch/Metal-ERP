@@ -51,6 +51,13 @@ export function InvoiceListPage() {
   const list = useQuery({
     queryKey: ["invoices", q, scope],
     queryFn: () => api<InvoiceListItem[]>(`/invoices?${params.toString()}`),
+    // delivery and Tally sync land after the send, so look again while any row is in flight
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (i) => i.whatsapp_status === "pending" || i.whatsapp_status === "sent" || i.tally_sync_status === "pending",
+      )
+        ? 6000
+        : false,
   });
 
   const dup = useMutation({

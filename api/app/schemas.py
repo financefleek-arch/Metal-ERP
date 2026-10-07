@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models._mixins import (
     AddressType,
@@ -126,6 +126,23 @@ class TenantUpdate(BaseModel):
     ] = None
     order_terms_line: str | None = Field(default=None, max_length=300)
     order_alert_phone: Phone = None
+    reminder_enabled: bool | None = None
+    reminder_auto_send: bool | None = None
+    # a bill is overdue this many days after its date (0 = from the bill date)
+    default_credit_days: Annotated[int | None, Field(ge=0, le=365)] = None
+    # days past due at which a reminder is proposed, e.g. "7,15,30" (1-5 numbers, 1-365 each)
+    reminder_days: Annotated[str | None, Field(max_length=40)] = None
+
+    @field_validator("reminder_days")
+    @classmethod
+    def _reminder_days(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        parts = [p.strip() for p in v.split(",") if p.strip()]
+        good = all(p.isdigit() and 1 <= int(p) <= 365 for p in parts)
+        if not parts or len(parts) > 5 or not good:
+            raise ValueError("Enter up to 5 day counts between 1 and 365, like 7,15,30")
+        return ",".join(str(n) for n in sorted({int(p) for p in parts}))
 
 
 class TenantOut(BaseModel):
@@ -158,6 +175,11 @@ class TenantOut(BaseModel):
     order_min_value: Decimal | None = None
     order_terms_line: str | None = None
     order_alert_phone: str | None = None
+    reminder_enabled: bool = False
+    reminder_auto_send: bool = False
+    reminder_auto_allowed: bool = True
+    default_credit_days: int = 0
+    reminder_days: str = "7,15,30"
 
 
 # --------------------------------------------------------------------------

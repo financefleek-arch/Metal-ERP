@@ -52,7 +52,12 @@ def _update_text(session, order: CustomerOrder, event: str) -> tuple[str, str] |
     if event == "accepted":
         return "confirmed", "We will send your invoice shortly."
     if event == "rejected":
-        return "could not be accepted", (order.reject_reason or "Please call the shop.")
+        # the approved text reads "Your order is now {{3}}. {{4}} If you have any questions...",
+        # so the status must fit after "is now" and the detail must be a finished sentence
+        reason = " ".join((order.reject_reason or "").split()).rstrip(".!? ")
+        if not reason:
+            return "cancelled", "Please call the shop for details."
+        return "cancelled", f"Reason: {reason[0].upper()}{reason[1:]}."
     if event == "invoiced":
         inv = session.get(Invoice, order.invoice_id) if order.invoice_id else None
         if inv is None or inv.number is None:

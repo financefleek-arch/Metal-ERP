@@ -97,6 +97,7 @@ export function CatalogReviewPage() {
   });
   const list = useInfiniteQuery({
     queryKey: ["catalog-items", id, filter],
+    refetchOnWindowFocus: false,
     queryFn: ({ pageParam }) =>
       apiPage<CatalogItem[]>(`/supplier-catalogs/${id}/items?${itemsQuery(filter, pageParam)}`),
     initialPageParam: null as string | null,

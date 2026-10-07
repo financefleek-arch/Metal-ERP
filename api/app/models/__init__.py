@@ -37,6 +37,7 @@ from app.models.media import MediaAsset
 from app.models.ordering import CatalogShareLink, CustomerOrder, CustomerOrderLine
 from app.models.party import Party, PartyAddress
 from app.models.payment import Payment, PaymentAllocation
+from app.models.reminder import PaymentReminder
 from app.models.tally_agent import AgentOutboxItem, BackupShop, BackupUpload
 from app.models.tally_connector import TallyCompany, TallyLink, TallySyncJob
 from app.models.tally_import import StagingTallyParty
@@ -52,6 +53,7 @@ __all__ = [
     "CatalogOutputJob",
     "CatalogProduct",
     "CatalogShareLink",
+    "PaymentReminder",
     "CustomerOrder",
     "CustomerOrderLine",
     "CodeSequence",

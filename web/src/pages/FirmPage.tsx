@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
@@ -8,8 +8,10 @@ import { TallyConnectCard } from "../components/TallyConnectCard";
 import { TallyBackupsCard } from "../components/TallyBackupsCard";
 import { CatalogSettingsCard } from "../components/CatalogSettingsCard";
 import { OrderSettingsCard } from "../components/OrderSettingsCard";
+import { ReminderSettingsCard } from "../components/ReminderSettingsCard";
 import { PhotoUsageLine } from "../components/PhotoUsageLine";
 import { useAuth } from "../lib/auth";
+import { canWrite } from "../lib/roles";
 import { panError } from "../lib/reference";
 
 type FormShape = Omit<
@@ -21,6 +23,11 @@ type FormShape = Omit<
   | "email"
   | "catalog_code_prefix"
   | "catalog_group_create_policy"
+  | "reminder_enabled"
+  | "reminder_auto_send"
+  | "reminder_auto_allowed"
+  | "reminder_days"
+  | "default_credit_days"
 >;
 
 type FieldKind = "text" | "textarea" | "state" | "pan";
@@ -60,10 +67,16 @@ export function FirmPage() {
   const [saved, setSaved] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
+  // Re-seed the form only when the profile fields themselves changed. Saving one of the settings
+  // cards below also replaces `data`, and that must not wipe what is half-typed in this form.
+  const seededWith = useRef("");
   useEffect(() => {
     if (data) {
       const seed: Partial<FormShape> = {};
       for (const f of FIELDS) seed[f.name] = (data[f.name] ?? "") as never;
+      const sig = JSON.stringify(seed);
+      if (sig === seededWith.current) return;
+      seededWith.current = sig;
       reset(seed as FormShape);
     }
   }, [data, reset]);
@@ -105,6 +118,7 @@ export function FirmPage() {
 
       <TallyConnectCard />
       <TallyBackupsCard />
+      {canWrite(me?.role) && <ReminderSettingsCard tenant={data} />}
       {me?.ext_supplier_catalog && (
         <>
           <CatalogSettingsCard tenant={data} />

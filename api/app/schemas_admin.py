@@ -14,11 +14,11 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from app.models._mixins import UserRole
 from app.schemas import LegalName, OptLegalName
 
-# Roles the operator may assign to a firm user. `owner` and `accountant`
-# both carry full read/write today; `viewer` is read-only. The shop-floor
-# touchpoint roles are deliberately not offered here.
+# Roles the operator may assign to a firm user. `owner` and `accountant` do everything;
+# `counter` prepares drafts, parties and orders but cannot finalize, take payments, push to
+# Tally or change settings; `viewer` is read-only. The other touchpoint roles are not offered.
 ASSIGNABLE_ROLES: frozenset[UserRole] = frozenset(
-    {UserRole.owner, UserRole.accountant, UserRole.viewer}
+    {UserRole.owner, UserRole.accountant, UserRole.counter, UserRole.viewer}
 )
 
 
@@ -36,6 +36,7 @@ class FirmListItem(BaseModel):
     gst_enabled: bool
     ext_inward_import: bool
     ext_supplier_catalog: bool
+    reminder_auto_allowed: bool
     user_count: int
     active_user_count: int
     created_at: datetime
@@ -61,6 +62,7 @@ class FirmDetail(BaseModel):
     gst_enabled: bool
     ext_inward_import: bool
     ext_supplier_catalog: bool
+    reminder_auto_allowed: bool
     created_at: datetime
     users: list[AdminUserOut]
 
@@ -76,6 +78,7 @@ class FirmPatch(BaseModel):
     gst_enabled: bool | None = None
     ext_inward_import: bool | None = None
     ext_supplier_catalog: bool | None = None
+    reminder_auto_allowed: bool | None = None
 
 
 # --------------------------------------------------------------------------

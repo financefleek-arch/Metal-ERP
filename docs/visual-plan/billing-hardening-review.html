@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Billing hardening: visual review</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+  .serif { font-family: 'Fraunces', Georgia, serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+  h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 38px 0 4px; }
+  p.lead { font-size: 14px; color: #6f685b; margin: 0 0 18px; max-width: 880px; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .cap { font-size: 12px; color: #8a8272; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+  .note { font-size: 12.5px; color: #6f685b; max-width: 320px; line-height: 1.5; margin-top: 10px; }
+  .note b { color: #23201b; }
+  .desk { width: 800px; max-width: 100%; background: #fff; border: 1px solid #e6e0d6; border-radius: 12px; overflow: hidden; }
+  .bar { background: #23201b; color: #f4f1ec; padding: 12px 18px; font-size: 13px; display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+  .bar .on { border-bottom: 2px solid #2f6f89; padding-bottom: 3px; }
+  .bar .off { opacity: .35; text-decoration: line-through; }
+  .pad { padding: 16px 18px; }
+  .panel { border: 1px solid #e6e0d6; border-radius: 10px; background: #fff; }
+  .panel h3 { margin: 0; font-size: 15px; }
+  .ph { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #ece6da; flex-wrap: wrap; }
+  .sub { font-size: 12px; color: #8a8272; }
+  .btn { display: inline-block; background: #2f6f89; color: #fff; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 12.5px; }
+  .btn.ghost { background: #fff; color: #2f6f89; border: 1px solid #2f6f89; }
+  .btn.dis { background: #e6e0d6; color: #8a8272; }
+  .btn.warn { background: #b4572d; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; padding: 8px 12px; border-bottom: 1px solid #e6e0d6; font-weight: 500; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f0ebe1; vertical-align: top; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; font-family: 'IBM Plex Sans'; }
+  .tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #efe9df; color: #6f685b; white-space: nowrap; }
+  .tag.stmt { background: #e3edf2; color: #2f6f89; }
+  .tag.bad { background: #f4e3df; color: #a8432c; }
+  .overdue { color: #a8432c; font-weight: 600; }
+  .muted { color: #8a8272; }
+  .banner { border-radius: 9px; padding: 11px 14px; font-size: 13px; line-height: 1.45; }
+  .banner.warn { background: #faf4ec; border: 1px solid #e8d9bd; color: #6d4f16; }
+  .banner.info { background: #eef4f7; border: 1px solid #cfe0e8; color: #25566b; }
+  .banner .acts { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .field { background: #fff; border: 1px solid #d8d1c4; border-radius: 8px; padding: 9px 11px; font-size: 13px; }
+  label.l { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; margin-bottom: 4px; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; }
+  .sw { width: 38px; height: 22px; border-radius: 99px; background: #2f6f89; position: relative; }
+  .sw::after { content: ""; position: absolute; right: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+  .phone { width: 330px; border: 10px solid #23201b; border-radius: 34px; background: #fff; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .ph-bar { background: #23201b; color: #f4f1ec; padding: 12px 14px; font-size: 13px; }
+  .ph-body { padding: 12px; background: #f4f1ec; }
+  .rc { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 11px 12px; margin-bottom: 9px; }
+  .rc .t { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; font-size: 13.5px; }
+  .rc .m { font-size: 12px; color: #8a8272; margin-top: 3px; line-height: 1.45; }
+  .rc .a { display: flex; gap: 8px; margin-top: 9px; }
+  .rc .a span { flex: 1; text-align: center; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .role { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.5; }
+  .role b.n { font-size: 13.5px; display: block; margin-bottom: 4px; }
+  .y { color: #3d7a4a; } .x { color: #a8432c; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="serif">Billing hardening: what goes where</h1>
+  <p class="lead">Decided: <b>a counter prepares drafts, an accountant finalizes</b>, and payment reminders are <b>proposed each morning and sent only when the shop approves them</b>. GST is set aside for now. Mock data and wording, not final. Tell me what to change before I build the screens.</p>
+
+  <h2 class="serif">1. Collections: "Reminders due" (owner and accountant)</h2>
+  <p class="lead">A panel at the top of the Collections page. It lists who is due a message today, one row per customer. One overdue bill sends the payment reminder; several overdue bills send the account statement instead, so nobody gets five messages.</p>
+  <div class="row">
+    <div>
+      <p class="cap">Desktop</p>
+      <div class="desk">
+        <div class="bar"><span>Invoices</span><span>Parties</span><span>Items</span><span class="on">Collections</span><span>Orders</span></div>
+        <div class="pad">
+          <div class="panel">
+            <div class="ph">
+              <div><h3 class="serif">Reminders due <span class="tag">3</span></h3><div class="sub">Nothing is sent until you press Send. Reminders go out from your WhatsApp number.</div></div>
+              <div style="display:flex;gap:8px;align-items:center"><span class="sub">Find reminders now</span><span class="btn ghost">Refresh</span></div>
+            </div>
+            <table>
+              <tr><th style="width:28px"></th><th>Customer</th><th>What goes out</th><th class="num">Owed</th><th class="num">Overdue</th><th></th></tr>
+              <tr><td>&#9745;</td><td><b>Jay Matadee Enterprises</b><div class="muted">98765 43210</div></td><td><span class="tag">Payment reminder</span><div class="muted">Bill 0128</div></td><td class="num">&#8377;18,400</td><td class="num overdue">34 days</td><td><span class="btn ghost">Skip</span></td></tr>
+              <tr><td>&#9745;</td><td><b>Sri Ganesh Stores</b><div class="muted">99880 11223</div></td><td><span class="tag stmt">Account statement</span><div class="muted">Bills 0097, 0111, 0125</div></td><td class="num">&#8377;61,250</td><td class="num overdue">52 days</td><td><span class="btn ghost">Skip</span></td></tr>
+              <tr><td>&#9744;</td><td><b>Hotel Annapurna</b><div class="muted"><span class="tag bad">No phone number</span></div></td><td><span class="tag">Payment reminder</span><div class="muted">Bill 0131</div></td><td class="num">&#8377;7,900</td><td class="num overdue">9 days</td><td><span class="btn ghost">Add number</span></td></tr>
+            </table>
+            <div class="ph" style="border-top:1px solid #ece6da;border-bottom:0">
+              <span class="sub">2 selected</span>
+              <span style="display:flex;gap:8px"><span class="btn ghost">Skip selected</span><span class="btn">Send 2 reminders</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="note"><b>Failed sends stay on the list</b> with Meta's reason (for example "not on WhatsApp") so you can fix the number and retry. A customer who pays before you press Send is dropped automatically. A customer you messaged in the last 3 days is not listed again.</p>
+    </div>
+    <div>
+      <p class="cap">Phone</p>
+      <div class="phone"><div class="ph-bar">Collections</div>
+        <div class="ph-body">
+          <div class="sub" style="margin-bottom:8px"><b style="color:#23201b;font-size:14px">Reminders due</b> &middot; 3</div>
+          <div class="rc"><div class="t"><span>Jay Matadee Enterprises</span><span>&#8377;18,400</span></div><div class="m">Payment reminder &middot; Bill 0128 &middot; <span class="overdue">34 days overdue</span></div><div class="a"><span class="btn ghost">Skip</span><span class="btn">Send</span></div></div>
+          <div class="rc"><div class="t"><span>Sri Ganesh Stores</span><span>&#8377;61,250</span></div><div class="m">Account statement &middot; 3 bills &middot; <span class="overdue">52 days overdue</span></div><div class="a"><span class="btn ghost">Skip</span><span class="btn">Send</span></div></div>
+          <div class="rc"><div class="t"><span>Hotel Annapurna</span><span>&#8377;7,900</span></div><div class="m"><span class="tag bad">No phone number</span> &middot; Bill 0131</div><div class="a"><span class="btn ghost">Add number</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="serif">2. Firm page: "Payment reminders" setting (owner and accountant)</h2>
+  <div class="row">
+    <div class="desk" style="width:640px">
+      <div class="pad">
+        <div class="panel"><div class="pad">
+          <h3 class="serif" style="margin:0 0 4px">Payment reminders</h3>
+          <div class="sub" style="margin-bottom:12px">Each morning the system lists customers whose bills are overdue. You approve the list; nothing is sent on its own.</div>
+          <div class="switch"><span class="sw"></span> Find overdue bills every morning</div>
+          <div style="display:flex;gap:16px;margin-top:14px;flex-wrap:wrap;align-items:flex-end">
+            <div><label class="l">Remind after (days overdue)</label><div class="field" style="width:160px">7, 15, 30</div></div>
+            <div class="sub" style="max-width:330px;line-height:1.5">A bill is overdue after its credit days (currently <b>30</b>, set on the Collections page). So the first reminder goes on day 37.</div>
+          </div>
+          <div style="margin-top:16px;border-top:1px solid #ece6da;padding-top:14px">
+            <label class="l">When they are found</label>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px">
+              <div>&#9673; <b>I review the list first</b> <span class="sub">(recommended)</span></div>
+              <div>&#9675; <b>Send automatically, no approval</b></div>
+            </div>
+            <div class="banner warn" style="margin-top:10px">With automatic sending, a reminder goes out on its own, between 9am and 7pm, as soon as a bill reaches one of the days above. <b>Bills that were already overdue for longer are not sent automatically</b>; they wait on your list, so switching this on never messages everyone at once. At most 40 a day.</div>
+          </div>
+          <div style="margin-top:14px"><span class="btn">Save</span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="serif">3. Two people editing one draft</h2>
+  <p class="lead">Shown when someone saved the draft after you opened it. Your edits stay on screen; nothing is lost and nothing is overwritten without a choice. A small line under the title also tells the accountant who prepared the draft.</p>
+  <div class="row">
+    <div class="desk" style="width:720px">
+      <div class="pad">
+        <div class="serif" style="font-size:19px;font-weight:600">Draft invoice <span class="sub" style="font-weight:400;font-family:'IBM Plex Sans'">&middot; Prepared by counter@sethia.example, edited 11:42</span></div>
+        <div style="height:12px"></div>
+        <div class="banner warn"><b>Counter changed this draft at 11:42.</b> Your screen still shows the older version, so saving now would replace their changes.
+          <div class="acts"><span class="btn">Load their version</span><span class="btn ghost">Keep mine and overwrite</span></div>
+          <div class="sub" style="margin-top:6px;color:#6d4f16">Loading their version discards the edits you made on this screen.</div>
+        </div>
+        <div style="height:12px"></div>
+        <table><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr>
+          <tr><td>Steel Glass 250 ML</td><td class="num">24</td><td class="num">38.00</td><td class="num">912.00</td></tr>
+          <tr><td>Beer Mug 480 ML</td><td class="num">6</td><td class="num">209.33</td><td class="num">1,256.00</td></tr></table>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="serif">4. What a counter sees on a draft</h2>
+  <p class="lead">The server refuses everything a counter should not do. The screen also stops offering it, with the reason in words, so nobody presses a button that fails.</p>
+  <div class="row">
+    <div class="desk" style="width:720px">
+      <div class="bar"><span>Invoices</span><span>Parties</span><span class="off">Items</span><span>Orders</span><span class="off">Collections</span><span class="off">Firm</span></div>
+      <div class="pad">
+        <div class="serif" style="font-size:19px;font-weight:600">Draft invoice</div>
+        <div class="sub" style="margin:4px 0 12px">Jay Matadee Enterprises &middot; 2 lines &middot; &#8377;2,168</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="btn ghost">Save</span><span class="btn dis">Finalize</span><span class="sub">Only an accountant can finalize. Save it and tell them it is ready.</span></div>
+      </div>
+    </div>
+    <div class="grid3" style="flex:1;min-width:300px">
+      <div class="role"><b class="n">Owner and accountant</b><span class="y">Everything:</span> bill, finalize, payments, reminders, Tally, items, settings.</div>
+      <div class="role"><b class="n">Counter</b><span class="y">Can:</span> create and edit drafts, add customers, handle orders up to "Create draft invoice".<br><span class="x">Cannot:</span> finalize, record or reverse payments, send reminders, push to Tally, edit items or settings.</div>
+      <div class="role"><b class="n">Viewer</b><span class="y">Can:</span> look at everything.<br><span class="x">Cannot:</span> change anything.</div>
+    </div>
+  </div>
+  <p class="note" style="max-width:760px">Roles are still handed out by you in the Ops console (the dropdown gains "Counter"). A firm owner adding their own staff from the Firm page is a separate, later piece.</p>
+</div>
+</body>
+</html>

@@ -3,6 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { COUNTER_HIDDEN_NAV } from "../lib/roles";
 import { JobsIndicator } from "./JobsIndicator";
 
 const baseNav = [
@@ -29,13 +30,15 @@ export function Shell({ children }: { children: ReactNode }) {
   });
   const newOrders = orderCounts.data?.new ?? 0;
 
-  const nav: { to: string; label: string; badge?: number }[] = [
+  const allNav: { to: string; label: string; badge?: number }[] = [
     ...baseNav,
     ...(me?.ext_supplier_catalog ? [{ to: "/orders", label: "Orders", badge: newOrders }] : []),
     ...(me?.ext_inward_import || me?.ext_supplier_catalog
       ? [{ to: "/documents", label: "Supplier documents" }]
       : []),
   ];
+  // a counter works on drafts and orders; money, items and settings are not theirs to open
+  const nav = me?.role === "counter" ? allNav.filter((n) => !COUNTER_HIDDEN_NAV.includes(n.to)) : allNav;
 
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setDrawerOpen(false), [pathname]);

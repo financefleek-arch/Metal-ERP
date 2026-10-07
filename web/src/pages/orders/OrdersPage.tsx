@@ -66,6 +66,8 @@ export function OrdersPage() {
   const nav = useNavigate();
   const isDesktop = useIsDesktop();
   const [filter, setFilter] = useState("");
+  // WhatsApp goes out just after Accept/Reject returns, so keep looking for a short while
+  const [burstUntil, setBurstUntil] = useState(0);
 
   const list = useQuery({
     queryKey: ["orders", filter],
@@ -81,6 +83,10 @@ export function OrdersPage() {
     queryKey: ["order", selectedId],
     queryFn: () => api<Order>(`/orders/${selectedId}`),
     enabled: !!selectedId,
+    refetchInterval: (q) => {
+      const inFlight = q.state.data?.messages.some((m) => m.status === "pending" || m.status === "sent");
+      return inFlight || Date.now() < burstUntil ? 3000 : false;
+    },
   });
 
   const showRail = isDesktop || !selectedId;
@@ -162,7 +168,7 @@ export function OrdersPage() {
           ) : detail.isLoading ? (
             <p className="text-sm text-muted">Loading…</p>
           ) : o ? (
-            <OrderDetail order={o} />
+            <OrderDetail order={o} onChanged={() => setBurstUntil(Date.now() + 20_000)} />
           ) : (
             <p className="err">Could not load that order.</p>
           )}
