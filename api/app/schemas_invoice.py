@@ -255,3 +255,26 @@ class FinalizeOut(BaseModel):
 
 class DuplicateOut(BaseModel):
     id: str
+
+
+# --------------------------------------------------------------------------
+# slip-capture OCR pilot (speech-invoice-capture-backlog's sibling vision path)
+# --------------------------------------------------------------------------
+
+
+class SlipLineReview(BaseModel):
+    """Per-line flags for the editor to highlight — not persisted; the
+    created draft's actual lines are plain `InvoiceLineOut` like any other
+    draft. Indexed by position in `InvoiceOut.lines`."""
+
+    sl_no: int
+    needs_review: bool
+    review_reason: str | None = None
+
+
+class SlipCaptureOut(BaseModel):
+    invoice: InvoiceOut
+    line_reviews: list[SlipLineReview] = Field(default_factory=list)
+    party_guess_name: str | None = None
+    party_needs_review: bool = False
+    notes: str | None = None

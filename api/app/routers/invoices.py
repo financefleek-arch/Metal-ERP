@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import selectinload
@@ -41,12 +41,15 @@ from app.schemas_invoice import (
     DuplicateOut,
     FinalizeOut,
     InvoiceCreate,
+    InvoiceLineIn,
     InvoiceLineOut,
     InvoiceListItem,
     InvoiceOut,
     InvoiceUpdate,
     InvoiceWhatsappMessageOut,
     PartyBrief,
+    SlipCaptureOut,
+    SlipLineReview,
 )
 from app.services import order_notify
 from app.services.invoices.common import (
@@ -57,9 +60,13 @@ from app.services.invoices.common import (
     totals_for,
 )
 from app.services.invoices.finalize import FinalizeError, finalize_invoice
+from app.services.ocr.extract_slip import SlipExtractionError, extract_slip
+from app.services.ocr.slip_to_draft import build_draft
 from app.services.payments import paid_amount_for_invoice
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
+
+_MAX_SLIP_BYTES = 10 * 1024 * 1024
 
 _EDITABLE_STATUSES = {InvoiceStatus.draft}
 
@@ -389,6 +396,74 @@ def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) ->
     session.add(inv)
     session.flush()
     return _out(session, inv)
+
+
+@router.post("/from-slip", response_model=SlipCaptureOut, status_code=status.HTTP_201_CREATED)
+def create_invoice_from_slip(
+    user: DraftUser,
+    session: SessionDep,
+    file: UploadFile = File(...),
+) -> SlipCaptureOut:
+    """Pilot: a photographed kachcha slip -> a draft sales invoice, prefilled
+    and flagged for review. The shop already writes every sale on a slip
+    before Tally entry — this reads that slip instead of asking the operator
+    to re-type it. Every result always opens in the ordinary draft editor;
+    nothing here is auto-accepted.
+    """
+    data = file.file.read()
+    if len(data) > _MAX_SLIP_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="That photo is over 10 MB.",
+        )
+    try:
+        extraction = extract_slip(data)
+    except SlipExtractionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    draft = build_draft(session, user.tenant_id, extraction)
+
+    d = date.today()
+    inv = Invoice(
+        tenant_id=user.tenant_id,
+        doc_type=DocType.inv,
+        series="Sales",
+        fy=financial_year(d),
+        date=d,
+        party_id=draft.party_id,
+        status=InvoiceStatus.draft,
+        pdf_status=PdfStatus.none,
+        created_by_user_id=user.id,
+        last_edited_by_user_id=user.id,
+    )
+    _apply_lines(
+        inv,
+        [
+            InvoiceLineIn(
+                item_id=ln.item_id,
+                description=ln.description,
+                quantity=ln.quantity,
+                uom=ln.uom,
+                unit_rate=ln.unit_rate,
+            )
+            for ln in draft.lines
+        ],
+    )
+    session.add(inv)
+    session.flush()
+
+    return SlipCaptureOut(
+        invoice=_out(session, inv),
+        line_reviews=[
+            SlipLineReview(sl_no=i, needs_review=ln.needs_review, review_reason=ln.review_reason)
+            for i, ln in enumerate(draft.lines, start=1)
+        ],
+        party_guess_name=draft.party_guess_name,
+        party_needs_review=draft.party_needs_review,
+        notes=draft.notes,
+    )
 
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)

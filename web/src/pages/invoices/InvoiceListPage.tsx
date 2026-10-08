@@ -1,12 +1,27 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError } from "../../lib/api";
+import { api, apiUpload, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { inr } from "../../lib/previewTotal";
 import { WhatsappBadge } from "../../components/WhatsappStatus";
 import { TallySyncBadge } from "../../components/TallySyncStatus";
 import type { InvoiceListItem, InvoicePaymentStatus, InvoiceStatus } from "../../lib/types";
+
+// Slip-capture OCR pilot (speech-invoice-capture-backlog's sibling vision
+// path) — only the fields this page reads out of SlipCaptureOut.
+interface SlipLineReview {
+  sl_no: number;
+  needs_review: boolean;
+  review_reason: string | null;
+}
+interface SlipCaptureResult {
+  invoice: { id: string };
+  line_reviews: SlipLineReview[];
+  party_guess_name: string | null;
+  party_needs_review: boolean;
+  notes: string | null;
+}
 
 type Scope = "" | InvoiceStatus;
 
@@ -43,6 +58,7 @@ export function InvoiceListPage() {
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<Scope>("");
   const [err, setErr] = useState<string | null>(null);
+  const slipInputRef = useRef<HTMLInputElement>(null);
 
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
@@ -75,6 +91,39 @@ export function InvoiceListPage() {
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Delete failed"),
   });
 
+  const slipCapture = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return apiUpload<SlipCaptureResult>("/invoices/from-slip", fd);
+    },
+    onSuccess: (r) => {
+      setErr(null);
+      qc.invalidateQueries({ queryKey: ["invoices"] });
+      const flagged = r.line_reviews.filter((lr) => lr.needs_review).length;
+      const bits: string[] = [];
+      if (r.party_guess_name && r.party_needs_review) {
+        bits.push(`customer "${r.party_guess_name}" needs confirming`);
+      } else if (!r.party_guess_name) {
+        bits.push("no customer name read off the slip");
+      }
+      if (flagged > 0) bits.push(`${flagged} line${flagged === 1 ? "" : "s"} need a look`);
+      if (r.notes) bits.push(r.notes);
+      window.sessionStorage.setItem(
+        `slip-review-${r.invoice.id}`,
+        bits.length ? bits.join(" · ") : "Looked fine — please double-check before finalizing.",
+      );
+      nav(`/invoices/${r.invoice.id}`);
+    },
+    onError: (e) =>
+      setErr(e instanceof ApiError ? e.message : "Couldn't read that slip — try retaking the photo."),
+  });
+
+  function onSlipFile(files: FileList | null) {
+    const f = files?.[0];
+    if (f) slipCapture.mutate(f);
+  }
+
   const canDelete = (s: InvoiceStatus) => s === "draft" || s === "cancelled";
 
   function openPdf(id: string) {
@@ -89,9 +138,30 @@ export function InvoiceListPage() {
     <div className="mx-auto flex max-w-5xl flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-serif text-lg font-semibold">Sales invoices</h1>
-        <button className="btn-primary h-9 px-4 text-sm" onClick={() => nav("/invoices/new")}>
-          + New invoice
-        </button>
+        <div className="flex gap-2">
+          <input
+            ref={slipInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              onSlipFile(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <button
+            className="btn-ghost h-9 px-4 text-sm"
+            disabled={slipCapture.isPending}
+            onClick={() => slipInputRef.current?.click()}
+            title="Pilot: photograph a kachcha slip to draft an invoice from it"
+          >
+            {slipCapture.isPending ? "Reading slip…" : "From slip"}
+          </button>
+          <button className="btn-primary h-9 px-4 text-sm" onClick={() => nav("/invoices/new")}>
+            + New invoice
+          </button>
+        </div>
       </div>
 
       <div className="card flex flex-col gap-2 p-3">

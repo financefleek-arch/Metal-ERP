@@ -276,6 +276,20 @@ export function InvoiceEditorPage() {
   const [closingSeg, setClosingSeg] = useState<number | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [savedNote, setSavedNote] = useState<string | null>(null);
+  // Slip-capture OCR pilot: a one-time banner left by InvoiceListPage's
+  // "From slip" upload, summarising what the vision extraction flagged.
+  // sessionStorage (not a server field) because it's purely a first-open
+  // hint — nothing persists it, and reloading the editor clears it.
+  const [slipReviewNote, setSlipReviewNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!id) return;
+    const key = `slip-review-${id}`;
+    const note = window.sessionStorage.getItem(key);
+    if (note) {
+      setSlipReviewNote(note);
+      window.sessionStorage.removeItem(key);
+    }
+  }, [id]);
   const [dirty, setDirty] = useState(false);
   // The saved version (`updated_at`) this screen was built from: a save presents it, and the
   // server refuses the save if someone else has saved since.
@@ -804,6 +818,11 @@ export function InvoiceEditorPage() {
       {err && <p className="err whitespace-pre-wrap">{err}</p>}
       {savedNote && !err && (
         <p className="rounded-md bg-[#eef3ee] px-3 py-2 text-xs text-ok">{savedNote}</p>
+      )}
+      {slipReviewNote && (
+        <p className="rounded-md bg-[#f1e7d6] px-3 py-2 text-xs text-warn">
+          <b>Drafted from a photographed slip —</b> {slipReviewNote}
+        </p>
       )}
       {finalized && inv?.pdf_status === "failed" && (
         <p className="rounded-md bg-[#f1e0e0] px-3 py-2 text-xs text-danger">
