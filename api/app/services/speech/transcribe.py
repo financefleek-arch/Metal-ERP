@@ -29,12 +29,6 @@ class Transcript:
     confidence: float | None
 
 
-# Nova-3's keyterm prompting budget is 500 tokens total across all terms
-# per request (Deepgram docs) — cap the list well under that so a long tail
-# of item names can't silently truncate the ones that matter most.
-MAX_KEYTERMS = 100
-
-
 def transcribe(
     audio_bytes: bytes, content_type: str, keyterms: list[str] | None = None
 ) -> Transcript:
@@ -56,8 +50,10 @@ def transcribe(
     if keyterms:
         # Nova-3 only (silently ignored on other models); plain terms, no
         # weights — repeat the query param once per term, httpx handles a
-        # list value as repeated params.
-        params["keyterm"] = keyterms[:MAX_KEYTERMS]
+        # list value as repeated params. Caller (keyterms.top_item_keyterms)
+        # is responsible for staying under Deepgram's 500-token budget —
+        # exceeding it is a hard 400 on the whole request, not a truncation.
+        params["keyterm"] = keyterms
 
     try:
         resp = httpx.post(
