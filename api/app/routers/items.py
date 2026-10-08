@@ -289,6 +289,8 @@ def item_tree(user: CurrentUser, session: SessionDep) -> list[TreeCategory]:
         )
         for c in cats
     ]
+    # every firm seeds its own categories; only show the ones that actually hold items
+    out = [c for c in out if c.loose_count > 0 or any(g.leaf_count > 0 for g in c.groups)]
     unc_groups = tree_groups(None)
     unc_loose = loose_counts.get(None, 0)
     if unc_groups or unc_loose:
