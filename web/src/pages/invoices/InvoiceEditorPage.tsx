@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, apiUpload, ApiError } from "../../lib/api";
+import { api, ApiError, getToken } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { computePreview, inr } from "../../lib/previewTotal";
 import { computeMeasure, kg } from "../../lib/weighment";
@@ -593,16 +593,37 @@ export function InvoiceEditorPage() {
     setDirty(true);
   }
 
-  // Speech-invoice-capture pilot: one push-to-talk recording -> one resolved
-  // line, appended the same way a typed pick is (see ItemPicker.pick above).
-  // Server does transcription + parsing + item-match; this just records,
-  // uploads, and inserts the result flagged for review when uncertain.
+  // Speech-invoice-capture pilot — real-time: a WebSocket proxy
+  // (app/routers/voice_stream.py) streams audio to Deepgram continuously and
+  // relays partial/final transcripts back as the operator talks. The live
+  // partial text drives the open row's `description` exactly as if it were
+  // typed, so LineRow's own existing debounced item search runs live for
+  // free — no separate search plumbing needed here. On stop, the full
+  // accumulated transcript goes through the same /voice-line resolve the
+  // push-to-talk pilot used, for authoritative qty/uom/rate/item parsing
+  // (kept server-side and in one place rather than duplicating the parser
+  // in JS).
   const [recording, setRecording] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const [voiceNoteIsError, setVoiceNoteIsError] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const voiceChunksRef = useRef<Blob[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const voiceRowKeyRef = useRef<string | null>(null);
+  const finalTranscriptRef = useRef("");
+
+  /** Deepgram transcript text, minus a trailing qty/unit/rate tail — a rough
+   *  client-side preview mirroring app/services/speech/parse_line.py, used
+   *  only to keep the live search query from including spoken numbers; the
+   *  server's parser is still what actually fills the row on stop. */
+  function livePreviewQuery(text: string): string {
+    return text
+      .replace(
+        /\b(\d+(\.\d+)?|ek|one|do|two|teen|three|char|chaar|four|panch|paanch|five|das|dus|ten|sau|hundred)\s+\w+\b\s*$/i,
+        "",
+      )
+      .trim();
+  }
 
   async function startVoiceLine() {
     setVoiceNote(null);
@@ -614,23 +635,59 @@ export function InvoiceEditorPage() {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const row = blankRow(curSeg);
+      voiceRowKeyRef.current = row.key;
+      finalTranscriptRef.current = "";
+      setRows((rs) => [...rs, row]);
+      setOpenKey(row.key);
+
+      const token = getToken() ?? "";
+      const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/invoices/voice-line/ws?token=${encodeURIComponent(token)}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onmessage = (ev) => {
+        try {
+          const msg = JSON.parse(ev.data as string) as {
+            type?: string;
+            is_final?: boolean;
+            channel?: { alternatives?: { transcript?: string }[] };
+            message?: string;
+          };
+          if (msg.type === "Error") {
+            setVoiceNote(msg.message ?? "Speech capture isn't configured.");
+            setVoiceNoteIsError(true);
+            return;
+          }
+          const piece = msg.channel?.alternatives?.[0]?.transcript ?? "";
+          if (!piece) return;
+          if (msg.is_final) {
+            finalTranscriptRef.current = `${finalTranscriptRef.current} ${piece}`.trim();
+          }
+          const liveText = `${finalTranscriptRef.current} ${msg.is_final ? "" : piece}`.trim();
+          const key = voiceRowKeyRef.current;
+          if (key) patchRow(key, { description: livePreviewQuery(liveText), item_id: null });
+        } catch {
+          // a non-JSON or unexpected message — ignore, next one may be fine
+        }
+      };
+      ws.onerror = () => {
+        setVoiceNote("Live transcription connection failed.");
+        setVoiceNoteIsError(true);
+      };
+
       const mr = new MediaRecorder(stream);
-      voiceChunksRef.current = [];
       mr.ondataavailable = (e) => {
-        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
+        if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
+          void e.data.arrayBuffer().then((buf) => ws.send(buf));
+        }
       };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
-        const blob = new Blob(voiceChunksRef.current, { type: mr.mimeType || "audio/webm" });
-        if (blob.size === 0) {
-          setVoiceNote("No audio was captured — try again and speak right after tapping.");
-          setVoiceNoteIsError(true);
-          return;
-        }
-        void submitVoiceLine(blob);
       };
       mediaRecorderRef.current = mr;
-      mr.start();
+      mr.start(250); // emit a chunk every 250ms, streamed live rather than one blob at the end
       setRecording(true);
     } catch {
       setVoiceNote("Couldn't access the microphone — check browser/site permission.");
@@ -640,16 +697,23 @@ export function InvoiceEditorPage() {
 
   function stopVoiceLine() {
     mediaRecorderRef.current?.stop();
+    wsRef.current?.close();
+    wsRef.current = null;
     setRecording(false);
+    const text = finalTranscriptRef.current.trim();
+    const key = voiceRowKeyRef.current;
+    if (text && key) void resolveVoiceLine(text, key);
+    else if (!text) {
+      setVoiceNote("Didn't catch anything — try again.");
+      setVoiceNoteIsError(true);
+    }
   }
 
-  async function submitVoiceLine(blob: Blob) {
+  async function resolveVoiceLine(transcript: string, rowKey: string) {
     setVoiceBusy(true);
     setVoiceNoteIsError(false);
     try {
-      const fd = new FormData();
-      fd.append("file", blob, "line.webm");
-      const r = await apiUpload<{
+      const r = await api<{
         transcript: string;
         item_id: string | null;
         description: string;
@@ -658,7 +722,7 @@ export function InvoiceEditorPage() {
         unit_rate: string | null;
         needs_review: boolean;
         review_reason: string | null;
-      }>("/invoices/voice-line", fd);
+      }>("/invoices/voice-line/resolve-text", { method: "POST", body: { transcript } });
 
       if (!r.description) {
         setVoiceNote(`Heard: "${r.transcript}" — ${r.review_reason ?? "try again"}`);
@@ -666,20 +730,13 @@ export function InvoiceEditorPage() {
         return;
       }
 
-      const row = blankRow(curSeg);
-      setRows((rs) => [
-        ...rs,
-        {
-          ...row,
-          item_id: r.item_id,
-          description: r.description,
-          quantity: r.quantity ?? "",
-          uom: normalizeUom(r.uom ?? "") || r.uom || "",
-          unit_rate: r.unit_rate ?? "",
-        },
-      ]);
-      setOpenKey(row.key);
-      setDirty(true);
+      patchRow(rowKey, {
+        item_id: r.item_id,
+        description: r.description,
+        quantity: r.quantity ?? "",
+        uom: normalizeUom(r.uom ?? "") || r.uom || "",
+        unit_rate: r.unit_rate ?? "",
+      });
       setVoiceNote(
         r.needs_review
           ? `Heard: "${r.transcript}" — ${r.review_reason ?? "please check this line"}`
@@ -687,7 +744,7 @@ export function InvoiceEditorPage() {
       );
       setVoiceNoteIsError(r.needs_review);
     } catch (e) {
-      setVoiceNote(e instanceof ApiError ? e.message : "Couldn't read that recording.");
+      setVoiceNote(e instanceof ApiError ? e.message : "Couldn't resolve that line.");
       setVoiceNoteIsError(true);
     } finally {
       setVoiceBusy(false);

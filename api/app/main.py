@@ -49,6 +49,7 @@ from app.routers import (
     tally_agent,
     tally_self_serve,
     tenant,
+    voice_stream,
     whatsapp,
 )
 
@@ -181,6 +182,7 @@ app.include_router(orders.public_router)
 app.include_router(share_links.router)
 app.include_router(share_links.public_router)
 app.include_router(media.router)
+app.include_router(voice_stream.router)
 if not settings.is_production:
     # Dev-only: PDF-in / XML-out, no auth, for quick Tally-import testing.
     # Imported here (not at module top) so this dev tool can never affect

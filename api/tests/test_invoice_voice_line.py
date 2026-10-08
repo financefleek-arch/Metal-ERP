@@ -119,3 +119,26 @@ def test_voice_line_transcription_failure_is_422_not_500(
         files={"file": ("line.webm", _TINY_AUDIO, "audio/webm")},
     )
     assert r.status_code == 422, r.text
+
+
+def test_voice_line_resolve_text_shares_the_same_parser(client: TestClient) -> None:
+    """Real-time pilot: /voice-line/resolve-text takes an already-
+    transcribed string (from the streaming WS) with no audio/Deepgram call
+    at all, and resolves it the same way /voice-line does post-transcribe."""
+    h = _h(_register(client, "voice5@x.example.com"))
+    item = client.post("/api/items", headers=h, json={"name": "Monin syrup"})
+    assert item.status_code == 201, item.text
+
+    r = client.post(
+        "/api/invoices/voice-line/resolve-text",
+        headers=h,
+        json={"transcript": "Monin syrup do dozen sau rupaye"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+
+    assert body["item_id"] == item.json()["id"]
+    assert body["quantity"] == "2"
+    assert body["uom"] == "doz"
+    assert body["unit_rate"] == "100"
+    assert body["needs_review"] is False

@@ -296,3 +296,10 @@ class VoiceLineOut(BaseModel):
     unit_rate: Money | None = None
     needs_review: bool
     review_reason: str | None = None
+
+
+class VoiceLineTranscriptIn(BaseModel):
+    """Real-time pilot: the accumulated transcript from the streaming
+    WebSocket, already transcribed — this just needs parsing/resolving."""
+
+    transcript: str = Field(min_length=1, max_length=2000)

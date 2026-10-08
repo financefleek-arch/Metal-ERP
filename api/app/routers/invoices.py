@@ -52,6 +52,7 @@ from app.schemas_invoice import (
     SlipCaptureOut,
     SlipLineReview,
     VoiceLineOut,
+    VoiceLineTranscriptIn,
 )
 from app.services import order_notify
 from app.services.invoices.common import (
@@ -472,6 +473,44 @@ def create_invoice_from_slip(
     )
 
 
+def _resolve_transcript(session: SessionDep, tenant_id: str, transcript: str) -> VoiceLineOut:
+    parsed = parse_voice_line(transcript)
+
+    if not parsed.item_query:
+        return VoiceLineOut(
+            transcript=transcript,
+            description="",
+            needs_review=True,
+            review_reason="couldn't make out an item in that — try again",
+        )
+
+    synonyms = load_synonym_map(session, tenant_id)
+    match = resolve_item(session, tenant_id, parsed.item_query, synonyms=synonyms)
+
+    needs_review = match.item_id is None or match.weak or parsed.quantity is None
+    reason = None
+    if parsed.quantity is None:
+        reason = "quantity not understood — please check"
+    elif match.item_id is None:
+        reason = "no confident item match — check the item"
+    elif match.weak:
+        reason = "ambiguous item match — please confirm"
+    elif parsed.rate is None:
+        reason = "rate not spoken — check before saving"
+        needs_review = True
+
+    return VoiceLineOut(
+        transcript=transcript,
+        item_id=match.item_id,
+        description=parsed.item_query,
+        quantity=parsed.quantity,
+        uom=parsed.uom,
+        unit_rate=parsed.rate,
+        needs_review=needs_review,
+        review_reason=reason,
+    )
+
+
 @router.post("/voice-line", response_model=VoiceLineOut)
 def resolve_voice_line(
     user: DraftUser,
@@ -493,41 +532,21 @@ def resolve_voice_line(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
 
-    parsed = parse_voice_line(tx.text)
+    return _resolve_transcript(session, user.tenant_id, tx.text)
 
-    if not parsed.item_query:
-        return VoiceLineOut(
-            transcript=tx.text,
-            description="",
-            needs_review=True,
-            review_reason="couldn't make out an item in that — try again",
-        )
 
-    synonyms = load_synonym_map(session, user.tenant_id)
-    match = resolve_item(session, user.tenant_id, parsed.item_query, synonyms=synonyms)
-
-    needs_review = match.item_id is None or match.weak or parsed.quantity is None
-    reason = None
-    if parsed.quantity is None:
-        reason = "quantity not understood — please check"
-    elif match.item_id is None:
-        reason = "no confident item match — check the item"
-    elif match.weak:
-        reason = "ambiguous item match — please confirm"
-    elif parsed.rate is None:
-        reason = "rate not spoken — check before saving"
-        needs_review = True
-
-    return VoiceLineOut(
-        transcript=tx.text,
-        item_id=match.item_id,
-        description=parsed.item_query,
-        quantity=parsed.quantity,
-        uom=parsed.uom,
-        unit_rate=parsed.rate,
-        needs_review=needs_review,
-        review_reason=reason,
-    )
+@router.post("/voice-line/resolve-text", response_model=VoiceLineOut)
+def resolve_voice_line_transcript(
+    user: DraftUser,
+    session: SessionDep,
+    body: VoiceLineTranscriptIn,
+) -> VoiceLineOut:
+    """Real-time pilot: the accumulated transcript from the streaming
+    WebSocket (app/routers/voice_stream.py) -> one resolved line. No audio
+    here — Deepgram already ran during the live stream; this just does the
+    same qty/uom/rate/item parse `/voice-line` does from text already in
+    hand, so the parser stays in one place."""
+    return _resolve_transcript(session, user.tenant_id, body.transcript)
 
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)

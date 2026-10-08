@@ -34,6 +34,10 @@ dependencies = [
     # Slip-capture OCR (speech-invoice-capture-backlog's sibling vision path)
     # — Claude vision call to extract invoice lines off a photographed slip.
     "anthropic>=0.40",
+    # Real-time speech-invoice-capture — proxies the browser's audio stream
+    # to Deepgram's streaming /v1/listen. Already a transitive dep via
+    # uvicorn[standard], pinned explicitly since we import it directly.
+    "websockets>=13.0",
 ]
 
 [project.optional-dependencies]
