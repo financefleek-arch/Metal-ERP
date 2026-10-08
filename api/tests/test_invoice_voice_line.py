@@ -37,7 +37,8 @@ def _h(t: str) -> dict[str, str]:
 
 def _mock_transcript(monkeypatch: pytest.MonkeyPatch, text: str) -> None:
     monkeypatch.setattr(
-        "app.routers.invoices.transcribe", lambda _data, _ct: Transcript(text=text, confidence=0.95)
+        "app.routers.invoices.transcribe",
+        lambda _data, _ct, **_kw: Transcript(text=text, confidence=0.95),
     )
 
 
@@ -107,7 +108,7 @@ def test_voice_line_transcription_failure_is_422_not_500(
 ) -> None:
     h = _h(_register(client, "voice4@x.example.com"))
 
-    def _boom(_data: bytes, _ct: str) -> Transcript:
+    def _boom(_data: bytes, _ct: str, **_kw: object) -> Transcript:
         raise TranscriptionError("Couldn't hear anything in that recording — try again.")
 
     monkeypatch.setattr("app.routers.invoices.transcribe", _boom)

@@ -66,6 +66,7 @@ from app.services.item_resolution import resolve_item
 from app.services.ocr.extract_slip import SlipExtractionError, extract_slip
 from app.services.ocr.slip_to_draft import build_draft
 from app.services.payments import paid_amount_for_invoice
+from app.services.speech.keyterms import top_item_keyterms
 from app.services.speech.parse_line import parse_voice_line
 from app.services.speech.transcribe import TranscriptionError, transcribe
 
@@ -484,8 +485,9 @@ def resolve_voice_line(
     row state, exactly as a typed line is added; nothing here auto-commits.
     """
     data = file.file.read()
+    keyterms = top_item_keyterms(session, user.tenant_id)
     try:
-        tx = transcribe(data, file.content_type or "audio/webm")
+        tx = transcribe(data, file.content_type or "audio/webm", keyterms=keyterms)
     except TranscriptionError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)

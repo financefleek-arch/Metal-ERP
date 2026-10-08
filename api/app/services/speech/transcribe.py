@@ -29,7 +29,15 @@ class Transcript:
     confidence: float | None
 
 
-def transcribe(audio_bytes: bytes, content_type: str) -> Transcript:
+# Nova-3's keyterm prompting budget is 500 tokens total across all terms
+# per request (Deepgram docs) — cap the list well under that so a long tail
+# of item names can't silently truncate the ones that matter most.
+MAX_KEYTERMS = 100
+
+
+def transcribe(
+    audio_bytes: bytes, content_type: str, keyterms: list[str] | None = None
+) -> Transcript:
     if not audio_bytes:
         raise TranscriptionError("Empty recording.")
     if len(audio_bytes) > MAX_AUDIO_BYTES:
@@ -39,15 +47,22 @@ def transcribe(audio_bytes: bytes, content_type: str) -> Transcript:
     if not settings.deepgram_secret_key:
         raise TranscriptionError("Speech capture is not configured (no Deepgram key).")
 
+    params: dict[str, str | list[str]] = {
+        "model": "nova-3",
+        "language": "multi",
+        "smart_format": "true",
+        "numerals": "true",
+    }
+    if keyterms:
+        # Nova-3 only (silently ignored on other models); plain terms, no
+        # weights — repeat the query param once per term, httpx handles a
+        # list value as repeated params.
+        params["keyterm"] = keyterms[:MAX_KEYTERMS]
+
     try:
         resp = httpx.post(
             _DEEPGRAM_URL,
-            params={
-                "model": "nova-3",
-                "language": "multi",
-                "smart_format": "true",
-                "numerals": "true",
-            },
+            params=params,
             headers={
                 "Authorization": f"Token {settings.deepgram_secret_key}",
                 "Content-Type": content_type,
