@@ -600,11 +600,18 @@ export function InvoiceEditorPage() {
   const [recording, setRecording] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const [voiceNoteIsError, setVoiceNoteIsError] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
 
   async function startVoiceLine() {
     setVoiceNote(null);
+    setVoiceNoteIsError(false);
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceNote("This browser can't record audio (needs HTTPS or localhost, and mic support).");
+      setVoiceNoteIsError(true);
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mr = new MediaRecorder(stream);
@@ -615,6 +622,11 @@ export function InvoiceEditorPage() {
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(voiceChunksRef.current, { type: mr.mimeType || "audio/webm" });
+        if (blob.size === 0) {
+          setVoiceNote("No audio was captured — try again and speak right after tapping.");
+          setVoiceNoteIsError(true);
+          return;
+        }
         void submitVoiceLine(blob);
       };
       mediaRecorderRef.current = mr;
@@ -622,6 +634,7 @@ export function InvoiceEditorPage() {
       setRecording(true);
     } catch {
       setVoiceNote("Couldn't access the microphone — check browser/site permission.");
+      setVoiceNoteIsError(true);
     }
   }
 
@@ -632,6 +645,7 @@ export function InvoiceEditorPage() {
 
   async function submitVoiceLine(blob: Blob) {
     setVoiceBusy(true);
+    setVoiceNoteIsError(false);
     try {
       const fd = new FormData();
       fd.append("file", blob, "line.webm");
@@ -648,6 +662,7 @@ export function InvoiceEditorPage() {
 
       if (!r.description) {
         setVoiceNote(`Heard: "${r.transcript}" — ${r.review_reason ?? "try again"}`);
+        setVoiceNoteIsError(true);
         return;
       }
 
@@ -670,8 +685,10 @@ export function InvoiceEditorPage() {
           ? `Heard: "${r.transcript}" — ${r.review_reason ?? "please check this line"}`
           : `Heard: "${r.transcript}" — added, please glance before saving.`,
       );
+      setVoiceNoteIsError(r.needs_review);
     } catch (e) {
       setVoiceNote(e instanceof ApiError ? e.message : "Couldn't read that recording.");
+      setVoiceNoteIsError(true);
     } finally {
       setVoiceBusy(false);
     }
@@ -1102,7 +1119,17 @@ export function InvoiceEditorPage() {
                     {recording ? "● Recording — tap to stop" : voiceBusy ? "Reading…" : "Speak a line"}
                   </button>
                 </div>
-                {voiceNote && <p className="text-xs text-muted">{voiceNote}</p>}
+                {voiceNote && (
+                  <p
+                    className={`rounded-md px-3 py-2 text-xs ${
+                      voiceNoteIsError
+                        ? "bg-[#f1e7d6] text-warn"
+                        : "bg-[#eef3ee] text-ok"
+                    }`}
+                  >
+                    {voiceNote}
+                  </p>
+                )}
               </div>
             )}
           </div>
