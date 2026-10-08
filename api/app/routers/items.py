@@ -277,6 +277,7 @@ def item_tree(user: CurrentUser, session: SessionDep) -> list[TreeCategory]:
                 leaf_count=leaf_counts.get(g.id, 0),
             )
             for g in groups_by_cat.get(cat_id, [])
+            if leaf_counts.get(g.id, 0) > 0  # a group with no items is not worth a row
         ]
 
     out: list[TreeCategory] = [
@@ -288,7 +289,7 @@ def item_tree(user: CurrentUser, session: SessionDep) -> list[TreeCategory]:
         )
         for c in cats
     ]
-    unc_groups = groups_by_cat.get(None, [])
+    unc_groups = tree_groups(None)
     unc_loose = loose_counts.get(None, 0)
     if unc_groups or unc_loose:
         out.append(

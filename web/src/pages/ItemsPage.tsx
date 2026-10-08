@@ -567,7 +567,9 @@ export function ItemsPage() {
                 >
                   <option value="">All groups</option>
                   <option value={NO_GROUP}>Ungrouped</option>
-                  {(groups.data ?? []).map((g) => (
+                  {(groups.data ?? [])
+                    .filter((g) => g.item_count > 0 || g.id === grpSel)
+                    .map((g) => (
                     <option key={g.id} value={g.id}>
                       {g.name}
                     </option>
