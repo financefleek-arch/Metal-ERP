@@ -610,6 +610,9 @@ export function InvoiceEditorPage() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const voiceRowKeyRef = useRef<string | null>(null);
+  // Mirrors voiceRowKeyRef as real state — the ref alone doesn't re-render,
+  // but LineRow needs forceSearchOpen as a prop to show its dropdown live.
+  const [voiceRowKey, setVoiceRowKey] = useState<string | null>(null);
   const finalTranscriptRef = useRef("");
 
   /** Deepgram transcript text, minus a trailing qty/unit/rate tail — a rough
@@ -638,6 +641,7 @@ export function InvoiceEditorPage() {
 
       const row = blankRow(curSeg);
       voiceRowKeyRef.current = row.key;
+      setVoiceRowKey(row.key);
       finalTranscriptRef.current = "";
       setRows((rs) => [...rs, row]);
       setOpenKey(row.key);
@@ -718,6 +722,8 @@ export function InvoiceEditorPage() {
       wsRef.current = null;
       const text = finalTranscriptRef.current.trim();
       const key = voiceRowKeyRef.current;
+      voiceRowKeyRef.current = null;
+      setVoiceRowKey(null);
       if (text && key) void resolveVoiceLine(text, key);
       else {
         setVoiceNote("Didn't catch anything — try again.");
@@ -1114,6 +1120,7 @@ export function InvoiceEditorPage() {
                     }
                     onPatch={(p) => patchRow(r.key, p)}
                     onRemove={() => removeRow(r.key)}
+                    forceSearchOpen={voiceRowKey === r.key}
                   />
                   {seg && (
                     <SlipDivider
@@ -2281,6 +2288,7 @@ function LineRow({
   otherItemLine,
   onPatch,
   onRemove,
+  forceSearchOpen,
 }: {
   n: number;
   row: Row;
@@ -2294,6 +2302,11 @@ function LineRow({
   otherItemLine: number;
   onPatch: (p: Partial<Row>) => void;
   onRemove: () => void;
+  /** Speech-invoice-capture pilot: keep the item-search dropdown open while
+   *  this row is being filled by a live voice transcript, without a real
+   *  DOM focus event (patchRow() from outside the component can't trigger
+   *  the input's own onFocus). */
+  forceSearchOpen?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState(row.description);
@@ -2309,7 +2322,7 @@ function LineRow({
   useEffect(() => setTyped(row.description), [row.description]);
 
   const debounced = useDebounced(typed.trim(), 200);
-  const active = open && debounced.length >= 1 && !row.item_id;
+  const active = (open || forceSearchOpen) && debounced.length >= 1 && !row.item_id;
 
   // visible candidate list — substring browse search
   const search = useQuery({
@@ -2453,7 +2466,7 @@ function LineRow({
           }
         }}
       />
-      {open && !row.item_id && typed.trim() && (
+      {(open || forceSearchOpen) && !row.item_id && typed.trim() && (
         <div className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg">
           {results.map((it) => {
             const badge = it.id === resolvedId && method ? METHOD_BADGE[method] : undefined;
