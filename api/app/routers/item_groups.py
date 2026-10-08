@@ -15,11 +15,12 @@ from sqlalchemy import update as sa_update
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.domain.product_parse import generated_name
-from app.models import Item, ItemAlias, ItemCategory, ProductGroup
+from app.models import Item, ItemAlias, ItemCategory, ItemClassifyRule, ProductGroup
 from app.schemas_catalogue import (
     GroupDetail,
     GroupIn,
     GroupLeaf,
+    GroupMergeIn,
     GroupOut,
     GroupUpdate,
     SizeOrderIn,
@@ -166,9 +167,19 @@ def update_group(
             raise HTTPException(status_code=409, detail=f"A group '{clash.name}' already exists")
         g.name = patch["name"].strip()
         g.name_normalized = key
+    if "category_id" in patch and patch["category_id"]:
+        c = session.get(ItemCategory, patch["category_id"])
+        if c is None or c.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=422, detail="Unknown category")
+    category_moved = "category_id" in patch and patch["category_id"] != g.category_id
     for field_ in ("category_id", "hsn_code", "uom", "item_type"):
         if field_ in patch:
             setattr(g, field_, patch[field_])
+    if category_moved:
+        # the group's items follow it, so a category filter and the tree agree
+        session.execute(
+            sa_update(Item).where(Item.group_id == g.id).values(category_id=g.category_id)
+        )
     session.flush()
     return get_group(gid, user, session)
 
@@ -207,4 +218,48 @@ def delete_group(gid: str, user: WriteUser, session: SessionDep) -> None:
         )
     # group-scoped aliases go too
     session.execute(sa_delete(ItemAlias).where(ItemAlias.group_id == g.id))
+    # a learned/seeded classify rule keeps its department; it just stops naming this group
+    # (the FK has no ON DELETE, so Postgres would refuse the delete otherwise)
+    session.execute(
+        sa_update(ItemClassifyRule).where(ItemClassifyRule.group_id == g.id).values(group_id=None)
+    )
     session.delete(g)
+
+
+@router.post("/{gid}/merge", response_model=GroupDetail)
+def merge_group(
+    gid: str, body: GroupMergeIn, user: WriteUser, session: SessionDep
+) -> GroupDetail:
+    """Fold group `gid` into `body.into`: its items, aliases and classify rules move over, the
+    items are put in the target's category and appended after its last size, then `gid` is
+    deleted. Item names, rates and HSN are not touched."""
+    if body.into == gid:
+        raise HTTPException(status_code=422, detail="Pick a different group to merge into.")
+    src = _owned(session, user.tenant_id, gid)
+    dst = _owned(session, user.tenant_id, body.into)
+
+    last = session.scalar(select(func.max(Item.size_pos)).where(Item.group_id == dst.id)) or 0
+    moving = list(
+        session.scalars(
+            select(Item)
+            .where(Item.group_id == src.id)
+            .order_by(Item.size_pos.nulls_last(), func.lower(Item.name))
+        ).all()
+    )
+    for i, it in enumerate(moving, start=1):
+        it.group_id = dst.id
+        it.size_pos = last + i
+        if dst.category_id:
+            it.category_id = dst.category_id
+    session.execute(
+        sa_update(ItemAlias).where(ItemAlias.group_id == src.id).values(group_id=dst.id)
+    )
+    session.execute(
+        sa_update(ItemClassifyRule)
+        .where(ItemClassifyRule.group_id == src.id)
+        .values(group_id=dst.id)
+    )
+    session.flush()
+    session.delete(src)
+    session.flush()
+    return get_group(dst.id, user, session)

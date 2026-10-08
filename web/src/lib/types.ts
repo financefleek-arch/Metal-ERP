@@ -450,6 +450,9 @@ export interface ItemListItem {
   sku: string | null;
   item_type: ItemType;
   category: string | null;
+  category_id?: string | null;
+  group_id?: string | null;
+  size_label?: string | null;
   uom: string | null;
   secondary_uom: string | null;
   hsn_code: string | null;
@@ -501,6 +504,11 @@ export interface ItemFilter {
   tally_price_due?: boolean;
   supplier_id?: string;
   catalog_id?: string;
+  /** where it sits in the tree; category + ungrouped is a tree "Ungrouped" row */
+  group_id?: string;
+  category_id?: string;
+  uncategorised?: boolean;
+  ungrouped?: boolean;
 }
 
 export interface ItemSources {
@@ -669,6 +677,8 @@ export interface TreeLeaf {
   default_rate: string | null;
   status: ItemStatus;
   thumb_url?: string | null;
+  availability?: Availability;
+  tally_state?: TallyState;
 }
 
 export interface TreeGroup {

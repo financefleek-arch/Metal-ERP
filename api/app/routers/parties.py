@@ -25,8 +25,10 @@ from app.models import (
     SupplierPricePoint,
     Tenant,
 )
-from app.models._mixins import PartyRole, PartyStatus
+from app.models._mixins import PartyRole, PartyStatus, WaConsent, WaConsentSource
 from app.schemas import (
+    CatalogConsentIn,
+    CatalogConsentOut,
     PartyAddressIn,
     PartyCreate,
     PartyDuplicate409,
@@ -38,6 +40,7 @@ from app.schemas import (
 )
 from app.schemas_payments import OpenInvoiceForAllocation
 from app.services.catalog.suppliers import catalog_ref_count
+from app.services.catalog_consent import set_catalog_consent
 from app.services.pagination import finish_page, paginate
 from app.services.parties import (
     SEARCH_RESULT_CAP,
@@ -144,6 +147,9 @@ def _out(session: SessionDep, party: Party) -> PartyOut:
         addresses=party.addresses,
         completeness=completeness_for(party),
         document_count=document_count(session, party.id),
+        wa_catalog_consent=party.wa_catalog_consent,
+        wa_catalog_consent_at=party.wa_catalog_consent_at,
+        wa_catalog_consent_source=party.wa_catalog_consent_source,
     )
 
 
@@ -393,6 +399,29 @@ def update_party(
         _apply_addresses(party, [PartyAddressIn(**a) for a in addresses])
     session.flush()
     return _out(session, party)
+
+
+@router.put("/{party_id}/catalog-consent", response_model=CatalogConsentOut)
+def set_party_catalog_consent(
+    party_id: str, body: CatalogConsentIn, user: DraftUser, session: SessionDep
+) -> CatalogConsentOut:
+    """Staff record a customer's answer to "may we send you price lists on WhatsApp?" (in person
+    or by phone). Opting in needs a phone number to send to; `none` cannot be set by hand."""
+    party = _get_owned(session, user.tenant_id, party_id)
+    if body.status == WaConsent.none:
+        raise HTTPException(status_code=422, detail="Choose opted in or opted out.")
+    if body.status == WaConsent.opted_in and not party.phone:
+        raise HTTPException(
+            status_code=422, detail="Add the party's phone number before recording consent."
+        )
+    set_catalog_consent(
+        session, party, body.status, WaConsentSource.manual, user_id=user.id
+    )
+    return CatalogConsentOut(
+        status=party.wa_catalog_consent,
+        at=party.wa_catalog_consent_at,
+        source=party.wa_catalog_consent_source,
+    )
 
 
 @router.delete("/{party_id}", status_code=status.HTTP_204_NO_CONTENT)

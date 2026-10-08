@@ -1,14 +1,34 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useVocab } from "../lib/reference";
 import { uomDisplay } from "../lib/uom";
-import type { GroupDetail, ItemCategoryRow, ItemType } from "../lib/types";
+import type { GroupDetail, GroupOut, ItemCategoryRow, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
+import { NodeMenu, NodeMenuEntry } from "./NodeMenu";
+import type { NodeAction } from "../lib/itemNodes";
 
-/** Product-group editor + its size grid (drag to reorder). */
-export function GroupForm({ groupId }: { groupId: string }) {
+/**
+ * Product-group editor + its size grid (drag to reorder), and the things you do to the whole
+ * group: add a size, run any bulk action on it, merge it into another group, ungroup or delete it.
+ */
+export function GroupForm({
+  groupId,
+  writable,
+  catalogModule,
+  onAction,
+}: {
+  groupId: string;
+  writable: boolean;
+  catalogModule: boolean;
+  onAction: (g: { id: string; name: string; item_count: number }, a: NodeAction) => void;
+}) {
   const qc = useQueryClient();
+  const nav = useNavigate();
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeInto, setMergeInto] = useState("");
+  const [actErr, setActErr] = useState<string | null>(null);
   const [saveHint, setSaveHint] = useState<string>("");
   const timer = useRef<number | undefined>(undefined);
   const [order, setOrder] = useState<string[] | null>(null);
@@ -55,6 +75,49 @@ export function GroupForm({ groupId }: { groupId: string }) {
     },
   });
 
+  const allGroups = useQuery({
+    queryKey: ["item-groups", ""],
+    queryFn: () => api<GroupOut[]>("/item-groups"),
+    enabled: mergeOpen,
+  });
+  const refreshAll = () => {
+    qc.invalidateQueries({ queryKey: ["item-tree"] });
+    qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
+    qc.invalidateQueries({ queryKey: ["items"] });
+    qc.invalidateQueries({ queryKey: ["item-groups"] });
+    qc.invalidateQueries({ queryKey: ["item-categories"] });
+  };
+  const ungroup = useMutation({
+    mutationFn: () =>
+      api(`/items/bulk`, {
+        method: "PATCH",
+        body: { filter: { group_id: groupId }, fields: { group_id: null }, fields_set: ["group_id"] },
+      }),
+    onSuccess: () => {
+      setActErr(null);
+      refreshAll();
+      qc.invalidateQueries({ queryKey: ["item-group", groupId] });
+    },
+    onError: (e) => setActErr(e instanceof ApiError ? e.message : "Could not ungroup."),
+  });
+  const removeGroup = useMutation({
+    mutationFn: () => api<void>(`/item-groups/${groupId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      refreshAll();
+      nav("/items");
+    },
+    onError: (e) => setActErr(e instanceof ApiError ? e.message : "Could not delete the group."),
+  });
+  const merge = useMutation({
+    mutationFn: (into: string) =>
+      api<GroupDetail>(`/item-groups/${groupId}/merge`, { method: "POST", body: { into } }),
+    onSuccess: (d) => {
+      refreshAll();
+      nav(`/items/g/${d.id}`);
+    },
+    onError: (e) => setActErr(e instanceof ApiError ? e.message : "Could not merge."),
+  });
+
   function patch(body: Record<string, unknown>) {
     setSaveHint("Editing…");
     window.clearTimeout(timer.current);
@@ -91,6 +154,103 @@ export function GroupForm({ groupId }: { groupId: string }) {
           {g.category_name ?? "uncategorised"} · {g.item_count} size
           {g.item_count === 1 ? "" : "s"}
         </p>
+        {writable && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              className="btn-primary h-8 px-3 text-xs"
+              onClick={() => nav(`/items/new?group=${g.id}`)}
+            >
+              + Add size
+            </button>
+            <button
+              className="btn-ghost h-8 px-3 text-xs"
+              disabled={g.item_count === 0}
+              onClick={() => onAction(g, "availability")}
+            >
+              Set availability
+            </button>
+            {catalogModule && (
+              <button
+                className="btn-ghost h-8 px-3 text-xs"
+                disabled={g.item_count === 0}
+                onClick={() => onAction(g, "catalog")}
+              >
+                Make customer catalog
+              </button>
+            )}
+            <NodeMenu
+              title={g.name}
+              count={g.item_count}
+              catalogModule={catalogModule}
+              onAction={(a) => onAction(g, a)}
+            >
+              <NodeMenuEntry label="Merge into another group…" onClick={() => setMergeOpen(true)} />
+              <NodeMenuEntry
+                label="Ungroup all items"
+                onClick={() => {
+                  if (
+                    g.item_count > 0 &&
+                    confirm(
+                      `Take ${g.item_count} item${g.item_count === 1 ? "" : "s"} out of "${g.name}"? They stay in their category, ungrouped.`,
+                    )
+                  )
+                    ungroup.mutate();
+                }}
+              />
+              <NodeMenuEntry
+                label="Delete group…"
+                onClick={() => {
+                  if (
+                    confirm(
+                      g.item_count > 0
+                        ? `Delete the group "${g.name}"? Its ${g.item_count} item${g.item_count === 1 ? "" : "s"} are NOT deleted; they become ungrouped.`
+                        : `Delete the empty group "${g.name}"?`,
+                    )
+                  )
+                    removeGroup.mutate();
+                }}
+              />
+            </NodeMenu>
+          </div>
+        )}
+        {actErr && <p className="err mt-2">{actErr}</p>}
+        {mergeOpen && (
+          <div className="mt-3 flex flex-col gap-2 rounded-lg border border-line bg-ground p-3 text-xs">
+            <p className="text-muted">
+              Move all {g.item_count} item{g.item_count === 1 ? "" : "s"} of “{g.name}” into another
+              group, then delete “{g.name}”. Item names, rates and HSN are not changed; the sizes go
+              to the end of the other group, and the items take its category.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                className="field h-8 min-w-[12rem] flex-1 text-xs"
+                value={mergeInto}
+                aria-label="Merge into"
+                onChange={(e) => setMergeInto(e.target.value)}
+              >
+                <option value="">— pick the group to keep —</option>
+                {(allGroups.data ?? [])
+                  .filter((x) => x.id !== g.id)
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                      {x.category_name ? ` (${x.category_name})` : ""}
+                    </option>
+                  ))}
+              </select>
+              <button
+                className="btn-primary h-8 px-3 text-xs"
+                disabled={!mergeInto || merge.isPending}
+                onClick={() => merge.mutate(mergeInto)}
+              >
+                {merge.isPending ? "Merging…" : "Merge"}
+              </button>
+              <button className="btn-ghost h-8 px-3 text-xs" onClick={() => setMergeOpen(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-x-3 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -157,11 +317,10 @@ export function GroupForm({ groupId }: { groupId: string }) {
           </span>
         </p>
         <div className="card divide-y divide-[#f3eee4] overflow-hidden">
-          <div className="grid grid-cols-[24px_1fr_90px_90px] gap-2 bg-[#efe9df] px-3 py-1.5 text-[9px] uppercase tracking-wide text-muted">
+          <div className="grid grid-cols-[24px_1fr_90px] gap-2 bg-[#efe9df] px-3 py-1.5 text-[9px] uppercase tracking-wide text-muted">
             <span>#</span>
             <span>Size</span>
             <span>Rate</span>
-            <span>Mode</span>
           </div>
           {leaves.map((l, i) => (
             <div
@@ -187,7 +346,7 @@ export function GroupForm({ groupId }: { groupId: string }) {
               <span className="text-faint">☰</span>
               <button
                 className="text-left hover:text-accent"
-                onClick={() => window.location.assign(`/items/${l.id}`)}
+                onClick={() => nav(`/items/${l.id}`)}
               >
                 {l.size_label ?? l.size_text ?? l.generated_name}
               </button>
@@ -198,7 +357,7 @@ export function GroupForm({ groupId }: { groupId: string }) {
           ))}
           {leaves.length === 0 && (
             <div className="px-3 py-4 text-center text-xs text-muted">
-              No sizes yet. Add an item and set its group to this one.
+              No sizes yet. Use “+ Add size” to create the first one.
             </div>
           )}
         </div>

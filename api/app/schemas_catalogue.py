@@ -115,6 +115,12 @@ class GroupDetail(GroupOut):
     leaves: list[GroupLeaf] = Field(default_factory=list)
 
 
+class GroupMergeIn(BaseModel):
+    """Fold this group into `into`."""
+
+    into: str
+
+
 class SizeOrderIn(BaseModel):
     """New ordering: leaf ids in the intended display order."""
 

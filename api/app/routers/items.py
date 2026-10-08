@@ -32,6 +32,7 @@ from app.schemas_item import (
     BulkOutcome,
     ItemBulkDelete,
     ItemBulkDeleteResult,
+    ItemBulkPrice,
     ItemBulkRename,
     ItemBulkUpdate,
     ItemBulkUpdateResult,
@@ -119,12 +120,20 @@ def list_items(
     tally_price_due: bool = Query(default=False),
     supplier_id: str | None = Query(default=None, description="came from this supplier"),
     catalog_id: str | None = Query(default=None, description="came from this price list"),
+    group_id: str | None = Query(default=None),
+    category_id: str | None = Query(default=None),
+    uncategorised: bool = Query(default=False),
+    ungrouped: bool = Query(default=False),
     limit: int | None = Query(
         default=None, ge=1, description="page size; omit for the whole list"
     ),
     cursor: str | None = Query(default=None, description="opaque next-page token"),
 ) -> list[ItemListItem]:
     flt = ItemFilter(
+        group_id=group_id,
+        category_id=category_id,
+        uncategorised=uncategorised,
+        ungrouped=ungrouped,
         type=type_,
         status=status_,
         no_hsn=no_hsn,
@@ -187,6 +196,8 @@ class TreeLeaf(BaseModel):
     default_rate: str | None
     status: ItemStatus
     thumb_url: str | None = None
+    availability: Availability = Availability.in_stock
+    tally_state: str = "none"
 
 
 class TreeGroup(BaseModel):
@@ -330,6 +341,8 @@ def item_tree_leaves(
             default_rate=str(it.default_rate) if it.default_rate is not None else None,
             status=it.status,
             thumb_url=media_url(it.primary_media_id, "thumb") if it.primary_media_id else None,
+            availability=it.availability,
+            tally_state=ItemListItem.model_validate(it).tally_state,
         )
         for it in rows
     ]
@@ -555,6 +568,90 @@ def bulk_update(
         unchanged=unchanged,
         errors=sum(1 for r in rows if r.result == "error"),
         learned_rule_ids=sorted(set(learned)),
+        rows=rows,
+    )
+
+
+@router.post("/bulk-price", response_model=ItemBulkUpdateResult)
+def bulk_price(
+    body: ItemBulkPrice,
+    user: WriteUser,
+    session: SessionDep,
+    dry_run: bool = Query(default=False),
+) -> ItemBulkUpdateResult:
+    """Raise or lower the rate of many items by a percentage or an amount. `dry_run=true` shows
+    each old → new rate without saving. An item with no rate, or whose new rate would be zero
+    or below, is reported and left alone; the rest proceed."""
+    all_ids = _ids_for(session, user.tenant_id, body.ids, body.filter)
+    found, missing = _bulk_items(session, user.tenant_id, all_ids)
+    rows: list[BulkOutcome] = [
+        BulkOutcome(id=mid, name="—", result="error", detail="not found") for mid in missing
+    ]
+    cent = Decimal("0.01")
+    changed = unchanged = 0
+    for it in found:
+        if it.merged_into_id is not None:
+            rows.append(BulkOutcome(id=it.id, name=it.name, result="skipped", detail="merged away"))
+            unchanged += 1
+            continue
+        old = getattr(it, body.field)
+        if old is None:
+            rows.append(BulkOutcome(id=it.id, name=it.name, result="skipped", detail="no rate set"))
+            unchanged += 1
+            continue
+        old = Decimal(str(old))
+        new = old * (1 + body.value / 100) if body.mode == "percent" else old + body.value
+        if body.round_to:
+            steps = (new / body.round_to).quantize(Decimal("1"), rounding="ROUND_HALF_UP")
+            new = steps * body.round_to
+        new = new.quantize(cent, rounding="ROUND_HALF_UP")
+        if new <= 0:
+            detail = f"{old} → {new} (not above zero)"
+            rows.append(BulkOutcome(id=it.id, name=it.name, result="error", detail=detail))
+            continue
+        if new == old.quantize(cent):
+            rows.append(
+                BulkOutcome(id=it.id, name=it.name, result="skipped", detail="rate does not change")
+            )
+            unchanged += 1
+            continue
+        detail = f"{old} → {new}"
+        lo, hi = it.price_min, it.price_max
+        banded = body.field == "default_rate" and lo is not None and hi is not None
+        if banded and not lo <= new <= hi:  # type: ignore[operator]
+            detail += f" (outside the {lo}–{hi} band)"
+        rows.append(BulkOutcome(id=it.id, name=it.name, result="changed", detail=detail))
+        if not dry_run:
+            setattr(it, body.field, new)
+        changed += 1
+
+    if dry_run:
+        session.rollback()
+    else:
+        session.flush()
+        if changed:
+            audit.record(
+                session,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                entity="item",
+                entity_id=user.tenant_id,
+                action="bulk_price",
+                after={
+                    "field": body.field,
+                    "mode": body.mode,
+                    "value": str(body.value),
+                    "changed": changed,
+                },
+            )
+    order = {i: n for n, i in enumerate(all_ids)}
+    rows.sort(key=lambda r: order.get(r.id, 1_000_000))
+    return ItemBulkUpdateResult(
+        dry_run=dry_run,
+        changed=changed,
+        unchanged=unchanged,
+        errors=sum(1 for r in rows if r.result == "error"),
+        learned_rule_ids=[],
         rows=rows,
     )
 

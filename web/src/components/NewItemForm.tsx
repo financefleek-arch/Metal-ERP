@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useVocab } from "../lib/reference";
 import { uomDisplay } from "../lib/uom";
-import type { GroupOut, Item, ItemCategoryRow, ItemType } from "../lib/types";
+import type { GroupDetail, GroupOut, Item, ItemCategoryRow, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
 
 /**
@@ -41,6 +42,23 @@ export function NewItemForm({
     queryFn: () =>
       api<GroupOut[]>(`/item-groups${categoryId ? `?category_id=${categoryId}` : ""}`),
   });
+
+  // "+ Add size" on a group page arrives as /items/new?group=<id>: start inside that group
+  const presetGroup = useSearchParams()[0].get("group");
+  const preset = useQuery({
+    queryKey: ["item-group", presetGroup],
+    queryFn: () => api<GroupDetail>(`/item-groups/${presetGroup}`),
+    enabled: !!presetGroup,
+  });
+  useEffect(() => {
+    const g = preset.data;
+    if (!g) return;
+    setCategoryId(g.category_id ?? "");
+    setGroupId(g.id);
+    setItemType(g.item_type);
+    if (g.uom) setUom(g.uom);
+    if (g.hsn_code) setHsn(g.hsn_code);
+  }, [preset.data]);
 
   const create = useMutation({
     mutationFn: () =>

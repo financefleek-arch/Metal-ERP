@@ -43,6 +43,22 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Failed"),
   });
 
+  const [mergeFrom, setMergeFrom] = useState<string | null>(null);
+  const [mergeInto, setMergeInto] = useState("");
+  const merge = useMutation({
+    mutationFn: (a: { id: string; into: string }) =>
+      api<ItemCategoryRow>(`/item-categories/${a.id}/merge`, { method: "POST", body: { into: a.into } }),
+    onSuccess: () => {
+      setMergeFrom(null);
+      setMergeInto("");
+      setErr(null);
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["item-tree-leaves"] });
+      qc.invalidateQueries({ queryKey: ["items"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not merge."),
+  });
+
   const del = useMutation({
     mutationFn: (id: string) =>
       api<void>(`/item-categories/${id}`, { method: "DELETE", body: {} }),
@@ -132,6 +148,16 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
                   Rename
                 </button>
                 <button
+                  className="shrink-0 px-1 text-xs text-muted hover:text-ink"
+                  title="Move everything in this category into another one, then remove this one"
+                  onClick={() => {
+                    setMergeFrom((m) => (m === c.id ? null : c.id));
+                    setMergeInto("");
+                  }}
+                >
+                  Merge
+                </button>
+                <button
                   className="shrink-0 px-1 text-xs text-danger hover:underline"
                   onClick={() => {
                     if (
@@ -149,6 +175,39 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
               </>
             )}
           </div>
+          {mergeFrom === c.id && (
+            <div className="flex flex-wrap items-center gap-2 bg-ground px-3 py-2.5 text-xs">
+              <span className="basis-full text-muted">
+                Move its {c.group_count} group{c.group_count === 1 ? "" : "s"} and {c.item_count} item
+                {c.item_count === 1 ? "" : "s"} into another category, then remove “{c.name}”.
+              </span>
+              <select
+                className="field h-8 min-w-[10rem] flex-1 text-xs"
+                aria-label="Merge into"
+                value={mergeInto}
+                onChange={(e) => setMergeInto(e.target.value)}
+              >
+                <option value="">— category to keep —</option>
+                {(cats.data ?? [])
+                  .filter((x) => x.id !== c.id)
+                  .map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+              </select>
+              <button
+                className="btn-primary h-8 px-3"
+                disabled={!mergeInto || merge.isPending}
+                onClick={() => merge.mutate({ id: c.id, into: mergeInto })}
+              >
+                {merge.isPending ? "Merging…" : "Merge"}
+              </button>
+              <button className="btn-ghost h-8 px-3" onClick={() => setMergeFrom(null)}>
+                Cancel
+              </button>
+            </div>
+          )}
           {taxOpen === c.id && <TaxPanel cat={c} onChanged={invalidate} />}
           </div>
         ))}

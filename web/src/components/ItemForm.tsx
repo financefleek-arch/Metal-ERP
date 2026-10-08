@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useVocab } from "../lib/reference";
@@ -7,6 +8,7 @@ import type { Item, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
 import { ItemPhoto } from "./ItemPhoto";
 import { ItemSourcesBlock } from "./ItemSourcesBlock";
+import { DuplicateItemDialog, MergeItemDialog } from "./ItemMergeDuplicate";
 import { AVAILABILITY } from "../lib/items";
 
 type Fields = { [k: string]: string };
@@ -89,14 +91,18 @@ type SaveState = "clean" | "dirty" | "saving" | "saved" | "error";
 
 export function ItemForm({
   item,
+  writable = true,
   onChanged,
   onDeleted,
 }: {
   item: Item;
+  writable?: boolean;
   onChanged: () => void;
   onDeleted: () => void;
 }) {
   const qc = useQueryClient();
+  const nav = useNavigate();
+  const [dialog, setDialog] = useState<"merge" | "copy" | null>(null);
   const [v, setV] = useState<Fields>(() => toFields(item));
   const [saveState, setSaveState] = useState<SaveState>("clean");
   const [err, setErr] = useState<string | null>(null);
@@ -141,9 +147,14 @@ export function ItemForm({
   });
 
   const act = useMutation({
-    mutationFn: async (kind: "confirm" | "delete") => {
+    mutationFn: async (kind: "confirm" | "delete" | "archive" | "restore") => {
       if (kind === "delete") await api<void>(`/items/${item.id}`, { method: "DELETE" });
-      else await api<Item>(`/items/${item.id}/confirm`, { method: "POST" });
+      else if (kind === "confirm") await api<Item>(`/items/${item.id}/confirm`, { method: "POST" });
+      else
+        await api<Item>(`/items/${item.id}`, {
+          method: "PATCH",
+          body: { status: kind === "archive" ? "archived" : "confirmed" },
+        });
     },
     onSuccess: (_d, kind) => {
       qc.invalidateQueries({ queryKey: ["items"] });
@@ -209,6 +220,8 @@ export function ItemForm({
                   ? "from a supplier price list"
                   : "added manually"}
             {` · billed ${item.times_billed}×`}
+            {item.document_count > 0 &&
+              ` · on ${item.document_count} document${item.document_count === 1 ? "" : "s"}`}
             {item.last_purchase_rate != null &&
               ` · last purchased ₹${item.last_purchase_rate}`}
             {" · "}
@@ -221,6 +234,7 @@ export function ItemForm({
             )}
           </p>
         </div>
+        {writable && (
         <div className="relative">
           <button
             className="rounded-md border border-line bg-card px-2 py-1 text-sm text-muted hover:text-ink"
@@ -230,8 +244,8 @@ export function ItemForm({
             ⋯
           </button>
           {menuOpen && (
-            <div className="absolute right-0 z-10 mt-1 min-w-[180px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-line bg-card shadow-xl">
-              {item.status !== "confirmed" && (
+            <div className="absolute right-0 z-10 mt-1 min-w-[200px] max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-line bg-card shadow-xl">
+              {item.status !== "confirmed" && item.status !== "archived" && (
                 <button
                   className="block w-full px-3 py-2 text-left text-xs hover:bg-ground"
                   onClick={() => {
@@ -240,6 +254,52 @@ export function ItemForm({
                   }}
                 >
                   Confirm
+                </button>
+              )}
+              <button
+                className="block w-full px-3 py-2 text-left text-xs hover:bg-ground"
+                onClick={() => {
+                  setMenuOpen(false);
+                  setDialog("copy");
+                }}
+              >
+                Copy this item…
+              </button>
+              {!item.merged_into_id && (
+                <button
+                  className="block w-full px-3 py-2 text-left text-xs hover:bg-ground"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setDialog("merge");
+                  }}
+                >
+                  Merge into another item…
+                </button>
+              )}
+              {item.status === "archived" ? (
+                <button
+                  className="block w-full px-3 py-2 text-left text-xs hover:bg-ground"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    act.mutate("restore");
+                  }}
+                >
+                  Restore from archive
+                </button>
+              ) : (
+                <button
+                  className="block w-full px-3 py-2 text-left text-xs hover:bg-ground"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (
+                      confirm(
+                        `Archive "${item.name}"? It leaves the list, new invoices and customer catalogs. Past invoices keep it.`,
+                      )
+                    )
+                      act.mutate("archive");
+                  }}
+                >
+                  Archive
                 </button>
               )}
               <button
@@ -256,7 +316,18 @@ export function ItemForm({
             </div>
           )}
         </div>
+        )}
       </div>
+      {item.merged_into_id && (
+        <p className="rounded-lg border border-line bg-ground px-3 py-2 text-xs text-muted">
+          This item was merged into another one and is hidden from lists.{" "}
+          <button className="text-accent underline" onClick={() => nav(`/items/${item.merged_into_id}`)}>
+            Open the item it was merged into
+          </button>
+        </p>
+      )}
+      {dialog === "merge" && <MergeItemDialog item={item} onClose={() => setDialog(null)} />}
+      {dialog === "copy" && <DuplicateItemDialog item={item} onClose={() => setDialog(null)} />}
 
       {/* Identity */}
       <Section title="Identity">

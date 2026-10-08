@@ -5,8 +5,17 @@ import { api, apiPage, getToken } from "../lib/api";
 import { useDebounced } from "../lib/useDebounced";
 import { useIsDesktop } from "../lib/useIsDesktop";
 import { uomDisplay } from "../lib/uom";
+import { canWrite } from "../lib/roles";
 import { AVAILABILITY, availabilityLabel, availabilityTone, tallyBadge } from "../lib/items";
-import type { Availability, Item, ItemFilter, ItemListItem } from "../lib/types";
+import { groupNode, type NodeAction, type TreeNodeSel } from "../lib/itemNodes";
+import type {
+  Availability,
+  GroupOut,
+  Item,
+  ItemCategoryRow,
+  ItemFilter,
+  ItemListItem,
+} from "../lib/types";
 
 const PAGE_SIZE = 50;
 import { ItemForm } from "../components/ItemForm";
@@ -25,11 +34,10 @@ import { MakeCatalogDialog } from "../components/catalog/MakeCatalogDialog";
 import { SelectionBar } from "../components/bulk/SelectionBar";
 import { BulkPanel, type BulkMode } from "../components/bulk/BulkPanel";
 
-type Scope = "" | "bulk" | "mrp" | "unconfirmed" | "no_hsn" | "price_review" | "archived";
+type Scope = "bulk" | "mrp" | "unconfirmed" | "no_hsn" | "price_review" | "archived";
 type View = "tree" | "flat";
 
 const FILTERS: { key: Scope; label: string }[] = [
-  { key: "", label: "All" },
   { key: "bulk", label: "⚖ BULK" },
   { key: "mrp", label: "📦 MRP" },
   { key: "unconfirmed", label: "Unconfirmed" },
@@ -37,6 +45,14 @@ const FILTERS: { key: Scope; label: string }[] = [
   { key: "price_review", label: "Price review" },
   { key: "archived", label: "Archived" },
 ];
+/** Chips that cannot both be on: BULK or MRP, Unconfirmed or Archived. The rest combine freely. */
+const EXCLUSIVE: Scope[][] = [
+  ["bulk", "mrp"],
+  ["unconfirmed", "archived"],
+];
+
+const NO_CATEGORY = "__none__";
+const NO_GROUP = "__loose__";
 
 function buildQuery(f: ItemFilter, cursor?: string | null) {
   const p = new URLSearchParams();
@@ -51,6 +67,10 @@ function buildQuery(f: ItemFilter, cursor?: string | null) {
   if (f.tally_price_due) p.set("tally_price_due", "true");
   if (f.catalog_id) p.set("catalog_id", f.catalog_id);
   if (f.supplier_id) p.set("supplier_id", f.supplier_id);
+  if (f.group_id) p.set("group_id", f.group_id);
+  if (f.category_id) p.set("category_id", f.category_id);
+  if (f.uncategorised) p.set("uncategorised", "true");
+  if (f.ungrouped) p.set("ungrouped", "true");
   // Server caps a search result and doesn't page it; page only the browse list.
   if (!f.q?.trim()) {
     p.set("limit", String(PAGE_SIZE));
@@ -101,9 +121,10 @@ export function ItemsPage() {
   const selectedId = isNew || isBulk || groupId ? null : (id ?? null);
   const [params, setParams] = useSearchParams();
   const catalogId = params.get("catalog");
+  const supplierId = params.get("supplier");
 
   const [view, setView] = useState<View>(
-    catalogId || params.get("avail") ? "flat" : "tree",
+    catalogId || supplierId || params.get("avail") ? "flat" : "tree",
   );
   const [avail, setAvail] = useState<Availability[]>(
     () => (params.get("avail")?.split(",").filter(Boolean) ?? []) as Availability[],
@@ -121,31 +142,53 @@ export function ItemsPage() {
   const [shareOpen, setShareOpen] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const { me } = useAuth();
+  const writable = canWrite(me?.role);
+  const catalogModule = !!me?.ext_supplier_catalog;
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
-  const [scope, setScope] = useState<Scope>("");
+  const [scopes, setScopes] = useState<Set<Scope>>(new Set());
+  const [catSel, setCatSel] = useState("");
+  const [grpSel, setGrpSel] = useState("");
   const isDesktop = useIsDesktop();
+
+  function toggleScope(k: Scope) {
+    const next = new Set(scopes);
+    if (next.has(k)) next.delete(k);
+    else {
+      for (const grp of EXCLUSIVE) if (grp.includes(k)) for (const o of grp) next.delete(o);
+      next.add(k);
+    }
+    setScopes(next);
+  }
 
   // the one description of "which items" shared by the list, the counts and every bulk action
   const itemFilter: ItemFilter = useMemo(
     () => ({
       q: dq || undefined,
-      type: scope === "bulk" || scope === "mrp" ? scope : undefined,
-      status: scope === "unconfirmed" || scope === "archived" ? scope : undefined,
-      no_hsn: scope === "no_hsn" || undefined,
-      price_review: scope === "price_review" || undefined,
+      type: scopes.has("bulk") ? "bulk" : scopes.has("mrp") ? "mrp" : undefined,
+      status: scopes.has("archived") ? "archived" : scopes.has("unconfirmed") ? "unconfirmed" : undefined,
+      no_hsn: scopes.has("no_hsn") || undefined,
+      price_review: scopes.has("price_review") || undefined,
       availability: avail.length ? avail : undefined,
       no_photo: noPhoto || undefined,
       in_tally: notInTally ? false : undefined,
       tally_price_due: tallyDue || undefined,
       catalog_id: catalogId ?? undefined,
+      supplier_id: supplierId ?? undefined,
+      group_id: grpSel && grpSel !== NO_GROUP ? grpSel : undefined,
+      category_id: catSel && catSel !== NO_CATEGORY ? catSel : undefined,
+      uncategorised: catSel === NO_CATEGORY || undefined,
+      ungrouped: grpSel === NO_GROUP || undefined,
     }),
-    [dq, scope, avail, noPhoto, notInTally, tallyDue, catalogId],
+    [dq, scopes, avail, noPhoto, notInTally, tallyDue, catalogId, supplierId, catSel, grpSel],
   );
   const filterKey = JSON.stringify(itemFilter);
 
-  // --- bulk selection (flat view only) ---
+  // --- bulk selection: ticked rows (flat or tree), or one whole tree node ---
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [node, setNode] = useState<TreeNodeSel | null>(null);
+  /** a node picked from a menu is only for that one action; a ticked node stays until cleared */
+  const transientNode = useRef(false);
   const [bulkMode, setBulkMode] = useState<BulkMode | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -173,12 +216,33 @@ export function ItemsPage() {
     if (selectedId && detail.isError) nav("/items", { replace: true });
   }, [selectedId, detail.isError, nav]);
 
-  // selection is ephemeral — drop it whenever the result set or view changes
+  // a new set of filters means a new list: drop what was ticked in the old one
+  const viewRef = useRef(view);
+  viewRef.current = view;
   useEffect(() => {
+    if (viewRef.current !== "flat") return;
     setSelected(new Set());
     setAllMatching(false);
     setBulkMode(null);
-  }, [filterKey, view]);
+  }, [filterKey]);
+  // ticks and a picked tree node carry across Tree and Flat; only the "all matching" mode cannot
+  useEffect(() => {
+    setAllMatching(false);
+  }, [view]);
+
+  const categories = useQuery({
+    queryKey: ["item-categories"],
+    queryFn: () => api<ItemCategoryRow[]>("/item-categories"),
+    enabled: view === "flat",
+  });
+  const groups = useQuery({
+    queryKey: ["item-groups", catSel && catSel !== NO_CATEGORY ? catSel : ""],
+    queryFn: () =>
+      api<GroupOut[]>(
+        `/item-groups${catSel && catSel !== NO_CATEGORY ? `?category_id=${catSel}` : ""}`,
+      ),
+    enabled: view === "flat",
+  });
 
   // chip counts (availability, no photo, not in Tally), scoped to the price list when one is open
   const counts = useQuery({
@@ -210,20 +274,24 @@ export function ItemsPage() {
       };
     },
   });
-  // how many items the current filter matches, for "select all N matching"
-  const matching = useQuery({
-    queryKey: ["item-matching", filterKey],
-    enabled: view === "flat" && selected.size > 0,
-    queryFn: () =>
-      api<{ count: number }>("/items/count", { method: "POST", body: itemFilter }).then(
-        (r) => r.count,
-      ),
-  });
 
   const rows = useMemo(
     () => list.data?.pages.flatMap((p) => p.data) ?? [],
     [list.data],
   );
+  const hasSelection = node != null || selected.size > 0;
+
+  // how many items the current filter (or the picked tree node) matches
+  const countFilter = node ? node.filter : itemFilter;
+  const matching = useQuery({
+    queryKey: ["item-matching", JSON.stringify(countFilter)],
+    enabled: (view === "flat" && rows.length > 0) || node != null,
+    queryFn: () =>
+      api<{ count: number }>("/items/count", { method: "POST", body: countFilter }).then(
+        (r) => r.count,
+      ),
+  });
+
   const selectedRows = useMemo(
     () => rows.filter((r) => selected.has(r.id)),
     [rows, selected],
@@ -232,6 +300,7 @@ export function ItemsPage() {
 
   function toggleRow(rid: string, e?: React.MouseEvent) {
     setFlash(null);
+    setNode(null);
     const next = new Set(selected);
     if (e?.shiftKey && lastClicked != null) {
       const a = rows.findIndex((r) => r.id === lastClicked);
@@ -247,17 +316,53 @@ export function ItemsPage() {
   }
   const [lastClicked, setLastClicked] = useState<string | null>(null);
 
+  /** a leaf ticked in the tree: ticks one item, and drops any whole-node selection */
+  function toggleLeaf(rid: string) {
+    setFlash(null);
+    setNode(null);
+    setAllMatching(false);
+    const next = new Set(selected);
+    if (next.has(rid)) next.delete(rid);
+    else next.add(rid);
+    setSelected(next);
+  }
+  function pickNode(n: TreeNodeSel | null) {
+    setFlash(null);
+    setSelected(new Set());
+    setAllMatching(false);
+    transientNode.current = false;
+    setNode(n);
+  }
+  function clearSelection() {
+    setSelected(new Set());
+    setAllMatching(false);
+    setBulkMode(null);
+    setNode(null);
+    transientNode.current = false;
+  }
+  /** a menu action on a node is over: forget the node it picked */
+  function endNodeAction() {
+    if (transientNode.current) {
+      transientNode.current = false;
+      setNode(null);
+    }
+  }
+
   function openBulk(mode: BulkMode) {
     setBulkMode(mode);
     if (!isDesktop) nav("/items/bulk");
   }
   function closeBulk() {
     setBulkMode(null);
+    endNodeAction();
     if (isBulk) nav("/items");
   }
   function bulkDone(summary: string) {
     setBulkMode(null);
     setSelected(new Set());
+    setAllMatching(false);
+    setNode(null);
+    transientNode.current = false;
     setFlash(summary);
     list.refetch();
     if (isBulk) nav("/items");
@@ -265,13 +370,62 @@ export function ItemsPage() {
 
   const bulkIds = useMemo(() => [...selected], [selected]);
 
+  /** what the dialogs and bulk panel act on */
+  const effFilter: ItemFilter | undefined = node ? node.filter : allMatching ? itemFilter : undefined;
+  const selection = effFilter ? { filter: effFilter } : { ids: bulkIds };
+  const selectedCount = node
+    ? (matching.data ?? node.count)
+    : allMatching
+      ? (matching.data ?? selected.size)
+      : selected.size;
+
+  /** a menu on a tree row (or the group page): select that node for one action and start it */
+  function nodeAction(n: TreeNodeSel, action: NodeAction) {
+    setFlash(null);
+    setSelected(new Set());
+    setAllMatching(false);
+    transientNode.current = true;
+    setNode(n);
+    switch (action) {
+      case "catalog":
+        return setCatalogOpen(true);
+      case "share":
+        return setShareOpen(true);
+      case "labels":
+        return setLabelsOpen(true);
+      case "tally":
+        return setTallyOpen(true);
+      case "availability":
+        return openBulk("availability");
+      case "price":
+        return openBulk("price");
+      case "fields":
+        return openBulk("fields");
+      case "move":
+        return openBulk("category");
+      case "rename":
+        return openBulk("rename");
+      case "archive":
+        return openBulk("archive");
+      case "export":
+        void exportSheet({ filter: n.filter });
+        transientNode.current = false;
+        return setNode(null);
+    }
+  }
+
   // Export what is ticked, else everything the current filters show, as an .xlsx download.
-  async function exportSheet() {
+  async function exportSheet(override?: { filter: ItemFilter }) {
     setExportErr(null);
     try {
       const t = getToken();
-      const body =
-        selected.size > 0 && !allMatching ? { ids: bulkIds } : { filter: view === "flat" ? itemFilter : {} };
+      const body = override
+        ? override
+        : node
+          ? { filter: node.filter }
+          : selected.size > 0 && !allMatching
+            ? { ids: bulkIds }
+            : { filter: view === "flat" ? itemFilter : {} };
       const res = await fetch("/api/item-sheet/export", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(t ? { Authorization: `Bearer ${t}` } : {}) },
@@ -291,47 +445,71 @@ export function ItemsPage() {
       setExportErr(e instanceof Error ? e.message : "Could not export.");
     }
   }
-  const selectedCount = allMatching ? (matching.data ?? selected.size) : selected.size;
   const showBulkInDetail = bulkMode != null && (isDesktop || isBulk);
+  const exportLabel = hasSelection
+    ? `Export ${selectedCount}`
+    : view === "flat" && matching.data != null
+      ? `Export ${matching.data}`
+      : "Export all";
+  const exportTitle = hasSelection
+    ? "Download the selected items as an Excel sheet"
+    : view === "flat"
+      ? "Download everything the filters below show as an Excel sheet"
+      : "Download every item as an Excel sheet";
+
+  const onClosedDialog = () => endNodeAction();
 
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-5xl flex-col rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
+    <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-7xl flex-col rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
       {/* rail */}
       <div
         className={`${
           showRailPane ? "flex" : "hidden"
-        } w-full shrink-0 flex-col border-b border-line bg-ground md:flex md:w-[320px] md:border-b-0 md:border-r`}
+        } w-full shrink-0 flex-col border-b border-line bg-ground md:flex md:w-[340px] md:border-b-0 md:border-r`}
       >
         <div className="flex flex-col gap-2 border-b border-line p-3">
           <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
             <span className="text-sm font-semibold">Items</span>
-            <div className="flex flex-wrap gap-1.5 [&_a]:whitespace-nowrap [&_button]:whitespace-nowrap">
-              <ImportMenu
-                onSheet={() => setSheetOpen(true)}
-                onExport={() => void exportSheet()}
-              />
+            <div className="flex flex-wrap items-center gap-1.5 [&_a]:whitespace-nowrap [&_button]:whitespace-nowrap">
+              {writable && (
+                <HeaderMenu
+                  label="Import"
+                  entries={[
+                    { label: "From a supplier price list", onClick: () => nav("/documents") },
+                    { label: "From a supplier bill", onClick: () => nav("/documents") },
+                    { label: "From Tally (stock items XML)", onClick: () => nav("/items/import") },
+                    { label: "Add one by hand", onClick: () => nav("/items/new") },
+                    "sep",
+                    { label: "Update from Excel…", onClick: () => setSheetOpen(true) },
+                  ]}
+                />
+              )}
               <button
                 className="btn-ghost h-7 px-2.5 text-xs"
-                title="Add photos to many items at once"
-                onClick={() => setPhotosOpen(true)}
+                title={exportTitle}
+                onClick={() => void exportSheet()}
               >
-                Photos
+                {exportLabel}
               </button>
-              <button
-                className="btn-ghost h-7 px-2.5 text-xs"
-                title="Go through the items that have no photo, one at a time"
-                onClick={() => setQueueOpen(true)}
-              >
-                Photo queue
-              </button>
-              {me?.ext_supplier_catalog && (
+              {writable && (
+                <HeaderMenu
+                  label="Photos"
+                  entries={[
+                    { label: "Add photos to many items", onClick: () => setPhotosOpen(true) },
+                    { label: "Photo queue (items with no photo)", onClick: () => setQueueOpen(true) },
+                  ]}
+                />
+              )}
+              {catalogModule && (
                 <Link to="/items/catalogs" className="btn-ghost h-7 px-2.5 text-xs">
                   Catalogs
                 </Link>
               )}
-              <button className="btn-primary h-7 px-3 text-xs" onClick={() => nav("/items/new")}>
-                + New
-              </button>
+              {writable && (
+                <button className="btn-primary h-7 px-3 text-xs" onClick={() => nav("/items/new")}>
+                  + New
+                </button>
+              )}
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5 md:gap-1">
@@ -363,13 +541,58 @@ export function ItemsPage() {
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
               />
+              <div className="flex gap-1.5">
+                <select
+                  className="field h-8 min-w-0 flex-1 text-xs"
+                  aria-label="Category"
+                  value={catSel}
+                  onChange={(e) => {
+                    setCatSel(e.target.value);
+                    setGrpSel("");
+                  }}
+                >
+                  <option value="">All categories</option>
+                  <option value={NO_CATEGORY}>Uncategorised</option>
+                  {(categories.data ?? []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="field h-8 min-w-0 flex-1 text-xs"
+                  aria-label="Group"
+                  value={grpSel}
+                  onChange={(e) => setGrpSel(e.target.value)}
+                >
+                  <option value="">All groups</option>
+                  <option value={NO_GROUP}>Ungrouped</option>
+                  {(groups.data ?? []).map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div className="flex flex-wrap gap-1.5 md:gap-1">
+                <button
+                  onClick={() => setScopes(new Set())}
+                  aria-pressed={scopes.size === 0}
+                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                    scopes.size === 0
+                      ? "border-ink bg-ink text-ground"
+                      : "border-line bg-card text-muted hover:bg-ground"
+                  }`}
+                >
+                  All
+                </button>
                 {FILTERS.map((f) => (
                   <button
                     key={f.key}
-                    onClick={() => setScope(f.key)}
+                    aria-pressed={scopes.has(f.key)}
+                    onClick={() => toggleScope(f.key)}
                     className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
-                      scope === f.key
+                      scopes.has(f.key)
                         ? "border-ink bg-ink text-ground"
                         : "border-line bg-card text-muted hover:bg-ground"
                     }`}
@@ -432,17 +655,26 @@ export function ItemsPage() {
                   {counts.data && <span className="ml-1 tabular-nums opacity-70">{counts.data.tally_due}</span>}
                 </button>
                 {catalogId && (
-                  <button
-                    className="rounded-full border border-accent bg-accent-soft px-3 py-1 text-xs text-accent md:px-2.5 md:py-0.5 md:text-[10px]"
+                  <LinkChip
+                    label="From a price list"
                     title="Showing only the items from this price list. Click to show all."
-                    onClick={() => {
+                    onClear={() => {
                       const next = new URLSearchParams(params);
                       next.delete("catalog");
                       setParams(next, { replace: true });
                     }}
-                  >
-                    From a price list ✕
-                  </button>
+                  />
+                )}
+                {supplierId && (
+                  <LinkChip
+                    label="From one supplier"
+                    title="Showing only the items that came from this supplier. Click to show all."
+                    onClear={() => {
+                      const next = new URLSearchParams(params);
+                      next.delete("supplier");
+                      setParams(next, { replace: true });
+                    }}
+                  />
                 )}
               </div>
             </>
@@ -450,36 +682,38 @@ export function ItemsPage() {
         </div>
 
         {/* selection bar sits above the rows (or sticky-bottom on mobile) */}
-        {view === "flat" && selected.size > 0 && (
+        {writable && hasSelection && (
           <div className="md:static md:order-none">
             <SelectionBar
-              count={selected.size}
-              matching={matching.data ?? null}
+              count={selectedCount}
+              label={node?.label ?? null}
+              matching={view === "flat" ? (matching.data ?? null) : null}
               allMatching={allMatching}
+              showRestore={scopes.has("archived")}
               onEditFields={() => openBulk("fields")}
               onRename={() => openBulk("rename")}
               onSetAvailability={() => openBulk("availability")}
               onMoveCategory={() => openBulk("category")}
+              onChangePrice={() => openBulk("price")}
+              onConfirm={() => openBulk("confirm")}
+              onArchive={() => openBulk("archive")}
+              onRestore={() => openBulk("restore")}
               onDelete={() => openBulk("delete")}
-              onShareLink={me?.ext_supplier_catalog ? () => setShareOpen(true) : undefined}
-              onSendToTally={me?.ext_supplier_catalog ? () => setTallyOpen(true) : undefined}
-              onPrintLabels={me?.ext_supplier_catalog ? () => setLabelsOpen(true) : undefined}
-              onMakeCatalog={me?.ext_supplier_catalog ? () => setCatalogOpen(true) : undefined}
+              onShareLink={catalogModule ? () => setShareOpen(true) : undefined}
+              onSendToTally={catalogModule ? () => setTallyOpen(true) : undefined}
+              onPrintLabels={catalogModule ? () => setLabelsOpen(true) : undefined}
+              onMakeCatalog={catalogModule ? () => setCatalogOpen(true) : undefined}
               onSelectAllMatching={() => {
                 setSelected(new Set(rows.map((r) => r.id)));
                 setAllMatching(true);
               }}
-              onClear={() => {
-                setSelected(new Set());
-                setAllMatching(false);
-                setBulkMode(null);
-              }}
+              onClear={clearSelection}
             />
           </div>
         )}
 
         <div className="flex-1 overflow-y-auto">
-          {flash && view === "flat" && (
+          {flash && (
             <div className="border-b border-line bg-accent-soft px-3 py-2 text-[11px] font-medium text-accent-dark">
               ✓ {flash}
             </div>
@@ -492,26 +726,52 @@ export function ItemsPage() {
           )}
 
           {view === "tree" ? (
-            <ItemTree selectedItemId={selectedId} selectedGroupId={groupId ?? null} />
+            <ItemTree
+              selectedItemId={selectedId}
+              selectedGroupId={groupId ?? null}
+              writable={writable}
+              catalogModule={catalogModule}
+              selectedIds={selected}
+              onToggleLeaf={toggleLeaf}
+              nodeKey={node && !transientNode.current ? node.key : null}
+              onPickNode={pickNode}
+              onNodeAction={nodeAction}
+            />
           ) : (
             <>
               {list.isLoading && <div className="px-3 py-6 text-xs text-muted">Loading…</div>}
-              {!list.isLoading && rows.length > 0 && (
-                <label className="flex items-center gap-2 border-b border-line px-3 py-2 text-[11px] text-muted">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-[color:theme(colors.accent.DEFAULT)]"
-                    checked={allLoadedSelected}
-                    onChange={(e) =>
-                      setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set())
-                    }
-                  />
-                  Select all {rows.length} shown
-                </label>
+              {!list.isLoading && rows.length > 0 && writable && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-2 text-[11px] text-muted">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[color:theme(colors.accent.DEFAULT)]"
+                      checked={allLoadedSelected}
+                      onChange={(e) => {
+                        setNode(null);
+                        setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set());
+                        if (!e.target.checked) setAllMatching(false);
+                      }}
+                    />
+                    Select all {rows.length} shown
+                  </label>
+                  {matching.data != null && matching.data > rows.length && !allMatching && (
+                    <button
+                      className="text-accent underline underline-offset-2"
+                      onClick={() => {
+                        setNode(null);
+                        setSelected(new Set(rows.map((r) => r.id)));
+                        setAllMatching(true);
+                      }}
+                    >
+                      Select all {matching.data} matching
+                    </button>
+                  )}
+                </div>
               )}
               {!list.isLoading && rows.length === 0 && !isNew && (
                 <div className="px-3 py-8 text-center text-xs text-muted">
-                  {dq || scope ? "No matches." : "No items yet."}
+                  {dq || scopes.size || catSel || grpSel ? "No matches." : "No items yet."}
                 </div>
               )}
               {rows.map((it) => {
@@ -527,13 +787,16 @@ export function ItemsPage() {
                           : "hover:bg-accent-soft"
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-[color:theme(colors.accent.DEFAULT)] md:opacity-60 md:hover:opacity-100"
-                      checked={isSel}
-                      onClick={(e) => toggleRow(it.id, e)}
-                      onChange={() => {}}
-                    />
+                    {writable && (
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-4 w-4 shrink-0 accent-[color:theme(colors.accent.DEFAULT)] md:opacity-60 md:hover:opacity-100"
+                        aria-label={`Select ${it.name}`}
+                        checked={isSel}
+                        onClick={(e) => toggleRow(it.id, e)}
+                        onChange={() => {}}
+                      />
+                    )}
                     {it.thumb_url && (
                       <img
                         src={it.thumb_url}
@@ -578,6 +841,11 @@ export function ItemsPage() {
                         {it.status === "unconfirmed" && (
                           <span className="ml-auto shrink-0 rounded-sm bg-[#f1e7d6] px-1 py-0.5 text-[8px] font-bold uppercase text-warn">
                             unconfirmed
+                          </span>
+                        )}
+                        {it.status === "archived" && (
+                          <span className="ml-auto shrink-0 rounded-sm bg-[#efe9df] px-1 py-0.5 text-[8px] font-bold uppercase text-muted">
+                            archived
                           </span>
                         )}
                         {it.status === "confirmed" && !it.hsn_code && (
@@ -630,8 +898,8 @@ export function ItemsPage() {
             <BulkPanel
               mode={bulkMode}
               ids={bulkIds}
-              filter={allMatching ? itemFilter : undefined}
-              total={allMatching ? selectedCount : undefined}
+              filter={effFilter}
+              total={effFilter ? selectedCount : undefined}
               items={selectedRows}
               onClose={closeBulk}
               onDone={bulkDone}
@@ -639,13 +907,21 @@ export function ItemsPage() {
           ) : isCats ? (
             <CategoryManager onClose={() => nav("/items")} />
           ) : groupId ? (
-            <GroupForm key={groupId} groupId={groupId} />
+            <GroupForm
+              key={groupId}
+              groupId={groupId}
+              writable={writable}
+              catalogModule={catalogModule}
+              onAction={(g, a) => nodeAction(groupNode(g.id, g.name, g.item_count), a)}
+            />
           ) : isNew ? (
             <NewItemForm onCreated={(it) => nav(`/items/${it.id}`)} onCancel={() => nav("/items")} />
-          ) : selected.size > 0 && isDesktop ? (
+          ) : hasSelection && isDesktop && !selectedId ? (
             <div className="grid h-full place-items-center px-6 text-center text-sm text-muted">
-              {selected.size} item{selected.size === 1 ? "" : "s"} selected — choose an action in the
-              bar on the left.
+              {node
+                ? `${node.label} — ${selectedCount} item${selectedCount === 1 ? "" : "s"} selected`
+                : `${selectedCount} item${selectedCount === 1 ? "" : "s"} selected`}
+              . Choose an action in the bar on the left.
             </div>
           ) : !selectedId ? (
             <div className="grid h-full place-items-center text-sm text-muted">
@@ -657,6 +933,7 @@ export function ItemsPage() {
             <ItemForm
               key={detail.data.id}
               item={detail.data}
+              writable={writable}
               onChanged={() => detail.refetch()}
               onDeleted={() => nav("/items")}
             />
@@ -668,9 +945,12 @@ export function ItemsPage() {
       {photosOpen && <PhotoBulkDialog onClose={() => setPhotosOpen(false)} />}
       {shareOpen && (
         <ShareLinkDialog
-          selection={allMatching ? { filter: itemFilter } : { ids: bulkIds }}
+          selection={selection}
           count={selectedCount}
-          onClose={() => setShareOpen(false)}
+          onClose={() => {
+            setShareOpen(false);
+            onClosedDialog();
+          }}
         />
       )}
       {queueOpen && <PhotoQueueDialog filter={itemFilter} onClose={() => setQueueOpen(false)} />}
@@ -682,43 +962,58 @@ export function ItemsPage() {
       )}
       {tallyOpen && (
         <TallyDialog
-          selection={allMatching ? { filter: itemFilter } : { ids: bulkIds }}
+          selection={selection}
           count={selectedCount}
           onClose={() => {
             setTallyOpen(false);
+            onClosedDialog();
             list.refetch();
           }}
         />
       )}
       {labelsOpen && (
         <LabelsDialog
-          selection={allMatching ? { filter: itemFilter } : { ids: bulkIds }}
+          selection={selection}
           count={selectedCount}
           onClose={() => {
             setLabelsOpen(false);
+            onClosedDialog();
             list.refetch(); // items may have been given codes
           }}
         />
       )}
       {catalogOpen && (
         <MakeCatalogDialog
-          selection={allMatching ? { filter: itemFilter } : { ids: bulkIds }}
+          selection={selection}
           count={selectedCount}
-          onClose={() => setCatalogOpen(false)}
+          onClose={() => {
+            setCatalogOpen(false);
+            onClosedDialog();
+          }}
         />
       )}
     </div>
   );
 }
 
-/** "Import items": the places items come from, in one menu. */
-function ImportMenu({ onSheet, onExport }: { onSheet: () => void; onExport: () => void }) {
-  const nav = useNavigate();
+/** A removable chip for a filter that arrives from another page (a price list, a supplier). */
+function LinkChip({ label, title, onClear }: { label: string; title: string; onClear: () => void }) {
+  return (
+    <button
+      className="rounded-full border border-accent bg-accent-soft px-3 py-1 text-xs text-accent md:px-2.5 md:py-0.5 md:text-[10px]"
+      title={title}
+      onClick={onClear}
+    >
+      {label} ✕
+    </button>
+  );
+}
+
+type MenuEntry = { label: string; onClick: () => void } | "sep";
+
+/** A small header dropdown: "Import ▾", "Photos ▾". */
+function HeaderMenu({ label, entries }: { label: string; entries: MenuEntry[] }) {
   const [open, setOpen] = useState(false);
-  const go = (to: string) => {
-    setOpen(false);
-    nav(to);
-  };
   return (
     <div className="relative">
       <button
@@ -728,52 +1023,31 @@ function ImportMenu({ onSheet, onExport }: { onSheet: () => void; onExport: () =
         onClick={() => setOpen((o) => !o)}
         onBlur={() => window.setTimeout(() => setOpen(false), 150)}
       >
-        Import ▾
+        {label} ▾
       </button>
       {open && (
         <div
           role="menu"
           className="absolute left-0 z-20 mt-1 w-max min-w-[220px] max-w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-line bg-card text-xs shadow-xl"
         >
-          {[
-            ["From a supplier price list", "/documents"],
-            ["From a supplier bill", "/documents"],
-            ["From Tally (stock items XML)", "/items/import"],
-            ["Add one by hand", "/items/new"],
-          ].map(([label, to]) => (
-            <button
-              key={to}
-              role="menuitem"
-              className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => go(to)}
-            >
-              {label}
-            </button>
-          ))}
-          <div className="border-t border-line" />
-          <button
-            role="menuitem"
-            className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setOpen(false);
-              onSheet();
-            }}
-          >
-            Update from Excel…
-          </button>
-          <button
-            role="menuitem"
-            className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={() => {
-              setOpen(false);
-              onExport();
-            }}
-          >
-            Export to Excel
-          </button>
+          {entries.map((e, i) =>
+            e === "sep" ? (
+              <div key={i} className="border-t border-line" />
+            ) : (
+              <button
+                key={e.label}
+                role="menuitem"
+                className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
+                onMouseDown={(ev) => ev.preventDefault()}
+                onClick={() => {
+                  setOpen(false);
+                  e.onClick();
+                }}
+              >
+                {e.label}
+              </button>
+            ),
+          )}
         </div>
       )}
     </div>

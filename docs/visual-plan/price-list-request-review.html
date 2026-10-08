@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Price list on request: visual review</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+  .serif { font-family: 'Fraunces', Georgia, serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+  h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 38px 0 4px; }
+  p.lead { font-size: 14px; color: #6f685b; margin: 0 0 18px; max-width: 860px; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .cap { font-size: 12px; color: #8a8272; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+  .note { font-size: 12.5px; color: #6f685b; max-width: 330px; line-height: 1.5; margin-top: 10px; }
+  .note b { color: #23201b; }
+  .phone { width: 330px; border: 10px solid #23201b; border-radius: 34px; background: #fff; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .ph-bar { background: #23201b; color: #f4f1ec; padding: 12px 14px; font-size: 13px; display: flex; justify-content: space-between; }
+  .ph-body { padding: 12px; background: #f4f1ec; min-height: 420px; }
+  .btn { display: block; text-align: center; background: #2f6f89; color: #fff; border-radius: 9px; padding: 12px; font-weight: 600; font-size: 14px; }
+  .btn.ghost { background: #fff; color: #2f6f89; border: 1px solid #2f6f89; }
+  .btn.sm { display: inline-block; padding: 7px 12px; font-size: 12.5px; border-radius: 8px; }
+  .field { background: #fff; border: 1px solid #d8d1c4; border-radius: 8px; padding: 10px 11px; font-size: 13px; margin-bottom: 8px; }
+  .field small { display: block; font-size: 10.5px; color: #8a8272; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+  .ok { background: #eef3ee; border: 1px solid #cfe0cf; color: #2f6a3d; border-radius: 9px; padding: 12px; font-size: 13px; line-height: 1.45; }
+  .wa { background: #e7ded0; padding: 12px; min-height: 340px; }
+  .bubble { background: #fff; border-radius: 4px 12px 12px 12px; padding: 8px; font-size: 12.5px; line-height: 1.45; max-width: 94%; box-shadow: 0 1px 1px rgba(0,0,0,.08); }
+  .bubble .doc { background: #f1ede5; border-radius: 8px; padding: 12px; display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .bubble .doc .ic { width: 34px; height: 40px; background: #c9503a; border-radius: 4px; color: #fff; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+  .bubble .tx { padding: 0 3px 2px; }
+  .bubble .tm { text-align: right; font-size: 10px; color: #8a8272; margin-top: 3px; }
+  .desk { width: 700px; max-width: 100%; background: #fff; border: 1px solid #e6e0d6; border-radius: 12px; padding: 18px; }
+  .desk h3 { margin: 0 0 4px; font-size: 16px; }
+  .sub { font-size: 12px; color: #8a8272; line-height: 1.45; }
+  label.l { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; margin: 12px 0 4px; }
+  .sel { background: #fff; border: 1px solid #d8d1c4; border-radius: 8px; padding: 9px 11px; font-size: 13px; display: flex; justify-content: space-between; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; padding: 8px 10px; border-bottom: 1px solid #e6e0d6; font-weight: 500; }
+  td { padding: 9px 10px; border-bottom: 1px solid #f0ebe1; }
+  .tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #e6efe8; color: #3d7a4a; }
+  .usage { background: #faf4ec; border: 1px solid #e8d9bd; color: #6d4f16; border-radius: 8px; padding: 9px 12px; font-size: 12.5px; margin-top: 10px; }
+  .tpl { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 12px 14px; font-size: 12.5px; line-height: 1.55; max-width: 520px; }
+  .tpl .nm { font-family: monospace; font-size: 11.5px; color: #2f6f89; font-weight: 600; }
+  .tpl .cat { font-size: 10.5px; background: #e6efe8; color: #3d7a4a; padding: 1px 7px; border-radius: 999px; margin-left: 6px; }
+  .field-row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; }
+  .inp { background: #fff; border: 1px solid #d8d1c4; border-radius: 8px; padding: 9px 11px; font-size: 13px; width: 120px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="serif">Price list on request</h1>
+  <p class="lead">The PDF goes out only when a customer presses <b>"Send me the price list on WhatsApp"</b> on the catalog page, so the message is a reply to their request. The shop never sends it to a list. It comes from the firm's own WhatsApp number. Mock data and wording, not final.</p>
+
+  <h2 class="serif">1. The customer's side</h2>
+  <div class="row">
+    <div>
+      <p class="cap">Catalog page: new button</p>
+      <div class="phone"><div class="ph-bar"><span>Kumar Steel House</span><span>Cart</span></div>
+        <div class="ph-body">
+          <div class="serif" style="font-size:17px;font-weight:600;margin-bottom:4px">Winter range</div>
+          <div class="sub" style="margin-bottom:12px">86 items &middot; Prices are before GST</div>
+          <div class="btn ghost" style="margin-bottom:12px">Send me the price list on WhatsApp</div>
+          <div style="height:200px;background:repeating-linear-gradient(45deg,#efe9df,#efe9df 8px,#f6f2ea 8px,#f6f2ea 16px);border-radius:10px;display:grid;place-items:center;font-size:12px;color:#8a8272">items grid as today</div>
+        </div>
+      </div>
+      <p class="note">Shown only when the shop attached a PDF to this link. The ordering flow stays exactly as it is.</p>
+    </div>
+    <div>
+      <p class="cap">After pressing it</p>
+      <div class="phone"><div class="ph-bar"><span>Price list</span><span>&#10005;</span></div>
+        <div class="ph-body">
+          <div class="sub" style="margin-bottom:10px;line-height:1.5">We will send the PDF to your WhatsApp. It comes from Kumar Steel House.</div>
+          <div class="field"><small>Your name</small>Ramesh Gupta</div>
+          <div class="field"><small>WhatsApp number</small>98765 43210</div>
+          <div class="btn" style="margin-top:6px">Send it to me</div>
+          <div class="sub" style="margin-top:10px">One message only. It is not added to any list.</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Then</p>
+      <div class="phone"><div class="ph-bar"><span>Price list</span><span></span></div>
+        <div class="ph-body">
+          <div class="ok"><b>On its way.</b> It will arrive from Kumar Steel House on WhatsApp in a minute.</div>
+          <div class="sub" style="margin-top:12px;line-height:1.5">Asked again within a day? "We already sent it to this number. Check your WhatsApp."<br><br>Shop's monthly limit reached? "Please ask Kumar Steel House directly."</div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">What arrives on WhatsApp</p>
+      <div class="phone"><div class="ph-bar"><span>Kumar Steel House</span><span></span></div>
+        <div class="wa">
+          <div class="bubble">
+            <div class="doc"><div class="ic">PDF</div><div><b>Winter range.pdf</b><div class="sub">86 items &middot; 14 pages</div></div></div>
+            <div class="tx">Hi Ramesh, here is the price list you requested from Kumar Steel House. It is attached as a PDF. If you have any questions, just reply to this message.</div>
+            <div class="tm">11:42</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="serif">2. The shop's side</h2>
+  <div class="row">
+    <div>
+      <p class="cap">Share link dialog: choose the PDF</p>
+      <div class="desk" style="width:480px">
+        <h3 class="serif">Share link</h3>
+        <div class="sub">Customers who open it see these items as they are now.</div>
+        <label class="l">PDF price list customers can request (optional)</label>
+        <div class="sel"><span>Winter range, latest version (14 pages)</span><span>&#9662;</span></div>
+        <div class="sub" style="margin-top:6px">They always get the newest version, so rebuilding the catalog updates what is sent. Leave empty to hide the button.</div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Share links panel: requests and monthly count</p>
+      <div class="desk" style="width:640px">
+        <h3 class="serif">Catalog links</h3>
+        <table>
+          <tr><th>Link</th><th>Views</th><th>Orders</th><th>Price lists</th></tr>
+          <tr><td><b>Winter range</b><div class="sub">Opened 3 times today</div></td><td>212</td><td>9</td><td>34 <span class="tag">PDF attached</span></td></tr>
+          <tr><td><b>Pooja items</b></td><td>41</td><td>2</td><td class="sub">No PDF</td></tr>
+        </table>
+        <div class="usage">Price lists sent on WhatsApp this month: <b>34 of 200</b>. WhatsApp may charge for these. Change the limit on the Firm page.</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="serif">3. Firm page: the monthly limit</h2>
+  <div class="desk" style="width:640px">
+    <h3 class="serif">Customer catalog page</h3>
+    <div class="field-row" style="margin-top:8px">
+      <div><label class="l" style="margin-top:0">Minimum order (&#8377;)</label><div class="inp">2000</div></div>
+      <div><label class="l" style="margin-top:0">Price lists per month</label><div class="inp">200</div></div>
+    </div>
+    <div class="sub" style="margin-top:8px">Stops sending price lists for the rest of the month once this many have gone out. Customers are told to ask you directly.</div>
+  </div>
+
+  <h2 class="serif">4. Template to submit to Meta</h2>
+  <div class="tpl">
+    <span class="nm">price_list_requested</span><span class="cat">Utility</span>
+    <div style="margin-top:6px"><b>Language:</b> English &middot; <b>Header:</b> Document (sample: any PDF) &middot; <b>Buttons / Footer:</b> none</div>
+    <div style="margin-top:6px"><b>Body:</b> Hi {{1}}, here is the price list you requested from {{2}}. It is attached as a PDF. If you have any questions, just reply to this message.</div>
+    <div style="margin-top:6px"><b>Samples:</b> {{1}} Ramesh &middot; {{2}} Kumar Steel House</div>
+  </div>
+  <p class="note" style="max-width:700px">The wording says "you requested" only because the customer pressed the button. That is what keeps it honest. If Meta still files it as Marketing, it is still sent and counted, and the monthly limit keeps the cost bounded.</p>
+</div>
+</body>
+</html>

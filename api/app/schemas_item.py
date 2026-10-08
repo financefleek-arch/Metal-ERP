@@ -180,6 +180,12 @@ class ItemFilter(BaseModel):
     # came from this supplier / this supplier catalog
     supplier_id: str | None = None
     catalog_id: str | None = None
+    # where it sits in the tree. The three combine: category + ungrouped is a tree "Ungrouped"
+    # row, uncategorised + ungrouped is the loose bucket of the "Uncategorised" node.
+    group_id: str | None = None
+    category_id: str | None = None
+    uncategorised: bool = False
+    ungrouped: bool = False
 
 
 class ItemCountOut(BaseModel):
@@ -214,6 +220,29 @@ class ItemBulkUpdate(BaseModel):
         missing = chosen - supplied
         if missing:
             raise ValueError(f"enabled but no value given: {', '.join(sorted(missing))}")
+        return self
+
+
+class ItemBulkPrice(BaseModel):
+    """Move the selling rate of many items by a percentage or a fixed amount (use a negative
+    value to lower it), optionally rounded to a step. Items with no rate are left alone."""
+
+    ids: list[str] | None = Field(default=None, min_length=1, max_length=MAX_BULK_IDS)
+    filter: ItemFilter | None = None
+    field: str = Field(default="default_rate", pattern="^(default_rate|mrp)$")
+    mode: str = Field(pattern="^(percent|amount)$")
+    value: Decimal = Field(max_digits=10, decimal_places=2)
+    # round the new rate to the nearest multiple of this (1 = whole rupee, 0.5, 5, 10)
+    round_to: Decimal | None = Field(default=None, gt=0, le=1000)
+
+    @model_validator(mode="after")
+    def _check(self) -> ItemBulkPrice:
+        if (self.ids is None) == (self.filter is None):
+            raise ValueError("send either ids or a filter, not both")
+        if self.value == 0:
+            raise ValueError("the change is zero")
+        if self.mode == "percent" and self.value <= Decimal("-100"):
+            raise ValueError("cannot lower a rate by 100% or more")
         return self
 
 

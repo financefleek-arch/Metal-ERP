@@ -17,6 +17,8 @@ from app.models._mixins import (
     PartySource,
     PartyStatus,
     UserRole,
+    WaConsent,
+    WaConsentSource,
 )
 from app.reference import (
     LEGAL_NAME_MAX,
@@ -265,6 +267,20 @@ class PartyOut(PartyBase):
     addresses: list[PartyAddressOut] = Field(default_factory=list)
     completeness: PartyCompleteness
     document_count: int
+    # May we send this party price lists on WhatsApp? (read-only here; set via /catalog-consent)
+    wa_catalog_consent: WaConsent = WaConsent.none
+    wa_catalog_consent_at: datetime | None = None
+    wa_catalog_consent_source: WaConsentSource | None = None
+
+
+class CatalogConsentIn(BaseModel):
+    status: WaConsent
+
+
+class CatalogConsentOut(BaseModel):
+    status: WaConsent
+    at: datetime | None
+    source: WaConsentSource | None
 
 
 class PartyListItem(BaseModel):

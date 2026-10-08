@@ -65,6 +65,14 @@ def filter_clauses(f: ItemFilter) -> list:  # type: ignore[type-arg]
                 SupplierCatalogItem.catalog_id == f.catalog_id,
             )
         )
+    if f.group_id:
+        out.append(Item.group_id == f.group_id)
+    if f.category_id:
+        out.append(Item.category_id == f.category_id)
+    elif f.uncategorised:
+        out.append(Item.category_id.is_(None))
+    if f.ungrouped:
+        out.append(Item.group_id.is_(None))
     return out
 
 

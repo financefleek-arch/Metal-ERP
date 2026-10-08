@@ -13,9 +13,19 @@ import type {
   ItemFilter,
   ItemListItem,
 } from "../../lib/types";
+import { HsnPicker } from "../HsnPicker";
 import { PreviewTable, ResultSummary } from "./PreviewTable";
 
-export type BulkMode = "fields" | "category" | "delete" | "availability" | "rename";
+export type BulkMode =
+  | "fields"
+  | "category"
+  | "delete"
+  | "availability"
+  | "rename"
+  | "price"
+  | "archive"
+  | "confirm"
+  | "restore";
 
 /** What a bulk action covers: ticked ids, or everything matching a filter. */
 type Sel = { ids: string[]; filter?: ItemFilter; n: number };
@@ -51,16 +61,17 @@ export function BulkPanel({
   const sel: Sel = { ids, filter, n: filter ? (total ?? 0) : ids.length };
   const plural = sel.n === 1 ? "" : "s";
 
-  const title =
-    mode === "fields"
-      ? `Edit ${sel.n} item${plural}`
-      : mode === "rename"
-        ? `Find and replace in the names of ${sel.n} item${plural}`
-        : mode === "availability"
-        ? `Set availability for ${sel.n} item${plural}`
-        : mode === "category"
-          ? `Move ${sel.n} item${plural}`
-          : `Delete ${sel.n} item${plural}?`;
+  const title = {
+    fields: `Edit ${sel.n} item${plural}`,
+    rename: `Find and replace in the names of ${sel.n} item${plural}`,
+    availability: `Set availability for ${sel.n} item${plural}`,
+    category: `Move ${sel.n} item${plural}`,
+    price: `Change the price of ${sel.n} item${plural}`,
+    archive: `Archive ${sel.n} item${plural}`,
+    confirm: `Confirm ${sel.n} item${plural}`,
+    restore: `Restore ${sel.n} item${plural}`,
+    delete: `Delete ${sel.n} item${plural}?`,
+  }[mode];
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["items"] });
@@ -92,6 +103,19 @@ export function BulkPanel({
       )}
       {mode === "availability" && (
         <AvailabilityFlow sel={sel} setErr={setErr} onDone={onDone} after={invalidate} />
+      )}
+      {mode === "price" && (
+        <PriceFlow sel={sel} setErr={setErr} onDone={onDone} after={invalidate} />
+      )}
+      {(mode === "archive" || mode === "confirm" || mode === "restore") && (
+        <StatusFlow
+          key={mode}
+          kind={mode}
+          sel={sel}
+          setErr={setErr}
+          onDone={onDone}
+          after={invalidate}
+        />
       )}
     </div>
   );
@@ -202,7 +226,7 @@ function StepFooter({
 type FieldSpec = {
   key: BulkField;
   label: string;
-  kind: "vocab" | "number" | "select" | "textarea";
+  kind: "vocab" | "number" | "select" | "textarea" | "hsn";
   vocab?: "uoms" | "metals" | "shapes" | "finishes";
   options?: { value: string; label: string }[];
   hint?: string;
@@ -226,6 +250,12 @@ const FIELD_SPECS: FieldSpec[] = [
     hint: "MRP items only — BULK items are skipped",
   },
   { key: "default_rate", label: "Default rate", kind: "number" },
+  {
+    key: "hsn_code",
+    label: "HSN",
+    kind: "hsn",
+    hint: "The GST rate follows the HSN you pick.",
+  },
   {
     key: "item_type",
     label: "Type",
@@ -398,6 +428,8 @@ function FieldControl({
   onChange: (v: string) => void;
   vocabList: string[];
 }) {
+  if (spec.kind === "hsn")
+    return <HsnPicker value={value} onChange={(code) => onChange(code)} />;
   if (spec.kind === "textarea")
     return (
       <textarea
@@ -860,6 +892,220 @@ function RenameFlow({
         previewing={previewM.isPending}
         applying={false}
         applyLabel=""
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// flow 6: change price by a percentage or an amount
+// ---------------------------------------------------------------------------
+
+function PriceFlow({
+  sel,
+  setErr,
+  onDone,
+  after,
+}: {
+  sel: Sel;
+  setErr: (s: string | null) => void;
+  onDone: (s: string) => void;
+  after: () => void;
+}) {
+  const [field, setField] = useState<"default_rate" | "mrp">("default_rate");
+  const [mode, setMode] = useState<"percent" | "amount">("percent");
+  const [dir, setDir] = useState<"up" | "down">("up");
+  const [value, setValue] = useState("");
+  const [roundTo, setRoundTo] = useState("");
+
+  const num = Number(value);
+  const valid = value.trim() !== "" && isFinite(num) && num > 0 && !(mode === "percent" && dir === "down" && num >= 100);
+  const run = (dryRun: boolean) =>
+    api<BulkUpdateResult>(`/items/bulk-price?dry_run=${dryRun}`, {
+      method: "POST",
+      body: {
+        ...selBody(sel),
+        field,
+        mode,
+        value: (dir === "down" ? -num : num).toFixed(2),
+        round_to: roundTo || null,
+      },
+    });
+  const { preview, setPreview, previewM, applyM } = useTwoStep(run, { setErr, onDone, after });
+
+  if (preview)
+    return (
+      <>
+        <p className="text-xs text-muted">
+          {preview.changed} of {sel.n} items change
+          {preview.errors > 0 ? `; ${preview.errors} would not be above zero and are left alone` : ""}.
+          Items with no {field === "mrp" ? "MRP" : "rate"} set are skipped.
+        </p>
+        <PreviewTable rows={preview.rows} />
+        <StepFooter
+          preview={preview}
+          onBack={() => setPreview(null)}
+          onPreview={() => previewM.mutate()}
+          onApply={() => applyM.mutate()}
+          previewing={previewM.isPending}
+          applying={applyM.isPending}
+          applyLabel={`Change ${preview.changed} price${preview.changed === 1 ? "" : "s"}`}
+        />
+      </>
+    );
+
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <span className="label">Which price</span>
+          <select className="field" value={field} onChange={(e) => setField(e.target.value as typeof field)}>
+            <option value="default_rate">Selling rate</option>
+            <option value="mrp">MRP</option>
+          </select>
+        </div>
+        <div>
+          <span className="label">Change by</span>
+          <select className="field" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
+            <option value="percent">a percentage (%)</option>
+            <option value="amount">an amount (₹)</option>
+          </select>
+        </div>
+        <div>
+          <span className="label">Direction</span>
+          <div className="flex gap-2">
+            {(["up", "down"] as const).map((d) => (
+              <button
+                key={d}
+                type="button"
+                aria-pressed={dir === d}
+                onClick={() => setDir(d)}
+                className={`flex-1 rounded-lg border px-3 py-2 text-sm ${
+                  dir === d ? "border-accent bg-accent-soft font-semibold" : "border-line"
+                }`}
+              >
+                {d === "up" ? "Raise" : "Lower"}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="bp-value">
+            {mode === "percent" ? "Percentage" : "Amount (₹)"}
+          </label>
+          <input
+            id="bp-value"
+            className="field font-mono"
+            inputMode="decimal"
+            placeholder={mode === "percent" ? "e.g. 5" : "e.g. 10"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="bp-round">
+            Round to the nearest
+          </label>
+          <select id="bp-round" className="field" value={roundTo} onChange={(e) => setRoundTo(e.target.value)}>
+            <option value="">no rounding (paise)</option>
+            <option value="0.5">₹0.50</option>
+            <option value="1">₹1</option>
+            <option value="5">₹5</option>
+            <option value="10">₹10</option>
+          </select>
+        </div>
+      </div>
+      <p className="text-xs text-muted">
+        You see each old and new price before anything is saved. Prices already sent to Tally show as “Tally
+        price old” until you send them again.
+      </p>
+      <StepFooter
+        preview={null}
+        onBack={() => {}}
+        onPreview={() => {
+          if (!valid) {
+            setErr("Enter a change above zero (a percentage lowered must be under 100).");
+            return;
+          }
+          previewM.mutate();
+        }}
+        onApply={() => {}}
+        previewing={previewM.isPending}
+        applying={false}
+        applyLabel=""
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// flow 7: archive / confirm / restore (a status change, previewed like the rest)
+// ---------------------------------------------------------------------------
+
+const STATUS_FLOW = {
+  archive: {
+    to: "archived",
+    verb: "Archive",
+    note: "Archived items disappear from the list, new invoices and customer catalogs. Their past invoices are not touched, and you can restore them from the Archived list.",
+  },
+  confirm: {
+    to: "confirmed",
+    verb: "Confirm",
+    note: "Marks them as reviewed. Items that are already confirmed are left alone.",
+  },
+  restore: {
+    to: "confirmed",
+    verb: "Restore",
+    note: "Brings them back as confirmed items.",
+  },
+} as const;
+
+function StatusFlow({
+  kind,
+  sel,
+  setErr,
+  onDone,
+  after,
+}: {
+  kind: "archive" | "confirm" | "restore";
+  sel: Sel;
+  setErr: (s: string | null) => void;
+  onDone: (s: string) => void;
+  after: () => void;
+}) {
+  const cfg = STATUS_FLOW[kind];
+  const run = (dryRun: boolean) =>
+    api<BulkUpdateResult>(`/items/bulk?dry_run=${dryRun}`, {
+      method: "PATCH",
+      body: { ...selBody(sel), fields: { status: cfg.to }, fields_set: ["status"] },
+    });
+  const { preview, setPreview, previewM, applyM } = useTwoStep(run, { setErr, onDone, after });
+
+  // one click is enough to see the preview, so run it straight away
+  const ran = useRef(false);
+  useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
+    previewM.mutate();
+  }, [previewM]);
+
+  if (!preview) return <p className="py-6 text-xs text-muted">Checking what changes…</p>;
+  return (
+    <>
+      <p className="text-xs text-muted">{cfg.note}</p>
+      <p className="text-xs">
+        {preview.changed} of {sel.n} item{sel.n === 1 ? "" : "s"} change.
+      </p>
+      <PreviewTable rows={preview.rows} />
+      <StepFooter
+        preview={preview}
+        onBack={() => setPreview(null)}
+        onPreview={() => previewM.mutate()}
+        onApply={() => applyM.mutate()}
+        previewing={previewM.isPending}
+        applying={applyM.isPending}
+        applyLabel={`${cfg.verb} ${preview.changed} item${preview.changed === 1 ? "" : "s"}`}
+        danger={kind === "archive"}
       />
     </>
   );

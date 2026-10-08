@@ -16,6 +16,8 @@ from app.models._mixins import (
     PartyStatus,
     PkUuidMixin,
     TimestampMixin,
+    WaConsent,
+    WaConsentSource,
 )
 
 
@@ -45,6 +47,16 @@ class Party(PkUuidMixin, TimestampMixin, Base):
     # party now needs only `phone`. Kept as a column to avoid a migration and
     # in case a real consent workflow is added later.
     whatsapp_optin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Consent to be sent price lists / catalogs on WhatsApp (marketing messages). Separate from
+    # `whatsapp_optin` on purpose: that flag's old rows were set under a different rule.
+    # `none` and `opted_out` both mean do not send. Proof = status + when + how + who.
+    wa_catalog_consent: Mapped[WaConsent] = mapped_column(
+        String(10), default=WaConsent.none, server_default=WaConsent.none.value, nullable=False
+    )
+    wa_catalog_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    wa_catalog_consent_source: Mapped[WaConsentSource | None] = mapped_column(String(16))
+    wa_catalog_consent_by: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"))
 
     # Lifecycle: archived parties drop out of the default list and every picker,
     # but stay linked to the documents that already reference them.

@@ -56,6 +56,20 @@ class PartyStatus(enum.StrEnum):
     archived = "archived"
 
 
+class WaConsent(enum.StrEnum):
+    """Whether we may send this party price lists / catalogs (marketing) on WhatsApp."""
+
+    none = "none"  # never asked: do not send
+    opted_in = "opted_in"
+    opted_out = "opted_out"  # said no or STOP: never send again until they opt in
+
+
+class WaConsentSource(enum.StrEnum):
+    manual = "manual"  # staff recorded a verbal / in-person yes
+    order_page = "order_page"  # ticked the box on the customer order page
+    whatsapp_reply = "whatsapp_reply"  # replied YES / STOP in the chat
+
+
 class PartySource(enum.StrEnum):
     manual = "manual"
     inward_bill = "inward_bill"

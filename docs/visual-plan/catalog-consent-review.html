@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Price-list consent: visual review</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+  .serif { font-family: 'Fraunces', Georgia, serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+  h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 38px 0 4px; }
+  p.lead { font-size: 14px; color: #6f685b; margin: 0 0 18px; max-width: 880px; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .cap { font-size: 12px; color: #8a8272; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+  .note { font-size: 12.5px; color: #6f685b; max-width: 330px; line-height: 1.5; margin-top: 10px; }
+  .note b { color: #23201b; }
+  .muted { color: #8a8272; }
+  .btn { display: inline-block; background: #2f6f89; color: #fff; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 12.5px; }
+  .btn.ghost { background: #fff; color: #2f6f89; border: 1px solid #2f6f89; }
+  .btn.dis { background: #e6e0d6; color: #8a8272; }
+  .btn.full { display: block; text-align: center; padding: 12px; font-size: 14px; }
+  .tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #efe9df; color: #6f685b; white-space: nowrap; }
+  .tag.ok { background: #e6efe8; color: #3d7a4a; }
+  .tag.bad { background: #f4e3df; color: #a8432c; }
+  .field { background: #fff; border: 1px solid #d8d1c4; border-radius: 8px; padding: 9px 11px; font-size: 13px; }
+  label.l { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; margin-bottom: 4px; }
+  .banner { border-radius: 9px; padding: 11px 14px; font-size: 13px; line-height: 1.45; }
+  .banner.info { background: #eef4f7; border: 1px solid #cfe0e8; color: #25566b; }
+  .banner.warn { background: #faf4ec; border: 1px solid #e8d9bd; color: #6d4f16; }
+  .phone { width: 340px; border: 10px solid #23201b; border-radius: 34px; background: #fff; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .ph-bar { background: #23201b; color: #f4f1ec; padding: 12px 14px; font-size: 13px; }
+  .ph-body { padding: 14px; background: #f4f1ec; }
+  .desk { width: 760px; max-width: 100%; background: #fff; border: 1px solid #e6e0d6; border-radius: 12px; overflow: hidden; }
+  .bar { background: #23201b; color: #f4f1ec; padding: 12px 18px; font-size: 13px; }
+  .pad { padding: 16px 18px; }
+  .cb { display: flex; gap: 9px; align-items: flex-start; font-size: 13px; line-height: 1.4; margin-top: 10px; }
+  .box { flex: none; width: 17px; height: 17px; border: 1.5px solid #8a8272; border-radius: 4px; margin-top: 1px; background: #fff; }
+  .box.on { background: #2f6f89; border-color: #2f6f89; position: relative; }
+  .box.on::after { content: "✓"; color: #fff; font-size: 12px; position: absolute; left: 2.5px; top: -1px; }
+  .cb small { display: block; color: #8a8272; font-size: 11.5px; margin-top: 2px; }
+  .seg { display: inline-flex; border: 1px solid #d8d1c4; border-radius: 8px; overflow: hidden; font-size: 13px; }
+  .seg span { padding: 8px 14px; background: #fff; }
+  .seg span + span { border-left: 1px solid #d8d1c4; }
+  .seg .sel { background: #2f6f89; color: #fff; font-weight: 600; }
+  .seg .selbad { background: #a8432c; color: #fff; font-weight: 600; }
+  .seg .off { color: #b3ac9d; background: #f6f3ec; }
+  .sect { border-top: 1px solid #ece6da; padding-top: 14px; margin-top: 14px; }
+  .sect .lab { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; margin-bottom: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .decide { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.55; max-width: 880px; }
+  .decide li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="serif">Price-list consent: visual review</h1>
+  <p class="lead">Two small screens, both feeding the consent record already built on the backend (migration 0054, <code>PUT /api/parties/{id}/catalog-consent</code>). Nothing here sends a catalog yet: this only records who has agreed to receive price lists on WhatsApp. Please say which of these you want changed before I code them.</p>
+
+  <!-- ============================================================ 1 -->
+  <h2 class="serif">1. Customer order page: a second, separate checkbox</h2>
+  <p class="lead">Today the order form has one box, ticked by default: "Send me order updates on WhatsApp". That covers messages about this order only. Price lists are marketing messages, so they get their own box, <b>unticked by default</b> (Meta wants a clear, active opt-in; a pre-ticked box is the weakest kind).</p>
+  <div class="row">
+    <div>
+      <p class="cap">Checkout, as the customer sees it</p>
+      <div class="phone">
+        <div class="ph-bar"><span class="serif" style="font-weight:600">Sethia Metal Store</span></div>
+        <div class="ph-body">
+          <div style="margin-bottom:10px"><label class="l">Your name</label><div class="field">Ravi Kumar</div></div>
+          <div style="margin-bottom:10px"><label class="l">Phone (WhatsApp)</label><div class="field">98765 43210</div></div>
+          <div style="margin-bottom:10px"><label class="l">Shop or firm (optional)</label><div class="field muted">Ravi Traders</div></div>
+          <div style="margin-bottom:6px"><label class="l">Note (optional)</label><div class="field muted">e.g. Deliver by Friday</div></div>
+
+          <div class="cb"><span class="box on"></span><span>Send me order updates on WhatsApp</span></div>
+          <div class="cb" style="outline:2px dashed #2f6f89; outline-offset:6px; border-radius:6px">
+            <span class="box"></span>
+            <span>Also send me price lists and new arrivals from Sethia Metal Store on WhatsApp
+              <small>Optional. Reply STOP any time to stop.</small></span>
+          </div>
+
+          <div class="btn full" style="margin-top:16px">Place order</div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="max-width:380px">
+      <p><b>Dashed box = new.</b> Everything else is as it is now.</p>
+      <p><b>Unticked every time.</b> We still remember their name and phone for next time, but not this choice: a repeat visitor has to tick it themselves.</p>
+      <p><b>Wording names the shop</b> (Meta's rule) and says what they will get and how to stop.</p>
+      <p><b>The order does not wait on it.</b> Ticking or not changes nothing about placing the order.</p>
+    </div>
+  </div>
+
+  <h2 class="serif">2. Shop side: where that tick lands on the customer</h2>
+  <p class="lead">An order only carries a name and phone. It is linked to a customer record when you review it. So the tick is kept on the order, and applied to the customer at that point, using the same "link or create customer" step you already do.</p>
+  <div class="row">
+    <div>
+      <p class="cap">Order review (existing screen), one new line</p>
+      <div class="desk">
+        <div class="bar">Order ORD-0042 · Ravi Kumar · +91 98765 43210</div>
+        <div class="pad">
+          <div class="banner info">
+            Customer matched by phone: <b>Ravi Traders</b>.
+            <div style="margin-top:6px"><span class="tag ok">Agreed to price lists on the order page</span>
+              <span class="muted" style="font-size:12px"> · will be recorded when you confirm the customer</span></div>
+          </div>
+          <div style="margin-top:12px; display:flex; gap:8px"><span class="btn">Use this customer</span><span class="btn ghost">Choose another</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="max-width:380px">
+      <p><b>Only applied when you confirm the customer</b>, never on a guess. A wrong phone match then cannot opt the wrong person in.</p>
+      <p><b>If they did not tick</b>, nothing is shown and nothing changes. An existing "opted in" or "opted out" is never overwritten by an unticked box.</p>
+      <p><b>An opt-out always wins over a tick</b> from an old order: if they replied STOP later, a stale order does not bring them back.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ 3 -->
+  <h2 class="serif">3. Party screen: record a verbal yes (or a no)</h2>
+  <p class="lead">For customers who tell you at the counter or on the phone. One new block on the party form, under the contact fields. Counter staff can use it, because that is who hears the answer.</p>
+  <div class="row">
+    <div>
+      <p class="cap">Party form, customer with a phone number</p>
+      <div class="desk">
+        <div class="bar">Ravi Traders · Customer</div>
+        <div class="pad">
+          <div class="grid2">
+            <div><label class="l">Phone</label><div class="field">+91 98765 43210</div></div>
+            <div><label class="l">Email</label><div class="field muted">—</div></div>
+          </div>
+          <div class="sect">
+            <div class="lab">WhatsApp price lists</div>
+            <div class="seg"><span>Not asked</span><span class="sel">Agreed</span><span>Declined</span></div>
+            <p class="muted" style="font-size:12px; margin:8px 0 0">Recorded by Priya at the counter on 7 Oct 2026. They can stop any time by replying STOP.</p>
+          </div>
+        </div>
+      </div>
+      <p class="cap" style="margin-top:20px">Other states</p>
+      <div class="desk">
+        <div class="pad">
+          <div class="grid2">
+            <div>
+              <div class="seg"><span class="sel" style="background:#efe9df;color:#6f685b">Not asked</span><span>Agreed</span><span>Declined</span></div>
+              <p class="muted" style="font-size:12px; margin:8px 0 0">Not asked yet. Price lists will not be sent to this customer.</p>
+            </div>
+            <div>
+              <div class="seg"><span>Not asked</span><span>Agreed</span><span class="selbad">Declined</span></div>
+              <p class="muted" style="font-size:12px; margin:8px 0 0">Replied STOP on 3 Oct 2026. Price lists will not be sent. Choose Agreed only if they say yes again.</p>
+            </div>
+          </div>
+          <div class="sect">
+            <div class="seg"><span>Not asked</span><span class="off">Agreed</span><span>Declined</span></div>
+            <p class="muted" style="font-size:12px; margin:8px 0 0">No phone number. Add one to record an agreement.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="note" style="max-width:380px">
+      <p><b>Saves the moment you tap</b> (it does not wait for the form's Save button), because it is a record of what the customer said, with the time and your name.</p>
+      <p><b>"Not asked" is a state you cannot go back to by hand.</b> You can only record Agreed or Declined; the server refuses anything else.</p>
+      <p><b>Disabled without a phone,</b> since there would be nowhere to send to.</p>
+      <p><b>Who and when are always shown,</b> so if a customer asks "did I agree to this?" you can answer.</p>
+    </div>
+  </div>
+
+  <h2 class="serif">Not in this round</h2>
+  <div class="decide">
+    <ul>
+      <li><b>Party list marker / "can send price lists" filter.</b> Useful once bulk sending exists; I would add it with that, not before.</li>
+      <li><b>YES / STOP replies</b> setting the state automatically, and the actual catalog send. Next slices.</li>
+      <li><b>Asking suppliers.</b> The block shows only for customers (and "both"), never for pure suppliers.</li>
+    </ul>
+  </div>
+
+  <h2 class="serif">Questions for you</h2>
+  <div class="decide">
+    <ol>
+      <li>Is the order-page wording right for your customers? Hindi or Hinglish option? (Today the page is English only.)</li>
+      <li>Agree that an unticked box on a later order never changes an earlier "agreed"?</li>
+      <li>Should counter staff (not only the owner) be able to record consent? I have assumed yes.</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>
