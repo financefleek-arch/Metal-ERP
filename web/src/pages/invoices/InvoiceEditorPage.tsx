@@ -678,16 +678,31 @@ export function InvoiceEditorPage() {
       };
 
       const mr = new MediaRecorder(stream);
+      let lastChunkSent: Promise<void> = Promise.resolve();
       mr.ondataavailable = (e) => {
         if (e.data.size > 0 && ws.readyState === WebSocket.OPEN) {
-          void e.data.arrayBuffer().then((buf) => ws.send(buf));
+          lastChunkSent = e.data.arrayBuffer().then((buf) => ws.send(buf));
         }
       };
       mr.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
+        // stop() flushes one last ondataavailable with whatever audio was
+        // still buffered — make sure that reaches Deepgram before we ask it
+        // to Finalize, or the last word or two gets dropped.
+        void lastChunkSent.then(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "Finalize" }));
+        });
       };
       mediaRecorderRef.current = mr;
-      mr.start(250); // emit a chunk every 250ms, streamed live rather than one blob at the end
+      // Don't start recording until the socket is actually open — the
+      // WebM container header only lives in the FIRST ondataavailable
+      // chunk, so if that chunk fires before the WS handshake finishes and
+      // gets dropped by the readyState guard above, every later chunk is a
+      // headerless fragment Deepgram can't decode, and nothing ever
+      // transcribes even though the connection looks fine.
+      const beginRecording = () => mr.start(250); // a chunk every 250ms, streamed live
+      if (ws.readyState === WebSocket.OPEN) beginRecording();
+      else ws.addEventListener("open", beginRecording, { once: true });
       setRecording(true);
     } catch {
       setVoiceNote("Couldn't access the microphone — check browser/site permission.");
@@ -696,17 +711,23 @@ export function InvoiceEditorPage() {
   }
 
   function stopVoiceLine() {
-    mediaRecorderRef.current?.stop();
-    wsRef.current?.close();
-    wsRef.current = null;
+    mediaRecorderRef.current?.stop(); // triggers mr.onstop above, which sends Finalize once the last chunk is out
     setRecording(false);
-    const text = finalTranscriptRef.current.trim();
-    const key = voiceRowKeyRef.current;
-    if (text && key) void resolveVoiceLine(text, key);
-    else if (!text) {
-      setVoiceNote("Didn't catch anything — try again.");
-      setVoiceNoteIsError(true);
-    }
+    const finish = () => {
+      wsRef.current?.close();
+      wsRef.current = null;
+      const text = finalTranscriptRef.current.trim();
+      const key = voiceRowKeyRef.current;
+      if (text && key) void resolveVoiceLine(text, key);
+      else {
+        setVoiceNote("Didn't catch anything — try again.");
+        setVoiceNoteIsError(true);
+      }
+    };
+    // Give Deepgram a short window to send the trailing final transcript
+    // event (it arrives via ws.onmessage, updating finalTranscriptRef)
+    // before we read that ref and close the socket.
+    setTimeout(finish, 600);
   }
 
   async function resolveVoiceLine(transcript: string, rowKey: string) {
