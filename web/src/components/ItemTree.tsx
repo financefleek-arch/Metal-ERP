@@ -14,8 +14,9 @@ import {
 import type { ItemListItem, TreeCategory, TreeLeaf } from "../lib/types";
 import { NodeMenu, NodeMenuEntry } from "./NodeMenu";
 
-const OPEN_KEY = "items.tree.open.v1";
+const OPEN_KEY = "items.tree.open.v2";
 
+/** `loose` lists the "Ungrouped" rows the user has CLOSED: they start open, to save a click */
 type OpenState = { cats: string[]; groups: string[]; loose: string[] };
 
 function loadOpen(): OpenState {
@@ -37,11 +38,14 @@ function Check({
   partial,
   label,
   onChange,
+  lockedBy,
 }: {
   checked: boolean;
   partial?: boolean;
   label: string;
   onChange: () => void;
+  /** set when a parent row is ticked: this one shows as ticked and cannot be changed alone */
+  lockedBy?: string;
 }) {
   const ref = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
@@ -52,10 +56,14 @@ function Check({
       ref={ref}
       type="checkbox"
       aria-label={label}
-      checked={checked}
+      checked={checked || !!lockedBy}
+      disabled={!!lockedBy}
+      title={lockedBy ? `Included because “${lockedBy}” is ticked. Untick that to choose differently.` : undefined}
       onChange={onChange}
       onClick={(e) => e.stopPropagation()}
-      className="h-4 w-4 shrink-0 accent-[color:theme(colors.accent.DEFAULT)] md:h-3.5 md:w-3.5"
+      className={`h-4 w-4 shrink-0 accent-[color:theme(colors.accent.DEFAULT)] md:h-3.5 md:w-3.5 ${
+        lockedBy ? "opacity-60" : ""
+      }`}
     />
   );
 }
@@ -101,7 +109,7 @@ export function ItemTree({
   const initial = useMemo(loadOpen, []);
   const [openCats, setOpenCats] = useState<Set<string>>(new Set(initial.cats));
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(initial.groups));
-  const [openLoose, setOpenLoose] = useState<Set<string>>(new Set(initial.loose));
+  const [closedLoose, setClosedLoose] = useState<Set<string>>(new Set(initial.loose));
   const [search, setSearch] = useState("");
   const dq = useDebounced(search.trim(), 250);
   const [note, setNote] = useState<string | null>(null);
@@ -112,12 +120,12 @@ export function ItemTree({
     try {
       window.sessionStorage.setItem(
         OPEN_KEY,
-        JSON.stringify({ cats: [...openCats], groups: [...openGroups], loose: [...openLoose] }),
+        JSON.stringify({ cats: [...openCats], groups: [...openGroups], loose: [...closedLoose] }),
       );
     } catch {
       /* ignore */
     }
-  }, [openCats, openGroups, openLoose]);
+  }, [openCats, openGroups, closedLoose]);
 
   const hits = useQuery({
     queryKey: ["items", "tree-search", dq],
@@ -211,7 +219,7 @@ export function ItemTree({
           onClick={() => {
             setOpenCats(new Set());
             setOpenGroups(new Set());
-            setOpenLoose(new Set());
+            setClosedLoose(new Set());
           }}
         >
           Close all
@@ -259,6 +267,7 @@ export function ItemTree({
         const cNode = categoryNode(c.id, c.name, nItems);
         const lNode = looseNode(c.id, c.name, c.loose_count);
         const catDropKey = `drop:cat:${catKey}`;
+        const catPicked = nodeKeys.has(cNode.key);
         return (
           <div key={catKey}>
             <div
@@ -361,6 +370,7 @@ export function ItemTree({
                             <Check
                               label={`Select all of ${g.name}`}
                               checked={nodeKeys.has(gNode.key)}
+                              lockedBy={catPicked ? c.name : undefined}
                               partial={leafPartial(gQuery)}
                               onChange={() => onPickNode(gNode)}
                             />
@@ -399,6 +409,9 @@ export function ItemTree({
                         <LeafList
                           query={gQuery}
                           total={g.leaf_count}
+                          lockedBy={
+                            catPicked ? c.name : nodeKeys.has(gNode.key) ? g.name : undefined
+                          }
                           pad="pl-10"
                           selectedItemId={selectedItemId}
                           useSizeLabel
@@ -420,6 +433,7 @@ export function ItemTree({
                 })}
                 {c.loose_count > 0 && (
                   <>
+                    {c.groups.length > 0 && (
                     <div
                       className={`flex items-center border-b border-[#f3eee4] pl-6 text-[9px] uppercase tracking-wide text-muted${dropCls(`drop:loose:${looseKey}`)}`}
                       {...dropOn(`drop:loose:${looseKey}`, (d) => d.kind === "leaf")}
@@ -440,6 +454,7 @@ export function ItemTree({
                           <Check
                             label={`Select all ungrouped in ${c.name}`}
                             checked={nodeKeys.has(lNode.key)}
+                            lockedBy={catPicked ? c.name : undefined}
                             partial={leafPartial(
                               c.id ? `category_id=${c.id}` : "uncategorised=true",
                             )}
@@ -449,11 +464,11 @@ export function ItemTree({
                       )}
                       <button
                         className="flex min-w-0 flex-1 items-center gap-1.5 py-2 text-left"
-                        aria-expanded={openLoose.has(looseKey)}
-                        onClick={() => toggle(openLoose, setOpenLoose, looseKey)}
+                        aria-expanded={!closedLoose.has(looseKey)}
+                        onClick={() => toggle(closedLoose, setClosedLoose, looseKey)}
                       >
                         <span className="text-[8px] text-faint">
-                          {openLoose.has(looseKey) ? "▾" : "▸"}
+                          {closedLoose.has(looseKey) ? "▸" : "▾"}
                         </span>
                         Ungrouped
                         <span className="ml-auto pr-1.5 font-mono text-[9px]">{c.loose_count}</span>
@@ -469,10 +484,14 @@ export function ItemTree({
                         </span>
                       )}
                     </div>
-                    {openLoose.has(looseKey) && (
+                    )}
+                    {(c.groups.length === 0 || !closedLoose.has(looseKey)) && (
                       <LeafList
                         query={c.id ? `category_id=${c.id}` : "uncategorised=true"}
                         total={c.loose_count}
+                        lockedBy={
+                          catPicked ? c.name : nodeKeys.has(lNode.key) ? `${c.name} · ungrouped` : undefined
+                        }
                         pad="pl-10"
                         selectedItemId={selectedItemId}
                         writable={writable}
@@ -505,6 +524,7 @@ const LEAF_PAGE = 200;
 function LeafList({
   query,
   total,
+  lockedBy,
   pad,
   selectedItemId,
   useSizeLabel,
@@ -518,6 +538,8 @@ function LeafList({
   query: string;
   /** how many items the node holds, so a long one can offer "show more" */
   total: number;
+  /** a parent category / group is ticked, so every leaf here is part of the selection */
+  lockedBy?: string;
   pad: string;
   selectedItemId: string | null;
   useSizeLabel?: boolean;
@@ -545,7 +567,7 @@ function LeafList({
     <>
       {rows.map((l) => {
         const tb = l.tally_state ? tallyBadge(l.tally_state) : null;
-        const on = selectedIds.has(l.id);
+        const on = selectedIds.has(l.id) || !!lockedBy;
         return (
           <div
             key={l.id}
@@ -565,6 +587,7 @@ function LeafList({
                 <Check
                   label={`Select ${l.name}`}
                   checked={on}
+                  lockedBy={lockedBy}
                   onChange={() => onToggleLeaf(l.id)}
                 />
               </span>
