@@ -180,7 +180,7 @@ All slices built, **uncommitted, not yet clicked through in a browser**. Backend
   in the preview, not blocked. Tree leaves now carry `availability` and `tally_state`.
 
 **Web**
-- Tree: checkboxes (leaf = that item; category / group / Ungrouped = the whole node as a filter, one node at a time),
+- Tree: checkboxes (leaf = that item; category / group / Ungrouped = the whole node as a filter; tick several and they act together as "any of these", via `ItemFilter.any_of`),
   ⋯ menus (bottom sheet on a phone), search, Open all / Close all, open state kept in sessionStorage, availability and
   Tally badges on leaves, drag a size onto a group or category and a group onto a category.
 - Selection bar: Set availability up front, then Change / Share / More menus (price, fields, rename, move, confirm,
@@ -201,3 +201,34 @@ All slices built, **uncommitted, not yet clicked through in a browser**. Backend
   the ones that include an item needs resolving each. Only the document count was added.
 - A separate category detail page: the category row's menu links to Categories, which now has Merge.
 - My earlier audit said "Export ignores the selection when select-all-matching is on". That was wrong: it sent the filter.
+
+- **Several categories / groups at once** (added later): `ItemFilter.any_of` is a list of tree nodes OR-ed together, then ANDed with the rest of the filter. Test: `test_filter_any_of_combines_tree_nodes`.
+
+## Scale check at 10,000 items (2026-10-08)
+
+Measured on a throwaway SQLite database with 10,000 items in one category and one 5,000-item group (a temporary
+probe test, deleted afterwards). SQLite has no network hop, so a remote Postgres will be slower per query; the
+fixes below remove per-item queries, which is what makes that gap grow.
+
+| Call | Before | After |
+|---|---|---|
+| `POST /items/count` (runs about 9 times when the Flat view opens) | 480 ms each | 21 ms |
+| Tree node of 5,000 leaves | 1 MB, 5,000 rows drawn | 200 first, "Show more" |
+| Apply a field change to all 10,000 by filter | 51 s | 1.9 s |
+| Move 5,000 items to another group | 38 s | 5 s |
+| Delete preview, 10,000 | 6.6 s | 1.1 s |
+| Rename preview, 10,000 | 10.9 s | 1.7 s |
+| Price change preview, 10,000 | 1.2 s | 1.2 s |
+| Export to Excel, 10,000 | 1.7 s | 2.4 s (noise) |
+| List page, search | 30 / 55 ms | same |
+
+What changed: counts are one SQL `COUNT`; tree leaves take a `limit` (200, up to 2,000); bulk updates validate the
+target group / category / HSN once up front (a bad one is now a single 422, not 10,000 error rows) and write the whole
+batch in one flush instead of a savepoint per item; delete counts documents with grouped queries; rename loads the
+firm's name keys and synonyms once; ticking more than 500 rows one by one is allowed (the ceiling is now 20,000, same
+as selecting by filter).
+
+Not measured / known limits: the Flat list keeps every loaded row in the page (fine for a few hundred; scrolling through
+thousands will get heavy, a windowed list is the fix); catalog PDFs, labels and Tally pushes for thousands of items run
+as background jobs and were not timed; a 10,000-row preview response is about 1.3 MB (the screen draws 200); the
+Flat view's multi-pick sends its nodes in the URL, fine for dozens of picks, not hundreds.

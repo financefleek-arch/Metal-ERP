@@ -509,6 +509,13 @@ export interface ItemFilter {
   category_id?: string;
   uncategorised?: boolean;
   ungrouped?: boolean;
+  /** several tree nodes at once: an item matches if it is in any of them */
+  any_of?: {
+    group_id?: string;
+    category_id?: string;
+    uncategorised?: boolean;
+    ungrouped?: boolean;
+  }[];
 }
 
 export interface ItemSources {

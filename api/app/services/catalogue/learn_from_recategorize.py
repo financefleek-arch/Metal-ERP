@@ -51,6 +51,7 @@ def learn_from_recategorize(
     new_group_id: str,
     *,
     was_unconfirmed: bool,
+    synonyms: dict[str, str] | None = None,
 ) -> ItemClassifyRule | None:
     """Write / refresh a learned rule from this recategorise. Returns the rule
     row, or None when nothing teachable. Caller commits.
@@ -60,15 +61,11 @@ def learn_from_recategorize(
     grp = session.get(ProductGroup, new_group_id)
     if grp is None or grp.tenant_id != tenant_id:
         return None
-    department = (
-        session.scalar(
-            select(ItemCategory.name).where(ItemCategory.id == grp.category_id)
-        )
-        if grp.category_id
-        else None
-    ) or ""
+    cat = session.get(ItemCategory, grp.category_id) if grp.category_id else None
+    department = cat.name if cat is not None else ""
 
-    synonyms = load_synonym_map(session, tenant_id)
+    if synonyms is None:  # a batch loads the map once and passes it in
+        synonyms = load_synonym_map(session, tenant_id)
     phrase = _phrase_from_name(item.name, synonyms)
     if not phrase or len(phrase) < 3:
         return None

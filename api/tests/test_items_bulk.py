@@ -12,7 +12,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.main import app
-from app.models import HsnCode, Item, ItemClassifyRule, ProductGroup
+from app.models import HsnCode, Item, ItemClassifyRule
+from app.schemas_item import MAX_BULK_IDS
 
 
 @pytest.fixture
@@ -134,7 +135,7 @@ def test_bulk_id_cap_422(client: TestClient) -> None:
     r = client.patch(
         "/api/items/bulk",
         headers=h,
-        json={"ids": [f"x{n}" for n in range(501)], "fields": {"uom": "kg"},
+        json={"ids": [f"x{n}" for n in range(MAX_BULK_IDS + 1)], "fields": {"uom": "kg"},
               "fields_set": ["uom"]},
     )
     assert r.status_code == 422

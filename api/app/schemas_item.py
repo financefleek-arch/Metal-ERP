@@ -158,9 +158,24 @@ BULK_EDITABLE_FIELDS = frozenset(
     }
 )
 
-MAX_BULK_IDS = 500
-# Selecting by filter has no tick limit, but a runaway filter is refused.
+# Selecting by filter or by ticks share one ceiling; a runaway selection is refused.
 MAX_BULK_FILTER = 20000
+MAX_BULK_IDS = MAX_BULK_FILTER
+
+
+class NodeFilter(BaseModel):
+    """One place in the tree: a group, a category, or an "Ungrouped" bucket."""
+
+    group_id: str | None = None
+    category_id: str | None = None
+    uncategorised: bool = False
+    ungrouped: bool = False
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> NodeFilter:
+        if not (self.group_id or self.category_id or self.uncategorised or self.ungrouped):
+            raise ValueError("a tree node needs a group or a category")
+        return self
 
 
 class ItemFilter(BaseModel):
@@ -186,6 +201,8 @@ class ItemFilter(BaseModel):
     category_id: str | None = None
     uncategorised: bool = False
     ungrouped: bool = False
+    # several tree nodes at once: an item matches if it is in ANY of them
+    any_of: list[NodeFilter] | None = Field(default=None, max_length=200)
 
 
 class ItemCountOut(BaseModel):

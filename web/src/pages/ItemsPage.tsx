@@ -31,6 +31,7 @@ import { SheetImportDialog } from "../components/SheetImportDialog";
 import { TallyDialog } from "../components/catalog/TallyDialog";
 import { LabelsDialog } from "../components/catalog/LabelsDialog";
 import { MakeCatalogDialog } from "../components/catalog/MakeCatalogDialog";
+import { MultiPick, type PickOption } from "../components/MultiPick";
 import { SelectionBar } from "../components/bulk/SelectionBar";
 import { BulkPanel, type BulkMode } from "../components/bulk/BulkPanel";
 
@@ -51,8 +52,27 @@ const EXCLUSIVE: Scope[][] = [
   ["unconfirmed", "archived"],
 ];
 
+const NO_KEYS = new Set<string>();
 const NO_CATEGORY = "__none__";
 const NO_GROUP = "__loose__";
+
+/**
+ * The picked categories and groups as tree nodes (an item may be in any of them). Picked groups
+ * win, since a group already lives in one category; "Ungrouped" means no group, inside the picked
+ * categories if there are any.
+ */
+function placeNodes(cats: string[], grps: string[]): ItemFilter["any_of"] {
+  const catNode = (c: string) => (c === NO_CATEGORY ? { uncategorised: true } : { category_id: c });
+  const out: NonNullable<ItemFilter["any_of"]> = [];
+  if (grps.length) {
+    for (const g of grps) {
+      if (g !== NO_GROUP) out.push({ group_id: g });
+      else if (cats.length) for (const c of cats) out.push({ ...catNode(c), ungrouped: true });
+      else out.push({ ungrouped: true });
+    }
+  } else for (const c of cats) out.push(catNode(c));
+  return out.length ? out : undefined;
+}
 
 function buildQuery(f: ItemFilter, cursor?: string | null) {
   const p = new URLSearchParams();
@@ -71,6 +91,7 @@ function buildQuery(f: ItemFilter, cursor?: string | null) {
   if (f.category_id) p.set("category_id", f.category_id);
   if (f.uncategorised) p.set("uncategorised", "true");
   if (f.ungrouped) p.set("ungrouped", "true");
+  if (f.any_of?.length) p.set("any_of", JSON.stringify(f.any_of));
   // Server caps a search result and doesn't page it; page only the browse list.
   if (!f.q?.trim()) {
     p.set("limit", String(PAGE_SIZE));
@@ -147,8 +168,8 @@ export function ItemsPage() {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
   const [scopes, setScopes] = useState<Set<Scope>>(new Set());
-  const [catSel, setCatSel] = useState("");
-  const [grpSel, setGrpSel] = useState("");
+  const [catSel, setCatSel] = useState<string[]>([]);
+  const [grpSel, setGrpSel] = useState<string[]>([]);
   const isDesktop = useIsDesktop();
 
   function toggleScope(k: Scope) {
@@ -175,10 +196,7 @@ export function ItemsPage() {
       tally_price_due: tallyDue || undefined,
       catalog_id: catalogId ?? undefined,
       supplier_id: supplierId ?? undefined,
-      group_id: grpSel && grpSel !== NO_GROUP ? grpSel : undefined,
-      category_id: catSel && catSel !== NO_CATEGORY ? catSel : undefined,
-      uncategorised: catSel === NO_CATEGORY || undefined,
-      ungrouped: grpSel === NO_GROUP || undefined,
+      any_of: placeNodes(catSel, grpSel),
     }),
     [dq, scopes, avail, noPhoto, notInTally, tallyDue, catalogId, supplierId, catSel, grpSel],
   );
@@ -186,7 +204,32 @@ export function ItemsPage() {
 
   // --- bulk selection: ticked rows (flat or tree), or one whole tree node ---
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [node, setNode] = useState<TreeNodeSel | null>(null);
+  const [nodes, setNodes] = useState<TreeNodeSel[]>([]);
+  /** the ticked tree nodes as one selection: one node as it is, several as "any of these" */
+  const node: TreeNodeSel | null = useMemo(() => {
+    if (nodes.length === 0) return null;
+    if (nodes.length === 1) return nodes[0];
+    const cats = nodes.filter((n) => n.key.startsWith("cat:")).length;
+    const grps = nodes.filter((n) => n.key.startsWith("grp:")).length;
+    const bits = [
+      cats && `${cats} categor${cats === 1 ? "y" : "ies"}`,
+      grps && `${grps} group${grps === 1 ? "" : "s"}`,
+      nodes.length - cats - grps && `${nodes.length - cats - grps} ungrouped`,
+    ].filter(Boolean);
+    return {
+      key: "multi",
+      label: bits.join(" + "),
+      filter: {
+        any_of: nodes.map((n) => ({
+          group_id: n.filter.group_id,
+          category_id: n.filter.category_id,
+          uncategorised: n.filter.uncategorised,
+          ungrouped: n.filter.ungrouped,
+        })),
+      },
+      count: nodes.reduce((a, n) => a + n.count, 0),
+    };
+  }, [nodes]);
   /** a node picked from a menu is only for that one action; a ticked node stays until cleared */
   const transientNode = useRef(false);
   const [bulkMode, setBulkMode] = useState<BulkMode | null>(null);
@@ -236,13 +279,35 @@ export function ItemsPage() {
     enabled: view === "flat",
   });
   const groups = useQuery({
-    queryKey: ["item-groups", catSel && catSel !== NO_CATEGORY ? catSel : ""],
-    queryFn: () =>
-      api<GroupOut[]>(
-        `/item-groups${catSel && catSel !== NO_CATEGORY ? `?category_id=${catSel}` : ""}`,
-      ),
+    queryKey: ["item-groups", ""],
+    queryFn: () => api<GroupOut[]>("/item-groups"),
     enabled: view === "flat",
   });
+  // pickable places: only those that hold items; groups narrow to the picked categories
+  const catOptions: PickOption[] = useMemo(
+    () => [
+      { value: NO_CATEGORY, label: "Uncategorised" },
+      ...(categories.data ?? [])
+        .filter((c) => c.item_count > 0 || catSel.includes(c.id))
+        .map((c) => ({ value: c.id, label: c.name, hint: String(c.item_count) })),
+    ],
+    [categories.data, catSel],
+  );
+  const grpOptions: PickOption[] = useMemo(
+    () => [
+      { value: NO_GROUP, label: "Ungrouped (no group)" },
+      ...(groups.data ?? [])
+        .filter((g) => g.item_count > 0 || grpSel.includes(g.id))
+        .filter(
+          (g) =>
+            catSel.length === 0 ||
+            grpSel.includes(g.id) ||
+            (g.category_id ? catSel.includes(g.category_id) : catSel.includes(NO_CATEGORY)),
+        )
+        .map((g) => ({ value: g.id, label: g.name, hint: String(g.item_count) })),
+    ],
+    [groups.data, catSel, grpSel],
+  );
 
   // chip counts (availability, no photo, not in Tally), scoped to the price list when one is open
   const counts = useQuery({
@@ -280,6 +345,7 @@ export function ItemsPage() {
     [list.data],
   );
   const hasSelection = node != null || selected.size > 0;
+  const nodeKeys = useMemo(() => new Set(nodes.map((n) => n.key)), [nodes]);
 
   // how many items the current filter (or the picked tree node) matches
   const countFilter = node ? node.filter : itemFilter;
@@ -300,7 +366,7 @@ export function ItemsPage() {
 
   function toggleRow(rid: string, e?: React.MouseEvent) {
     setFlash(null);
-    setNode(null);
+    setNodes([]);
     const next = new Set(selected);
     if (e?.shiftKey && lastClicked != null) {
       const a = rows.findIndex((r) => r.id === lastClicked);
@@ -319,32 +385,40 @@ export function ItemsPage() {
   /** a leaf ticked in the tree: ticks one item, and drops any whole-node selection */
   function toggleLeaf(rid: string) {
     setFlash(null);
-    setNode(null);
+    setNodes([]);
     setAllMatching(false);
     const next = new Set(selected);
     if (next.has(rid)) next.delete(rid);
     else next.add(rid);
     setSelected(next);
   }
-  function pickNode(n: TreeNodeSel | null) {
+  /** tick or untick a whole category / group; several can be ticked together */
+  function pickNode(n: TreeNodeSel) {
     setFlash(null);
     setSelected(new Set());
     setAllMatching(false);
+    const wasTransient = transientNode.current;
     transientNode.current = false;
-    setNode(n);
+    setNodes((cur) =>
+      wasTransient
+        ? [n]
+        : cur.some((x) => x.key === n.key)
+          ? cur.filter((x) => x.key !== n.key)
+          : [...cur, n],
+    );
   }
   function clearSelection() {
     setSelected(new Set());
     setAllMatching(false);
     setBulkMode(null);
-    setNode(null);
+    setNodes([]);
     transientNode.current = false;
   }
   /** a menu action on a node is over: forget the node it picked */
   function endNodeAction() {
     if (transientNode.current) {
       transientNode.current = false;
-      setNode(null);
+      setNodes([]);
     }
   }
 
@@ -361,7 +435,7 @@ export function ItemsPage() {
     setBulkMode(null);
     setSelected(new Set());
     setAllMatching(false);
-    setNode(null);
+    setNodes([]);
     transientNode.current = false;
     setFlash(summary);
     list.refetch();
@@ -385,7 +459,7 @@ export function ItemsPage() {
     setSelected(new Set());
     setAllMatching(false);
     transientNode.current = true;
-    setNode(n);
+    setNodes([n]);
     switch (action) {
       case "catalog":
         return setCatalogOpen(true);
@@ -410,7 +484,7 @@ export function ItemsPage() {
       case "export":
         void exportSheet({ filter: n.filter });
         transientNode.current = false;
-        return setNode(null);
+        return setNodes([]);
     }
   }
 
@@ -542,41 +616,23 @@ export function ItemsPage() {
                 onChange={(e) => setQ(e.target.value)}
               />
               <div className="flex gap-1.5">
-                <select
-                  className="field h-8 min-w-0 flex-1 text-xs"
-                  aria-label="Category"
+                <MultiPick
+                  label="Category"
+                  allLabel="All categories"
+                  options={catOptions}
                   value={catSel}
-                  onChange={(e) => {
-                    setCatSel(e.target.value);
-                    setGrpSel("");
+                  onChange={(v) => {
+                    setCatSel(v);
+                    setGrpSel([]);
                   }}
-                >
-                  <option value="">All categories</option>
-                  <option value={NO_CATEGORY}>Uncategorised</option>
-                  {(categories.data ?? [])
-                    .filter((c) => c.item_count > 0 || c.id === catSel)
-                    .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  className="field h-8 min-w-0 flex-1 text-xs"
-                  aria-label="Group"
+                />
+                <MultiPick
+                  label="Group"
+                  allLabel="All groups"
+                  options={grpOptions}
                   value={grpSel}
-                  onChange={(e) => setGrpSel(e.target.value)}
-                >
-                  <option value="">All groups</option>
-                  <option value={NO_GROUP}>Ungrouped</option>
-                  {(groups.data ?? [])
-                    .filter((g) => g.item_count > 0 || g.id === grpSel)
-                    .map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setGrpSel}
+                />
               </div>
               <div className="flex flex-wrap gap-1.5 md:gap-1">
                 <button
@@ -737,7 +793,7 @@ export function ItemsPage() {
               catalogModule={catalogModule}
               selectedIds={selected}
               onToggleLeaf={toggleLeaf}
-              nodeKey={node && !transientNode.current ? node.key : null}
+              nodeKeys={transientNode.current ? NO_KEYS : nodeKeys}
               onPickNode={pickNode}
               onNodeAction={nodeAction}
             />
@@ -752,7 +808,7 @@ export function ItemsPage() {
                       className="h-4 w-4 accent-[color:theme(colors.accent.DEFAULT)]"
                       checked={allLoadedSelected}
                       onChange={(e) => {
-                        setNode(null);
+                        setNodes([]);
                         setSelected(e.target.checked ? new Set(rows.map((r) => r.id)) : new Set());
                         if (!e.target.checked) setAllMatching(false);
                       }}
@@ -763,7 +819,7 @@ export function ItemsPage() {
                     <button
                       className="text-accent underline underline-offset-2"
                       onClick={() => {
-                        setNode(null);
+                        setNodes([]);
                         setSelected(new Set(rows.map((r) => r.id)));
                         setAllMatching(true);
                       }}
@@ -775,7 +831,7 @@ export function ItemsPage() {
               )}
               {!list.isLoading && rows.length === 0 && !isNew && (
                 <div className="px-3 py-8 text-center text-xs text-muted">
-                  {dq || scopes.size || catSel || grpSel ? "No matches." : "No items yet."}
+                  {dq || scopes.size || catSel.length || grpSel.length ? "No matches." : "No items yet."}
                 </div>
               )}
               {rows.map((it) => {

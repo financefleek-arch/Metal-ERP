@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useDebounced } from "../lib/useDebounced";
 import { availabilityLabel, availabilityTone, tallyBadge } from "../lib/items";
@@ -66,8 +66,8 @@ function Check({
  * it is expanded, so this stays cheap at 10k items.
  *
  * Selecting: a leaf checkbox ticks that one item; a category / group / "Ungrouped" checkbox selects
- * the WHOLE node as a filter (no tick limit), one node at a time. The ⋯ menu runs an action on a
- * whole node. Drag a size onto a group or category (or a group onto a category) to move it.
+ * the WHOLE node as a filter (no tick limit); tick as many categories and groups as you like and
+ * they act together. The ⋯ menu runs an action on one whole node. Drag a size onto a group or category (or a group onto a category) to move it.
  */
 export function ItemTree({
   selectedItemId,
@@ -76,7 +76,7 @@ export function ItemTree({
   catalogModule,
   selectedIds,
   onToggleLeaf,
-  nodeKey,
+  nodeKeys,
   onPickNode,
   onNodeAction,
 }: {
@@ -87,8 +87,9 @@ export function ItemTree({
   catalogModule: boolean;
   selectedIds: Set<string>;
   onToggleLeaf: (id: string) => void;
-  nodeKey: string | null;
-  onPickNode: (node: TreeNodeSel | null) => void;
+  /** keys of the ticked categories / groups; several can be ticked together */
+  nodeKeys: Set<string>;
+  onPickNode: (node: TreeNodeSel) => void;
   onNodeAction: (node: TreeNodeSel, action: NodeAction) => void;
 }) {
   const nav = useNavigate();
@@ -181,10 +182,11 @@ export function ItemTree({
         }
       : {};
 
-  const leafPartial = (query: string) => {
-    const leaves = qc.getQueryData<TreeLeaf[]>(["item-tree-leaves", query]);
-    return !!leaves && leaves.some((l) => selectedIds.has(l.id));
-  };
+  const leafPartial = (query: string) =>
+    selectedIds.size > 0 &&
+    qc
+      .getQueriesData<TreeLeaf[]>({ queryKey: ["item-tree-leaves", query] })
+      .some(([, leaves]) => leaves?.some((l) => selectedIds.has(l.id)));
 
   const dropCls = (key: string) => (dropKey === key ? " outline outline-2 -outline-offset-2 outline-accent" : "");
 
@@ -281,8 +283,8 @@ export function ItemTree({
                 <span className="pl-3">
                   <Check
                     label={`Select all of ${c.name}`}
-                    checked={nodeKey === cNode.key}
-                    onChange={() => onPickNode(nodeKey === cNode.key ? null : cNode)}
+                    checked={nodeKeys.has(cNode.key)}
+                    onChange={() => onPickNode(cNode)}
                   />
                 </span>
               )}
@@ -358,9 +360,9 @@ export function ItemTree({
                           <span className="mr-1.5">
                             <Check
                               label={`Select all of ${g.name}`}
-                              checked={nodeKey === gNode.key}
+                              checked={nodeKeys.has(gNode.key)}
                               partial={leafPartial(gQuery)}
-                              onChange={() => onPickNode(nodeKey === gNode.key ? null : gNode)}
+                              onChange={() => onPickNode(gNode)}
                             />
                           </span>
                         )}
@@ -396,6 +398,7 @@ export function ItemTree({
                       {gOpen && (
                         <LeafList
                           query={gQuery}
+                          total={g.leaf_count}
                           pad="pl-10"
                           selectedItemId={selectedItemId}
                           useSizeLabel
@@ -436,11 +439,11 @@ export function ItemTree({
                         <span className="mr-1.5">
                           <Check
                             label={`Select all ungrouped in ${c.name}`}
-                            checked={nodeKey === lNode.key}
+                            checked={nodeKeys.has(lNode.key)}
                             partial={leafPartial(
                               c.id ? `category_id=${c.id}` : "uncategorised=true",
                             )}
-                            onChange={() => onPickNode(nodeKey === lNode.key ? null : lNode)}
+                            onChange={() => onPickNode(lNode)}
                           />
                         </span>
                       )}
@@ -469,6 +472,7 @@ export function ItemTree({
                     {openLoose.has(looseKey) && (
                       <LeafList
                         query={c.id ? `category_id=${c.id}` : "uncategorised=true"}
+                        total={c.loose_count}
                         pad="pl-10"
                         selectedItemId={selectedItemId}
                         writable={writable}
@@ -496,8 +500,11 @@ export function ItemTree({
 }
 
 /** Leaves for one expanded node — fetched on first open, then cached. */
+const LEAF_PAGE = 200;
+
 function LeafList({
   query,
+  total,
   pad,
   selectedItemId,
   useSizeLabel,
@@ -509,6 +516,8 @@ function LeafList({
   onPick,
 }: {
   query: string;
+  /** how many items the node holds, so a long one can offer "show more" */
+  total: number;
   pad: string;
   selectedItemId: string | null;
   useSizeLabel?: boolean;
@@ -519,9 +528,11 @@ function LeafList({
   onDragEnd: () => void;
   onPick: (id: string) => void;
 }) {
+  const [limit, setLimit] = useState(LEAF_PAGE);
   const leaves = useQuery({
-    queryKey: ["item-tree-leaves", query],
-    queryFn: () => api<TreeLeaf[]>(`/items/tree/leaves?${query}`),
+    queryKey: ["item-tree-leaves", query, limit],
+    queryFn: () => api<TreeLeaf[]>(`/items/tree/leaves?${query}&limit=${limit}`),
+    placeholderData: keepPreviousData,
   });
 
   if (leaves.isLoading)
@@ -600,6 +611,15 @@ function LeafList({
           </div>
         );
       })}
+      {rows.length >= limit && total > rows.length && (
+        <button
+          className="block w-full border-b border-[#f3eee4] py-2.5 pl-10 pr-3 text-left text-[11px] text-accent hover:bg-accent-soft md:py-1.5"
+          onClick={() => setLimit((n) => Math.min(n + LEAF_PAGE, 2000))}
+        >
+          Show {Math.min(LEAF_PAGE, total - rows.length)} more · {total - rows.length} not shown
+          {limit >= 2000 ? " (open the Flat view to see them all)" : ""}
+        </button>
+      )}
     </>
   );
 }

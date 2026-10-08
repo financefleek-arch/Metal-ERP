@@ -245,3 +245,67 @@ def test_tree_leaves_carry_availability(client: TestClient) -> None:
     leaves = client.get(f"/api/items/tree/leaves?category_id={cat}", headers=h).json()
     assert leaves[0]["availability"] == "out_of_stock"
     assert leaves[0]["tally_state"] == "none"
+
+
+def test_filter_any_of_combines_tree_nodes(client: TestClient) -> None:
+    h = _h(_token(client, "gap-11@x.example.com"))
+    a = _cat(client, h, "Gap Any A")
+    b = _cat(client, h, "Gap Any B")
+    c = _cat(client, h, "Gap Any C")
+    g = _grp(client, h, "Gap Any Grp", c)
+    _item(client, h, "Gap Any A1", category_id=a)
+    _item(client, h, "Gap Any B1", category_id=b)
+    _item(client, h, "Gap Any B2", category_id=b)
+    _item(client, h, "Gap Any C1", group_id=g)
+    _item(client, h, "Gap Any C2", category_id=c)
+
+    assert _count(client, h, {"any_of": [{"category_id": a}, {"category_id": b}]}) == 3
+    # a category next to a group inside another one
+    assert _count(client, h, {"any_of": [{"category_id": a}, {"group_id": g}]}) == 2
+    # still ANDed with the rest of the filter
+    two = {"any_of": [{"category_id": a}, {"category_id": b}], "ungrouped": True}
+    assert _count(client, h, two) == 3
+    # a node with nothing in it is refused rather than matching everything
+    bad = client.post("/api/items/count", headers=h, json={"any_of": [{}]})
+    assert bad.status_code == 422
+    # bulk actions take it too
+    res = client.post(
+        "/api/items/bulk-price?dry_run=true",
+        headers=h,
+        json={"filter": {"any_of": [{"category_id": a}]}, "mode": "percent", "value": "5"},
+    )
+    assert res.status_code == 200
+
+
+def test_list_takes_any_of_and_tree_leaves_are_capped(client: TestClient) -> None:
+    import json
+
+    h = _h(_token(client, "gap-12@x.example.com"))
+    a = _cat(client, h, "Gap List A")
+    b = _cat(client, h, "Gap List B")
+    _item(client, h, "Gap List A1", category_id=a)
+    _item(client, h, "Gap List B1", category_id=b)
+    _item(client, h, "Gap List B2", category_id=b)
+    nodes = json.dumps([{"category_id": a}, {"category_id": b}])
+    r = client.get("/api/items", headers=h, params={"any_of": nodes})
+    assert r.status_code == 200 and len(r.json()) == 3
+    only_a = json.dumps([{"category_id": a}])
+    assert len(client.get("/api/items", headers=h, params={"any_of": only_a}).json()) == 1
+    bad = client.get("/api/items", headers=h, params={"any_of": "not json"})
+    assert bad.status_code == 422
+
+    leaves = client.get(f"/api/items/tree/leaves?category_id={b}&limit=1", headers=h).json()
+    assert len(leaves) == 1
+
+
+def test_bulk_move_rejects_unknown_targets_up_front(client: TestClient) -> None:
+    h = _h(_token(client, "gap-13@x.example.com"))
+    cat = _cat(client, h, "Gap Up Front")
+    it = _item(client, h, "Gap Up Front One", category_id=cat)
+    for fields in ({"group_id": "nope"}, {"category_id": "nope"}, {"hsn_code": "00000000"}):
+        r = client.patch(
+            "/api/items/bulk",
+            headers=h,
+            json={"ids": [it], "fields": fields, "fields_set": list(fields)},
+        )
+        assert r.status_code == 422, (fields, r.text)

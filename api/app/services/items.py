@@ -58,6 +58,27 @@ def document_count(session: Session, item_id: str) -> int:
     return total
 
 
+def document_counts(session: Session, item_ids: list[str]) -> dict[str, int]:
+    """`document_count` for many items in a few grouped queries instead of two per item."""
+    out: dict[str, int] = {}
+    for table_name, col in (
+        ("invoice_line", "item_id"),
+        ("inward_bill_line", "matched_item_id"),
+    ):
+        table = Item.metadata.tables.get(table_name)
+        if table is None or col not in table.c:
+            continue
+        for i in range(0, len(item_ids), 500):
+            chunk = item_ids[i : i + 500]
+            for iid, n in session.execute(
+                select(table.c[col], func.count())
+                .where(table.c[col].in_(chunk))
+                .group_by(table.c[col])
+            ):
+                out[iid] = out.get(iid, 0) + n
+    return out
+
+
 def detach_catalog_links(
     session: Session, item_ids: list[str], *, to_item_id: str | None = None
 ) -> None:

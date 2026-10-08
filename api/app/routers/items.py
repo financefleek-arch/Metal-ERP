@@ -11,7 +11,7 @@ import re
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import Integer, case, func, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
@@ -43,6 +43,7 @@ from app.schemas_item import (
     ItemMergeIn,
     ItemOut,
     ItemUpdate,
+    NodeFilter,
 )
 from app.services import audit
 from app.services.catalogue.learn_from_recategorize import learn_from_recategorize
@@ -54,6 +55,8 @@ from app.services.items import (
     apply_search,
     detach_catalog_links,
     document_count,
+    document_counts,
+    hsn_exists,
     hsn_gst_rate,
     rate_in_band,
 )
@@ -124,12 +127,24 @@ def list_items(
     category_id: str | None = Query(default=None),
     uncategorised: bool = Query(default=False),
     ungrouped: bool = Query(default=False),
+    any_of: str | None = Query(
+        default=None, description="JSON list of tree nodes; an item in any of them matches"
+    ),
     limit: int | None = Query(
         default=None, ge=1, description="page size; omit for the whole list"
     ),
     cursor: str | None = Query(default=None, description="opaque next-page token"),
 ) -> list[ItemListItem]:
+    nodes: list[NodeFilter] | None = None
+    if any_of:
+        try:
+            nodes = TypeAdapter(list[NodeFilter]).validate_json(any_of)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail="any_of is not a list of tree nodes"
+            ) from exc
     flt = ItemFilter(
+        any_of=nodes,
         group_id=group_id,
         category_id=category_id,
         uncategorised=uncategorised,
@@ -309,6 +324,7 @@ def item_tree_leaves(
     group_id: str | None = Query(default=None),
     category_id: str | None = Query(default=None, description="loose leaves in this category"),
     uncategorised: bool = Query(default=False, description="loose leaves with no category"),
+    limit: int = Query(default=200, ge=1, le=2000, description="first N; ask for more to see more"),
 ) -> list[TreeLeaf]:
     """Leaves for one tree node — a group, or the loose bucket of a category.
 
@@ -335,7 +351,7 @@ def item_tree_leaves(
         func.coalesce(Item.size_pos, 9999) if group_id is not None else func.lower(Item.name),
         func.lower(Item.name),
     )
-    rows = session.scalars(stmt).unique().all()
+    rows = session.scalars(stmt.limit(limit)).unique().all()
     return [
         TreeLeaf(
             id=it.id,
@@ -412,12 +428,8 @@ def _apply_group_inheritance(
     """
     if not it.group_id:
         return
-    grp = session.scalar(
-        select(ProductGroup).where(
-            ProductGroup.id == it.group_id, ProductGroup.tenant_id == tenant_id
-        )
-    )
-    if grp is None:
+    grp = session.get(ProductGroup, it.group_id)  # one query, then the session remembers it
+    if grp is None or grp.tenant_id != tenant_id:
         raise HTTPException(status_code=422, detail="Unknown product group")
     if "category_id" not in set_fields and it.category_id is None:
         it.category_id = grp.category_id
@@ -481,6 +493,21 @@ def bulk_update(
     ]
     learned: list[str] = []
     changed = unchanged = 0
+    # Check the targets once, up front, so 10,000 rows do not each find out the same thing.
+    if patch.get("group_id"):
+        grp = session.get(ProductGroup, patch["group_id"])
+        if grp is None or grp.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=422, detail="Unknown product group")
+    if patch.get("category_id"):
+        cat = session.get(ItemCategory, patch["category_id"])
+        if cat is None or cat.tenant_id != user.tenant_id:
+            raise HTTPException(status_code=422, detail="Unknown category")
+    hsn_rate = None
+    if patch.get("hsn_code"):
+        if not hsn_exists(session, patch["hsn_code"]):
+            raise HTTPException(status_code=422, detail="Unknown HSN code")
+        hsn_rate = hsn_gst_rate(session, patch["hsn_code"])
+    synonyms = load_synonym_map(session, user.tenant_id) if patch.get("group_id") else None
 
     # name is not bulk-editable, so a normalized-key check is unnecessary here.
     for it in found:
@@ -525,36 +552,26 @@ def bulk_update(
             changed += 1
             continue
 
-        sp = session.begin_nested()
-        try:
-            group_changed = "group_id" in diff and diff["group_id"] != it.group_id
-            hsn_changed = "hsn_code" in diff and diff["hsn_code"] != it.hsn_code
-            was_unconfirmed = it.status == ItemStatus.unconfirmed
-            if "notes" in diff and body.notes_mode == "append" and it.notes:
-                diff["notes"] = f"{it.notes}\n{diff['notes']}"
-            for field_, value in diff.items():
-                setattr(it, field_, value)
-            if group_changed:
-                _apply_group_inheritance(session, user.tenant_id, it, set(diff.keys()))
-                if it.group_id:
-                    rule = learn_from_recategorize(
-                        session, user.tenant_id, it, it.group_id,
-                        was_unconfirmed=was_unconfirmed,
-                    )
-                    if rule is not None:
-                        learned.append(rule.id)
-            if hsn_changed:
-                rate = hsn_gst_rate(session, it.hsn_code)
-                if rate is not None:
-                    it.gst_rate = float(rate)
-            session.flush()
-            sp.commit()
-        except Exception as exc:  # noqa: BLE001 — report, don't abort the batch
-            sp.rollback()
-            rows.append(
-                BulkOutcome(id=it.id, name=it.name, result="error", detail=str(exc)[:200])
-            )
-            continue
+        # Every target was checked before the loop, so nothing below can fail for one row: no
+        # savepoint per item, and one flush at the end writes the whole batch.
+        group_changed = "group_id" in diff and diff["group_id"] != it.group_id
+        hsn_changed = "hsn_code" in diff and diff["hsn_code"] != it.hsn_code
+        was_unconfirmed = it.status == ItemStatus.unconfirmed
+        if "notes" in diff and body.notes_mode == "append" and it.notes:
+            diff["notes"] = f"{it.notes}\n{diff['notes']}"
+        for field_, value in diff.items():
+            setattr(it, field_, value)
+        if group_changed:
+            _apply_group_inheritance(session, user.tenant_id, it, set(diff.keys()))
+            if it.group_id:
+                rule = learn_from_recategorize(
+                    session, user.tenant_id, it, it.group_id,
+                    was_unconfirmed=was_unconfirmed, synonyms=synonyms,
+                )
+                if rule is not None:
+                    learned.append(rule.id)
+        if hsn_changed and hsn_rate is not None:
+            it.gst_rate = float(hsn_rate)
         rows.append(
             BulkOutcome(id=it.id, name=it.name, result="changed", detail="; ".join(detail_bits))
         )
@@ -562,6 +579,8 @@ def bulk_update(
 
     if dry_run:
         session.rollback()
+    elif changed:
+        session.flush()
 
     order = {i: n for n, i in enumerate(all_ids)}
     rows.sort(key=lambda r: order.get(r.id, 1_000_000))
@@ -680,6 +699,14 @@ def bulk_rename(
     rows: list[BulkOutcome] = [
         BulkOutcome(id=mid, name="—", result="error", detail="not found") for mid in missing
     ]
+    # every name key in the firm and the synonym map, loaded once instead of once per item
+    synonyms = load_synonym_map(session, user.tenant_id)
+    taken: dict[str, tuple[str, str]] = {
+        key: (iid, nm)
+        for iid, nm, key in session.execute(
+            select(Item.id, Item.name, Item.name_normalized).where(Item.tenant_id == user.tenant_id)
+        )
+    }
     changed = unchanged = 0
     for it in found:
         if it.merged_into_id is not None:
@@ -700,32 +727,31 @@ def bulk_rename(
                 BulkOutcome(id=it.id, name=it.name, result="error", detail="name would be too long")
             )
             continue
-        key = _normalized(session, user.tenant_id, new)
-        clash = session.scalar(
-            select(Item).where(
-                Item.tenant_id == user.tenant_id, Item.id != it.id, Item.name_normalized == key
-            )
-        )
-        if not key or clash is not None:
+        key = normalize_name(new, synonyms)
+        clash = taken.get(key)
+        if not key or (clash is not None and clash[0] != it.id):
             rows.append(
                 BulkOutcome(
                     id=it.id,
                     name=it.name,
                     result="error",
-                    detail=f"would match the existing item: {clash.name}" if clash else "no name",
+                    detail=f"would match the existing item: {clash[1]}" if clash else "no name",
                 )
             )
             continue
         rows.append(
             BulkOutcome(id=it.id, name=it.name, result="changed", detail=f"{it.name} → {new}")
         )
-        # applied in a dry run too, then rolled back, so a later row sees this name as taken
+        # a later row in this same batch must see this name as taken, and the old one as free
+        if taken.get(it.name_normalized, (None,))[0] == it.id:
+            del taken[it.name_normalized]
+        taken[key] = (it.id, new)
         it.name, it.name_normalized = new, key
-        session.flush()
         changed += 1
     if dry_run:
         session.rollback()
     elif changed:
+        session.flush()
         audit.record(
             session,
             tenant_id=user.tenant_id,
@@ -765,6 +791,7 @@ def bulk_delete(
     ]
     deleted = archived = blocked = 0
     removable: list[str] = []
+    refs_by_item = document_counts(session, [it.id for it in found])
 
     for it in found:
         if it.merged_into_id is not None:
@@ -772,7 +799,7 @@ def bulk_delete(
                 BulkOutcome(id=it.id, name=it.name, result="error", detail="already merged")
             )
             continue
-        refs = document_count(session, it.id)
+        refs = refs_by_item.get(it.id, 0)
         n = max(refs, it.times_billed)
         if n > 0:
             if body.on_blocked == "archive":
@@ -1017,8 +1044,9 @@ def resolve(
 @router.post("/count", response_model=ItemCountOut)
 def count_matching(body: ItemFilter, user: CurrentUser, session: SessionDep) -> ItemCountOut:
     """How many items a filter matches, for "select all N matching" and bulk previews."""
-    n = len(list(session.scalars(_filter_stmt(session, user.tenant_id, body)).unique().all()))
-    return ItemCountOut(count=n)
+    stmt = _filter_stmt(session, user.tenant_id, body).order_by(None)
+    n = session.scalar(select(func.count()).select_from(stmt.subquery()))
+    return ItemCountOut(count=n or 0)
 
 
 class SourceCatalog(BaseModel):

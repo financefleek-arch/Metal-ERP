@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models import CatalogProduct, Item, SupplierCatalogItem
 from app.models._mixins import ItemStatus
-from app.schemas_item import MAX_BULK_FILTER, ItemFilter
+from app.schemas_item import MAX_BULK_FILTER, ItemFilter, NodeFilter
 from app.services.items import apply_search
 
 
@@ -65,6 +65,15 @@ def filter_clauses(f: ItemFilter) -> list:  # type: ignore[type-arg]
                 SupplierCatalogItem.catalog_id == f.catalog_id,
             )
         )
+    out.extend(_place_clauses(f))
+    if f.any_of:
+        out.append(or_(*[and_(*_place_clauses(n)) for n in f.any_of]))
+    return out
+
+
+def _place_clauses(f: ItemFilter | NodeFilter) -> list:  # type: ignore[type-arg]
+    """Where in the tree: a group, a category, and/or the "no group" bucket."""
+    out: list = []  # type: ignore[type-arg]
     if f.group_id:
         out.append(Item.group_id == f.group_id)
     if f.category_id:
