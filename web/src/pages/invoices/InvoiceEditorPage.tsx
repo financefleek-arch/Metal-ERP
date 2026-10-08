@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError } from "../../lib/api";
+import { api, apiUpload, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { computePreview, inr } from "../../lib/previewTotal";
 import { computeMeasure, kg } from "../../lib/weighment";
@@ -592,6 +592,90 @@ export function InvoiceEditorPage() {
     setOpenKey(r.key); // the fresh line is the one you're filling
     setDirty(true);
   }
+
+  // Speech-invoice-capture pilot: one push-to-talk recording -> one resolved
+  // line, appended the same way a typed pick is (see ItemPicker.pick above).
+  // Server does transcription + parsing + item-match; this just records,
+  // uploads, and inserts the result flagged for review when uncertain.
+  const [recording, setRecording] = useState(false);
+  const [voiceBusy, setVoiceBusy] = useState(false);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceChunksRef = useRef<Blob[]>([]);
+
+  async function startVoiceLine() {
+    setVoiceNote(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      voiceChunksRef.current = [];
+      mr.ondataavailable = (e) => {
+        if (e.data.size > 0) voiceChunksRef.current.push(e.data);
+      };
+      mr.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(voiceChunksRef.current, { type: mr.mimeType || "audio/webm" });
+        void submitVoiceLine(blob);
+      };
+      mediaRecorderRef.current = mr;
+      mr.start();
+      setRecording(true);
+    } catch {
+      setVoiceNote("Couldn't access the microphone — check browser/site permission.");
+    }
+  }
+
+  function stopVoiceLine() {
+    mediaRecorderRef.current?.stop();
+    setRecording(false);
+  }
+
+  async function submitVoiceLine(blob: Blob) {
+    setVoiceBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", blob, "line.webm");
+      const r = await apiUpload<{
+        transcript: string;
+        item_id: string | null;
+        description: string;
+        quantity: string | null;
+        uom: string | null;
+        unit_rate: string | null;
+        needs_review: boolean;
+        review_reason: string | null;
+      }>("/invoices/voice-line", fd);
+
+      if (!r.description) {
+        setVoiceNote(`Heard: "${r.transcript}" — ${r.review_reason ?? "try again"}`);
+        return;
+      }
+
+      const row = blankRow(curSeg);
+      setRows((rs) => [
+        ...rs,
+        {
+          ...row,
+          item_id: r.item_id,
+          description: r.description,
+          quantity: r.quantity ?? "",
+          uom: normalizeUom(r.uom ?? "") || r.uom || "",
+          unit_rate: r.unit_rate ?? "",
+        },
+      ]);
+      setOpenKey(row.key);
+      setDirty(true);
+      setVoiceNote(
+        r.needs_review
+          ? `Heard: "${r.transcript}" — ${r.review_reason ?? "please check this line"}`
+          : `Heard: "${r.transcript}" — added, please glance before saving.`,
+      );
+    } catch (e) {
+      setVoiceNote(e instanceof ApiError ? e.message : "Couldn't read that recording.");
+    } finally {
+      setVoiceBusy(false);
+    }
+  }
   function removeRow(key: string) {
     setRows((rs) => {
       const next = rs.filter((r) => r.key !== key);
@@ -989,20 +1073,36 @@ export function InvoiceEditorPage() {
             )}
 
             {!readOnly && (
-              <div className="p-3">
-                {/* mobile: a real button, not a whisper */}
-                <button
-                  className="flex w-full items-center justify-center gap-2 rounded-lg border-[1.5px] border-dashed border-accent bg-accent-soft py-3 text-[15px] font-semibold text-accent-dark md:hidden"
-                  onClick={addRow}
-                >
-                  <span className="text-xl leading-none">＋</span> Add another item
-                </button>
-                <button
-                  className="hidden text-sm text-accent hover:underline md:inline"
-                  onClick={addRow}
-                >
-                  + Add line
-                </button>
+              <div className="flex flex-col gap-2 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* mobile: a real button, not a whisper */}
+                  <button
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border-[1.5px] border-dashed border-accent bg-accent-soft py-3 text-[15px] font-semibold text-accent-dark md:hidden md:w-auto"
+                    onClick={addRow}
+                  >
+                    <span className="text-xl leading-none">＋</span> Add another item
+                  </button>
+                  <button
+                    className="hidden text-sm text-accent hover:underline md:inline"
+                    onClick={addRow}
+                  >
+                    + Add line
+                  </button>
+                  {/* Speech-invoice-capture pilot — push to talk, one line per recording */}
+                  <button
+                    type="button"
+                    disabled={voiceBusy}
+                    onClick={recording ? stopVoiceLine : startVoiceLine}
+                    className={`rounded-md border px-3 py-2 text-xs font-semibold md:py-1 ${
+                      recording
+                        ? "border-danger bg-[#f4e3df] text-danger"
+                        : "border-line bg-card text-ink hover:bg-ground"
+                    } disabled:opacity-60`}
+                  >
+                    {recording ? "● Recording — tap to stop" : voiceBusy ? "Reading…" : "Speak a line"}
+                  </button>
+                </div>
+                {voiceNote && <p className="text-xs text-muted">{voiceNote}</p>}
               </div>
             )}
           </div>

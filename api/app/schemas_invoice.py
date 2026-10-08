@@ -278,3 +278,21 @@ class SlipCaptureOut(BaseModel):
     party_guess_name: str | None = None
     party_needs_review: bool = False
     notes: str | None = None
+
+
+# --------------------------------------------------------------------------
+# speech-invoice-capture pilot — one push-to-talk line, resolve only (no
+# invoice side effects; the editor appends the result to its own row state,
+# same as a typed line)
+# --------------------------------------------------------------------------
+
+
+class VoiceLineOut(BaseModel):
+    transcript: str
+    item_id: str | None = None
+    description: str
+    quantity: Money | None = None
+    uom: str | None = None
+    unit_rate: Money | None = None
+    needs_review: bool
+    review_reason: str | None = None

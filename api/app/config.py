@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     llm_enabled: bool = False
     anthropic_api_key: str | None = None
 
+    # Speech-invoice-capture pilot (speech-invoice-capture-backlog) — STT for
+    # a push-to-talk voice line. Deepgram nova-3, language=multi (Hindi/
+    # Hinglish/English code-switch), prerecorded API — one short utterance
+    # per call, not a live stream.
+    deepgram_secret_key: str | None = None
+
     # Optional integrations
     # Brevo transactional-email HTTP API key — shared across the fleek
     # stack (secret/brevo/api). Used from Stage 1+ for invoice email.

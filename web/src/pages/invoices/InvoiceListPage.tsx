@@ -143,7 +143,6 @@ export function InvoiceListPage() {
             ref={slipInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             onChange={(e) => {
               onSlipFile(e.target.files);

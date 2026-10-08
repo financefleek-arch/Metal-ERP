@@ -18,6 +18,7 @@ from sqlalchemy import case, func, select, update
 from sqlalchemy.orm import selectinload
 
 from app.deps import CurrentUser, DraftUser, SessionDep, WriteUser
+from app.domain.normalize import load_synonym_map
 from app.models import (
     CustomerOrder,
     Invoice,
@@ -50,6 +51,7 @@ from app.schemas_invoice import (
     PartyBrief,
     SlipCaptureOut,
     SlipLineReview,
+    VoiceLineOut,
 )
 from app.services import order_notify
 from app.services.invoices.common import (
@@ -60,9 +62,12 @@ from app.services.invoices.common import (
     totals_for,
 )
 from app.services.invoices.finalize import FinalizeError, finalize_invoice
+from app.services.item_resolution import resolve_item
 from app.services.ocr.extract_slip import SlipExtractionError, extract_slip
 from app.services.ocr.slip_to_draft import build_draft
 from app.services.payments import paid_amount_for_invoice
+from app.services.speech.parse_line import parse_voice_line
+from app.services.speech.transcribe import TranscriptionError, transcribe
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -463,6 +468,63 @@ def create_invoice_from_slip(
         party_guess_name=draft.party_guess_name,
         party_needs_review=draft.party_needs_review,
         notes=draft.notes,
+    )
+
+
+@router.post("/voice-line", response_model=VoiceLineOut)
+def resolve_voice_line(
+    user: DraftUser,
+    session: SessionDep,
+    file: UploadFile = File(...),
+) -> VoiceLineOut:
+    """Pilot: one push-to-talk recording -> one resolved invoice line.
+
+    Resolve-only — no invoice side effects. The editor calls this per line
+    while the operator is building a draft and appends the result to its own
+    row state, exactly as a typed line is added; nothing here auto-commits.
+    """
+    data = file.file.read()
+    try:
+        tx = transcribe(data, file.content_type or "audio/webm")
+    except TranscriptionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+
+    parsed = parse_voice_line(tx.text)
+
+    if not parsed.item_query:
+        return VoiceLineOut(
+            transcript=tx.text,
+            description="",
+            needs_review=True,
+            review_reason="couldn't make out an item in that — try again",
+        )
+
+    synonyms = load_synonym_map(session, user.tenant_id)
+    match = resolve_item(session, user.tenant_id, parsed.item_query, synonyms=synonyms)
+
+    needs_review = match.item_id is None or match.weak or parsed.quantity is None
+    reason = None
+    if parsed.quantity is None:
+        reason = "quantity not understood — please check"
+    elif match.item_id is None:
+        reason = "no confident item match — check the item"
+    elif match.weak:
+        reason = "ambiguous item match — please confirm"
+    elif parsed.rate is None:
+        reason = "rate not spoken — check before saving"
+        needs_review = True
+
+    return VoiceLineOut(
+        transcript=tx.text,
+        item_id=match.item_id,
+        description=parsed.item_query,
+        quantity=parsed.quantity,
+        uom=parsed.uom,
+        unit_rate=parsed.rate,
+        needs_review=needs_review,
+        review_reason=reason,
     )
 
 
