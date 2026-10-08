@@ -639,12 +639,24 @@ export function InvoiceEditorPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      const row = blankRow(curSeg);
-      voiceRowKeyRef.current = row.key;
-      setVoiceRowKey(row.key);
+      // Reuse a trailing still-empty row (e.g. a previous voice attempt
+      // that got no match and left its row blank) instead of stacking a
+      // fresh one every time "Speak a line" is tapped — otherwise each
+      // unresolved/retried attempt leaves permanent clutter behind.
+      const isEmpty = (r: Row) => !r.description.trim() && !r.item_id && !r.quantity.trim();
+      const lastRow = rows.length ? rows[rows.length - 1] : undefined;
+      let rowKey: string;
+      if (lastRow && isEmpty(lastRow)) {
+        rowKey = lastRow.key;
+      } else {
+        const fresh = blankRow(curSeg);
+        rowKey = fresh.key;
+        setRows((rs) => [...rs, fresh]);
+      }
+      voiceRowKeyRef.current = rowKey;
+      setVoiceRowKey(rowKey);
       finalTranscriptRef.current = "";
-      setRows((rs) => [...rs, row]);
-      setOpenKey(row.key);
+      setOpenKey(rowKey);
 
       const token = getToken() ?? "";
       const wsUrl = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/invoices/voice-line/ws?token=${encodeURIComponent(token)}`;
