@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pieces and supplier filter: visual review</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; background: #f4f1ec; color: #23201b; }
+  .serif { font-family: 'Fraunces', Georgia, serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+  h1 { font-size: 26px; font-weight: 600; margin: 0 0 6px; }
+  h2 { font-size: 18px; font-weight: 600; margin: 40px 0 4px; }
+  p.lead { font-size: 14px; color: #6f685b; margin: 0 0 16px; max-width: 880px; line-height: 1.5; }
+  .row { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .cap { font-size: 12px; color: #8a8272; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+  .note { font-size: 12.5px; color: #6f685b; max-width: 340px; line-height: 1.5; margin-top: 10px; }
+  .note b { color: #23201b; }
+  .phone { width: 340px; border: 10px solid #23201b; border-radius: 34px; background: #fff; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .ph-bar { background: #23201b; color: #f4f1ec; padding: 12px 14px; font-size: 13px; display: flex; justify-content: space-between; }
+  .ph-body { padding: 12px; background: #f4f1ec; }
+  .card { background: #fff; border: 1px solid #e6e0d6; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+  .img { height: 78px; display: grid; place-items: center; font-size: 11px; color: #8a8272; background: repeating-linear-gradient(45deg, #efe9df, #efe9df 8px, #f6f2ea 8px, #f6f2ea 16px); }
+  .t { padding: 8px 10px 2px; font-size: 13px; font-weight: 500; line-height: 1.3; }
+  .p { padding: 0 10px; font-weight: 600; font-size: 15px; display: flex; justify-content: space-between; align-items: baseline; }
+  .s { padding: 1px 10px 8px; font-size: 11.5px; color: #8a8272; line-height: 1.4; }
+  .qrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 10px; }
+  .seg { display: inline-flex; border: 1px solid #cbc4b8; border-radius: 8px; overflow: hidden; font-size: 12px; font-weight: 600; }
+  .seg span { padding: 6px 12px; background: #fff; color: #6f685b; }
+  .seg span.on { background: #2f6f89; color: #fff; }
+  .step { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; font-size: 14px; }
+  .step b { width: 28px; height: 28px; border: 1px solid #cbc4b8; border-radius: 7px; display: grid; place-items: center; font-size: 16px; background: #fff; }
+  .line { font-size: 12px; color: #6f685b; padding: 0 10px 8px; }
+  .btn { display: inline-block; background: #2f6f89; color: #fff; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 12.5px; }
+  .btn.ghost { background: #fff; color: #2f6f89; border: 1px solid #2f6f89; }
+  .desk { width: 720px; max-width: 100%; background: #fff; border: 1px solid #e6e0d6; border-radius: 12px; padding: 18px; }
+  .desk h3 { margin: 0 0 4px; font-size: 16px; }
+  .sub { font-size: 12px; color: #8a8272; line-height: 1.45; }
+  label.l { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; margin: 12px 0 4px; }
+  .inp { background: #fff; border: 1px solid #d8d1c4; border-radius: 8px; padding: 8px 11px; font-size: 13px; display: inline-block; min-width: 90px; }
+  .radio { display: flex; gap: 8px; align-items: baseline; font-size: 13.5px; margin: 5px 0; }
+  .chip { display: inline-block; font-size: 11px; padding: 5px 11px; border-radius: 999px; border: 1px solid #d8d1c4; background: #fff; color: #6f685b; margin: 0 5px 6px 0; }
+  .chip.on { background: #2f6f89; border-color: #2f6f89; color: #fff; }
+  .chip.sel { border-color: #2f6f89; background: #e3edf2; color: #2f6f89; font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
+  th { text-align: left; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: #8a8272; padding: 8px 10px; border-bottom: 1px solid #e6e0d6; font-weight: 500; }
+  td { padding: 9px 10px; border-bottom: 1px solid #f0ebe1; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tag { font-size: 10.5px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #e3edf2; color: #2f6f89; }
+  .ok { background: #eef3ee; border: 1px solid #cfe0cf; color: #2f6a3d; border-radius: 9px; padding: 11px 13px; font-size: 13px; line-height: 1.45; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="serif">Pieces on the order page, and finding a supplier's items</h1>
+  <p class="lead">Decided: a loose piece costs <b>pack price &divide; pieces</b> by default, with an optional <b>premium %</b> (on the link, and also when you create a catalog PDF). Whether pieces can be ordered is <b>chosen per catalog link</b>. Mock data and wording, not final.</p>
+
+  <h2 class="serif">1. The customer's catalog page</h2>
+  <p class="lead">Every row now says how many pieces are in a pack, like the PDF does ("for 6 pcs"). When the link allows pieces, a row with a pack size gets a <b>Pack | Piece</b> switch next to the stepper. Items sold singly look as they do today. How many items per row (default 2), and whether the code and the pack line show, are set per link (section 2).</p>
+  <div class="row">
+    <div>
+      <p class="cap">Link shows the pack price large</p>
+      <div class="phone"><div class="ph-bar"><span>Kumar Steel House</span><span>Cart</span></div>
+        <div class="ph-body">
+          <div class="card"><div class="img">photo</div>
+            <div class="t">Beer Mug 480 ML Col Box 6 PC</div>
+            <div class="p"><span>&#8377;1,256</span><span class="sub" style="font-weight:400">100500</span></div>
+            <div class="s">for 6 pcs &middot; &#8377;209.33 per piece</div>
+            <div class="qrow"><span class="seg"><span class="on">Pack</span><span>Piece</span></span><span class="step"><b>&minus;</b>2<b>+</b></span></div>
+            <div class="line">2 packs &times; &#8377;1,256 = <b style="color:#23201b">&#8377;2,512</b></div>
+          </div>
+          <div class="card"><div class="img">photo</div>
+            <div class="t">Single Bowl</div>
+            <div class="p"><span>&#8377;99</span><span class="sub" style="font-weight:400">100501</span></div>
+            <div class="qrow"><span class="sub">each</span><span class="step"><b>&minus;</b>1<b>+</b></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Customer switched to Piece</p>
+      <div class="phone"><div class="ph-bar"><span>Kumar Steel House</span><span>Cart</span></div>
+        <div class="ph-body">
+          <div class="card"><div class="img">photo</div>
+            <div class="t">Beer Mug 480 ML Col Box 6 PC</div>
+            <div class="p"><span>&#8377;209.33 <span class="sub" style="font-weight:400">per piece</span></span><span class="sub" style="font-weight:400">100500</span></div>
+            <div class="s">pack of 6: &#8377;1,256</div>
+            <div class="qrow"><span class="seg"><span>Pack</span><span class="on">Piece</span></span><span class="step"><b>&minus;</b>4<b>+</b></span></div>
+            <div class="line">4 pieces &times; &#8377;209.33 = <b style="color:#23201b">&#8377;837.32</b></div>
+          </div>
+        </div>
+      </div>
+      <p class="note">A shop that sets a premium shows the premium price here (for 10%: &#8377;230.27). The server prices the order, not the page.</p>
+    </div>
+    <div>
+      <p class="cap">Link set to "show per piece price"</p>
+      <div class="phone"><div class="ph-bar"><span>Kumar Steel House</span><span>Cart</span></div>
+        <div class="ph-body">
+          <div class="card"><div class="img">photo</div>
+            <div class="t">Beer Mug 480 ML Col Box 6 PC</div>
+            <div class="p"><span>&#8377;209.33 <span class="sub" style="font-weight:400">per piece</span></span><span class="sub" style="font-weight:400">100500</span></div>
+            <div class="s">pack of 6: &#8377;1,256</div>
+            <div class="qrow"><span class="seg"><span class="on">Pack</span><span>Piece</span></span><span class="step"><b>&minus;</b>1<b>+</b></span></div>
+          </div>
+          <div class="sub">Same wording as the catalog PDF's "per piece" option.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="serif">2. The shop's side</h2>
+  <div class="row">
+    <div>
+      <p class="cap">Share link dialog: new options</p>
+      <div class="desk" style="width:500px">
+        <h3 class="serif">Share link</h3>
+        <label class="l">Page layout on a phone</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <span class="chip">1 per row <span class="sub">(large)</span></span><span class="chip on">2 per row <span class="sub" style="color:#dbe9ef">(default)</span></span><span class="chip">3 per row <span class="sub">(compact)</span></span>
+        </div>
+        <div class="radio" style="margin-top:8px">&#9745; <span>Show item code</span></div>
+        <div class="radio">&#9745; <span>Show "for 6 pcs" and the per-piece price</span></div>
+        <div class="sub">Tablets and computers show more per row automatically. The other items below the line are as drawn in section 1.</div>
+        <label class="l">Price shown</label>
+        <div class="radio">&#9673; <span>Pack price <span class="sub">(with "&#8377;209.33 per piece" underneath)</span></span></div>
+        <div class="radio">&#9675; <span>Price per piece <span class="sub">(with the pack price underneath)</span></span></div>
+        <label class="l">Customers can order</label>
+        <div class="radio">&#9673; <span>Whole packs only</span></div>
+        <div class="radio">&#9675; <span>Packs or single pieces</span></div>
+        <label class="l">Loose-piece premium</label>
+        <span class="inp">10</span> <span class="sub">% on top of pack price &divide; pieces. Leave 0 for no premium. Only used when pieces can be ordered.</span>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Make customer catalog dialog: new field</p>
+      <div class="desk" style="width:440px">
+        <h3 class="serif">Make customer catalog</h3>
+        <label class="l">Price shown</label>
+        <div class="radio">&#9675; <span>Price of a pack</span></div>
+        <div class="radio">&#9673; <span>Price per piece</span></div>
+        <label class="l">Loose-piece premium</label>
+        <span class="inp">10</span> <span class="sub">% added to the per-piece price. 0 = pack price &divide; pieces.</span>
+      </div>
+    </div>
+  </div>
+  <p class="note" style="max-width:720px">The premium only touches the per-piece price. Pack prices never change.</p>
+
+  <div class="row" style="margin-top:22px">
+    <div>
+      <p class="cap">Orders: each line says packs or pieces</p>
+      <div class="desk">
+        <h3 class="serif">Order ORD-0012</h3>
+        <table><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Amount</th></tr>
+          <tr><td>Beer Mug 480 ML <span class="tag">pieces</span></td><td class="num">4 pcs</td><td class="num">&#8377;209.33</td><td class="num">&#8377;837.32</td></tr>
+          <tr><td>Juice Glass 190 ML</td><td class="num">3 packs</td><td class="num">&#8377;190</td><td class="num">&#8377;570</td></tr></table>
+        <div class="sub" style="margin-top:8px">The draft invoice counts loose pieces in pieces: "Beer Mug 480 ML (loose pieces) &times; 4 nos &#8377;209.33".</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="serif">3. Finding a supplier's items, and making a catalog right after import</h2>
+  <p class="lead">Today the supplier and price-list filters only appear when you arrive from another page, and the "make a customer catalog" step is buried in the Items selection bar. Two changes:</p>
+  <div class="row">
+    <div>
+      <p class="cap">Items page: pick the supplier or price list yourself</p>
+      <div class="desk" style="width:640px">
+        <div style="margin-bottom:6px"><span class="chip on">All</span><span class="chip">Missing HSN</span><span class="chip">No price</span></div>
+        <div style="margin-bottom:6px"><span class="chip">Supplier &#9662;</span><span class="chip">Price list &#9662;</span><span class="chip">No photo</span><span class="chip">Not in Tally</span></div>
+        <div class="sub" style="margin:4px 0 8px">After choosing:</div>
+        <div><span class="chip sel">Supplier: Sugal Glass House &#10005;</span><span class="chip sel">Price list: Winter 2026 &#10005;</span></div>
+        <div class="sub" style="margin-top:8px">Both lists show only suppliers and price lists that have items in your Items list. Tick the items, or "select all matching", and use "Make customer catalog" as today.</div>
+      </div>
+    </div>
+    <div>
+      <p class="cap">Right after "Add to items"</p>
+      <div class="desk" style="width:440px">
+        <h3 class="serif">Added to items</h3>
+        <div class="ok"><b>42 items added.</b> 3 had their code added to the name.</div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap"><span class="btn ghost">Done</span><span class="btn ghost">Open in Items</span><span class="btn">Make customer catalog</span></div>
+        <div class="sub" style="margin-top:8px">Opens the catalog dialog with all of this price list's items already chosen. The same button sits on the price list page once its items are in.</div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

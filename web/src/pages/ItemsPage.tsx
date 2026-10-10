@@ -6,7 +6,7 @@ import { useDebounced } from "../lib/useDebounced";
 import { useIsDesktop } from "../lib/useIsDesktop";
 import { uomDisplay } from "../lib/uom";
 import { canWrite } from "../lib/roles";
-import { AVAILABILITY, availabilityLabel, availabilityTone, tallyBadge } from "../lib/items";
+import { AVAILABILITY, availabilityLabel, availabilityTone, tallyBadge, type ItemSources } from "../lib/items";
 import { groupNode, type NodeAction, type TreeNodeSel } from "../lib/itemNodes";
 import type {
   Availability,
@@ -143,6 +143,18 @@ export function ItemsPage() {
   const [params, setParams] = useSearchParams();
   const catalogId = params.get("catalog");
   const supplierId = params.get("supplier");
+  const setParam = (key: string, value: string | null) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  };
+  // the suppliers and price lists that really have items here, for the two pickers
+  const sources = useQuery({
+    queryKey: ["item-sources"],
+    queryFn: () => api<ItemSources>("/items/sources"),
+    staleTime: 60_000,
+  });
 
   const [view, setView] = useState<View>(
     catalogId || supplierId || params.get("avail") ? "flat" : "tree",
@@ -634,6 +646,47 @@ export function ItemsPage() {
                   onChange={setGrpSel}
                 />
               </div>
+              {sources.data && (sources.data.suppliers.length > 0 || sources.data.price_lists.length > 0) && (
+                <div className="flex flex-wrap gap-1.5">
+                  {sources.data.suppliers.length > 0 && (
+                    <select
+                      aria-label="Supplier"
+                      className="field h-8 max-w-[14rem] text-xs"
+                      value={supplierId ?? ""}
+                      onChange={(e) => setParam("supplier", e.target.value || null)}
+                    >
+                      <option value="">All suppliers</option>
+                      {supplierId && !sources.data.suppliers.some((x) => x.id === supplierId) && (
+                        <option value={supplierId}>This supplier</option>
+                      )}
+                      {sources.data.suppliers.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.name} ({x.items})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {sources.data.price_lists.length > 0 && (
+                    <select
+                      aria-label="Price list"
+                      className="field h-8 max-w-[14rem] text-xs"
+                      value={catalogId ?? ""}
+                      onChange={(e) => setParam("catalog", e.target.value || null)}
+                    >
+                      <option value="">All price lists</option>
+                      {catalogId && !sources.data.price_lists.some((x) => x.id === catalogId) && (
+                        <option value={catalogId}>This price list</option>
+                      )}
+                      {sources.data.price_lists.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.title}
+                          {x.supplier ? ` · ${x.supplier}` : ""} ({x.items})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap gap-1.5 md:gap-1">
                 <button
                   onClick={() => setScopes(new Set())}

@@ -6,6 +6,7 @@ interface Line {
   code: string | null;
   qty: number;
   pack_qty: number;
+  unit: "pack" | "piece";
   rate: string;
   amount: string;
 }
@@ -114,7 +115,8 @@ export function PublicOrderPage() {
               <div className="min-w-0">
                 <p className="font-medium leading-snug">{l.name}</p>
                 <p className="text-xs text-muted tabular-nums">
-                  {l.qty} pack{l.qty === 1 ? "" : "s"} × ₹{money(l.rate)}
+                  {l.qty} {l.unit === "piece" ? "piece" : "pack"}{l.qty === 1 ? "" : "s"} × ₹{money(l.rate)}
+                  {l.unit === "pack" && l.pack_qty > 1 ? ` · ${l.qty * l.pack_qty} pcs` : ""}
                 </p>
               </div>
               <p className="shrink-0 font-semibold tabular-nums">₹{money(l.amount)}</p>

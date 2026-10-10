@@ -15,6 +15,8 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
+    true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -44,6 +46,25 @@ class CatalogShareLink(PkUuidMixin, TimestampMixin, Base):
     selection_json: Mapped[dict] = mapped_column(_JSON, nullable=False)
     # also show items marked Expected, tagged "on order"
     include_expected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Loose pieces: off unless the shop allows them for this link. The premium is extra on the
+    # divided price (0 = pack price / pieces). `price_basis` is which price the page shows large.
+    # how the page lays out its items: per row on a phone, and which small lines each card shows
+    columns: Mapped[int] = mapped_column(Integer, default=2, server_default="2", nullable=False)
+    show_code: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    show_pack_info: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    allow_pieces: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    piece_premium_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), default=0, server_default="0", nullable=False
+    )
+    price_basis: Mapped[str] = mapped_column(
+        String(5), default="pack", server_default="pack", nullable=False
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     view_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
@@ -97,7 +118,11 @@ class CustomerOrderLine(PkUuidMixin, TimestampMixin, Base):
     # what the customer saw and agreed to, kept even if the item changes later
     name: Mapped[str] = mapped_column(String(300), nullable=False)
     code: Mapped[str | None] = mapped_column(String(64))
-    qty: Mapped[int] = mapped_column(Integer, nullable=False)  # whole packs
+    qty: Mapped[int] = mapped_column(Integer, nullable=False)  # whole `unit`s
     pack_qty: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
-    rate: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)  # per pack
+    # what `qty` counts: a whole 'pack' (the default) or a loose 'piece'
+    unit: Mapped[str] = mapped_column(
+        String(5), default="pack", server_default="pack", nullable=False
+    )
+    rate: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)  # per `unit`
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)

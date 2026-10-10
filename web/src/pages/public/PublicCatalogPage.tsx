@@ -7,6 +7,8 @@ interface PublicItem {
   code: string;
   group: string;
   price: string;
+  /** what one loose piece costs on this link; null for an item sold singly */
+  piece_price: string | null;
   pack_qty: number;
   photo_url: string | null;
   thumb_url: string | null;
@@ -18,6 +20,12 @@ interface PublicCatalog {
   firm_phone: string | null;
   terms_line: string | null;
   min_order: string | null;
+  allow_pieces: boolean;
+  price_basis: "pack" | "piece";
+  /** items per row on a phone */
+  columns: 1 | 2 | 3;
+  show_code: boolean;
+  show_pack_info: boolean;
   groups: string[];
   items: PublicItem[];
 }
@@ -29,6 +37,30 @@ interface Placed {
 }
 
 const MAX_QTY = 999;
+
+type Unit = "pack" | "piece";
+type CartLine = { qty: number; unit: Unit };
+type Cart = Record<string, CartLine>;
+type Line = { item: PublicItem; qty: number; unit: Unit };
+
+/** per row on a phone; more on wider screens (class names written out so Tailwind sees them) */
+const GRID: Record<number, string> = {
+  1: "grid-cols-1 sm:grid-cols-3 md:grid-cols-4",
+  2: "grid-cols-2 sm:grid-cols-3 md:grid-cols-4",
+  3: "grid-cols-3 sm:grid-cols-4 md:grid-cols-5",
+};
+
+const rateOf = (item: PublicItem, unit: Unit) =>
+  unit === "piece" && item.piece_price ? Number(item.piece_price) : Number(item.price);
+const unitName = (unit: Unit, n: number) => (unit === "piece" ? (n === 1 ? "piece" : "pieces") : n === 1 ? "pack" : "packs");
+
+/** carts saved before pieces existed were {item: packs}; keep them */
+function readCart(token: string): Cart {
+  const fresh = read<Cart | null>(`cart2:${token}`, null);
+  if (fresh) return fresh;
+  const old = read<Record<string, number>>(`cart:${token}`, {});
+  return Object.fromEntries(Object.entries(old).map(([id, qty]) => [id, { qty, unit: "pack" as Unit }]));
+}
 const money = (v: string | number) =>
   Number(v).toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
@@ -62,7 +94,9 @@ export function PublicCatalogPage() {
   const [q, setQ] = useState("");
   const [group, setGroup] = useState("All");
   const [zoom, setZoom] = useState<PublicItem | null>(null);
-  const [cart, setCart] = useState<Record<string, number>>(() => read(`cart:${token}`, {}));
+  const [cart, setCart] = useState<Cart>(() => readCart(token));
+  // the Pack | Piece choice for items not in the cart yet
+  const [pref, setPref] = useState<Record<string, Unit>>({});
   const [step, setStep] = useState<"browse" | "review" | "done">("browse");
   const [placed, setPlaced] = useState<Placed | null>(null);
 
@@ -90,18 +124,18 @@ export function PublicCatalogPage() {
     if (data) document.title = `${data.title} · ${data.firm_name}`;
   }, [data]);
 
-  useEffect(() => write(`cart:${token}`, cart), [cart, token]);
+  useEffect(() => write(`cart2:${token}`, cart), [cart, token]);
 
   const byId = useMemo(() => new Map((data?.items ?? []).map((i) => [i.id, i])), [data]);
   // drop anything the shop no longer offers
   const lines = useMemo(
     () =>
       Object.entries(cart)
-        .map(([id, qty]) => ({ item: byId.get(id), qty }))
-        .filter((l): l is { item: PublicItem; qty: number } => !!l.item && l.qty > 0),
+        .map(([id, c]) => ({ item: byId.get(id), qty: c.qty, unit: c.unit }))
+        .filter((l): l is Line => !!l.item && l.qty > 0),
     [cart, byId],
   );
-  const total = lines.reduce((n, l) => n + Number(l.item.price) * l.qty, 0);
+  const total = lines.reduce((n, l) => n + rateOf(l.item, l.unit) * l.qty, 0);
   const packs = lines.reduce((n, l) => n + l.qty, 0);
   const min = data?.min_order ? Number(data.min_order) : 0;
 
@@ -110,9 +144,14 @@ export function PublicCatalogPage() {
       const next = { ...c };
       const v = Math.max(0, Math.min(MAX_QTY, Math.floor(qty) || 0));
       if (v === 0) delete next[id];
-      else next[id] = v;
+      else next[id] = { qty: v, unit: c[id]?.unit ?? pref[id] ?? "pack" };
       return next;
     });
+  const unitOf = (id: string): Unit => cart[id]?.unit ?? pref[id] ?? "pack";
+  const setUnit = (id: string, unit: Unit) => {
+    setPref((p) => ({ ...p, [id]: unit }));
+    setCart((c) => (c[id] ? { ...c, [id]: { ...c[id], unit } } : c));
+  };
 
   const shown = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -237,9 +276,15 @@ export function PublicCatalogPage() {
       {shown.length === 0 ? (
         <p className="mt-10 text-center text-sm text-muted">Nothing matches that.</p>
       ) : (
-        <ul className="mt-4 grid grid-cols-2 gap-3 pb-24 sm:grid-cols-3 md:grid-cols-4">
+        <ul className={`mt-4 grid ${GRID[data.columns] ?? GRID[2]} gap-3 pb-24`}>
           {shown.map((i) => {
-            const qty = cart[i.id] ?? 0;
+            const qty = cart[i.id]?.qty ?? 0;
+            const unit = unitOf(i.id);
+            const canPiece = data.allow_pieces && !!i.piece_price;
+            const perPiece = data.price_basis === "piece" && !!i.piece_price;
+            const headline = perPiece ? i.piece_price! : i.price;
+            const packInfo = i.pack_qty > 1 && data.show_pack_info;
+            const meta = [data.show_code && i.code ? i.code : null].filter(Boolean).join(" · ");
             return (
               <li key={i.id} className={`card overflow-hidden bg-card ${qty ? "ring-2 ring-accent" : ""}`}>
                 <button
@@ -256,18 +301,38 @@ export function PublicCatalogPage() {
                 </button>
                 <div className="p-2.5">
                   <p className="line-clamp-2 text-[13px] font-medium leading-snug">{i.name}</p>
-                  <p className="mt-0.5 text-[11px] text-muted">
-                    {i.code ? `${i.code} · ` : ""}Pack of {i.pack_qty}
-                  </p>
+                  {meta && <p className="mt-0.5 text-[11px] text-muted">{meta}</p>}
                   <p className="mt-1 flex items-baseline gap-1.5">
-                    <span className="text-sm font-semibold tabular-nums">₹{money(i.price)}</span>
-                    <span className="text-[11px] text-muted">per pack</span>
+                    <span className="text-sm font-semibold tabular-nums">₹{money(headline)}</span>
+                    <span className="text-[11px] text-muted">{perPiece ? "per piece" : i.pack_qty > 1 ? "per pack" : "each"}</span>
                     {i.tag && (
                       <span className="ml-auto rounded-sm bg-accent-soft px-1 py-0.5 text-[9px] font-bold uppercase text-accent">
                         {i.tag}
                       </span>
                     )}
                   </p>
+                  {packInfo && (
+                    <p className="text-[11px] leading-snug text-muted">
+                      {perPiece
+                        ? `pack of ${i.pack_qty}: ₹${money(i.price)}`
+                        : `for ${i.pack_qty} pcs${i.piece_price ? ` · ₹${money(i.piece_price)} per piece` : ""}`}
+                    </p>
+                  )}
+                  {canPiece && (
+                    <div role="group" aria-label={`Order ${i.name} by`} className="mt-2 inline-flex overflow-hidden rounded-lg border border-line text-xs font-semibold">
+                      {(["pack", "piece"] as const).map((u) => (
+                        <button
+                          key={u}
+                          type="button"
+                          aria-pressed={unit === u}
+                          className={`px-3 py-1.5 ${unit === u ? "bg-accent text-ground" : "bg-card text-muted"}`}
+                          onClick={() => setUnit(i.id, u)}
+                        >
+                          {u === "pack" ? "Pack" : "Piece"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   {qty === 0 ? (
                     <button
                       type="button"
@@ -277,7 +342,13 @@ export function PublicCatalogPage() {
                       Add
                     </button>
                   ) : (
-                    <Stepper qty={qty} label={i.name} onChange={(n) => setQty(i.id, n)} />
+                    <>
+                      <Stepper qty={qty} unit={unit} label={i.name} onChange={(n) => setQty(i.id, n)} />
+                      <p className="mt-1.5 text-[11px] tabular-nums text-muted">
+                        {qty} {unitName(unit, qty)} × ₹{money(rateOf(i, unit))} ={" "}
+                        <b className="text-ink">₹{money(rateOf(i, unit) * qty)}</b>
+                      </p>
+                    </>
                   )}
                 </div>
               </li>
@@ -315,6 +386,7 @@ export function PublicCatalogPage() {
               <span className="font-medium">{zoom.name}</span>
               <span className="block text-xs text-muted">
                 ₹{money(zoom.price)} per pack of {zoom.pack_qty}
+                {zoom.piece_price ? ` · ₹${money(zoom.piece_price)} per piece` : ""}
               </span>
             </figcaption>
           </figure>
@@ -342,7 +414,17 @@ function Shell({ data, children }: { data: PublicCatalog; children: React.ReactN
   );
 }
 
-function Stepper({ qty, label, onChange }: { qty: number; label: string; onChange: (n: number) => void }) {
+function Stepper({
+  qty,
+  unit,
+  label,
+  onChange,
+}: {
+  qty: number;
+  unit: Unit;
+  label: string;
+  onChange: (n: number) => void;
+}) {
   return (
     <div className="mt-2 flex items-center justify-between">
       <button
@@ -354,7 +436,7 @@ function Stepper({ qty, label, onChange }: { qty: number; label: string; onChang
         −
       </button>
       <input
-        aria-label={`Packs of ${label}`}
+        aria-label={`${unit === "piece" ? "Pieces" : "Packs"} of ${label}`}
         inputMode="numeric"
         className="w-12 rounded-md border border-line bg-card py-1 text-center text-sm font-semibold tabular-nums"
         value={qty}
@@ -385,7 +467,7 @@ function ReviewOrder({
 }: {
   token: string;
   data: PublicCatalog;
-  lines: { item: PublicItem; qty: number }[];
+  lines: Line[];
   total: number;
   min: number;
   setQty: (id: string, qty: number) => void;
@@ -425,7 +507,7 @@ function ReviewOrder({
           note: note || null,
           wa_opt_in: wa,
           website: trap || null,
-          lines: lines.map((l) => ({ item_id: l.item.id, qty: l.qty })),
+          lines: lines.map((l) => ({ item_id: l.item.id, qty: l.qty, unit: l.unit })),
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
@@ -461,19 +543,20 @@ function ReviewOrder({
       <h2 className="mt-2 font-serif text-xl font-semibold">Your order</h2>
 
       <ul className="card mt-3 divide-y divide-line bg-card">
-        {lines.map(({ item, qty }) => (
+        {lines.map(({ item, qty, unit }) => (
           <li key={item.id} className="flex items-center gap-3 p-3">
             <div className="min-w-0 flex-1">
               <p className="line-clamp-2 text-[13px] font-medium leading-snug">{item.name}</p>
               <p className="text-[11px] text-muted tabular-nums">
-                {qty} pack{qty === 1 ? "" : "s"} × ₹{money(item.price)}
+                {qty} {unitName(unit, qty)} × ₹{money(rateOf(item, unit))}
+                {unit === "pack" && item.pack_qty > 1 ? ` · ${qty * item.pack_qty} pcs` : ""}
               </p>
             </div>
             <div className="w-28 shrink-0">
-              <Stepper qty={qty} label={item.name} onChange={(n) => setQty(item.id, n)} />
+              <Stepper qty={qty} unit={unit} label={item.name} onChange={(n) => setQty(item.id, n)} />
             </div>
             <p className="w-20 shrink-0 text-right text-sm font-semibold tabular-nums">
-              ₹{money(Number(item.price) * qty)}
+              ₹{money(rateOf(item, unit) * qty)}
             </p>
           </li>
         ))}

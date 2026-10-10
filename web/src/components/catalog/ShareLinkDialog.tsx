@@ -2,7 +2,15 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import type { CatalogSelection } from "../../lib/catalog";
-import { copyText, linkUrl, whatsappShare } from "./shareLinkUtils";
+import { ShareLinkOptions } from "./ShareLinkOptions";
+import {
+  DEFAULT_LINK_OPTIONS,
+  copyText,
+  linkUrl,
+  optionsBad,
+  whatsappShare,
+  type LinkOptions,
+} from "./shareLinkUtils";
 
 export interface ShareLink {
   id: string;
@@ -10,6 +18,12 @@ export interface ShareLink {
   token: string;
   path: string;
   include_expected: boolean;
+  columns: 1 | 2 | 3;
+  show_code: boolean;
+  show_pack_info: boolean;
+  price_basis: "pack" | "piece";
+  allow_pieces: boolean;
+  piece_premium_pct: number;
   expires_at: string | null;
   revoked_at: string | null;
   live: boolean;
@@ -35,6 +49,7 @@ export function ShareLinkDialog({
   const [title, setTitle] = useState("");
   const [expected, setExpected] = useState(false);
   const [days, setDays] = useState<"" | "7" | "30" | "90">("");
+  const [opts, setOpts] = useState<LinkOptions>(DEFAULT_LINK_OPTIONS);
   const [made, setMade] = useState<ShareLink | null>(null);
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -53,6 +68,7 @@ export function ShareLinkDialog({
           title: title.trim(),
           selection,
           include_expected: expected,
+          ...opts,
           expires_at: days ? new Date(Date.now() + Number(days) * 86_400_000).toISOString() : null,
         },
       }),
@@ -120,6 +136,9 @@ export function ShareLinkDialog({
                 <option value="90">After 90 days</option>
               </select>
             </div>
+            <div className="mt-4 border-t border-line pt-3">
+              <ShareLinkOptions value={opts} onChange={setOpts} idPrefix="sl" />
+            </div>
             {err && (
               <p className="err" role="alert">
                 {err}
@@ -132,7 +151,7 @@ export function ShareLinkDialog({
               <button
                 type="button"
                 className="btn-primary"
-                disabled={!title.trim() || create.isPending}
+                disabled={!title.trim() || optionsBad(opts) || create.isPending}
                 onClick={() => create.mutate()}
               >
                 {create.isPending ? "Making…" : "Make link"}

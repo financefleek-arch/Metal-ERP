@@ -17,6 +17,7 @@ from sqlalchemy import Integer, case, func, select
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import (
+    CatalogProduct,
     InwardBill,
     InwardBillLine,
     Item,
@@ -840,6 +841,59 @@ def bulk_delete(
         blocked=blocked,
         errors=sum(1 for r in rows if r.result == "error"),
         rows=rows,
+    )
+
+
+class SourceSupplier(BaseModel):
+    id: str
+    name: str
+    items: int
+
+
+class SourcePriceList(BaseModel):
+    id: str
+    title: str
+    supplier: str | None
+    items: int
+
+
+class ItemSourcesList(BaseModel):
+    suppliers: list[SourceSupplier]
+    price_lists: list[SourcePriceList]
+
+
+@router.get("/sources", response_model=ItemSourcesList)
+def item_filter_sources(user: CurrentUser, session: SessionDep) -> ItemSourcesList:
+    """The suppliers and price lists that have items in the Items list, for the two filters.
+
+    Only sources with at least one item that is actually in Items are offered, so choosing one
+    never gives an empty list."""
+    suppliers = session.execute(
+        select(Party.id, Party.legal_name, func.count(func.distinct(CatalogProduct.item_id)))
+        .join(CatalogProduct, CatalogProduct.supplier_party_id == Party.id)
+        .where(Party.tenant_id == user.tenant_id, CatalogProduct.item_id.is_not(None))
+        .group_by(Party.id, Party.legal_name)
+        .order_by(func.lower(Party.legal_name))
+    ).all()
+    lists = session.execute(
+        select(
+            SupplierCatalog.id,
+            SupplierCatalog.title,
+            Party.legal_name,
+            func.count(func.distinct(SupplierCatalogItem.item_id)),
+        )
+        .join(SupplierCatalogItem, SupplierCatalogItem.catalog_id == SupplierCatalog.id)
+        .outerjoin(Party, Party.id == SupplierCatalog.supplier_party_id)
+        .where(
+            SupplierCatalog.tenant_id == user.tenant_id,
+            SupplierCatalogItem.item_id.is_not(None),
+        )
+        .group_by(SupplierCatalog.id, SupplierCatalog.title, Party.legal_name)
+        .order_by(SupplierCatalog.created_at.desc())
+    ).all()
+    return ItemSourcesList(
+        suppliers=[SourceSupplier(id=i, name=n, items=c) for i, n, c in suppliers],
+        price_lists=[SourcePriceList(id=i, title=t, supplier=n, items=c) for i, t, n, c in lists],
     )
 
 

@@ -281,3 +281,25 @@ def test_sources_of_another_firms_item_is_not_found(
     other = auth(register(client, "other5@catalog.example.com"))
     foreign = client.post("/api/items", headers=other, json={"name": "Theirs"}).json()
     assert c.get(f"/api/items/{foreign['id']}/sources", headers=h).status_code == 404
+
+
+def test_sources_list_offers_only_suppliers_and_price_lists_that_have_items(
+    catalog_client: CatalogEnv,
+) -> None:
+    client, h, sup, cid = _env(catalog_client)
+    # a price list that was uploaded but never added to items must not be offered
+    _upload(
+        client, h, data=_cells("91"), name="b.pdf", supplier_party_id=_party(client, h, "Idle Co")
+    )
+    r = client.get("/api/items/sources", headers=h)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert [(s["id"], s["name"], s["items"]) for s in out["suppliers"]] == [
+        (sup, "Yujing Glass Traders", 3)
+    ]
+    assert [(p["id"], p["supplier"], p["items"]) for p in out["price_lists"]] == [
+        (cid, "Yujing Glass Traders", 3)
+    ]
+    # the ids are exactly what the Items filters take
+    assert len(_list(client, h, supplier_id=out["suppliers"][0]["id"])) == 3
+    assert len(_list(client, h, catalog_id=out["price_lists"][0]["id"])) == 3

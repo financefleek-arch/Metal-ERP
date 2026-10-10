@@ -18,13 +18,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from hashlib import sha256
 from typing import Literal
 
 import pymupdf
 
 from app.services.catalog.pdf_text import inr, latin1, put_text, wrap
+from app.services.piece_price import piece_rate
 
 PAGE_W, PAGE_H = 595.28, 841.89  # A4, points
 MARGIN = 28.0
@@ -68,6 +69,7 @@ class CatalogPdfOptions:
     group_by: str = "group"
     show_code: bool = True
     price_basis: str = "pack"
+    piece_premium_pct: float = 0.0
     contents: bool = True
 
 
@@ -104,8 +106,8 @@ _Cell = tuple[Literal["cell"], float, float, CatalogEntry]  # x, y, entry
 _Placed = _Heading | _Cell
 
 
-def piece_price(price: Decimal, pack_qty: int) -> Decimal:
-    return (price / max(pack_qty, 1)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+def piece_price(price: Decimal, pack_qty: int, premium_pct: object = 0) -> Decimal:
+    return piece_rate(price, pack_qty, premium_pct)
 
 
 def _geometry(columns: int) -> tuple[float, float]:
@@ -264,7 +266,7 @@ def _draw_cell(
 
     base = y + ch - 7
     if opts.price_basis == "piece" and entry.pack_qty > 1:
-        shown = inr(piece_price(entry.price, entry.pack_qty))
+        shown = inr(piece_price(entry.price, entry.pack_qty, opts.piece_premium_pct))
         sub = f"per piece  (pack of {entry.pack_qty}: {inr(entry.price)})"
     else:
         shown = inr(entry.price)

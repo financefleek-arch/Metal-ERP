@@ -172,3 +172,37 @@ Meta asks for an example for every variable. Use realistic values; no ₹ sign o
 - Shop alert number: Firm page > Customer catalog page > "Tell me on WhatsApp when an order arrives" (`tenant.order_alert_phone`), separate from the sending number, which cannot message itself.
 - Tests: 21 order tests (`test_customer_orders.py`) and 9 notification tests (`test_order_notifications.py`, Meta stubbed); full suite passes with foreign keys on. Browser-verified: placing, review, edit, new customer, draft invoice.
 - **Not verified against real Meta:** the templates must be approved first (submit them with the section 13 samples), and the first real send should be checked in `docker logs` and the order's WhatsApp list.
+
+## 15. Loose pieces and per-piece price (2026-10-10)
+
+Decided by the user: a loose piece costs **pack price / pieces** (to the paisa) by default, with an optional **premium %**; the premium
+is also an option when creating a customer catalog PDF. Whether pieces can be ordered is **chosen per catalog link**.
+
+Built (backend, migration `0055`, tests in `tests/catalog/test_order_pieces.py`, full suite green):
+- `services/piece_price.py::piece_rate` is the one rule (customer page, order, catalog PDF).
+- `catalog_share_link.allow_pieces` / `piece_premium_pct` / `price_basis` ('pack' | 'piece', which price is shown large).
+  The premium only applies where pieces can be bought; on a pack-only link the per-piece price shown is the plain divided one.
+- Public view: each item gets `piece_price` (None for an item with no pack size); top level gets `allow_pieces`, `price_basis`.
+- `customer_order_line.unit` ('pack' | 'piece'); `qty` and `rate` are per that unit. One unit per item per order (422 if both).
+  Piece orders are refused unless the link allows them and the item has a pack size > 1. The minimum order counts piece amounts.
+- Invoice lines from a piece line: quantity in pieces, uom `nos`, description "<name> (loose pieces)", unit rate = piece rate.
+- `CatalogLayout.piece_premium_pct` (PDF option, applied only when price basis = piece).
+
+Not built: the web screens. Visual review page: `docs/visual-plan/pieces-and-supplier-filter-review.html` (customer page Pack | Piece
+switch and "for 6 pcs" line, share-link and catalog dialog options, order lines showing pieces, Items supplier / price-list pickers,
+"Make customer catalog" right after "Add to items").
+
+Added the same day (migration `0056`): the page layout is per link too: `columns` (1, 2 = default, 3 items per row on a phone),
+`show_code`, `show_pack_info` ("for 6 pcs" and the per-piece price on each card). Public view carries all three. Mirrors the catalog PDF's
+Layout / Item code options. The review page shows them in the share-link dialog.
+
+Web screens BUILT 2026-10-10 (user approved the review page; typecheck + lint + vite build clean, NOT clicked through in a browser):
+- `PublicCatalogPage`: items per row (`columns`), code / "for N pcs + per piece price" lines, Pack | Piece switch, per-row total, cart stored as
+  `{qty, unit}` under `cart2:<token>` (old `cart:<token>` carts are read and converted); review rows show units; order sends `unit`.
+- `ShareLinkDialog` + new `ShareLinkOptions` (layout, price shown, pieces + premium); `ShareLinksPanel` gets an "Options" button per link
+  (PATCH, address unchanged) and a "pieces allowed" note. Shared types/defaults live in `shareLinkUtils.ts`.
+- `MakeCatalogDialog`: loose-piece premium field when price basis = piece (`piece_premium_pct`).
+- Shop `OrderDetail` / `PublicOrderPage`: Qty column with units, "pack of 6 pcs" / "loose pieces" line; `current_rate` for piece lines is compared piece to piece.
+- Items page: Supplier and Price list pickers (flat view) fed by new `GET /api/items/sources` (only sources that have items in Items).
+- Catalog review page: "Make customer catalog (N)" once items are in, and the same button in the "Add to items" done state
+  (opens `MakeCatalogDialog` with the Items filter `{catalog_id}`).

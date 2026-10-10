@@ -57,6 +57,7 @@ def display_number(n: int) -> str:
 class LineIn:
     item_id: str
     qty: int
+    unit: str = "pack"  # 'pack' or 'piece'
 
 
 @dataclass
@@ -127,12 +128,19 @@ def place(
         raise HTTPException(status_code=422, detail="Enter your name.")
     phone = clean_phone(phone)
 
-    # one line per item; whole packs only
+    # one line per item, in whole packs or (when the link allows it) whole pieces
     merged: dict[str, int] = {}
+    units: dict[str, str] = {}
     for ln in lines:
+        if ln.unit not in ("pack", "piece"):
+            raise HTTPException(status_code=422, detail="Choose pack or piece for each item.")
         if ln.qty < 1 or ln.qty > MAX_QTY:
             raise HTTPException(
-                status_code=422, detail=f"Quantities must be from 1 to {MAX_QTY} packs."
+                status_code=422, detail=f"Quantities must be from 1 to {MAX_QTY} per item."
+            )
+        if units.setdefault(ln.item_id, ln.unit) != ln.unit:
+            raise HTTPException(
+                status_code=422, detail="Choose either packs or pieces for each item, not both."
             )
         merged[ln.item_id] = min(MAX_QTY, merged.get(ln.item_id, 0) + ln.qty)
     if not merged:
@@ -142,7 +150,11 @@ def place(
 
     # a double tap, or a retry after a slow connection, returns the order already made
     digest = hashlib.sha256(
-        (phone + "|" + ",".join(f"{k}:{v}" for k, v in sorted(merged.items()))).encode()
+        (
+            phone
+            + "|"
+            + ",".join(f"{k}:{units[k]}:{v}" for k, v in sorted(merged.items()))
+        ).encode()
     ).hexdigest()
     cutoff = datetime.now(UTC) - DEDUPE_WINDOW
     prior = session.scalar(
@@ -183,7 +195,16 @@ def place(
     built: list[CustomerOrderLine] = []
     for item_id, qty in merged.items():
         it = offered[item_id]
-        rate = _money(it.default_rate)
+        unit = units[item_id]
+        if unit == "piece":
+            piece = share_links.piece_rate_for(link, it) if link.allow_pieces else None
+            if piece is None:
+                raise HTTPException(
+                    status_code=422, detail=f"{it.name} is only sold in whole packs."
+                )
+            rate = piece
+        else:
+            rate = _money(it.default_rate)
         amount = _money(rate * qty)
         total += amount
         built.append(
@@ -193,6 +214,7 @@ def place(
                 code=(it.sku or it.barcode or None),
                 qty=qty,
                 pack_qty=int(it.pack_qty or 1),
+                unit=unit,
                 rate=rate,
                 amount=amount,
             )
@@ -260,8 +282,9 @@ def _check_open(order: CustomerOrder) -> None:
 
 
 def edit_lines(session: Session, order: CustomerOrder, wanted: dict[str, int]) -> None:
-    """Set the packs of each item on the order (0 removes it); an item not on it yet is added at
-    its current price. The rate of a line that stays is the rate the customer agreed to."""
+    """Set the quantity (in the line's own unit) of each item on the order (0 removes it); an item
+    not on it yet is added, in packs, at its current price. The rate of a line that stays is the
+    rate the customer agreed to."""
     _check_open(order)
     current = {ln.item_id: ln for ln in lines_of(session, order.id) if ln.item_id}
     for item_id, qty in wanted.items():
@@ -367,7 +390,7 @@ def link_customer(
 
 
 def invoice_lines(session: Session, order: CustomerOrder) -> list[dict]:
-    """The order as invoice rows: whole packs at the agreed pack rate."""
+    """The order as invoice rows: packs at the agreed pack rate, loose pieces at the piece rate."""
     out: list[dict] = []
     items = {
         it.id: it
@@ -379,14 +402,22 @@ def invoice_lines(session: Session, order: CustomerOrder) -> list[dict]:
     }
     for ln in lines_of(session, order.id):
         it = items.get(ln.item_id or "")
-        pack = f" (pack of {ln.pack_qty})" if ln.pack_qty and ln.pack_qty > 1 else ""
+        loose = ln.unit == "piece"
+        pack = (
+            " (loose pieces)"
+            if loose
+            else f" (pack of {ln.pack_qty})"
+            if ln.pack_qty and ln.pack_qty > 1
+            else ""
+        )
         out.append(
             {
                 "item_id": ln.item_id if it is not None else None,
                 "description": f"{ln.name}{pack}"[:300],
                 "hsn_code": it.hsn_code if it is not None else None,
                 "quantity": Decimal(ln.qty),
-                "uom": it.uom if it is not None else None,
+                # loose pieces are counted in pieces, whatever unit the item is sold in
+                "uom": "nos" if loose else (it.uom if it is not None else None),
                 "unit_rate": Decimal(str(ln.rate)),
             }
         )

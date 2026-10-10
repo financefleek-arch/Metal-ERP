@@ -27,6 +27,8 @@ import { Barcode } from "../../components/catalog/Barcode";
 import { SupplierPicker } from "../../components/catalog/SupplierPicker";
 import { EditableNumber, EditableText } from "../../components/catalog/Editable";
 import { PromoteDialog } from "../../components/catalog/PromoteDialog";
+import { MakeCatalogDialog } from "../../components/catalog/MakeCatalogDialog";
+import type { ItemFilter as ItemsFilter } from "../../lib/types";
 import { ImageLightbox } from "../../components/catalog/ImageLightbox";
 import { GroupsPanel } from "../../components/catalog/GroupsPanel";
 import { PricingBar } from "../../components/catalog/PricingBar";
@@ -68,6 +70,15 @@ export function CatalogReviewPage() {
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [promoteOpen, setPromoteOpen] = useState(false);
+  const [makeOpen, setMakeOpen] = useState(false);
+  // how many of this price list's products are in Items now: the catalog can only be made from those
+  const inItems = useQuery({
+    queryKey: ["catalog-in-items", id],
+    queryFn: () => api<{ count: number }>("/items/count", { method: "POST", body: { catalog_id: id } }),
+  });
+  const itemCount = inItems.data?.count ?? 0;
+  // the Items list's own filter (price list = this one), not the price list page's row filter
+  const makeSelection: { filter: ItemsFilter } = { filter: { catalog_id: id } };
   const [zoomRow, setZoomRow] = useState<CatalogItem | null>(null);
   const [pickSupplier, setPickSupplier] = useState(false);
   const [importNote, setImportNote] = useState<string | null>(null);
@@ -433,6 +444,11 @@ export function CatalogReviewPage() {
           <button type="button" className="btn-ghost" onClick={() => setPromoteOpen(true)}>
             Add to items
           </button>
+          {itemCount > 0 && (
+            <button type="button" className="btn-ghost" onClick={() => setMakeOpen(true)}>
+              Make customer catalog ({itemCount})
+            </button>
+          )}
           {confirmDelete ? (
             <span className="flex items-center gap-2 text-sm">
               Delete this catalog?
@@ -1013,10 +1029,25 @@ export function CatalogReviewPage() {
           selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
           filtered={filtered ? { count: total ?? 0, filter } : null}
           includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
+          onMakeCatalog={() => {
+            setPromoteOpen(false);
+            qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+            qc.invalidateQueries({ queryKey: ["catalog-in-items", id] });
+            setMakeOpen(true);
+          }}
           onClose={() => {
             setPromoteOpen(false);
             qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+            qc.invalidateQueries({ queryKey: ["catalog-in-items", id] });
           }}
+        />
+      )}
+      {makeOpen && cat && (
+        <MakeCatalogDialog
+          selection={makeSelection}
+          count={itemCount}
+          defaultTitle={cat.title}
+          onClose={() => setMakeOpen(false)}
         />
       )}
       <p className="mt-2 text-xs text-muted">

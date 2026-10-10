@@ -6,6 +6,8 @@ The public endpoint needs no login: the token in the URL is the key.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -33,11 +35,25 @@ class ShareLinkCreate(BaseModel):
     selection: CatalogSelection
     include_expected: bool = False
     expires_at: datetime | None = None
+    allow_pieces: bool = False
+    # extra on the per-piece price; 0 = pack price divided by the pieces in it
+    piece_premium_pct: float = Field(default=0.0, ge=0, le=100)
+    price_basis: Literal["pack", "piece"] = "pack"
+    # the customer page: items per row on a phone, and the small lines on each card
+    columns: int = Field(default=2, ge=1, le=3)
+    show_code: bool = True
+    show_pack_info: bool = True
 
 
 class ShareLinkPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     include_expected: bool | None = None
+    allow_pieces: bool | None = None
+    piece_premium_pct: float | None = Field(default=None, ge=0, le=100)
+    price_basis: Literal["pack", "piece"] | None = None
+    columns: int | None = Field(default=None, ge=1, le=3)
+    show_code: bool | None = None
+    show_pack_info: bool | None = None
     # send null to remove the expiry
     expires_at: datetime | None = None
     revoked: bool | None = None
@@ -49,6 +65,12 @@ class ShareLinkOut(BaseModel):
     token: str
     path: str  # the part of the URL after the site address
     include_expected: bool
+    allow_pieces: bool
+    piece_premium_pct: float
+    price_basis: str
+    columns: int
+    show_code: bool
+    show_pack_info: bool
     expires_at: datetime | None
     revoked_at: datetime | None
     live: bool
@@ -65,6 +87,12 @@ def _out(link: CatalogShareLink) -> ShareLinkOut:
         token=link.token,
         path=f"/c/{link.token}",
         include_expected=link.include_expected,
+        allow_pieces=link.allow_pieces,
+        piece_premium_pct=float(link.piece_premium_pct or 0),
+        price_basis=link.price_basis,
+        columns=link.columns,
+        show_code=link.show_code,
+        show_pack_info=link.show_pack_info,
         expires_at=link.expires_at,
         revoked_at=link.revoked_at,
         live=svc.is_live(link),
@@ -101,6 +129,12 @@ def create_link(body: ShareLinkCreate, session: SessionDep, user: CatalogWriteUs
         selection=body.selection,
         include_expected=body.include_expected,
         expires_at=body.expires_at,
+        allow_pieces=body.allow_pieces,
+        piece_premium_pct=body.piece_premium_pct,
+        price_basis=body.price_basis,
+        columns=body.columns,
+        show_code=body.show_code,
+        show_pack_info=body.show_pack_info,
     )
     audit.record(
         session,
@@ -135,6 +169,18 @@ def patch_link(
         link.title = body.title.strip()
     if "include_expected" in patch and body.include_expected is not None:
         link.include_expected = body.include_expected
+    if "allow_pieces" in patch and body.allow_pieces is not None:
+        link.allow_pieces = body.allow_pieces
+    if "piece_premium_pct" in patch and body.piece_premium_pct is not None:
+        link.piece_premium_pct = Decimal(str(body.piece_premium_pct))
+    if "price_basis" in patch and body.price_basis is not None:
+        link.price_basis = body.price_basis
+    if "columns" in patch and body.columns is not None:
+        link.columns = body.columns
+    if "show_code" in patch and body.show_code is not None:
+        link.show_code = body.show_code
+    if "show_pack_info" in patch and body.show_pack_info is not None:
+        link.show_pack_info = body.show_pack_info
     if "expires_at" in patch:
         if body.expires_at is not None and svc._utc(body.expires_at) <= datetime.now(UTC):
             raise HTTPException(status_code=422, detail="The expiry must be in the future.")

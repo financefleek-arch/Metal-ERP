@@ -29,6 +29,8 @@ class CatalogLayout(BaseModel):
     show_code: bool = True
     # 'pack' = the price of one pack; 'piece' = price per piece.
     price_basis: Literal["pack", "piece"] = "pack"
+    # extra on the per-piece price (loose pieces cost more to hand out); 0 = pack price / pieces
+    piece_premium_pct: float = Field(default=0.0, ge=0, le=100)
     contents: bool = True
     # In stock items are always in. Expected ones only when asked, and the label is optional.
     include_expected: bool = False

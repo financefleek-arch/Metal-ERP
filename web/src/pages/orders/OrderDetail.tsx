@@ -158,7 +158,7 @@ export function OrderDetail({ order: o, onChanged }: { order: Order; onChanged?:
         <thead>
           <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
             <th className="py-2 pr-2 font-medium">Item</th>
-            <th className="px-2 py-2 text-right font-medium">Packs</th>
+            <th className="px-2 py-2 text-right font-medium">Qty</th>
             <th className="px-2 py-2 text-right font-medium">Rate</th>
             <th className="py-2 pl-2 text-right font-medium">Amount</th>
           </tr>
@@ -172,6 +172,13 @@ export function OrderDetail({ order: o, onChanged }: { order: Order; onChanged?:
                 <td className="py-2 pr-2">
                   {l.name}
                   {l.code && <span className="ml-1 text-xs text-muted">{l.code}</span>}
+                  <div className="text-[11px] text-muted">
+                    {l.unit === "piece"
+                      ? `loose pieces (pack of ${l.pack_qty})`
+                      : l.pack_qty > 1
+                        ? `pack of ${l.pack_qty} pcs`
+                        : "sold singly"}
+                  </div>
                   <div className="mt-0.5 flex flex-wrap gap-1">
                     {!l.item_id && <span className="rounded-sm bg-[#efe9df] px-1 text-[10px] text-muted">item removed</span>}
                     {l.item_id && !l.available && o.status !== "invoiced" && (
@@ -186,7 +193,7 @@ export function OrderDetail({ order: o, onChanged }: { order: Order; onChanged?:
                   {open && l.item_id ? (
                     <span className="inline-flex items-center gap-1">
                       <input
-                        aria-label={`Packs of ${l.name}`}
+                        aria-label={`${l.unit === "piece" ? "Pieces" : "Packs"} of ${l.name}`}
                         inputMode="numeric"
                         className="w-14 rounded-md border border-line bg-card py-1 text-center tabular-nums"
                         value={q2}
@@ -202,7 +209,9 @@ export function OrderDetail({ order: o, onChanged }: { order: Order; onChanged?:
                       </button>
                     </span>
                   ) : (
-                    <span className="tabular-nums">{l.qty}</span>
+                    <span className="tabular-nums">
+                      {l.qty} <span className="text-xs text-muted">{l.unit === "piece" ? "pcs" : l.qty === 1 ? "pack" : "packs"}</span>
+                    </span>
                   )}
                 </td>
                 <td className="px-2 py-2 text-right tabular-nums">₹{money(l.rate)}</td>

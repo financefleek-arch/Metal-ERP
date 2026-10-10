@@ -69,6 +69,7 @@ def layout_options(layout: CatalogLayout) -> CatalogPdfOptions:
         group_by=layout.group_by,
         show_code=layout.show_code,
         price_basis=layout.price_basis,
+        piece_premium_pct=layout.piece_premium_pct,
         contents=layout.contents,
     )
 

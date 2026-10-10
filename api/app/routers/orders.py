@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
@@ -34,6 +35,8 @@ status_limit = Depends(limit_dependency(_status_limiter))
 class LineBody(BaseModel):
     item_id: str = Field(min_length=1, max_length=36)
     qty: int = Field(ge=1, le=svc.MAX_QTY)
+    # a whole pack (the default) or a loose piece, when the link allows pieces
+    unit: Literal["pack", "piece"] = "pack"
 
 
 class OrderBody(BaseModel):
@@ -60,6 +63,7 @@ class PublicLine(BaseModel):
     code: str | None
     qty: int
     pack_qty: int
+    unit: str = "pack"
     rate: str
     amount: str
 
@@ -114,7 +118,7 @@ def place_order(
         firm=body.firm,
         note=body.note,
         wa_opt_in=body.wa_opt_in,
-        lines=[svc.LineIn(ln.item_id, ln.qty) for ln in body.lines],
+        lines=[svc.LineIn(ln.item_id, ln.qty, ln.unit) for ln in body.lines],
     )
     o = placed.order
     if not placed.duplicate:
@@ -158,6 +162,7 @@ def public_order(status_token: str, session: SessionDep) -> PublicOrder:
                 code=ln.code,
                 qty=ln.qty,
                 pack_qty=ln.pack_qty,
+                unit=ln.unit,
                 rate=_m(ln.rate),
                 amount=_m(ln.amount),
             )
@@ -211,6 +216,16 @@ class OrderOut(BaseModel):
     lines: list[OrderLineOut] = []
 
 
+def _current_rate(link: object, it: Item | None, unit: str) -> str | None:
+    """Today's price in the line's own unit, so a loose-piece line is compared piece to piece."""
+    if it is None or not it.default_rate:
+        return None
+    if unit == "piece":
+        pr = share_links.piece_rate_for(link, it) if link is not None else None  # type: ignore[arg-type]
+        return _m(pr) if pr is not None else None
+    return _m(it.default_rate)
+
+
 def _order_out(session: SessionDep, o: CustomerOrder, *, with_lines: bool) -> OrderOut:
     from app.models import CatalogShareLink
 
@@ -236,10 +251,11 @@ def _order_out(session: SessionDep, o: CustomerOrder, *, with_lines: bool) -> Or
                 code=ln.code,
                 qty=ln.qty,
                 pack_qty=ln.pack_qty,
+                unit=ln.unit,
                 rate=_m(ln.rate),
                 amount=_m(ln.amount),
                 available=it is not None and str(it.availability) == "in_stock",
-                current_rate=_m(it.default_rate) if it is not None and it.default_rate else None,
+                current_rate=_current_rate(link, it, ln.unit),
             )
         )
     invoice = session.get(Invoice, o.invoice_id) if o.invoice_id else None

@@ -12,12 +12,15 @@ export function PromoteDialog({
   selection,
   filtered,
   includedTotal,
+  onMakeCatalog,
   onClose,
 }: {
   catalogId: string;
   selection: { count: number; target: BulkTarget } | null;
   filtered: { count: number; filter: ItemFilter } | null;
   includedTotal: number;
+  /** offered once the items are in: go straight on to a customer catalog from them */
+  onMakeCatalog?: () => void;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -143,6 +146,11 @@ export function PromoteDialog({
               >
                 Open in Items
               </button>
+              {onMakeCatalog && (
+                <button type="button" className="btn-primary" onClick={onMakeCatalog}>
+                  Make customer catalog
+                </button>
+              )}
             </>
           ) : (
             <button type="button" className="btn-primary" disabled={!p || todo === 0 || promote.isPending} onClick={() => promote.mutate()}>

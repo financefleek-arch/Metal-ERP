@@ -43,3 +43,9 @@ export function availabilityTone(a: Availability): string {
       return "bg-[#e6efe8] text-ok";
   }
 }
+
+/** The suppliers and price lists that have items in the Items list (the two source filters). */
+export interface ItemSources {
+  suppliers: { id: string; name: string; items: number }[];
+  price_lists: { id: string; title: string; supplier: string | null; items: number }[];
+}

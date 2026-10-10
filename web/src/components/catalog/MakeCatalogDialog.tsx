@@ -19,6 +19,7 @@ const DEFAULTS: CatalogLayout = {
   group_by: "group",
   show_code: true,
   price_basis: "pack",
+  piece_premium_pct: 0,
   contents: true,
   include_expected: false,
   label_expected: false,
@@ -403,6 +404,26 @@ export function MakeCatalogDialog({
                   Price per piece
                 </label>
               </div>
+              {layout.price_basis === "piece" && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                  <label className="label m-0" htmlFor="mc-prem">
+                    Loose-piece premium
+                  </label>
+                  <input
+                    id="mc-prem"
+                    className="field w-20"
+                    inputMode="decimal"
+                    value={String(layout.piece_premium_pct)}
+                    onChange={(e) => {
+                      const v = e.target.value.replace(/[^0-9.]/g, "");
+                      patch({ piece_premium_pct: Math.min(100, v === "" ? 0 : Number(v)) });
+                    }}
+                  />
+                  <span className="text-xs text-muted">
+                    % added to the per-piece price. Leave 0 to use pack price &divide; pieces.
+                  </span>
+                </div>
+              )}
             </fieldset>
 
             <fieldset>

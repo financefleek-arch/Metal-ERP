@@ -19,6 +19,7 @@ from app.models._mixins import Availability
 from app.schemas_customer_catalog import CatalogLayout, CatalogSelection
 from app.services.catalog import item_catalogs
 from app.services.media_urls import media_url
+from app.services.piece_price import piece_rate
 
 # A customer page loads the whole catalog at once; this keeps one response a sensible size.
 MAX_PUBLIC_ITEMS = 3000
@@ -30,6 +31,7 @@ PUBLIC_ITEM_FIELDS = (
     "code",
     "group",
     "price",
+    "piece_price",
     "pack_qty",
     "photo_url",
     "thumb_url",
@@ -70,6 +72,12 @@ def create(
     selection: CatalogSelection,
     include_expected: bool,
     expires_at: datetime | None,
+    allow_pieces: bool = False,
+    piece_premium_pct: float = 0.0,
+    price_basis: str = "pack",
+    columns: int = 2,
+    show_code: bool = True,
+    show_pack_info: bool = True,
 ) -> CatalogShareLink:
     link = CatalogShareLink(
         tenant_id=tenant_id,
@@ -79,6 +87,12 @@ def create(
         selection_json=selection.model_dump(mode="json", exclude_none=True),
         include_expected=include_expected,
         expires_at=expires_at,
+        allow_pieces=allow_pieces,
+        piece_premium_pct=Decimal(str(piece_premium_pct)),
+        price_basis=price_basis,
+        columns=columns,
+        show_code=show_code,
+        show_pack_info=show_pack_info,
     )
     session.add(link)
     session.flush()
@@ -95,6 +109,19 @@ def record_view(session: Session, link: CatalogShareLink) -> None:
         .where(CatalogShareLink.id == link.id)
         .values(view_count=CatalogShareLink.view_count + 1, last_viewed_at=datetime.now(UTC))
     )
+
+
+def premium_for(link: CatalogShareLink) -> Decimal:
+    """The loose-piece premium only applies where pieces can actually be bought."""
+    return Decimal(str(link.piece_premium_pct or 0)) if link.allow_pieces else Decimal(0)
+
+
+def piece_rate_for(link: CatalogShareLink, item: Item) -> Decimal | None:
+    """What one loose piece costs on this link, or None for an item that is sold singly."""
+    packs = int(item.pack_qty or 1)
+    if packs < 2 or item.default_rate is None:
+        return None
+    return piece_rate(item.default_rate, packs, premium_for(link))
 
 
 def _price_text(item: Item) -> str:
@@ -128,6 +155,9 @@ def public_view(session: Session, link: CatalogShareLink) -> dict[str, object]:
                 "code": it.sku or it.barcode or "",
                 "group": group,
                 "price": _price_text(it),
+                "piece_price": (
+                    f"{pr:.2f}" if (pr := piece_rate_for(link, it)) is not None else None
+                ),
                 "pack_qty": int(it.pack_qty or 1),
                 "photo_url": media_url(it.primary_media_id, "photo")
                 if it.primary_media_id
@@ -148,6 +178,11 @@ def public_view(session: Session, link: CatalogShareLink) -> dict[str, object]:
             if tenant.order_min_value
             else None
         ),
+        "allow_pieces": link.allow_pieces,
+        "price_basis": link.price_basis,
+        "columns": link.columns,
+        "show_code": link.show_code,
+        "show_pack_info": link.show_pack_info,
         "groups": groups,
         "items": items,
     }

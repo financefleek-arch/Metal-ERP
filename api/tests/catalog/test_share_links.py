@@ -101,6 +101,11 @@ def test_the_public_page_never_leaks_internal_fields(shop) -> None:
         "firm_phone",
         "terms_line",
         "min_order",
+        "allow_pieces",
+        "price_basis",
+        "columns",
+        "show_code",
+        "show_pack_info",
         "groups",
         "items",
     }

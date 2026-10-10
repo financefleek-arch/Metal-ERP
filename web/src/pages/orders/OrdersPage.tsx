@@ -12,6 +12,7 @@ export interface OrderLine {
   code: string | null;
   qty: number;
   pack_qty: number;
+  unit: "pack" | "piece";
   rate: string;
   amount: string;
   available: boolean;

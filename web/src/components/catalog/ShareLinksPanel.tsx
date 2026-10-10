@@ -2,13 +2,15 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import type { ShareLink } from "./ShareLinkDialog";
-import { copyText, linkUrl, whatsappShare } from "./shareLinkUtils";
+import { ShareLinkOptions } from "./ShareLinkOptions";
+import { copyText, linkUrl, optionsBad, optionsOf, whatsappShare, type LinkOptions } from "./shareLinkUtils";
 
 /** The shop's public catalog links: copy, send, stop, resume. */
 export function ShareLinksPanel() {
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ShareLink | null>(null);
   const links = useQuery({ queryKey: ["share-links"], queryFn: () => api<ShareLink[]>("/share-links") });
 
   const toggle = useMutation({
@@ -16,6 +18,17 @@ export function ShareLinksPanel() {
       api<ShareLink>(`/share-links/${l.id}`, { method: "PATCH", body: { revoked: l.live } }),
     onSuccess: () => {
       setErr(null);
+      qc.invalidateQueries({ queryKey: ["share-links"] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "That did not work. Try again."),
+  });
+
+  const save = useMutation({
+    mutationFn: (v: { l: ShareLink; o: LinkOptions }) =>
+      api<ShareLink>(`/share-links/${v.l.id}`, { method: "PATCH", body: v.o }),
+    onSuccess: () => {
+      setErr(null);
+      setEditing(null);
       qc.invalidateQueries({ queryKey: ["share-links"] });
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "That did not work. Try again."),
@@ -53,6 +66,7 @@ export function ShareLinksPanel() {
                 Opened {l.view_count} time{l.view_count === 1 ? "" : "s"}
                 {l.expires_at ? ` · stops ${new Date(l.expires_at).toLocaleDateString("en-IN")}` : ""}
                 {l.selection_kind === "filter" ? " · follows a filter" : ""}
+                {l.allow_pieces ? " · pieces allowed" : ""}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -80,6 +94,9 @@ export function ShareLinksPanel() {
                   </a>
                 </>
               )}
+              <button type="button" className="btn-ghost h-8 px-3 text-xs" onClick={() => setEditing(l)}>
+                Options
+              </button>
               {(l.live || l.revoked_at) && (
                 <button
                   type="button"
@@ -94,6 +111,52 @@ export function ShareLinksPanel() {
           </div>
         ))}
       </div>
+      {editing && (
+        <EditOptions
+          link={editing}
+          busy={save.isPending}
+          onClose={() => setEditing(null)}
+          onSave={(o) => save.mutate({ l: editing, o })}
+        />
+      )}
     </section>
+  );
+}
+
+function EditOptions({
+  link,
+  busy,
+  onClose,
+  onSave,
+}: {
+  link: ShareLink;
+  busy: boolean;
+  onClose: () => void;
+  onSave: (o: LinkOptions) => void;
+}) {
+  const [opts, setOpts] = useState<LinkOptions>(optionsOf(link));
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/40 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div role="dialog" aria-modal="true" aria-label={`Options for ${link.title}`} className="card w-full max-w-md bg-card p-5 shadow-xl">
+        <h3 className="font-serif text-lg font-semibold">{link.title}</h3>
+        <p className="mt-1 text-xs text-muted">Changes apply at once. The link address stays the same.</p>
+        <div className="mt-3">
+          <ShareLinkOptions value={opts} onChange={setOpts} idPrefix="ed" />
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" className="btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="button" className="btn-primary" disabled={busy || optionsBad(opts)} onClick={() => onSave(opts)}>
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

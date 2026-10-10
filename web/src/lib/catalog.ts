@@ -311,6 +311,8 @@ export interface CatalogLayout {
   group_by: GroupBy;
   show_code: boolean;
   price_basis: PriceBasis;
+  /** extra on the per-piece price (loose pieces cost more to hand out); 0 = pack price / pieces */
+  piece_premium_pct: number;
   contents: boolean;
   include_expected: boolean;
   label_expected: boolean;
