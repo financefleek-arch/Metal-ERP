@@ -204,9 +204,7 @@ def _opening_balance(led: etree._Element) -> float | None:
     if val is None:
         return None
     lo = raw.strip().lower()
-    if "cr" in lo and val > 0:
-        val = -val
-    elif "dr" in lo and val < 0:
+    if "cr" in lo and val > 0 or "dr" in lo and val < 0:
         val = -val
     else:
         pos = _t(led, "ISDEEMEDPOSITIVE")

@@ -3,11 +3,11 @@ lines match PRE-EXISTING items (unlike the fresh-tenant tests where approve
 creates all 12). Approve must not 500."""
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-
-from datetime import UTC, datetime
 
 from app.db import SessionLocal
 from app.domain.normalize import normalize_name

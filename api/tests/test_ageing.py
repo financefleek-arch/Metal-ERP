@@ -17,7 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.main import app
-from app.models import Invoice, Party, Tenant
+from app.models import Invoice, Tenant
 
 
 @pytest.fixture

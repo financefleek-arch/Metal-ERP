@@ -1,8 +1,11 @@
 import time
+
 from fastapi.testclient import TestClient
+
+from app.db import Base, engine
 from app.main import app
 from tests.conftest import _SessionTest  # noqa
-from app.db import Base, engine
+
 Base.metadata.create_all(engine)
 with engine.begin() as conn:
     for t in reversed(Base.metadata.sorted_tables): conn.execute(t.delete())
@@ -22,6 +25,7 @@ t=time.time()
 rev = c.get(f"/api/items/import/{b['batch_id']}", headers=h).json()
 print(f"REVIEW  {time.time()-t:.1f}s   counts={rev['counts']}")
 from collections import Counter
+
 fc = Counter(f["code"] for row in rev["rows"] for f in row["flags"])
 print(f"  flag codes (informational): {dict(fc)}")
 
