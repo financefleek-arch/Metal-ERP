@@ -41,8 +41,7 @@ from app.schemas_admin import (
     FirmWhatsappUpsert,
 )
 from app.security import hash_password
-from app.seed import seed_synonyms
-from app.services.catalogue.seed_taxonomy import seed_taxonomy
+from app.services import entitlements, firm_provisioning
 
 router = APIRouter(
     prefix="/api/admin",
@@ -127,23 +126,9 @@ def list_firms(session: SessionDep, q: str | None = Query(default=None)) -> list
 
 @router.post("/firms", response_model=FirmDetail, status_code=status.HTTP_201_CREATED)
 def create_firm(body: FirmCreate, session: SessionDep) -> FirmDetail:
-    firm = Tenant(
-        legal_name=body.legal_name.strip(),
-        city=(body.city.strip() if body.city else None),
-        document_label="Invoice",
+    return _detail(
+        firm_provisioning.create_firm(session, legal_name=body.legal_name, city=body.city)
     )
-    session.add(firm)
-    session.flush()
-
-    # Same bootstrap a self-registered firm gets: normalization dictionary
-    # first (so seed_taxonomy's name_normalized keys collapse consistently),
-    # then the fixed item taxonomy.
-    seed_synonyms(session, firm.id)
-    session.flush()
-    seed_taxonomy(session, firm.id)
-    session.flush()
-
-    return _detail(firm)
 
 
 @router.get("/firms/{firm_id}", response_model=FirmDetail)
@@ -511,6 +496,11 @@ def create_firm_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists",
         )
+
+    # A firm linked to Fleek is held to its plan's user limit (an unlinked firm is unlimited).
+    over = entitlements.user_limit_reason(session, firm)
+    if over:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=over)
 
     user = User(
         tenant_id=firm.id,

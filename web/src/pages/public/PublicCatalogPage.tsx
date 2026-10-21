@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 interface PublicItem {
   id: string;
@@ -28,6 +28,8 @@ interface PublicCatalog {
   show_pack_info: boolean;
   groups: string[];
   items: PublicItem[];
+  /** present when the page was opened from a customer's personal link */
+  customer?: { name: string };
 }
 interface Placed {
   number: string;
@@ -89,6 +91,10 @@ const write = (key: string, value: unknown) => {
  */
 export function PublicCatalogPage() {
   const { token = "" } = useParams();
+  // a personal link carries who the customer is (p) and which campaign it came from (c)
+  const [search] = useSearchParams();
+  const personal = search.get("p") ?? "";
+  const campaign = search.get("c") ?? "";
   const [data, setData] = useState<PublicCatalog | null>(null);
   const [state, setState] = useState<"loading" | "ok" | "gone" | "busy" | "error">("loading");
   const [q, setQ] = useState("");
@@ -104,7 +110,8 @@ export function PublicCatalogPage() {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/public/catalog/${encodeURIComponent(token)}`);
+        const qs = personal ? `?p=${encodeURIComponent(personal)}` : "";
+        const res = await fetch(`/api/public/catalog/${encodeURIComponent(token)}${qs}`);
         if (cancelled) return;
         if (res.status === 404) return setState("gone");
         if (res.status === 429) return setState("busy");
@@ -118,7 +125,7 @@ export function PublicCatalogPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, personal]);
 
   useEffect(() => {
     if (data) document.title = `${data.title} · ${data.firm_name}`;
@@ -213,6 +220,8 @@ export function PublicCatalogPage() {
       <Shell data={data}>
         <ReviewOrder
           token={token}
+          personal={personal}
+          campaign={campaign}
           data={data}
           lines={lines}
           total={total}
@@ -456,6 +465,8 @@ function Stepper({
 
 function ReviewOrder({
   token,
+  personal,
+  campaign,
   data,
   lines,
   total,
@@ -466,6 +477,8 @@ function ReviewOrder({
   onUnavailable,
 }: {
   token: string;
+  personal: string;
+  campaign: string;
   data: PublicCatalog;
   lines: Line[];
   total: number;
@@ -481,8 +494,10 @@ function ReviewOrder({
     firm: "",
     wa: true,
   });
-  const [name, setName] = useState(saved.name);
+  const [name, setName] = useState(saved.name || data.customer?.name || "");
   const [phone, setPhone] = useState(saved.phone);
+  // on a personal link the shop already holds the number, so it need not be typed again
+  const knownNumber = !!data.customer;
   const [firm, setFirm] = useState(saved.firm);
   const [note, setNote] = useState("");
   const [wa, setWa] = useState(saved.wa);
@@ -491,7 +506,7 @@ function ReviewOrder({
   const [err, setErr] = useState<string | null>(null);
 
   const belowMin = min > 0 && total < min;
-  const ready = lines.length > 0 && name.trim().length >= 2 && phone.replace(/\D/g, "").length >= 10 && !belowMin;
+  const ready = lines.length > 0 && name.trim().length >= 2 && (knownNumber || phone.replace(/\D/g, "").length >= 10) && !belowMin;
 
   async function place() {
     setBusy(true);
@@ -503,6 +518,8 @@ function ReviewOrder({
         body: JSON.stringify({
           name,
           phone,
+          p: personal || null,
+          c: campaign || null,
           firm: firm || null,
           note: note || null,
           wa_opt_in: wa,
@@ -581,7 +598,7 @@ function ReviewOrder({
         </div>
         <div>
           <label className="label" htmlFor="co-phone">
-            Phone (WhatsApp)
+            {knownNumber ? "Phone (WhatsApp), optional" : "Phone (WhatsApp)"}
           </label>
           <input
             id="co-phone"

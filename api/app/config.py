@@ -77,6 +77,14 @@ class Settings(BaseSettings):
         """Outbound sends need only the System User token."""
         return bool(self.whatsapp_api_key)
 
+    # Fleek control plane (docs/PLAN-fleek-control-plane.md). Shared secret that signs the calls fleek-backend
+    # makes to /api/internal/control-plane/*. Unset = those routes answer 503 (never open).
+    control_plane_secret: str | None = None
+    # Where WE call the control plane (entitlements). Internal network address, e.g. http://fleek-
+    # backend:8100. Unset = a linked firm is
+    # treated as unverified, which never blocks it (the licence rules are deliberately lenient).
+    control_plane_url: str | None = None
+
     # Tally companion agent — cloud backup sync. A dedicated Cloudflare R2
     # bucket/token, deliberately separate from the infra/postgres backup
     # container's own R2_* env vars (different bucket/account — this is a

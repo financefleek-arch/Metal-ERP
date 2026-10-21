@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -17,7 +17,7 @@ from app.deps import SessionDep
 from app.models import CatalogShareLink
 from app.routers.catalog import CatalogUser, CatalogWriteUser
 from app.schemas_customer_catalog import CatalogSelection
-from app.services import audit
+from app.services import audit, crm_sync
 from app.services import share_links as svc
 from app.services.item_filter import resolve_ids
 from app.services.ratelimit import RateLimiter, limit_dependency
@@ -201,11 +201,20 @@ def patch_link(
 
 
 @public_router.get("/catalog/{token}", dependencies=[public_limit])
-def public_catalog(token: str, session: SessionDep) -> dict[str, object]:
-    """What a customer sees. Unknown, stopped and expired links all answer the same 404."""
+def public_catalog(
+    token: str, session: SessionDep, p: str | None = Query(default=None, max_length=40)
+) -> dict[str, object]:
+    """What a customer sees. Unknown, stopped and expired links all answer the same 404.
+
+    `p` is a customer's personal link token (control plane P5): when it is valid for this shop the page also
+    gets that customer's name, so the order form can greet and prefill them. An invalid or foreign token is
+    ignored, never an error."""
     link = svc.find_live(session, token)
     if link is None:
         raise HTTPException(status_code=404, detail="This link is not available.")
     view = svc.public_view(session, link)
+    party = crm_sync.party_by_token(session, link.tenant_id, p)
+    if party is not None:
+        view["customer"] = {"name": party.legal_name}
     svc.record_view(session, link)
     return view

@@ -120,6 +120,8 @@ def place(
     note: str | None,
     wa_opt_in: bool,
     lines: list[LineIn],
+    party: Party | None = None,
+    campaign_ref: str | None = None,
 ) -> Placed:
     tenant = session.get(Tenant, link.tenant_id)
     assert tenant is not None
@@ -238,8 +240,12 @@ def place(
         customer_firm=((firm or "").strip()[:120] or None),
         note=((note or "").strip()[:500] or None),
         wa_opt_in=wa_opt_in,
-        # only a phone match is trusted enough to suggest; the shop confirms it on review
-        matched_party_id=match.party_id if match.method == "phone" else None,
+        # a personal link proves who the customer is; otherwise only a phone match is trusted enough to
+        # suggest, and the shop confirms it on review
+        matched_party_id=(
+            party.id if party is not None else (match.party_id if match.method == "phone" else None)
+        ),
+        campaign_ref=((campaign_ref or "").strip()[:64] or None),
         item_count=len(built),
         total=total,
         dedupe_hash=digest,

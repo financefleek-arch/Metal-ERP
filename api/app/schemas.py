@@ -82,6 +82,16 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
 
 
+class LicenceOut(BaseModel):
+    """The firm's licence for the SPA banner (None on UserOut = a firm not linked to Fleek: nothing to
+    show)."""
+
+    status: str  # trial | active | lapsed | unlicensed | unverified
+    plan_label: str | None = None
+    trial_days_left: int | None = None
+    stale: bool = False
+
+
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -94,6 +104,8 @@ class UserOut(BaseModel):
     # Extension flags the SPA needs at bootstrap (nav gating / route guards).
     ext_inward_import: bool = False
     ext_supplier_catalog: bool = False
+    # Fleek licence (additive): drives a trial / lapsed banner. None for a firm not linked to Fleek.
+    licence: LicenceOut | None = None
 
 
 # --------------------------------------------------------------------------

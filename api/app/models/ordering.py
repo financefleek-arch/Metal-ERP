@@ -106,6 +106,8 @@ class CustomerOrder(PkUuidMixin, TimestampMixin, Base):
     invoice_id: Mapped[str | None] = mapped_column(ForeignKey("invoice.id"))
     # a double tap on "Place order" must not make two orders
     dedupe_hash: Mapped[str | None] = mapped_column(String(64))
+    # which campaign's personal link the customer came through (the ?c= value), if any
+    campaign_ref: Mapped[str | None] = mapped_column(String(64))
 
 
 class CustomerOrderLine(PkUuidMixin, TimestampMixin, Base):

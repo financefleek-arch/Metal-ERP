@@ -18,7 +18,7 @@ from app.models import CustomerOrder, Invoice, Item, Party, Tenant, WhatsappMess
 from app.routers.catalog import CatalogDraftUser, CatalogUser
 from app.routers.invoices import create_invoice
 from app.schemas_invoice import InvoiceCreate, InvoiceLineIn
-from app.services import audit, order_notify, share_links
+from app.services import audit, crm_sync, order_notify, share_links
 from app.services import orders as svc
 from app.services.ratelimit import RateLimiter, client_key, limit_dependency
 
@@ -41,7 +41,11 @@ class LineBody(BaseModel):
 
 class OrderBody(BaseModel):
     name: str = Field(min_length=1, max_length=100)
-    phone: str = Field(min_length=1, max_length=30)
+    # may be left out on a customer's personal link: we then use the number we already hold for them
+    phone: str = Field(default="", max_length=30)
+    # a personal link's customer token and campaign reference (?p= and ?c= on the page address)
+    p: str | None = Field(default=None, max_length=40)
+    c: str | None = Field(default=None, max_length=64)
     firm: str | None = Field(default=None, max_length=120)
     note: str | None = Field(default=None, max_length=500)
     wa_opt_in: bool = False
@@ -104,7 +108,8 @@ def place_order(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many orders from here. Please try again later or call the shop.",
         )
-    phone = svc.clean_phone(body.phone)
+    party = crm_sync.party_by_token(session, link.tenant_id, body.p)
+    phone = svc.clean_phone(body.phone or (party.phone if party is not None else "") or "")
     if not _per_phone.check(phone):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -119,6 +124,8 @@ def place_order(
         note=body.note,
         wa_opt_in=body.wa_opt_in,
         lines=[svc.LineIn(ln.item_id, ln.qty, ln.unit) for ln in body.lines],
+        party=party,
+        campaign_ref=body.c,
     )
     o = placed.order
     if not placed.duplicate:
@@ -211,6 +218,8 @@ class OrderOut(BaseModel):
     link_title: str | None
     created_at: datetime
     invoice_status: str | None = None
+    # the campaign whose personal link the customer came through, if any
+    campaign_ref: str | None = None
     # the WhatsApp messages sent about this order, so a failure is visible
     messages: list[OrderMessage] = []
     lines: list[OrderLineOut] = []
@@ -288,6 +297,7 @@ def _order_out(session: SessionDep, o: CustomerOrder, *, with_lines: bool) -> Or
         link_title=link.title if link else None,
         created_at=o.created_at,
         invoice_status=str(invoice.status) if invoice is not None else None,
+        campaign_ref=o.campaign_ref,
         messages=[
             OrderMessage(
                 template=m.template_name,

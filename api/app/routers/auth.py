@@ -9,6 +9,7 @@ from app.deps import CurrentUser, SessionDep
 from app.models import Tenant, User
 from app.models._mixins import UserRole
 from app.schemas import (
+    LicenceOut,
     LoginRequest,
     RegisterRequest,
     TokenResponse,
@@ -16,6 +17,7 @@ from app.schemas import (
 )
 from app.security import create_access_token, hash_password, verify_password
 from app.seed import seed_synonyms
+from app.services import entitlements
 from app.services.catalogue.seed_taxonomy import seed_taxonomy
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -90,6 +92,24 @@ def login(body: LoginRequest, session: SessionDep) -> TokenResponse:
     return TokenResponse(access_token=token)
 
 
+def _licence_out(session: SessionDep, tenant: Tenant | None) -> LicenceOut | None:
+    """The banner data. Never lets a licence problem break sign-in or the bootstrap call."""
+    if tenant is None:
+        return None
+    try:
+        lic = entitlements.current(session, tenant)
+    except Exception:  # noqa: BLE001
+        return None
+    if lic is None:
+        return None
+    return LicenceOut(
+        status=lic.status,
+        plan_label=lic.plan_label,
+        trial_days_left=lic.trial_days_left,
+        stale=lic.stale,
+    )
+
+
 @router.get("/me", response_model=UserOut)
 def me(user: CurrentUser, session: SessionDep) -> UserOut:
     tenant = session.get(Tenant, user.tenant_id)
@@ -101,4 +121,5 @@ def me(user: CurrentUser, session: SessionDep) -> UserOut:
         is_platform_admin=user.is_platform_admin,
         ext_inward_import=bool(tenant and tenant.ext_inward_import),
         ext_supplier_catalog=bool(tenant and tenant.ext_supplier_catalog),
+        licence=_licence_out(session, tenant),
     )

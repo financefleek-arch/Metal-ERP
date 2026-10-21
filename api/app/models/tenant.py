@@ -113,6 +113,10 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
         String(40), default="7,15,30", server_default="7,15,30", nullable=False
     )
 
+    # The Fleek control-plane organisation this firm belongs to (docs/PLAN-fleek-control-plane.md). NULL =
+    # not linked yet (every firm today). Set once, by the control plane, via /api/internal/control-plane.
+    fleek_org_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+
     users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
 
 

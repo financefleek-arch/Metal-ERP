@@ -25,6 +25,7 @@ from app.routers import (
     catalog,
     catalog_review,
     catalog_tally,
+    control_plane,
     customer_catalogs,
     documents,
     invoices,
@@ -149,6 +150,7 @@ if not settings.is_production:
 
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(control_plane.router)
 app.include_router(reference.router)
 app.include_router(tenant.router)
 app.include_router(parties.router)

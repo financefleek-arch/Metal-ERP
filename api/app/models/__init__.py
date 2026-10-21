@@ -21,6 +21,7 @@ from app.models.catalog import (
     SupplierPricePoint,
 )
 from app.models.common import HsnCode, NumberSequence, Synonym
+from app.models.entitlement import TenantEntitlement
 from app.models.invoice import Invoice, InvoiceLine
 from app.models.inward import (
     ExtractionRun,
@@ -89,6 +90,7 @@ __all__ = [
     "TallyLink",
     "TallySyncJob",
     "Tenant",
+    "TenantEntitlement",
     "TenantWhatsappConfig",
     "User",
     "WhatsappMessage",

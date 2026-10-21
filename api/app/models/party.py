@@ -58,6 +58,10 @@ class Party(PkUuidMixin, TimestampMixin, Base):
     wa_catalog_consent_source: Mapped[WaConsentSource | None] = mapped_column(String(16))
     wa_catalog_consent_by: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"))
 
+    # The customer's own catalog link token, minted when they are pushed to the Fleek CRM (a capability:
+    # whoever holds it is this customer).
+    link_token: Mapped[str | None] = mapped_column(String(40), unique=True)
+
     # Lifecycle: archived parties drop out of the default list and every picker,
     # but stay linked to the documents that already reference them.
     status: Mapped[PartyStatus] = mapped_column(

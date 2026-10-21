@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Invoice, Party, PaymentReminder, Tenant
 from app.models._mixins import InvoiceStatus
+from app.services import entitlements
 from app.services import whatsapp as wa
 from app.services.payments import balance_due_for_invoice
 
@@ -140,6 +141,12 @@ def send(session: Session, reminder: PaymentReminder, *, user_id: str | None) ->
     the proposal is left `failed` with the reason, so the shop can see it and retry."""
     reminder.decided_by_user_id = user_id
     reminder.decided_at = datetime.now(UTC)
+    tenant = session.get(Tenant, reminder.tenant_id)
+    if tenant is not None and not entitlements.proactive_sends_allowed(session, tenant):
+        reminder.status = "failed"  # kept, so it can be sent once the licence is renewed
+        reminder.error = entitlements.LAPSED_MESSAGE
+        session.flush()
+        return reminder
     party = session.get(Party, reminder.party_id)
 
     live: list[Invoice] = []
@@ -191,6 +198,8 @@ def auto_send(session: Session, tenant: Tenant) -> int:
     Older backlog is left for the shop to review. Without that, switching automatic reminders on
     would message every customer who had been overdue for months in one go. A failed send is
     recorded and left for the shop; it is not retried here. Returns how many were sent."""
+    if not entitlements.proactive_sends_allowed(session, tenant):
+        return 0
     waiting = session.scalars(
         select(PaymentReminder)
         .where(
