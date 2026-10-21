@@ -26,6 +26,7 @@ import { GroupForm } from "../components/GroupForm";
 import { CategoryManager } from "../components/CategoryManager";
 import { useAuth } from "../lib/auth";
 import { ShareLinkDialog } from "../components/catalog/ShareLinkDialog";
+import { OffersDialog } from "../components/catalog/OffersDialog";
 import { PhotoQueueDialog } from "../components/PhotoQueueDialog";
 import { SheetImportDialog } from "../components/SheetImportDialog";
 import { TallyDialog } from "../components/catalog/TallyDialog";
@@ -173,6 +174,7 @@ export function ItemsPage() {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [offersOpen, setOffersOpen] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const { me } = useAuth();
   const writable = canWrite(me?.role);
@@ -813,6 +815,9 @@ export function ItemsPage() {
               onRestore={() => openBulk("restore")}
               onDelete={() => openBulk("delete")}
               onShareLink={catalogModule ? () => setShareOpen(true) : undefined}
+              onSendOffers={
+                catalogModule && canWrite(me?.role) ? () => setOffersOpen(true) : undefined
+              }
               onSendToTally={catalogModule ? () => setTallyOpen(true) : undefined}
               onPrintLabels={catalogModule ? () => setLabelsOpen(true) : undefined}
               onMakeCatalog={catalogModule ? () => setCatalogOpen(true) : undefined}
@@ -1062,6 +1067,15 @@ export function ItemsPage() {
           count={selectedCount}
           onClose={() => {
             setShareOpen(false);
+            onClosedDialog();
+          }}
+        />
+      )}
+      {offersOpen && (
+        <OffersDialog
+          selection={selection}
+          onClose={() => {
+            setOffersOpen(false);
             onClosedDialog();
           }}
         />

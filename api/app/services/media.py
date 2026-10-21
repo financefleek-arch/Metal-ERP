@@ -139,6 +139,39 @@ def print_key(tenant_id: str, sha256: str) -> str:
     return f"media/{tenant_id}/{sha256}_p.jpg"
 
 
+# --------------------------------------------------------------------------- card rendition (WhatsApp)
+
+CARD_EDGE = 800
+CARD_QUALITY = 85
+
+
+def card_key(tenant_id: str, sha256: str) -> str:
+    return f"media/{tenant_id}/{sha256}_c.jpg"
+
+
+def card_jpeg(storage: CatalogStorage, asset: MediaAsset) -> bytes | None:
+    """A square JPEG of the item's photo for a WhatsApp carousel card (WhatsApp cannot show WebP, and every
+    card of one message must share a shape). The whole photo is kept, centred on white, never cropped, so a
+    wide item is not cut off. Made once from the stored main rendition and kept; None when the photo cannot
+    be read."""
+    key = card_key(asset.tenant_id, asset.sha256)
+    have = storage.get_many([key]).get(key)
+    if have:
+        return have  # type: ignore[no-any-return]
+    try:
+        im = Image.open(io.BytesIO(storage.get(asset.key))).convert("RGB")
+        square = ImageOps.pad(
+            im, (CARD_EDGE, CARD_EDGE), Image.Resampling.LANCZOS, color=(255, 255, 255)
+        )
+        buf = io.BytesIO()
+        square.save(buf, format="JPEG", quality=CARD_QUALITY)
+    except Exception:  # noqa: BLE001 - a lost or unreadable photo has no card
+        return None
+    data = buf.getvalue()
+    storage.put_many([(key, data, "image/jpeg")])
+    return data
+
+
 def print_jpegs(storage: CatalogStorage, assets: list[MediaAsset]) -> dict[str, bytes]:
     """media id -> a JPEG sized for printing (a PDF cannot embed WebP). Made once from the stored
     main rendition and kept, so a rebuild does not decode everything again. A photo that cannot

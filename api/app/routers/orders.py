@@ -49,6 +49,8 @@ class OrderBody(BaseModel):
     firm: str | None = Field(default=None, max_length=120)
     note: str | None = Field(default=None, max_length=500)
     wa_opt_in: bool = False
+    # the separate box, unticked by default: "new ranges and offers on WhatsApp"
+    offers_opt_in: bool = False
     lines: list[LineBody] = Field(min_length=1, max_length=svc.MAX_LINES)
     # a field real people never see or fill: bots do
     website: str | None = Field(default=None, max_length=200)
@@ -123,6 +125,7 @@ def place_order(
         firm=body.firm,
         note=body.note,
         wa_opt_in=body.wa_opt_in,
+        offers_opt_in=body.offers_opt_in,
         lines=[svc.LineIn(ln.item_id, ln.qty, ln.unit) for ln in body.lines],
         party=party,
         campaign_ref=body.c,
@@ -209,6 +212,7 @@ class OrderOut(BaseModel):
     customer_firm: str | None
     note: str | None
     wa_opt_in: bool
+    offers_opt_in: bool = False
     matched_party_id: str | None
     matched_party_name: str | None
     item_count: int
@@ -288,6 +292,7 @@ def _order_out(session: SessionDep, o: CustomerOrder, *, with_lines: bool) -> Or
         customer_firm=o.customer_firm,
         note=o.note,
         wa_opt_in=o.wa_opt_in,
+        offers_opt_in=o.offers_opt_in,
         matched_party_id=o.matched_party_id,
         matched_party_name=party.legal_name if party else None,
         item_count=o.item_count,

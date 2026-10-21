@@ -87,6 +87,7 @@ export function SelectionBar({
   onMakeCatalog,
   onPrintLabels,
   onShareLink,
+  onSendOffers,
   onSendToTally,
   onSelectAllMatching,
   onClear,
@@ -113,6 +114,8 @@ export function SelectionBar({
   onMakeCatalog?: () => void;
   onPrintLabels?: () => void;
   onShareLink?: () => void;
+  /** send the picked items to customers who agreed, on WhatsApp */
+  onSendOffers?: () => void;
   onSendToTally?: () => void;
   onSelectAllMatching: () => void;
   onClear: () => void;
@@ -121,6 +124,9 @@ export function SelectionBar({
   const share: Entry[] = [
     ...(onMakeCatalog ? [{ label: "Make customer catalog", onClick: onMakeCatalog }] : []),
     ...(onShareLink ? [{ label: "Share catalog link", onClick: onShareLink }] : []),
+    ...(onSendOffers
+      ? [{ label: "Send to customers on WhatsApp", onClick: onSendOffers }]
+      : []),
     ...(onPrintLabels ? [{ label: "Print labels", onClick: onPrintLabels }] : []),
     ...(onSendToTally ? [{ label: "Send to Tally", onClick: onSendToTally }] : []),
   ];

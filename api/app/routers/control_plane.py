@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
@@ -20,6 +21,7 @@ from app.deps import SessionDep
 from app.models import Tenant
 from app.services import crm_sync, firm_provisioning
 from app.services.control_plane_auth import require_control_plane
+from app.services.whatsapp import handle_status_webhook
 
 router = APIRouter(
     prefix="/api/internal/control-plane",
@@ -141,6 +143,20 @@ def sync_contacts(body: SyncAsk, session: SessionDep) -> SyncOut:
     except crm_sync.SyncError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     return SyncOut(sent=out.sent, status=out.status, consent=out.consent, opted_out_here=out.opted_out_here)
+
+
+@router.post("/whatsapp-events")
+def whatsapp_events(body: dict[str, Any], session: SessionDep) -> dict[str, str]:
+    """Fleek hands over what Meta reported for this app's firms' numbers: delivery, read and failure status.
+
+    The body is Meta's own webhook body, already filtered by Fleek to the firms it owns, and the
+    request is signed like every other control-plane call (so this app holds no Meta secret for
+    it). A status for a message this app never sent is ignored, as on the public webhook."""
+    try:
+        handle_status_webhook(session, body)
+    except Exception:  # never fail back at Fleek for one odd payload
+        log.exception("whatsapp events: error handling payload")
+    return {"status": "ok"}
 
 
 class UnlinkedFirm(BaseModel):

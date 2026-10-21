@@ -40,7 +40,7 @@ from app.schemas import (
 )
 from app.schemas_payments import OpenInvoiceForAllocation
 from app.services.catalog.suppliers import catalog_ref_count
-from app.services.catalog_consent import set_catalog_consent
+from app.services.catalog_consent import OFFERS_FILTERS, offers_counts, set_catalog_consent
 from app.services.pagination import finish_page, paginate
 from app.services.parties import (
     SEARCH_RESULT_CAP,
@@ -171,6 +171,12 @@ def _list_item(session: SessionDep, party: Party) -> PartyListItem:
     )
 
 
+@router.get("/offers-counts")
+def party_offers_counts(user: CurrentUser, session: SessionDep) -> dict[str, int]:
+    """Active customers with a phone, by their answer about offers on WhatsApp."""
+    return offers_counts(session, user.tenant_id)
+
+
 @router.get("", response_model=list[PartyListItem])
 def list_parties(
     user: CurrentUser,
@@ -182,6 +188,9 @@ def list_parties(
         default=None, alias="status", description="default: active only"
     ),
     completeness: Literal["incomplete"] | None = Query(default=None),
+    offers: Literal["agreed", "not_asked", "opted_out"] | None = Query(
+        default=None, description="the customer's answer about offers on WhatsApp"
+    ),
     dormant: bool = Query(default=False, description="no transaction in the tenant window"),
     limit: int | None = Query(
         default=None, ge=1, description="page size; omit for the whole list"
@@ -195,6 +204,9 @@ def list_parties(
         stmt = stmt.where(Party.status == PartyStatus.active)
     else:
         stmt = stmt.where(Party.status == status_)
+
+    if offers:
+        stmt = stmt.where(Party.wa_catalog_consent == OFFERS_FILTERS[offers])
 
     if role:
         # 'both' parties match either customer or supplier filters.

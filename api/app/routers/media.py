@@ -298,13 +298,22 @@ def serve(
 ) -> Response:
     """The image bytes. Authenticated by the signed link, since an <img> cannot send a bearer
     header. Content never changes for a given id, so it is cacheable."""
-    if variant not in ("photo", "thumb"):
+    if variant not in ("photo", "thumb", "card"):
         raise HTTPException(status_code=404, detail="Not found")
     if not image_url.verify(media_id, e, s, scope=SCOPE):
         raise HTTPException(status_code=403, detail="Link expired")
     asset = session.get(MediaAsset, media_id)
     if asset is None:
         raise HTTPException(status_code=404, detail="Not found")
+    if variant == "card":
+        card = media_svc.card_jpeg(storage, asset)
+        if card is None:
+            raise HTTPException(status_code=404, detail="Image not found")
+        return Response(
+            content=card,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=86400"},
+        )
     try:
         data = storage.get(asset.thumb_key if variant == "thumb" else asset.key)
     except Exception as exc:  # noqa: BLE001 - missing object, storage hiccup

@@ -40,6 +40,7 @@ from app.routers import (
     items_import,
     jobs,
     media,
+    offers,
     orders,
     parties,
     parties_import,
@@ -186,6 +187,7 @@ app.include_router(whatsapp_connect.router)
 app.include_router(reminders.router)
 app.include_router(orders.public_router)
 app.include_router(share_links.router)
+app.include_router(offers.router)
 app.include_router(share_links.public_router)
 app.include_router(media.router)
 app.include_router(voice_stream.router)

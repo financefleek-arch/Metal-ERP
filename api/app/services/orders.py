@@ -30,11 +30,12 @@ from app.models import (
     Party,
     Tenant,
 )
-from app.models._mixins import PartyRole, PartySource
+from app.models._mixins import PartyRole, PartySource, WaConsent, WaConsentSource
 from app.reference import validate_phone
 from app.schemas_customer_catalog import CatalogLayout
 from app.services import share_links
 from app.services.catalog import item_catalogs
+from app.services.catalog_consent import set_catalog_consent
 from app.services.party_resolution import resolve_party
 
 MAX_LINES = 100
@@ -92,6 +93,14 @@ def _money(v: object) -> Decimal:
     return Decimal(str(v)).quantize(Decimal("0.01"))
 
 
+def apply_offers_answer(session: Session, order: CustomerOrder, party: Party) -> None:
+    """The customer ticked offers on the order page: record it as their consent, source "order page".
+
+    Only a tick is applied. A box left unticked says nothing (it never opts anyone out)."""
+    if order.offers_opt_in:
+        set_catalog_consent(session, party, WaConsent.opted_in, WaConsentSource.order_page)
+
+
 def clean_phone(raw: str) -> str:
     try:
         phone = validate_phone(raw)
@@ -122,6 +131,7 @@ def place(
     lines: list[LineIn],
     party: Party | None = None,
     campaign_ref: str | None = None,
+    offers_opt_in: bool = False,
 ) -> Placed:
     tenant = session.get(Tenant, link.tenant_id)
     assert tenant is not None
@@ -240,6 +250,7 @@ def place(
         customer_firm=((firm or "").strip()[:120] or None),
         note=((note or "").strip()[:500] or None),
         wa_opt_in=wa_opt_in,
+        offers_opt_in=offers_opt_in,
         # a personal link proves who the customer is; otherwise only a phone match is trusted enough to
         # suggest, and the shop confirms it on review
         matched_party_id=(
@@ -255,6 +266,8 @@ def place(
     for ln in built:
         ln.order_id = order.id
         session.add(ln)
+    if party is not None:  # a personal link proves who they are, so their tick counts now
+        apply_offers_answer(session, order, party)
     session.flush()
     return Placed(order)
 
@@ -391,6 +404,7 @@ def link_customer(
     else:
         raise HTTPException(status_code=422, detail="Choose a customer or add a new one.")
     order.matched_party_id = party.id
+    apply_offers_answer(session, order, party)
     session.flush()
     return party
 

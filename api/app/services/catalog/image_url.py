@@ -24,10 +24,12 @@ def _sig(item_id: str, exp: int, scope: str = "catalog-image") -> str:
     return hmac.new(key, msg, hashlib.sha256).hexdigest()[:32]
 
 
-def sign_query(item_id: str, now: float | None = None, scope: str = "catalog-image") -> str:
-    """`e=<expiry>&s=<signature>` for the image URL of `item_id`."""
+def sign_query(
+    item_id: str, now: float | None = None, scope: str = "catalog-image", hours: int = 2
+) -> str:
+    """`e=<expiry>&s=<signature>` for the image URL of `item_id` (valid `hours - 1` to `hours` hours)."""
     t = time.time() if now is None else now
-    exp = (int(t) // _HOUR + 2) * _HOUR  # valid for 1 to 2 hours
+    exp = (int(t) // _HOUR + hours) * _HOUR  # rounded to the hour so the URL is stable within it
     return f"e={exp}&s={_sig(item_id, exp, scope)}"
 
 

@@ -12,9 +12,11 @@ import { PartyForm } from "../components/PartyForm";
 import { NewPartyForm } from "../components/NewPartyForm";
 import { PartyAccountTab } from "../components/PartyAccountTab";
 import { PartyCatalogsTab } from "../components/catalog/PartyCatalogsTab";
+import { OffersConsent } from "../components/OffersConsent";
 import { useAuth } from "../lib/auth";
 
 type Scope = "" | PartyRole | "incomplete" | "archived";
+type Offers = "" | "agreed" | "not_asked" | "opted_out";
 
 const FILTERS: { key: Scope; label: string }[] = [
   { key: "", label: "All" },
@@ -29,8 +31,15 @@ function roleTag(role: PartyRole) {
   return role === "customer" ? "cust" : role === "supplier" ? "supp" : "both";
 }
 
-function buildQuery(q: string, scope: Scope, cursor?: string | null) {
+const OFFERS: { key: Exclude<Offers, "">; label: string }[] = [
+  { key: "agreed", label: "Agreed" },
+  { key: "not_asked", label: "Not asked" },
+  { key: "opted_out", label: "Said no" },
+];
+
+function buildQuery(q: string, scope: Scope, offers: Offers, cursor?: string | null) {
   const p = new URLSearchParams();
+  if (offers) p.set("offers", offers);
   if (q.trim()) p.set("q", q.trim());
   if (scope === "customer" || scope === "supplier" || scope === "both") p.set("role", scope);
   if (scope === "incomplete") p.set("completeness", "incomplete");
@@ -69,7 +78,7 @@ function LoadMore({ loading, onLoad }: { loading: boolean; onLoad: () => void })
 export function PartiesPage() {
   const nav = useNavigate();
   const { id } = useParams();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   // The /parties/new route has no :id param, so read it from the path.
   const isNew = pathname === "/parties/new";
   const selectedId = isNew ? null : (id ?? null);
@@ -77,6 +86,11 @@ export function PartiesPage() {
   const [q, setQ] = useState("");
   const dq = useDebounced(q.trim(), 250);
   const [scope, setScope] = useState<Scope>("");
+  // the composer's "not asked" link arrives as /parties?offers=not_asked
+  const [offers, setOffers] = useState<Offers>(() => {
+    const o = new URLSearchParams(search).get("offers");
+    return o === "agreed" || o === "not_asked" || o === "opted_out" ? o : "";
+  });
   const [detailTab, setDetailTab] = useState<"details" | "account" | "catalogs">("details");
   const { me } = useAuth();
   const isDesktop = useIsDesktop();
@@ -87,10 +101,10 @@ export function PartiesPage() {
   const paged = !dq && scope !== "incomplete";
 
   const list = useInfiniteQuery({
-    queryKey: ["parties", dq, scope],
+    queryKey: ["parties", dq, scope, offers],
     refetchOnWindowFocus: false,
     queryFn: ({ pageParam }) =>
-      apiPage<PartyListItem[]>(`/parties?${buildQuery(dq, scope, pageParam)}`),
+      apiPage<PartyListItem[]>(`/parties?${buildQuery(dq, scope, offers, pageParam)}`),
     initialPageParam: null as string | null,
     getNextPageParam: (last) => last.nextCursor,
   });
@@ -98,6 +112,12 @@ export function PartiesPage() {
     () => list.data?.pages.flatMap((p) => p.data) ?? [],
     [list.data],
   );
+
+  const offerCounts = useQuery({
+    queryKey: ["offers-counts"],
+    queryFn: () => api<Record<Exclude<Offers, "">, number>>("/parties/offers-counts"),
+    refetchOnWindowFocus: false,
+  });
 
   const detail = useQuery({
     queryKey: ["party", selectedId],
@@ -160,6 +180,25 @@ export function PartiesPage() {
               </button>
             ))}
           </div>
+          {offerCounts.data && (
+            <div className="flex flex-wrap items-center gap-1.5 md:gap-1" role="group" aria-label="Offers on WhatsApp">
+              <span className="text-[10px] uppercase tracking-wide text-muted">Offers</span>
+              {OFFERS.map((f) => (
+                <button
+                  key={f.key}
+                  aria-pressed={offers === f.key}
+                  onClick={() => setOffers(offers === f.key ? "" : f.key)}
+                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                    offers === f.key
+                      ? "border-accent bg-accent text-ground"
+                      : "border-line bg-card text-muted hover:bg-ground"
+                  }`}
+                >
+                  {f.label} <span className="tabular-nums opacity-70">{offerCounts.data[f.key]}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -172,7 +211,7 @@ export function PartiesPage() {
           {list.isLoading && <div className="px-3 py-6 text-xs text-muted">Loading…</div>}
           {!list.isLoading && rows.length === 0 && !isNew && (
             <div className="px-3 py-8 text-center text-xs text-muted">
-              {dq || scope ? "No matches." : "No parties yet."}
+              {dq || scope || offers ? "No matches." : "No parties yet."}
             </div>
           )}
           {rows.map((p) => (
@@ -272,12 +311,15 @@ export function PartiesPage() {
           ) : detailTab === "catalogs" ? (
             <PartyCatalogsTab party={detail.data} />
           ) : (
-            <PartyForm
-              key={detail.data.id}
-              party={detail.data}
-              onChanged={() => detail.refetch()}
-              onDeleted={() => nav("/parties")}
-            />
+            <>
+              {detail.data.role !== "supplier" && <OffersConsent party={detail.data} variant="card" />}
+              <PartyForm
+                key={detail.data.id}
+                party={detail.data}
+                onChanged={() => detail.refetch()}
+                onDeleted={() => nav("/parties")}
+              />
+            </>
           )
         ) : (
           <div className="grid h-full place-items-center text-sm text-muted">Party not found.</div>

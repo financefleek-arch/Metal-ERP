@@ -320,7 +320,13 @@ export interface PartyListItem {
   completeness: PartyCompleteness;
 }
 
+/** A customer's answer to offers on WhatsApp: none = never asked. */
+export type WaConsent = "none" | "opted_in" | "opted_out";
+
 export interface Party extends PartyListItem {
+  wa_catalog_consent?: WaConsent;
+  wa_catalog_consent_at?: string | null;
+  wa_catalog_consent_source?: "manual" | "order_page" | "whatsapp_reply" | null;
   email: string | null;
   pan: string | null;
   opening_balance_as_of: string | null;

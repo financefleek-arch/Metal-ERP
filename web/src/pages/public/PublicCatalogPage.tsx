@@ -488,7 +488,7 @@ function ReviewOrder({
   onPlaced: (p: Placed) => void;
   onUnavailable: (ids: string[]) => void;
 }) {
-  const saved = read<{ name: string; phone: string; firm: string; wa: boolean }>("customer", {
+  const saved = read<{ name: string; phone: string; firm: string; wa: boolean; offers?: boolean }>("customer", {
     name: "",
     phone: "",
     firm: "",
@@ -501,6 +501,8 @@ function ReviewOrder({
   const [firm, setFirm] = useState(saved.firm);
   const [note, setNote] = useState("");
   const [wa, setWa] = useState(saved.wa);
+  // a separate, deliberate choice: never ticked for them, and only remembered if they ticked it before
+  const [offers, setOffers] = useState(saved.offers === true);
   const [trap, setTrap] = useState(""); // hidden field: only bots fill it
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -523,6 +525,7 @@ function ReviewOrder({
           firm: firm || null,
           note: note || null,
           wa_opt_in: wa,
+          offers_opt_in: offers,
           website: trap || null,
           lines: lines.map((l) => ({ item_id: l.item.id, qty: l.qty, unit: l.unit })),
         }),
@@ -531,7 +534,7 @@ function ReviewOrder({
         detail?: string | { message?: string; unavailable?: { id: string; name: string | null }[] };
       } & Placed;
       if (res.ok) {
-        write("customer", { name, phone, firm, wa });
+        write("customer", { name, phone, firm, wa, offers });
         onPlaced(body);
         return;
       }
@@ -632,6 +635,13 @@ function ReviewOrder({
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-1" checked={wa} onChange={(e) => setWa(e.target.checked)} />
           <span>Send me order updates on WhatsApp</span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={offers} onChange={(e) => setOffers(e.target.checked)} />
+          <span>
+            Also send me new ranges and offers on WhatsApp
+            <span className="block text-xs text-muted">Reply STOP any time to stop.</span>
+          </span>
         </label>
       </div>
 

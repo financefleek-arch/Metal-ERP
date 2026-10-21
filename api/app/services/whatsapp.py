@@ -20,6 +20,7 @@ body parameters, in the order listed.
 
 from __future__ import annotations
 
+import base64
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -31,7 +32,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Invoice, Party, TenantWhatsappConfig, WhatsappMessage
+from app.models import Invoice, Party, Tenant, TenantWhatsappConfig, WhatsappMessage
+from app.services import fleek_messages
 
 log = logging.getLogger("whatsapp")
 _settings = get_settings()
@@ -230,6 +232,105 @@ def _send_template_message(
 
 
 # --------------------------------------------------------------------------
+# where a message goes: through Fleek (a linked firm) or straight to Meta (a firm not linked yet)
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Route:
+    """How one firm's messages leave.
+
+    `fleek_org_id` set: Fleek sends them, from the firm's own number (docs/PLAN-fleek-control-plane.md).
+    Otherwise `cfg` is the direct Meta route every firm used before it was linked (kept until each
+    firm is adopted)."""
+
+    fleek_org_id: str | None = None
+    cfg: ResolvedConfig | None = None
+
+
+def route_for(session: Session, tenant_id: str) -> Route:
+    """Raises WhatsappNotConfigured (as get_config does) for a direct firm with no active number.
+
+    A linked firm is never checked here: Fleek knows whether its number is connected and registered,
+    and says so when asked to send."""
+    s = get_settings()
+    tenant = session.get(Tenant, tenant_id)
+    if tenant is not None and tenant.fleek_org_id and s.control_plane_url and s.control_plane_secret:
+        return Route(fleek_org_id=tenant.fleek_org_id)
+    return Route(cfg=get_config(session, tenant_id))
+
+
+def _clean(value: object) -> str:
+    """Meta rejects newlines, tabs and long runs of spaces inside a variable."""
+    return " ".join(str(value).split())[:200]
+
+
+def _deliver(
+    route: Route,
+    *,
+    request_id: str,
+    template_name: str,
+    recipient: str,
+    values: dict[str, str],
+    document_path: str | None = None,
+    document_bytes: bytes | None = None,
+    document_filename: str | None = None,
+    order_token: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Send one template message. -> (Meta's message id, Meta media id or None).
+
+    Raises WhatsappError (WhatsappNotConfigured when the firm has no usable number). `values` is by the
+    names in TEMPLATE_BODY_PARAMS, which are also the names Fleek holds for the template. The file to
+    attach is `document_bytes`, or the file at `document_path` when it exists."""
+    if route.fleek_org_id and document_bytes is None and document_path and Path(document_path).exists():
+        document_bytes = Path(document_path).read_bytes()
+    has_file = document_bytes is not None or bool(document_path and Path(document_path).exists())
+    if route.fleek_org_id:
+        payload: dict[str, object] = {
+            "template_key": template_name,
+            "to": recipient,
+            "values": {k: _clean(v) for k, v in values.items()},
+            "request_id": request_id,
+        }
+        if order_token:
+            payload["links"] = {"order": order_token}
+        if has_file:
+            payload["document"] = {
+                "filename": document_filename or "document.pdf",
+                "content_base64": base64.b64encode(document_bytes or b"").decode(),
+            }
+        try:
+            status, body = fleek_messages.send(route.fleek_org_id, payload)
+        except fleek_messages.FleekUnavailable as exc:
+            raise WhatsappError(f"send failed: {exc}") from exc
+        if status == 200:
+            return body.get("provider_message_id"), None
+        reason = str(body.get("message") or body.get("detail") or f"Fleek answered {status}")
+        if body.get("error") == "not_connected":
+            raise WhatsappNotConfigured(reason)
+        raise WhatsappError(f"send failed: {reason}"[:600])
+
+    assert route.cfg is not None
+    media_id: str | None = None
+    if document_bytes is not None:
+        media_id = _upload_media_bytes(
+            route.cfg, document_bytes, filename=document_filename or "document.pdf"
+        )
+    elif has_file:
+        media_id = upload_media(route.cfg, str(document_path), filename=document_filename or "document.pdf")
+    wa_id = _send_template_message(
+        route.cfg,
+        to_phone=recipient,
+        template_name=template_name,
+        body_params=[values[k] for k in TEMPLATE_BODY_PARAMS[template_name]],
+        document_media_id=media_id,
+        document_filename=document_filename,
+        button_url_param=order_token,
+    )
+    return wa_id, media_id
+
+
+# --------------------------------------------------------------------------
 # test send — prove a firm's config works without a real invoice
 # --------------------------------------------------------------------------
 
@@ -279,7 +380,7 @@ def send_test_message(
     if template_name not in TEMPLATE_BODY_PARAMS:
         raise WhatsappError(f"unknown template: {template_name!r}")
 
-    cfg = get_config(session, tenant_id)
+    route = route_for(session, tenant_id)
     to = _phone_e164(to_phone)
     if len(to) < 10:
         raise WhatsappError(f"recipient phone looks invalid: {to_phone!r}")
@@ -290,7 +391,7 @@ def send_test_message(
         "invoice_number": "TEST-0001",
         "grand_total": "1234.00",
     }
-    body_params = [dummy[k] for k in TEMPLATE_BODY_PARAMS[template_name]]
+    values = {k: dummy[k] for k in TEMPLATE_BODY_PARAMS[template_name]}
 
     msg = WhatsappMessage(
         tenant_id=tenant_id,
@@ -303,21 +404,17 @@ def send_test_message(
     session.add(msg)
     session.flush()
 
-    media_id: str | None = None
     try:
-        if with_document:
-            media_id = _upload_media_bytes(
-                cfg, _TEST_PDF_BYTES, filename="Fleek-test.pdf"
-            )
-            msg.media_id = media_id
-        wa_id = _send_template_message(
-            cfg,
-            to_phone=to,
+        wa_id, media_id = _deliver(
+            route,
+            request_id=msg.id,
             template_name=template_name,
-            body_params=body_params,
-            document_media_id=media_id,
+            recipient=to,
+            values=values,
+            document_bytes=_TEST_PDF_BYTES if with_document else None,
             document_filename="Fleek-test.pdf",
         )
+        msg.media_id = media_id
     except WhatsappError as exc:
         msg.status = "failed"
         msg.error = str(exc)[:1000]
@@ -411,7 +508,7 @@ def send_invoice(
             raise WhatsappError("party has no phone number")
         recipient = _phone_e164(party.phone)
 
-    cfg = get_config(session, invoice.tenant_id)
+    route = route_for(session, invoice.tenant_id)
 
     grand_total = amount_override if amount_override is not None else invoice.grand_total
     # {{3}} is declared as a Number variable in the WhatsApp template, so it
@@ -423,7 +520,6 @@ def send_invoice(
         "invoice_number": str(invoice.number or ""),
         "grand_total": total_str,
     }
-    body_params = [param_values[k] for k in TEMPLATE_BODY_PARAMS[template_name]]
 
     msg = WhatsappMessage(
         tenant_id=invoice.tenant_id,
@@ -438,20 +534,18 @@ def send_invoice(
 
     from app.services.invoices.common import download_name
 
-    media_id: str | None = None
     filename = download_name(invoice)
     try:
-        if invoice.pdf_path and Path(invoice.pdf_path).exists():
-            media_id = upload_media(cfg, invoice.pdf_path, filename=filename)
-            msg.media_id = media_id
-        wa_id = _send_template_message(
-            cfg,
-            to_phone=recipient,
+        wa_id, media_id = _deliver(
+            route,
+            request_id=msg.id,
             template_name=template_name,
-            body_params=body_params,
-            document_media_id=media_id,
+            recipient=recipient,
+            values=param_values,
+            document_path=invoice.pdf_path,
             document_filename=filename,
         )
+        msg.media_id = media_id
     except WhatsappError as exc:
         msg.status = "failed"
         msg.error = str(exc)[:1000]
@@ -516,7 +610,7 @@ def send_party_statement(
             raise WhatsappError("party has no phone number")
         recipient = _phone_e164(party.phone)
 
-    cfg = get_config(session, party.tenant_id)
+    route = route_for(session, party.tenant_id)
 
     try:
         pdf_path, data = render_party_statement_pdf(
@@ -531,7 +625,6 @@ def send_party_statement(
     # {{2}} is a Number variable in the template — bare numeric string, no ₹.
     total_str = f"{data.total_due:.2f}"
     param_values = {"party_name": party.legal_name, "total_due": total_str}
-    body_params = [param_values[k] for k in TEMPLATE_BODY_PARAMS["account_statement"]]
 
     msg = WhatsappMessage(
         tenant_id=party.tenant_id,
@@ -544,19 +637,17 @@ def send_party_statement(
     session.add(msg)
     session.flush()
 
-    media_id: str | None = None
     try:
-        if Path(pdf_path).exists():
-            media_id = upload_media(cfg, str(pdf_path), filename=filename)
-            msg.media_id = media_id
-        wa_id = _send_template_message(
-            cfg,
-            to_phone=recipient,
+        wa_id, media_id = _deliver(
+            route,
+            request_id=msg.id,
             template_name="account_statement",
-            body_params=body_params,
-            document_media_id=media_id,
+            recipient=recipient,
+            values=param_values,
+            document_path=str(pdf_path),
             document_filename=filename,
         )
+        msg.media_id = media_id
     except WhatsappError as exc:
         msg.status = "failed"
         msg.error = str(exc)[:1000]
@@ -594,10 +685,8 @@ def send_order_message(
     recipient = _phone_e164(to_phone)
     if len(recipient) < 10:
         raise WhatsappError(f"recipient phone looks invalid: {to_phone!r}")
-    cfg = get_config(session, tenant_id)
-    # Meta rejects newlines, tabs and long runs of spaces inside a variable
-    clean = {k: " ".join(str(v).split())[:200] for k, v in values.items()}
-    body_params = [clean[k] for k in TEMPLATE_BODY_PARAMS[template_name]]
+    route = route_for(session, tenant_id)
+    clean = {k: _clean(v) for k, v in values.items()}
     msg = WhatsappMessage(
         tenant_id=tenant_id,
         party_id=party_id,
@@ -610,14 +699,13 @@ def send_order_message(
     session.add(msg)
     session.flush()
     try:
-        wa_id = _send_template_message(
-            cfg,
-            to_phone=recipient,
+        wa_id, _ = _deliver(
+            route,
+            request_id=msg.id,
             template_name=template_name,
-            body_params=body_params,
-            document_media_id=None,
-            document_filename=None,
-            button_url_param=button_url_param,
+            recipient=recipient,
+            values=clean,
+            order_token=button_url_param,
         )
     except WhatsappError as exc:
         msg.status = "failed"

@@ -546,4 +546,4 @@ Rule: Metal ERP copies how Fleek already does a thing. The full comparison is `d
 - **No new configuration:** the page uses the same public ids as Fleek's (build vars `VITE_WHATSAPP_APP_ID`, `VITE_WHATSAPP_CONFIG_ID`); there is no signup-config route.
 - **Left out because they belong to the CRM core:** the business-profile card, "What happens next", the org-shared number.
 - **Open:** Fleek's number cap (`whatsapp_connect_block_reason`) applies only to CRM-only orgs, so a shop's `whatsapp_numbers` limit is not enforced until `metal_erp` is added there.
-  The Metal ERP web page is not built (it is a port of `WhatsAppIntegration.vue`).
+  The Metal ERP web page is built (`web/src/components/WhatsappConnectCard.tsx`, a port of `WhatsAppIntegration.vue`, shown to owners on the Firm page); it has not been run in a browser or against real Meta.

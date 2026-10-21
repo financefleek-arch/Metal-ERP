@@ -12,6 +12,7 @@ import { lastSeenLabel } from "../../lib/format";
 import { useAuth } from "../../lib/auth";
 import { canDraft, canWrite } from "../../lib/roles";
 import { PaymentDialog } from "../../components/PaymentDialog";
+import { OffersConsent } from "../../components/OffersConsent";
 import { WhatsappLog } from "../../components/WhatsappStatus";
 import { TallyPushPanel } from "../../components/TallySyncStatus";
 import { SimilarParties } from "../../components/SimilarParties";
@@ -1058,6 +1059,9 @@ export function InvoiceEditorPage() {
                     setDirty(true);
                   }}
                 />
+              )}
+              {!readOnly && partyId && partyRec.data && (
+                <OffersConsent party={partyRec.data} variant="line" />
               )}
               {!readOnly && partyId && (
                 <PartyOpeningBlock

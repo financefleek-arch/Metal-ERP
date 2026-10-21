@@ -66,6 +66,7 @@ class FakeFleek:
                 "business_name": "Sethia" if live else None,
                 "profile": None,
                 "connection": VIEW if live else None,
+                "templates": {"approved": 4, "pending": 2, "rejected": 0, "total": 6} if live else None,
             }
 
         def handler(request: httpx.Request) -> httpx.Response:
@@ -163,6 +164,16 @@ def test_status_is_fleeks_status_and_refreshes_the_cache(client, monkeypatch) ->
     assert got["connected"] is True and got["connection_mode"] == "coexistence"
     cfg = _cfg(tenant_id)
     assert cfg is not None and cfg.is_active is True
+
+
+def test_the_owner_sees_how_many_messages_whatsapp_has_approved(client, monkeypatch) -> None:
+    fleek = FakeFleek(monkeypatch)
+    owner, _ = _shop(client)
+    assert client.get("/api/whatsapp-integrations", headers=owner).json()["templates"] is None
+    fleek.connected = True
+    out = client.get("/api/whatsapp-integrations", headers=owner).json()
+    assert out["templates"] == {"approved": 4, "pending": 2, "rejected": 0, "total": 6}
+    assert "connection" not in out  # the number's ids stay on the server
 
 
 def test_a_number_pending_registration_is_not_sent_from_until_retry_works(client, monkeypatch) -> None:

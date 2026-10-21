@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
+import { almostReady, type TemplateCounts } from "../lib/whatsappSetup";
+import { WhatsappSetupChecklist } from "./WhatsappSetupChecklist";
 
 /**
  * The owner's WhatsApp page, ported from Fleek's advisor page (fleek-frontend WhatsAppIntegration.vue) so a
@@ -17,6 +19,8 @@ interface Status {
   display_phone_number: string | null;
   business_name: string | null;
   connection_mode?: "cloud" | "coexistence" | null;
+  /** how many of the shop's messages WhatsApp has approved (Fleek's answer) */
+  templates?: TemplateCounts | null;
 }
 
 interface Reply {
@@ -263,7 +267,7 @@ export function WhatsappConnectCard() {
         <h3 className="text-sm font-semibold">WhatsApp Business</h3>
         <span
           className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-            st.needs_reconnect || st.needs_registration
+            st.needs_reconnect || st.needs_registration || (connected && almostReady(st.templates))
               ? "bg-warn/15 text-warn"
               : connected
                 ? "bg-ok/15 text-ok"
@@ -275,7 +279,9 @@ export function WhatsappConnectCard() {
             : st.needs_registration
               ? "Registration pending"
               : connected
-                ? "Connected"
+                ? almostReady(st.templates)
+                  ? "Almost ready"
+                  : "Connected"
                 : "Not connected"}
         </span>
       </div>
@@ -327,6 +333,7 @@ export function WhatsappConnectCard() {
           {st.connection_mode === "coexistence" && (
             <div className="text-xs text-ok">Also works on your phone's WhatsApp Business app</div>
           )}
+          <WhatsappSetupChecklist registered={!st.needs_registration} templates={st.templates} />
         </div>
       )}
 

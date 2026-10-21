@@ -96,6 +96,11 @@ class CustomerOrder(PkUuidMixin, TimestampMixin, Base):
     customer_firm: Mapped[str | None] = mapped_column(String(120))
     note: Mapped[str | None] = mapped_column(String(500))
     wa_opt_in: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # ticked "new ranges and offers on WhatsApp" on the order page; becomes the customer's consent
+    # once the order is tied to a party
+    offers_opt_in: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     # an existing customer whose phone matched (the shop confirms it on review)
     matched_party_id: Mapped[str | None] = mapped_column(ForeignKey("party.id"))
 
