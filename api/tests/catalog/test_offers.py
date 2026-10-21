@@ -249,3 +249,71 @@ def test_pause_resume_and_cancel_are_passed_on_and_a_bad_action_is_refused(catal
         "campaigns/camp-1/resume",
         "campaigns/camp-1/cancel",
     ]
+
+
+# --------------------------------------------------------------------------- name and price on each card
+def test_a_price_reads_as_a_whole_number_or_with_paise_and_a_long_name_is_kept_short() -> None:
+    from app.services import offers
+
+    assert [offers.price_text(v) for v in ("640", "640.00", 640.5, "85.25", None)] == [
+        "640",
+        "640",
+        "640.50",
+        "85.25",
+        "0",
+    ]
+    name, price = offers.card_values("Steel   Tiffin\n3 Tier " + "x" * 80, "640")
+    assert "\n" not in name and len(name) <= 60 and name.startswith("Steel Tiffin 3 Tier") and price == "640"
+
+
+def test_the_message_that_names_the_item_and_its_price_is_preferred_and_odd_ones_are_skipped() -> None:
+    from app.services import offers
+
+    plain = {"ref": "wa:plain", "cards": 4, "card_variables": 0, "ready": True}
+    named = {"ref": "wa:named", "cards": 4, "card_variables": 2, "ready": True}
+    odd = {"ref": "wa:odd", "cards": 4, "card_variables": 3, "ready": True}
+    assert offers.pick_template([plain, named])[0] == named
+    assert (
+        offers.pick_template([plain, {**named, "ready": False}])[0] == plain
+    )  # only what WhatsApp has approved
+    assert offers.pick_template([odd])[0] is None  # a shape we cannot fill
+    assert offers.pick_template([{**named, "ready": False}])[1] and offers.pick_template([])[1]
+
+
+def test_send_gives_each_card_its_own_name_and_price_when_the_message_has_them(catalog_client, fleek) -> None:  # type: ignore[no-untyped-def]
+    client, h, tid, items = _shop(catalog_client)
+    fleek.answers["GET campaigns/templates"] = (
+        200,
+        {
+            "templates": [
+                {
+                    "ref": "wa:named",
+                    "title": "New range",
+                    "purpose": "",
+                    "cards": 2,
+                    "card_variables": 2,
+                    "ready": True,
+                    "reason": None,
+                }
+            ]
+        },
+    )
+    r = client.post("/api/offers/send", headers=h, json={"selection": {"ids": [i["id"] for i in items]}})
+    assert r.status_code == 201, r.text
+    payload = next(c[2] for c in fleek.calls if c[1] == "campaigns")
+    assert payload is not None and payload["template"] == "wa:named"
+    names = {i["name"] for i in items}
+    for card in payload["cards"]:
+        assert len(card["values"]) == 2 and card["values"][0] in names and card["values"][1] == "100"
+
+
+def test_a_message_with_a_fixed_card_line_sends_no_values(catalog_client, fleek) -> None:  # type: ignore[no-untyped-def]
+    client, h, tid, items = _shop(catalog_client)
+    assert (
+        client.post(
+            "/api/offers/send", headers=h, json={"selection": {"ids": [i["id"] for i in items]}}
+        ).status_code
+        == 201
+    )
+    payload = next(c[2] for c in fleek.calls if c[1] == "campaigns")
+    assert payload is not None and all("values" not in card for card in payload["cards"])

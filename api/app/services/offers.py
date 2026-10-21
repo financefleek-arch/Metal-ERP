@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -58,6 +59,7 @@ class Card:
     name: str
     price: str
     media_id: str
+    values: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -87,14 +89,33 @@ def rank_cards(items: list[Item], n_cards: int) -> list[Item]:
     return with_photo[:n_cards]
 
 
+# the card line of an offer message is either fixed text (0 variables) or the item's name and price (2)
+CARD_VARIABLES_SUPPORTED = (0, 2)
+
+
 def pick_template(templates: list[dict[str, Any]]) -> tuple[dict[str, Any] | None, str | None]:
-    """Pure. -> (the first ready offer message, None) or (None, why there is none)."""
-    if not templates:
+    """Pure. -> (the offer message to use, None) or (None, why there is none).
+
+    Among the ready ones, the message whose cards name the item and its price comes first."""
+    usable = [t for t in templates if int(t.get("card_variables") or 0) in CARD_VARIABLES_SUPPORTED]
+    if not usable:
         return None, "No offer message is set up for your shop yet. Ask Fleek."
-    ready = [t for t in templates if t.get("ready")]
+    ready = [t for t in usable if t.get("ready")]
     if not ready:
         return None, "WhatsApp is still checking your offer message. It usually takes a day."
+    ready.sort(key=lambda t: -int(t.get("card_variables") or 0))
     return ready[0], None
+
+
+def price_text(rate: object) -> str:
+    """Pure. A price for a card's line: 640, or 640.50 (the rupee sign is in the message)."""
+    value = Decimal(str(rate or 0)).quantize(Decimal("0.01"))
+    return f"{value:.0f}" if value == value.to_integral_value() else f"{value:.2f}"
+
+
+def card_values(name: str, rate: object) -> list[str]:
+    """Pure. What fills a card's line of text: the item's name (kept short) and its price."""
+    return [_clean(name)[:60], price_text(rate)]
 
 
 def blockers_for(plan: OfferPlan, n_cards: int) -> list[str]:
@@ -169,7 +190,13 @@ def plan_offer(session: Session, tenant: Tenant, selection: CatalogSelection) ->
     if why:
         plan.blockers.append(why)
     plan.cards = [
-        Card(it.id, it.name, f"{float(it.default_rate or 0):.2f}", it.primary_media_id or "")
+        Card(
+            it.id,
+            it.name,
+            f"{float(it.default_rate or 0):.2f}",
+            it.primary_media_id or "",
+            card_values(it.name, it.default_rate),
+        )
         for it in rank_cards(catalog.items, n_cards)
     ]
     plan.blockers += blockers_for(plan, n_cards)
@@ -205,7 +232,10 @@ def send_offer(
         asset = session.get(MediaAsset, card.media_id)
         if asset is None or media_svc.card_jpeg(storage, asset) is None:
             raise OfferRefused(422, f"The photo of {card.name} could not be read. Replace it and try again.")
-        cards.append({"image_url": card_url(card.media_id)})
+        entry: dict[str, Any] = {"image_url": card_url(card.media_id)}
+        if int(plan.template.get("card_variables") or 0):
+            entry["values"] = card.values
+        cards.append(entry)
 
     name = _clean(title)[:120] or "New range"
     link = share_links_svc.create(
