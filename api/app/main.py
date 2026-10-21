@@ -26,6 +26,7 @@ from app.routers import (
     catalog_review,
     catalog_tally,
     control_plane,
+    control_plane_firm,
     customer_catalogs,
     documents,
     invoices,
@@ -52,6 +53,7 @@ from app.routers import (
     tenant,
     voice_stream,
     whatsapp,
+    whatsapp_connect,
 )
 
 settings = get_settings()
@@ -151,6 +153,7 @@ if not settings.is_production:
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(control_plane.router)
+app.include_router(control_plane_firm.router)
 app.include_router(reference.router)
 app.include_router(tenant.router)
 app.include_router(parties.router)
@@ -179,6 +182,7 @@ app.include_router(item_sheet.router)
 app.include_router(item_tally.router)
 app.include_router(jobs.router)
 app.include_router(orders.router)
+app.include_router(whatsapp_connect.router)
 app.include_router(reminders.router)
 app.include_router(orders.public_router)
 app.include_router(share_links.router)

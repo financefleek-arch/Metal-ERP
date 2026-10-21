@@ -26,23 +26,23 @@ Everything is built and tested but **uncommitted and undeployed**. Items marked 
 
 ## C. Meta / WhatsApp
 13. **Meta app (FleekWA):** advanced access and Embedded Signup configuration are in place (Fleek is an approved Tech Provider). Confirm the app's allowed domains include the Fleek admin domain that will host the connect popup (VERIFY).
-14. **Webhook fields subscribed** in the Meta App Dashboard: `messages`, `message_template_status_update`, `smb_message_echoes`, `history`, `smb_app_state_sync`, `account_update`, `user_preferences`, `business_capability_update`, `account_alerts`.
+14. **Webhook fields subscribed** (use the existing webhook health card in the Fleek admin and the existing `check_meta_webhook_subscription` / `check_whatsapp_webhook_subscription` scripts; nothing new is configured) in the Meta App Dashboard: `messages`, `message_template_status_update`, `smb_message_echoes`, `history`, `smb_app_state_sync`, `account_update`, `user_preferences`, `business_capability_update`, `account_alerts`.
 15. **Pilot shop's number** is on the WhatsApp Business app (version 2.24.17 or later), has been active for about a week, and is not on regular WhatsApp (error 2494064). The shop's owner is a Facebook admin of their business and has a payment method ready for their WABA (Meta bills the shop directly).
 16. **Create the carousel template** in WhatsApp Manager on Fleek's own WABA (see section F for the exact configuration) and wait for approval.
 17. **Check the six existing Metal ERP templates** on Fleek's WABA are Approved and match the variable counts (`invoice_ready` 3, `payment_reminder` 3, `account_statement` 2, `order_received` 5, `order_update` 4, `new_order_alert` 4); the adopt script reports any mismatch.
 
 ## D. Fleek: one-time data steps (run inside the fleek-backend container after deploy)
 18. `python scripts/seed_metal_erp_plans.py` (dry run), then `--execute`: writes the default plans as editable rows. Tune prices and limits in the admin Plan Templates (plan names `metal_erp_*`, `features` JSON: label, users, campaign_monthly_cap, whatsapp_numbers).
-19. `python scripts/adopt_metal_erp_templates.py` (dry run), then `--execute`: adopts the six existing templates with audience `metal_erp`.
-20. **Adopt the carousel:** `POST /api/admin/whatsapp-templates/meta/adopt` with `{"name": "<template name>", "language": "en", "placeholders": ["name"], "audience": "metal_erp"}` (use `[]` if the body has no variable).
-21. **Offer it to shops:** `PUT /api/admin/whatsapp-templates/<name>/crm` with `{"pickable": true, "title": "New range", "purpose": "Show your catalogue", "kind": "engagement", "sort": 10}`.
+19. **In the existing WhatsApp Templates console** (Sync from Meta): adopt the six Metal ERP templates (`invoice_ready`, `payment_reminder`, `account_statement`, `order_received`, `order_update`, `new_order_alert`) with their variable names in order (Metal ERP's `TEMPLATE_BODY_PARAMS`) and the audience **Metal ERP shops**.
+20. **Adopt the carousel there too** (name, language `en`, placeholder name `name` if the body greets), audience Metal ERP shops.
+21. **Offer the carousel to shops:** mark it pickable as an engagement message (existing control; title `New range`, purpose `Show your catalogue`). Watch approval and the per-number rollout in the same console.
 22. **Secrets:** confirm `FLEEK_WABA_ID`, `WHATSAPP_API_KEY`, `WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET` are set (the sample-upload handle for templates needs the app id).
 
 ## E. Pilot shop onboarding (Fleek-assisted)
 23. **Create the shop org:** `POST /api/admin/orgs/metal-erp` (shop name, city, contact name, contact email that is not already a Fleek account, optional plan, trial days, billing mode). Fleek creates the Metal ERP firm by a signed call; if it answers `pending`, retry with `POST /api/admin/orgs/<id>/metal-erp/provision`.
-24. **Existing live shops** (if any): link each with `POST /api/internal/control-plane/link` and give them a manual-billing subscription (`PUT /api/admin/orgs/<id>/metal-erp/plan` with `billing_mode: manual, trial_days: 0`); a dry-run backfill script is not written yet.
+24. **Existing live shops:** adopt each one instead of recreating it: `GET /api/admin/metal-erp/unlinked-firms`, then `POST /api/admin/orgs/metal-erp` with `existing_tenant_id`, a plan, `billing_mode: manual` and `trial_days: 0`. Nothing in the firm changes (its data and users stay). A failed link is retried with `POST /api/admin/orgs/<id>/metal-erp/provision` and the same `existing_tenant_id`.
 25. **Billing:** trial runs 15 days on autopay. Before it ends, send the owner the hosted authorisation link from `POST /api/admin/orgs/<id>/metal-erp/payment-link` (it is not sent for you), or keep the shop on manual billing.
-26. **Connect the number** with the owner present: the Embedded Signup popup must run in the Fleek admin shell, and that **admin screen does not exist yet** (needs a mockup); until then the popup result (code, waba_id, phone_number_id, `onboarding: "business_app"`) must be posted to `POST /api/admin/orgs/<id>/whatsapp/connect` by a tool. Then check `GET /api/admin/orgs/<id>/whatsapp` (templates approved, Flows none) and `POST .../whatsapp/sync` for anything pending.
+26. **Connect the number:** the shop owner connects it themselves from Metal ERP's WhatsApp page (a port of Fleek's advisor page; not built yet), as an advisor does in Fleek. A Fleek admin only sees the connection. Same public ids as Fleek's page (`VITE_WHATSAPP_APP_ID`, `VITE_WHATSAPP_CONFIG_ID` on the Metal ERP web build, three places). Add `metal.fleekfinance.in` to the Meta app's allowed domains (the popup then runs on that domain).
 27. **Grant the CRM core:** `POST /api/admin/orgs/<id>/crm-core` (tier, price, `apply_now`).
 28. **Metal ERP side of the shop:** the firm exists and is linked; set the operator toggles as needed; add the shop's users (limited by the plan); create the catalogue share link the campaign will open (note its token).
 29. **Consent capture:** until the screens exist, consent can only be recorded by staff per party (`PUT /api/parties/<id>/catalog-consent`). Customers with no recorded consent are pushed but never messaged.
@@ -69,7 +69,11 @@ Every card opens the **same** catalogue page. Per-card category pages are not bu
 31. Run a campaign to the **pilot shop owner's own phone** first: put the owner as the only consented customer, then `POST /api/admin/orgs/<id>/campaigns/catalog` with `template: "wa:catalog_range_carousel"`, the catalogue link token, four card pictures, `start: true`. Check: the carousel renders, each card button opens the owner's personal link (name prefilled, phone optional), an order from it shows the campaign reference.
 32. Check delivery and reads in `GET /api/admin/orgs/<id>/campaigns/<campaign id>`, Meta's message counts (the shop is billed by Meta), and that a STOP reply marks the customer opted out in Metal ERP.
 33. Then the shop's consented customers, in a small batch first (Meta's per-user marketing cap and quality rating apply; the portfolio starts at 250 unique users a day until verified).
-34. **Roll back path:** cancel the campaign (`POST .../cancel`), disconnect the number (`POST .../whatsapp/disconnect`), or unlink nothing: every other shop stays on the shared number until moved on purpose.
+34. **Roll back path:** cancel the campaign (`POST .../cancel`), have the owner disconnect the number on the WhatsApp page, or unlink nothing: every other shop stays on the shared number until moved on purpose.
+
+## G2. One console (Fleek manages the whole shop; section 16 of the plan)
+- Backend built: shop settings, users, Tally agent and WhatsApp test are reachable from Fleek through signed routes (`/api/admin/orgs/<id>/metal-erp/settings|users|tally|whatsapp-test`). A linked firm's WhatsApp number can no longer be pasted into the Metal ERP console.
+- To retire the Metal ERP operator console: approve and build the Fleek screens, adopt every live shop (step 24), then close the console in Metal ERP in stages (firm creation first). The switch that closes each stage is not written yet.
 
 ## H. Not built (will need work before the matching feature is usable)
 - Admin screens (Fleek console): new Metal ERP shop, connect number, plan, campaigns. Today these are API calls.

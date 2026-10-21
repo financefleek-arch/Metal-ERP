@@ -424,8 +424,7 @@ on); Fleek-assisted connect; templates are finalised at the end, ongoing. Detail
 - **Metal ERP side:** `PUT /api/internal/control-plane/whatsapp` keeps Metal ERP's `tenant_whatsapp_config` in step (refuses a number another active firm uses).
 - **Webhooks:** a shop's number is routed by owner. Its customers' messages skip Fleek's staff inbox, advisor STOP handling and the auto-responder; Metal ERP
   receives only its shops' events and the older shared-number events (re-signed with the App Secret).
-- **Templates:** audience `metal_erp` (migration `b109`); the six Metal ERP templates are adopted from Fleek's WABA with `scripts/adopt_metal_erp_templates.py`
-  (dry run first). Document headers and carousels (2-10 picture cards) are adoptable and are re-submitted with fresh sample handles. Carousels are
+- **Templates:** audience `metal_erp` (migration `b109`); the six Metal ERP templates are adopted from Fleek's WABA in the existing WhatsApp Templates console (Sync from Meta, audience "Metal ERP shops"; no separate script). Document headers and carousels (2-10 picture cards) are adoptable and are re-submitted with fresh sample handles. Carousels are
   created in WhatsApp Manager and adopted; there is no builder yet. Sending a carousel is P5.
 - **Verified:** 11 new DB tests, 15 new pure tests, regression 243 of 247 (the 4 are explained in the B60 spec). Metal ERP suite green apart from the
   old date-dependent reminders test.
@@ -502,3 +501,49 @@ Owner answers 2026-10-21: no consent criteria on who is pushed; Metal ERP mints 
   (`PUT /api/admin/whatsapp-templates/<key>/crm`, kind `engagement`); (2) connect the pilot shop's number; (3) grant the shop the CRM core; (4) link the shop and set the
   Metal ERP env variables; (5) create the campaign with the shop's catalogue link token and card pictures hosted where Meta can fetch them.
 - **Still open:** P5e (consent capture and a campaign screen in Metal ERP, mockups first), P5f (the real send), the DPDP position, the infra variables, commits and deploy.
+
+## 16. One console: Fleek manages the whole shop (2026-10-21, backend built, UI awaiting review)
+
+Owner decision 2026-10-21: no second management console. Fleek's admin is the only place an operator manages a Metal ERP shop; Metal ERP's own operator
+console is retired in steps. Login stays in Metal ERP (section 4, P6), so shop users are managed by Fleek **through Metal ERP's own admin functions**, over the
+same signed channel, with no shared tables.
+- **Metal ERP (built, tested):** `app/routers/control_plane_firm.py`, signed routes addressed by the Fleek organisation id: firm details and switches (GST, inward
+  import, supplier catalogues, automatic reminders), users (list, add, change role or password, switch off), Tally agent (read, provision, rotate key, pin version,
+  installer download), WhatsApp test send. Each calls the operator router's own function, so the plan's user limit and the last-owner guard are the same rules.
+  `GET /api/internal/control-plane/unlinked-firms` lists live firms that belong to no organisation. The operator console's WhatsApp paste-in form now refuses a
+  firm linked to Fleek (409), so it cannot overwrite what Fleek pushed.
+- **Fleek (built, tested):** `routes/admin_metal_erp_settings.py` proxies each of those under `/api/admin/orgs/<id>/metal-erp/...` with an audit entry per action
+  (field names and ids only; a password is never logged or recorded). Metal ERP's own refusal (a plan limit, a duplicate email) comes back with its sentence and status.
+  Adoption: `GET /api/admin/metal-erp/unlinked-firms`, and `POST /api/admin/orgs/metal-erp` accepts `existing_tenant_id` to link a live firm instead of creating
+  one (a failed link is retried with `POST .../metal-erp/provision` plus the same id).
+- **Mockup updated** (`fleek-backend/debug_tools/debug_b62_metal_erp_admin_mockup.html`): a Settings tab on the shop page (firm and switches, people with the plan's user count,
+  Tally agent) and an "Adopt a live Metal ERP shop" mode on the New shop screen. Not approved; no UI is built.
+- **Remaining steps to retire the Metal ERP console:** (1) approve and build the Fleek screens; (2) adopt every live shop (it is a plain step per shop: pick the firm,
+  choose a plan and manual billing); (3) then close the console in Metal ERP in stages: firm creation first (an unlinked firm has no licence), then users, switches and Tally,
+  finally the sign-in for operators. A setting that switches each stage off is not written yet.
+- **Not covered by this move:** the shop owner's own settings inside Metal ERP (logo, bank details, order minimum, terms, reminder days) stay with the shop.
+
+### 16.1 Templates and webhooks: no second entry point (owner 2026-10-21)
+Fleek already has one established place to configure and deploy WhatsApp templates and Meta webhooks (the WhatsApp Templates console, Sync from Meta, the rollout
+views, the webhook health card). Metal ERP uses that place and adds none:
+- the audience `Metal ERP shops` is a new option in the existing console (frontend `whatsappTemplateAudience.ts`, backend `AUDIENCES`);
+- the six templates and the carousel are adopted, marked pickable and watched there; copying to a shop's number is the existing push on connect;
+- the shop page in the Fleek admin shows the connection (number, mode, whether Metal ERP has been told), not template or Flow status;
+- Meta's webhook stays one URL with one health card; the routing by number lives inside the existing handler.
+Removed for this reason: the adoption script, and the template and Flow results from the shop's WhatsApp status and sync routes.
+
+### 16.2 The WhatsApp connect flow is a replica of Fleek's advisor flow (owner 2026-10-21; supersedes sections 9, 10 and the P3 notes above)
+Rule: Metal ERP copies how Fleek already does a thing. The full comparison is `docs/PARITY-whatsapp-connect.md`.
+- **Who connects:** the shop owner, from Metal ERP, exactly as an advisor does from Fleek: connect, retry registration, disconnect. A Fleek admin only SEES the
+  connection (`GET /api/admin/orgs/<id>/whatsapp`, read only). There is no admin connect, no admin disconnect and no admin resync, because Fleek has none for advisors.
+- **Routes:** Metal ERP `/api/whatsapp-integrations` (GET status, POST connect, retry-registration, disconnect), owner only. Each is a signed pass-through to Fleek's
+  `/api/internal/metal-erp/orgs/<id>/whatsapp-integrations/...`, which calls the SAME functions as the advisor routes (`status_for`, `connect_number`,
+  `retry_registration_for`, `disconnect_for` in `routes/whatsapp_integrations.py`). Fleek's bodies and statuses pass through unchanged.
+- **The only differences from an advisor:** (1) the caller is Metal ERP's server, signed, because an owner has no Fleek session; (2) the status and connect answers also carry
+  `connection` (the number's ids) for Metal ERP's own server.
+- **The number in Metal ERP is a cache** (`tenant_whatsapp_config`, as `tenant_entitlement` is for the licence): rewritten from Fleek after every call; a number is active
+  only when Fleek reports it connected AND registered. Fleek never pushes it; the push route, the admin resync and the pending state are removed.
+- **No new configuration:** the page uses the same public ids as Fleek's (build vars `VITE_WHATSAPP_APP_ID`, `VITE_WHATSAPP_CONFIG_ID`); there is no signup-config route.
+- **Left out because they belong to the CRM core:** the business-profile card, "What happens next", the org-shared number.
+- **Open:** Fleek's number cap (`whatsapp_connect_block_reason`) applies only to CRM-only orgs, so a shop's `whatsapp_numbers` limit is not enforced until `metal_erp` is added there.
+  The Metal ERP web page is not built (it is a port of `WhatsAppIntegration.vue`).

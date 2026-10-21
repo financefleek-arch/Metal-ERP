@@ -59,6 +59,16 @@ def _load_firm(session: SessionDep, firm_id: str) -> Tenant:
     return firm
 
 
+def _refuse_if_managed_by_fleek(firm: Tenant) -> None:
+    """A firm linked to Fleek gets its WhatsApp number from Fleek (the control plane owns the connection).
+    A hand-pasted number would overwrite it and the two would disagree."""
+    if firm.fleek_org_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This firm's WhatsApp number is managed from Fleek. Connect or change it there.",
+        )
+
+
 def _firm_users(firm: Tenant) -> list[User]:
     return sorted(firm.users, key=lambda u: u.created_at)
 
@@ -187,7 +197,7 @@ def get_firm_whatsapp(firm_id: str, session: SessionDep) -> FirmWhatsappOut:
 def upsert_firm_whatsapp(
     firm_id: str, body: FirmWhatsappUpsert, session: SessionDep
 ) -> FirmWhatsappOut:
-    _load_firm(session, firm_id)
+    _refuse_if_managed_by_fleek(_load_firm(session, firm_id))
     cfg = session.scalar(
         select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == firm_id)
     )
@@ -213,7 +223,7 @@ def upsert_firm_whatsapp(
 
 @router.delete("/firms/{firm_id}/whatsapp", status_code=status.HTTP_204_NO_CONTENT)
 def delete_firm_whatsapp(firm_id: str, session: SessionDep) -> None:
-    _load_firm(session, firm_id)
+    _refuse_if_managed_by_fleek(_load_firm(session, firm_id))
     cfg = session.scalar(
         select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == firm_id)
     )

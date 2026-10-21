@@ -55,6 +55,10 @@ function parseError(data: unknown, fallback: string): { message: string; detail:
     const msg = (d as { message?: string }).message;
     return { message: typeof msg === "string" ? msg : fallback, detail: d };
   }
+  const m = (data as { message?: unknown } | undefined)?.message;
+  if (typeof m === "string" && m) return { message: m, detail: undefined };
+  const e = (data as { error?: unknown } | undefined)?.error;
+  if (typeof e === "string" && e) return { message: e, detail: undefined };
   return { message: fallback, detail: undefined };
 }
 

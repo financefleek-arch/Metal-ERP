@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.deps import SessionDep
-from app.models import Tenant, TenantWhatsappConfig
+from app.models import Tenant
 from app.services import crm_sync, firm_provisioning
 from app.services.control_plane_auth import require_control_plane
 
@@ -46,21 +46,6 @@ class FirmLinkOut(BaseModel):
     fleek_org_id: str
     legal_name: str
     created: bool  # True = a new firm was made by this call; False = the firm already existed
-
-
-class WhatsappConfigIn(BaseModel):
-    fleek_org_id: str = Field(min_length=1, max_length=64)
-    phone_number_id: str = Field(min_length=1, max_length=40)
-    waba_id: str = Field(min_length=1, max_length=40)
-    display_phone_number: str | None = Field(default=None, max_length=30)
-    is_active: bool = True
-
-
-class WhatsappConfigOut(BaseModel):
-    tenant_id: str
-    fleek_org_id: str
-    phone_number_id: str
-    is_active: bool
 
 
 def _by_org(session: SessionDep, fleek_org_id: str) -> Tenant | None:
@@ -111,47 +96,6 @@ def link(body: LinkIn, session: SessionDep) -> FirmLinkOut:
     )
 
 
-@router.put("/whatsapp", response_model=WhatsappConfigOut)
-def put_whatsapp(body: WhatsappConfigIn, session: SessionDep) -> WhatsappConfigOut:
-    """Keep Metal ERP's copy of the shop's WhatsApp number in step with Fleek, which owns the connection.
-
-    Safe to repeat. A number that another active firm already uses is refused: the webhook finds the
-    firm by that number, so it must belong to exactly one."""
-    firm = _by_org(session, body.fleek_org_id)
-    if firm is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "No firm is linked to this organisation")
-    clash = session.scalar(
-        select(TenantWhatsappConfig).where(
-            TenantWhatsappConfig.phone_number_id == body.phone_number_id,
-            TenantWhatsappConfig.tenant_id != firm.id,
-            TenantWhatsappConfig.is_active.is_(True),
-        )
-    )
-    if clash is not None and body.is_active:
-        raise HTTPException(status.HTTP_409_CONFLICT, "This number is already used by another firm")
-    cfg = session.scalar(
-        select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == firm.id)
-    )
-    if cfg is None:
-        cfg = TenantWhatsappConfig(
-            tenant_id=firm.id,
-            phone_number_id=body.phone_number_id,
-            waba_id=body.waba_id,
-        )
-        session.add(cfg)
-    cfg.phone_number_id = body.phone_number_id
-    cfg.waba_id = body.waba_id
-    cfg.display_phone_number = body.display_phone_number
-    cfg.is_active = body.is_active
-    session.flush()
-    return WhatsappConfigOut(
-        tenant_id=firm.id,
-        fleek_org_id=body.fleek_org_id,
-        phone_number_id=cfg.phone_number_id,
-        is_active=cfg.is_active,
-    )
-
-
 class ConsentIn(BaseModel):
     fleek_org_id: str = Field(min_length=1, max_length=64)
     external_id: str = Field(min_length=1, max_length=64)
@@ -197,3 +141,32 @@ def sync_contacts(body: SyncAsk, session: SessionDep) -> SyncOut:
     except crm_sync.SyncError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     return SyncOut(sent=out.sent, status=out.status, consent=out.consent, opted_out_here=out.opted_out_here)
+
+
+class UnlinkedFirm(BaseModel):
+    id: str
+    legal_name: str
+    city: str | None
+    active_users: int
+
+
+@router.get("/unlinked-firms", response_model=list[UnlinkedFirm])
+def unlinked_firms(session: SessionDep) -> list[UnlinkedFirm]:
+    """Firms that belong to no Fleek organisation yet (shops from before the control plane).
+
+    A Fleek admin adopts each one instead of creating a duplicate. The operator tenant is never listed."""
+    out: list[UnlinkedFirm] = []
+    firms = select(Tenant).where(Tenant.fleek_org_id.is_(None)).order_by(Tenant.legal_name)
+    for firm in session.scalars(firms):
+        users = list(firm.users)
+        if any(u.is_platform_admin for u in users):
+            continue
+        out.append(
+            UnlinkedFirm(
+                id=firm.id,
+                legal_name=firm.legal_name,
+                city=firm.city,
+                active_users=sum(1 for u in users if u.is_active),
+            )
+        )
+    return out

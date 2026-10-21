@@ -9,6 +9,7 @@ import { TallyBackupsCard } from "../components/TallyBackupsCard";
 import { CatalogSettingsCard } from "../components/CatalogSettingsCard";
 import { OrderSettingsCard } from "../components/OrderSettingsCard";
 import { ReminderSettingsCard } from "../components/ReminderSettingsCard";
+import { WhatsappConnectCard } from "../components/WhatsappConnectCard";
 import { PhotoUsageLine } from "../components/PhotoUsageLine";
 import { useAuth } from "../lib/auth";
 import { canWrite } from "../lib/roles";
@@ -118,6 +119,7 @@ export function FirmPage() {
 
       <TallyConnectCard />
       <TallyBackupsCard />
+      {me?.role === "owner" && <WhatsappConnectCard />}
       {canWrite(me?.role) && <ReminderSettingsCard tenant={data} />}
       {me?.ext_supplier_catalog && (
         <>

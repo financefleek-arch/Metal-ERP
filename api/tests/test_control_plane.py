@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from app.config import get_settings
 from app.db import SessionLocal
 from app.main import app
-from app.models import Synonym, Tenant, TenantWhatsappConfig
+from app.models import Synonym, Tenant
 from app.services.control_plane_auth import (
     SIGNATURE_HEADER,
     TIMESTAMP_HEADER,
@@ -188,45 +188,19 @@ def test_operator_console_still_creates_firms(client: TestClient) -> None:
         assert s.scalar(select(func.count()).select_from(Synonym).where(Synonym.tenant_id == firm.id)) > 0
 
 
-WHATSAPP = "/api/internal/control-plane/whatsapp"
+def test_unlinked_firms_are_listed_without_the_operator_tenant(client: TestClient) -> None:
+    from tools.make_platform_admin import run as make_admin
 
-
-def _cfg(org: str, **kw: object) -> dict:
-    return {
-        "fleek_org_id": org,
-        "phone_number_id": "pn-1",
-        "waba_id": "waba-1",
-        "display_phone_number": "+91 98000 00000",
-        "is_active": True,
-        **kw,
-    }
-
-
-def test_whatsapp_config_is_created_then_updated_in_place(client: TestClient) -> None:
-    tid = _make_firm("Shop A")
-    assert _post(client, LINK, {"tenant_id": tid, "fleek_org_id": "org-w"}).status_code == 200
-    first = _call(client, "PUT", WHATSAPP, _cfg("org-w"))
-    assert first.status_code == 200, first.text
-    assert first.json()["tenant_id"] == tid and first.json()["is_active"] is True
-    again = _call(client, "PUT", WHATSAPP, _cfg("org-w", phone_number_id="pn-2", is_active=False))
-    assert again.status_code == 200
     with SessionLocal() as s:
-        rows = list(s.scalars(select(TenantWhatsappConfig).where(TenantWhatsappConfig.tenant_id == tid)))
-        assert len(rows) == 1
-        assert (rows[0].phone_number_id, rows[0].is_active, rows[0].waba_id) == ("pn-2", False, "waba-1")
-
-
-def test_whatsapp_config_refuses_unknown_orgs_signature_less_calls_and_shared_numbers(
-    client: TestClient,
-) -> None:
-    assert _call(client, "PUT", WHATSAPP, _cfg("nobody")).status_code == 404
-    assert client.put(WHATSAPP, json=_cfg("nobody")).status_code == 401
-    assert _call(client, "PUT", WHATSAPP, _cfg("org-x"), secret="bad").status_code == 401
+        make_admin(s, email="ops@fleek.example.com", password="ops-s3cret-pass")
+        s.commit()
     a, b = _make_firm("Shop A"), _make_firm("Shop B")
-    _post(client, LINK, {"tenant_id": a, "fleek_org_id": "org-a"})
     _post(client, LINK, {"tenant_id": b, "fleek_org_id": "org-b"})
-    assert _call(client, "PUT", WHATSAPP, _cfg("org-a")).status_code == 200
-    taken = _call(client, "PUT", WHATSAPP, _cfg("org-b"))
-    assert taken.status_code == 409
-    inactive = _call(client, "PUT", WHATSAPP, _cfg("org-b", is_active=False))
-    assert inactive.status_code == 200  # recording "no number" is never a clash
+    path = "/api/internal/control-plane/unlinked-firms"
+    assert client.get(path).status_code == 401
+    stamp = str(int(time.time()))
+    sig = sign(SECRET, timestamp=stamp, method="GET", path=path, body=b"")
+    r = client.get(path, headers={TIMESTAMP_HEADER: stamp, SIGNATURE_HEADER: sig})
+    assert r.status_code == 200
+    assert [f["id"] for f in r.json()] == [a]  # Shop B is linked; the operator tenant is not a shop
+    assert r.json()[0]["legal_name"] == "Shop A" and r.json()[0]["active_users"] == 0
