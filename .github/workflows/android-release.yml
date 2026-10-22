@@ -67,6 +67,14 @@ jobs:
           npm i -g @bubblewrap/cli@1.22.2
           mkdir -p ~/.bubblewrap
           printf '{"jdkPath":"%s","androidSdkPath":"%s"}' "$JAVA_HOME" "$ANDROID_HOME" > ~/.bubblewrap/config.json
+          # Bubblewrap only accepts an SDK that has tools/ or bin/ at its root (the pre-2020 layout) and
+          # looks for sdkmanager there to install build-tools. The runner's SDK has cmdline-tools/<ver>/
+          # instead, so give it a tools/bin/sdkmanager that forwards to the real one.
+          real=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | head -1)
+          mkdir -p "$ANDROID_HOME/tools/bin"
+          { echo '#!/bin/sh'; echo "exec \"$real\" \"\$@\""; } > "$ANDROID_HOME/tools/bin/sdkmanager"
+          chmod +x "$ANDROID_HOME/tools/bin/sdkmanager"
+          "$ANDROID_HOME/tools/bin/sdkmanager" --version
 
       - name: Build
         working-directory: twa

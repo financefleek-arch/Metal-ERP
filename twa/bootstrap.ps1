@@ -96,22 +96,27 @@ if ($rc -ne 0) { Write-Warning "Could not add the android-v* tag rule (it may al
 # 3 + 4. secrets ---------------------------------------------------------------------------------
 # The value goes to gh's stdin as exact bytes. `$value | gh secret set` would append a newline (and
 # pass-by-argument mangles the JSON's quotes), either of which corrupts a stored secret.
+#
+# Not through .NET's redirected stdin either: when the console code page is UTF-8 (65001) that writer
+# prepends a UTF-8 byte-order mark, so every stored secret got 3 junk bytes in front (the keystore
+# then failed to base64-decode in CI). Instead the value is written to a temp file as exact bytes and
+# cmd.exe redirects the file into gh (`< file`), which passes the bytes through untouched.
 $ghExe = (Get-Command gh).Source
 function Set-EnvSecret([string]$name, [string]$value) {
-  $psi = New-Object System.Diagnostics.ProcessStartInfo
-  $psi.FileName = $ghExe
-  $psi.Arguments = "secret set $name --env android-release --repo $repo"
-  $psi.UseShellExecute = $false
-  $psi.RedirectStandardInput = $true
-  $psi.RedirectStandardError = $true
-  $p = [System.Diagnostics.Process]::Start($psi)
-  $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($value)
-  $p.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
-  $p.StandardInput.Close()
-  $err = $p.StandardError.ReadToEnd()
-  $p.WaitForExit()
-  if ($p.ExitCode -ne 0) { throw "could not set ${name}: $err" }
-  Write-Host "  set $name"
+  $f = Join-Path ([IO.Path]::GetTempPath()) ("secret-" + [guid]::NewGuid().ToString("N") + ".txt")
+  [IO.File]::WriteAllBytes($f, (New-Object System.Text.UTF8Encoding($false)).GetBytes($value))
+  try {
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "cmd.exe"
+    $psi.Arguments = "/c `"`"$ghExe`" secret set $name --env android-release --repo $repo < `"$f`"`""
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardError = $true
+    $p = [System.Diagnostics.Process]::Start($psi)
+    $err = $p.StandardError.ReadToEnd()
+    $p.WaitForExit()
+    if ($p.ExitCode -ne 0) { throw "could not set ${name}: $err" }
+    Write-Host "  set $name"
+  } finally { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 }
 Set-EnvSecret ANDROID_KEYSTORE_BASE64 ([Convert]::ToBase64String([IO.File]::ReadAllBytes($ks)))
 Set-EnvSecret ANDROID_KEYSTORE_PASSWORD $storePass
