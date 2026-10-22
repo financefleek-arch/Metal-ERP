@@ -91,3 +91,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+    "pg_fuzzy: exercises the Postgres-only trigram (fuzzy) matching; the default is to switch it off",
+]

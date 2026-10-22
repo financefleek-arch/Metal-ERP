@@ -92,11 +92,13 @@ def _shop(catalog_client, n_items: int = 3, photos: int = 3):  # type: ignore[no
                 _upload_photo(client, h, it["id"], _img(600, 400, color=(10 * i, 90, 160))).status_code == 200
             )
         items.append(it)
-    for i in range(2):
+    # Clearly different names: "Agreed 0" / "Agreed 1" count as near-duplicates to Postgres' trigram
+    # match (SQLite has none), so the create route answers 409 and there is no id to read.
+    for i, name in enumerate(("Ramesh Traders", "Sunita Hardware")):
         p = client.post(
             "/api/parties",
             headers=h,
-            json={"legal_name": f"Agreed {i}", "role": "customer", "phone": f"98765432{i}0"},
+            json={"legal_name": name, "role": "customer", "phone": f"98765432{i}0"},
         ).json()
         assert (
             client.put(

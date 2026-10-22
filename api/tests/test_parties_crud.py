@@ -324,10 +324,15 @@ def test_opening_balance_editable_via_patch_before_history(client: TestClient) -
 # de-duplication gate — structured 409 (party_exists / party_maybe_exists)
 # --------------------------------------------------------------------------
 
-_PG_ONLY = pytest.mark.skipif(
+_NOT_PG = pytest.mark.skipif(
     "sqlite" in __import__("os").environ.get("DATABASE_URL", "sqlite"),
     reason="trigram fuzzy rung is Postgres-only",
 )
+
+
+def _PG_ONLY(fn):  # type: ignore[no-untyped-def]
+    """Postgres only, and with the real fuzzy rung switched back on (see conftest)."""
+    return pytest.mark.pg_fuzzy(_NOT_PG(fn))
 
 
 def test_create_exact_key_variant_returns_structured_409(client: TestClient) -> None:

@@ -15,9 +15,21 @@ directly must share the committed state, not a separate transaction.
 from __future__ import annotations
 
 import os
+import tempfile
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./_pytest.db")
 os.environ.setdefault("APP_ENV", "test")
+
+# File outputs default to /data/... (a mounted volume in prod). That path is not writable on a CI
+# runner, and on a dev box it litters a real C:\data, so tests write to a throwaway directory.
+_TEST_FILES = tempfile.mkdtemp(prefix="metalerp-test-")
+for _var, _sub in (
+    ("PDF_DIR", "pdfs"),
+    ("INWARD_DIR", "inward"),
+    ("CATALOG_LOCAL_DIR", "catalog"),
+    ("TALLY_AGENT_BUILD_DIR", "tally-agent-build"),
+):
+    os.environ.setdefault(_var, os.path.join(_TEST_FILES, _sub))
 
 from collections.abc import Iterator  # noqa: E402
 
@@ -55,6 +67,23 @@ def _clean_db() -> Iterator[None]:
         for table in reversed(Base.metadata.sorted_tables):
             conn.execute(table.delete())
     yield
+
+
+@pytest.fixture(autouse=True)
+def _suite_assumes_no_fuzzy(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the trigram (fuzzy) rung out of the party/item resolvers unless a test asks for it.
+
+    The suite was written against SQLite, where that rung does not exist. On Postgres it fires:
+    "Supplier One" / "Supplier Two" count as near-duplicates, the create route answers 409, and every
+    test that just wants two suppliers breaks. Tests that exist to check the fuzzy rung carry
+    `@pytest.mark.pg_fuzzy` and run it for real (they skip on SQLite).
+    """
+    if request.node.get_closest_marker("pg_fuzzy"):
+        return
+    from app.services import item_resolution, party_resolution
+
+    monkeypatch.setattr(party_resolution, "_is_postgres", lambda session: False)
+    monkeypatch.setattr(item_resolution, "_is_postgres", lambda session: False)
 
 
 @pytest.fixture
