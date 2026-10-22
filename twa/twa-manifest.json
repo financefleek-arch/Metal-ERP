@@ -1,8 +1,8 @@
 {
   "packageId": "in.fleekfinance.metalerp",
   "host": "metal.fleekfinance.in",
-  "name": "Metal ERP",
-  "launcherName": "Metal ERP",
+  "name": "Tally+",
+  "launcherName": "Tally+",
   "display": "standalone",
   "orientation": "portrait",
   "themeColor": "#23201b",
