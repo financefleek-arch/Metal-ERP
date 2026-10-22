@@ -181,7 +181,11 @@ export function OffersDialog({
             <section className="mt-3 border-t border-line pt-3">
               <h3 className="text-sm font-semibold">Cards in the message</h3>
               {p.cards.length === 0 ? (
-                <p className="mt-1 text-xs text-muted">No cards yet.</p>
+                <p className="mt-1 text-xs text-muted">
+                  {p.template
+                    ? "None of the picked items has a photo yet."
+                    : "Cards appear once your offer message is ready."}
+                </p>
               ) : (
                 <ul className="mt-2 flex gap-2 overflow-x-auto pb-1">
                   {p.cards.map((c) => (

@@ -277,6 +277,11 @@ def test_the_message_that_names_the_item_and_its_price_is_preferred_and_odd_ones
         offers.pick_template([plain, {**named, "ready": False}])[0] == plain
     )  # only what WhatsApp has approved
     assert offers.pick_template([odd])[0] is None  # a shape we cannot fill
+    why = {**named, "ready": False, "reason": "Connect your WhatsApp Business number first."}
+    assert offers.pick_template([why, {**plain, "ready": False}]) == (
+        None,
+        "Connect your WhatsApp Business number first.",
+    )
     assert offers.pick_template([{**named, "ready": False}])[1] and offers.pick_template([])[1]
 
 

@@ -102,7 +102,9 @@ def pick_template(templates: list[dict[str, Any]]) -> tuple[dict[str, Any] | Non
         return None, "No offer message is set up for your shop yet. Ask Fleek."
     ready = [t for t in usable if t.get("ready")]
     if not ready:
-        return None, "WhatsApp is still checking your offer message. It usually takes a day."
+        # Fleek says why a message is not ready (waiting for approval, refused, not connected): say it
+        why = next((str(t["reason"]) for t in usable if t.get("reason")), None)
+        return None, why or "WhatsApp is still checking your offer message. It usually takes a day."
     ready.sort(key=lambda t: -int(t.get("card_variables") or 0))
     return ready[0], None
 
@@ -149,9 +151,19 @@ def _ask(method: str, tenant: Tenant, suffix: str, payload: dict[str, Any] | Non
     try:
         status, body = fleek_messages.request(method, _fleek_org(tenant), suffix, payload)
     except fleek_messages.FleekUnavailable as exc:
+        log.warning("offers firm=%s fleek %s %s unreachable: %s", tenant.id, method, suffix, exc)
         raise OfferRefused(502, "Fleek could not be reached. Try again in a moment.") from exc
     if 200 <= status < 300:
         return body
+    log.warning(
+        "offers firm=%s fleek %s %s answered %s error=%s message=%s",
+        tenant.id,
+        method,
+        suffix,
+        status,
+        body.get("error"),
+        body.get("message") or body.get("detail"),
+    )
     reason = str(body.get("message") or body.get("detail") or "That did not work.")
     if status == 404 or body.get("error") == "campaigns_not_available":
         raise OfferRefused(409, "Offers on WhatsApp are not part of this firm's plan yet. Ask Fleek.")
@@ -186,6 +198,20 @@ def plan_offer(session: Session, tenant: Tenant, selection: CatalogSelection) ->
         return plan
     plan.allowance = {k: int(allowance.get(k) or 0) for k in ("cap", "used")}
     plan.template, why = pick_template(templates)
+    # one line that explains a preview: what Fleek offered, what was chosen, and why not
+    log.info(
+        "offers preview firm=%s offered=%s chosen=%s why_not=%s items=%s with_photo=%s agreed=%s",
+        tenant.id,
+        [
+            (t.get("ref"), t.get("cards"), t.get("card_variables"), t.get("ready"), t.get("reason"))
+            for t in templates
+        ],
+        plan.template.get("ref") if plan.template else None,
+        why,
+        plan.offered,
+        plan.with_photo,
+        plan.audience.get("agreed"),
+    )
     n_cards = int(plan.template["cards"]) if plan.template else 0
     if why:
         plan.blockers.append(why)
