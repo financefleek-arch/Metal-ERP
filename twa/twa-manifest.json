@@ -23,7 +23,7 @@
   "splashScreenFadeOutDuration": 300,
   "signingKey": { "path": "./android.keystore", "alias": "metalerp" },
   "fallbackType": "customtabs",
-  "minSdkVersion": 21,
+  "minSdkVersion": 24,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
   "enableSiteSettingsShortcut": false,
