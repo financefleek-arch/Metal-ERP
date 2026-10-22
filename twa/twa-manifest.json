@@ -26,6 +26,6 @@
   "minSdkVersion": 24,
   "isChromeOSOnly": false,
   "isMetaQuest": false,
-  "enableSiteSettingsShortcut": false,
+  "enableSiteSettingsShortcut": true,
   "generatorApp": "bubblewrap-cli"
 }
