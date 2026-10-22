@@ -30,6 +30,9 @@ def sent(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """Stand in for Meta. Records template sends and statement sends."""
     calls: list[dict[str, Any]] = []
     monkeypatch.setattr(wa, "get_config", lambda *a, **k: wa.ResolvedConfig("t", "pn", "tok"))
+    # send_invoice renders the PDF and uploads it first; where WeasyPrint works (CI) that is a real
+    # POST to Meta, so stub it as the other WhatsApp tests do.
+    monkeypatch.setattr(wa, "upload_media", lambda *a, **k: "media.TEST")
 
     def fake(cfg: object, **kw: Any) -> str:
         calls.append({"kind": "template", **kw})

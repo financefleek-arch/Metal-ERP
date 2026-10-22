@@ -86,6 +86,23 @@ def _suite_assumes_no_fuzzy(request: pytest.FixtureRequest, monkeypatch: pytest.
     monkeypatch.setattr(item_resolution, "_is_postgres", lambda session: False)
 
 
+@pytest.fixture(autouse=True)
+def _no_real_meta_calls(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test must never reach Meta. One that forgot to stub a send used to pass locally (no PDF
+    renderer) and fail in CI with a real 401 from graph.facebook.com; now it fails the same way
+    everywhere, naming the call. Tests that patch `httpx.post` themselves override this."""
+    import httpx
+
+    real_post = httpx.post
+
+    def guarded(url: str, *args: object, **kwargs: object) -> httpx.Response:
+        if "graph.facebook.com" in str(url):
+            raise AssertionError(f"test tried to call Meta for real: POST {url}")
+        return real_post(url, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(httpx, "post", guarded)
+
+
 @pytest.fixture
 def session() -> Iterator[Session]:
     """A plain session on the app engine. Commit in the test if the app
