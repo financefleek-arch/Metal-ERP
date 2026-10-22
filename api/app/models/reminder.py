@@ -30,10 +30,11 @@ class PaymentReminder(PkUuidMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("tenant_id", "dedupe_key", name="uq_payment_reminder_dedupe"),
         Index("ix_payment_reminder_tenant_status", "tenant_id", "status"),
+        Index("ix_payment_reminder_party", "party_id"),
     )
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False)
-    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), nullable=False, index=True)
+    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), nullable=False)
     kind: Mapped[str] = mapped_column(String(12), nullable=False)  # invoice | statement
     invoice_id: Mapped[str | None] = mapped_column(ForeignKey("invoice.id", ondelete="SET NULL"))
     invoice_ids: Mapped[list | None] = mapped_column(JSON)

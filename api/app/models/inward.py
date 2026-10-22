@@ -14,7 +14,17 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
@@ -144,7 +154,9 @@ class SupplierTemplate(PkUuidMixin, TimestampMixin, Base):
     """
 
     __tablename__ = "supplier_template"
-    __table_args__ = ()
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "supplier_gstin", name="uq_supplier_template_tenant_gstin"),
+    )
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
     supplier_gstin: Mapped[str] = mapped_column(String(15), nullable=False)

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -27,12 +27,16 @@ from app.models._mixins import PkUuidMixin, TimestampMixin
 
 class TenantWhatsappConfig(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "tenant_whatsapp_config"
+    # Spelled out (not unique=True/index=True) to match migration 0014: a named unique
+    # constraint plus a separate plain index.
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_tenant_whatsapp_config_tenant"),
+        Index("ix_tenant_whatsapp_config_tenant_id", "tenant_id"),
+    )
 
     # One config row per firm. Unique (not the PK) so the row keeps a stable
     # id across credential edits.
-    tenant_id: Mapped[str] = mapped_column(
-        ForeignKey("tenant.id"), nullable=False, unique=True, index=True
-    )
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False)
 
     # Meta identifiers for this firm's WhatsApp Business number.
     phone_number_id: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
