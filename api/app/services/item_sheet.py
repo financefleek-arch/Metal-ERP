@@ -84,6 +84,7 @@ def export_xlsx(session: Session, tenant_id: str, items: list[Item]) -> bytes:
     }
     wb = Workbook()
     ws = wb.active
+    assert ws is not None
     ws.title = "Items"
     ws.append(HEADERS)
     for it in items:

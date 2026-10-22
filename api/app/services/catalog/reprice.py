@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from decimal import Decimal
 
-from sqlalchemy import Row, select, update
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models import SupplierCatalog, SupplierCatalogItem
@@ -31,13 +31,13 @@ def reprice(
     base = select(C.id, C.cost_price, C.item_margin_pct, C.sell_price).where(
         C.catalog_id == catalog.id, C.tenant_id == catalog.tenant_id
     )
-    rows: list[Row[tuple[str, Decimal, Decimal | None, Decimal]]] = []
+    rows: list[tuple[str, Decimal, Decimal | None, Decimal]] = []
     if item_ids is None:
-        rows = list(session.execute(base))
+        rows = list(session.execute(base).tuples())
     else:
         ids = list(item_ids)
         for i in range(0, len(ids), _CHUNK):
-            rows += list(session.execute(base.where(C.id.in_(ids[i : i + _CHUNK]))))
+            rows += list(session.execute(base.where(C.id.in_(ids[i : i + _CHUNK]))).tuples())
 
     changes: list[dict[str, object]] = []
     for item_id, cost, override, current in rows:

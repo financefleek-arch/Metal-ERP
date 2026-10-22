@@ -456,8 +456,8 @@ def ageing_summary(
         )
         party_meta[pid] = (Decimal(opening or 0), as_of, created)
 
-    for pid, inv_date, bill_no, balance in inv_rows:
-        a = acc.get(pid)
+    for inv_pid, inv_date, bill_no, balance in inv_rows:
+        a = acc.get(inv_pid) if inv_pid else None
         if a is None:
             continue  # invoice for an archived/other-tenant party — skip
         bal = Decimal(balance or 0)
