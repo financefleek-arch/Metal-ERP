@@ -51,9 +51,8 @@ const FIELDS: { name: keyof FormShape; label: string; full?: boolean; kind?: Fie
   { name: "jurisdiction_text", label: "Jurisdiction line", full: true },
 ];
 
-/** Interim copy served by this app. Once Section 12 (Metal ERP) is live on https://fleekfintech.com/privacy-policy/
- *  point this at that page and delete pages/public/LegalPages.tsx's PrivacyPage. */
-const PRIVACY_POLICY_URL = "/privacy";
+/** The versioned policy page on the corporate site; Section 12 covers Metal ERP. */
+const PRIVACY_POLICY_URL = "https://fleekfintech.com/privacy-policy/";
 
 export function FirmPage() {
   const qc = useQueryClient();

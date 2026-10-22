@@ -7,15 +7,14 @@ the business can verify; do not submit them unchecked. Package `in.fleekfinance.
 
 | Field | Value |
 |---|---|
-| Privacy policy | **https://fleekfintech.com/privacy-policy/** once version 2 (with Section 12, Metal ERP) is published; until then the interim page https://metal.fleekfinance.in/privacy |
+| Privacy policy | **https://fleekfintech.com/privacy-policy/** (live, version 2; Section 12 covers Metal ERP) |
 | Account deletion request page | https://metal.fleekfinance.in/delete-account |
 | Website | https://fleekfintech.com |
 | Contact email | contact@fleekfinance.in |
 | Contact phone | +91 8956506362 |
 
-The policy of record is the versioned WordPress page (source: `fleek-infra/wordpress-corp/legal/privacy-policy.html`, Section 12). The
-`/privacy` page in [LegalPages.tsx](../web/src/pages/public/LegalPages.tsx) is an interim copy so Play has a live URL; **delete it once the
-WordPress version is live** so there is only one policy to keep correct. `/delete-account` stays in the app (the policy links to it).
+The policy of record is the versioned WordPress page (source: `fleek-infra/wordpress-corp/legal/privacy-policy.html`, Section 12).
+`/delete-account` lives in the app ([LegalPages.tsx](../web/src/pages/public/LegalPages.tsx)); the policy links to it.
 
 ## Main store listing
 
@@ -113,11 +112,11 @@ Security practices:
 
 ## Open items before submitting for production
 
-1. **Publish policy version 2** on fleekfintech.com (README steps in `fleek-infra/wordpress-corp/legal`: paste the HTML, set `legal_version` = 2 and
-   `legal_updated`), and **deploy `/delete-account`**. Open both URLs in a browser before entering them in Play.
+1. **Deploy `/delete-account`** (Metal ERP, with the Firm profile link) and open it in a browser. The policy page is already live (version 2).
+   The policy's header comment, with the note "DRAFT: counsel to review", is visible in view-source; drop it at the next edit.
 2. **In-app deletion path — built.** Firm profile has an "Account and data" card with the privacy-policy link (all users) and "request account deletion"
-   (owner only), which opens `/delete-account`. Deletion itself is a manual, emailed request, as the page says. When the WordPress
-   policy is live, change `PRIVACY_POLICY_URL` in `FirmPage.tsx` to it.
+   (owner only), which opens `/delete-account`; the policy link already points at the WordPress page. Deletion itself is a manual,
+   emailed request, as the page says.
 3. **Third-party services in the policy.** The policy names Anthropic and Deepgram "if a shop switches on
    document reading or voice entry". Check whether either is on in production; delete the line if neither ever is.
    Google Fonts and the Facebook SDK are real and listed.
