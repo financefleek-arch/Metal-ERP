@@ -20,6 +20,7 @@
   "fullScopeUrl": "https://metal.fleekfinance.in/",
   "appVersion": "1.0.0",
   "appVersionCode": 1,
+  "splashScreenFadeOutDuration": 300,
   "signingKey": { "path": "./android.keystore", "alias": "metalerp" },
   "fallbackType": "customtabs",
   "minSdkVersion": 21,
