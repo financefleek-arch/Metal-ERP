@@ -185,11 +185,12 @@ def price_changed(r: _Row) -> bool:
 
 
 def _category_names(session: Session, tenant_id: str) -> dict[str, str]:
-    return dict(
-        session.execute(
+    return {
+        k: v
+        for k, v in session.execute(
             select(ItemCategory.id, ItemCategory.name).where(ItemCategory.tenant_id == tenant_id)
         ).all()
-    )
+    }
 
 
 def plan_groups(

@@ -263,9 +263,9 @@ def place(
     )
     session.add(order)
     session.flush()
-    for ln in built:
-        ln.order_id = order.id
-        session.add(ln)
+    for built_line in built:
+        built_line.order_id = order.id
+        session.add(built_line)
     if party is not None:  # a personal link proves who they are, so their tick counts now
         apply_offers_answer(session, order, party)
     session.flush()

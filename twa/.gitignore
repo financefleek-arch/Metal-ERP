@@ -1,0 +1,5 @@
+android.keystore
+*.keystore
+/build/
+.gradle/
+app-release*

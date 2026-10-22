@@ -78,6 +78,8 @@ def _apply_addresses(party: Party, addresses: list[PartyAddressIn]) -> None:
 
 def _match_ref_for_party(session: SessionDep, party_id: str, score: float | None) -> PartyMatchRef:
     p = session.get(Party, party_id)
+    if p is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Party not found")
     addr = (
         next((a for a in p.addresses if a.is_default), p.addresses[0])
         if p and p.addresses
@@ -98,6 +100,7 @@ def _match_ref_for_party(session: SessionDep, party_id: str, score: float | None
 def _dup_409(session: SessionDep, match: PartyMatch, name: str) -> HTTPException:
     """Build the structured 409 for a likely-duplicate create / rename."""
     if match.method in ("gstin", "phone", "exact"):
+        assert match.party_id is not None
         body = PartyDuplicate409(
             code="party_exists",
             message=_reason(match, name),

@@ -425,13 +425,14 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
 
     # --- name pre-pass: one query for the tenant's existing normalized names,
     # so the per-row dedup check is a dict lookup, not 2000+ SELECTs ---
-    existing_by_key: dict[str, str] = dict(
-        session.execute(
+    existing_by_key: dict[str, str] = {
+        k: v
+        for k, v in session.execute(
             select(Item.name_normalized, Item.id).where(
                 Item.tenant_id == user.tenant_id
             )
         ).all()
-    )
+    }
 
     new_items: list[Item] = []
     for row in rows:

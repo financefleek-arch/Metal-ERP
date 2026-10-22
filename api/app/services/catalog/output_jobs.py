@@ -92,7 +92,7 @@ def run_labels_job(job_id: str, storage: CatalogStorage) -> None:
     """Build the PDF for `job_id` and store it. Runs in a background task."""
     with SessionLocal() as s:
         job = s.get(CatalogOutputJob, job_id)
-        if job is None or job.params_json is None:
+        if job is None or job.params_json is None or job.catalog_id is None:
             return
         job.status = "running"
         s.commit()

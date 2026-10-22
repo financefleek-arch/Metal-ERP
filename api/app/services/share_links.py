@@ -135,13 +135,14 @@ def public_view(session: Session, link: CatalogShareLink) -> dict[str, object]:
     layout = CatalogLayout(include_expected=link.include_expected)
     ids = item_catalogs.resolve_selection(session, link.tenant_id, selection_of(link))
     plan = item_catalogs.plan(session, link.tenant_id, ids, layout)
-    cats = dict(
-        session.execute(
+    cats = {
+        k: v
+        for k, v in session.execute(
             select(ItemCategory.id, ItemCategory.name).where(
                 ItemCategory.tenant_id == link.tenant_id
             )
         ).all()
-    )
+    }
     items: list[dict[str, object]] = []
     groups: list[str] = []
     for it in plan.items[:MAX_PUBLIC_ITEMS]:

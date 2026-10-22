@@ -456,7 +456,7 @@ def ageing_summary(
         )
         party_meta[pid] = (Decimal(opening or 0), as_of, created)
 
-    for pid, inv_date, number, balance in inv_rows:
+    for pid, inv_date, bill_no, balance in inv_rows:
         a = acc.get(pid)
         if a is None:
             continue  # invoice for an archived/other-tenant party — skip
@@ -466,7 +466,7 @@ def ageing_summary(
         a.open_count += 1
         if a.oldest_date is None or inv_date < a.oldest_date:
             a.oldest_date = inv_date
-            a.oldest_number = number
+            a.oldest_number = bill_no
 
     # opening debit → its own bucket by opening_balance_as_of (lt30 if null);
     # opening credit → subtract from the net later, never a bucket.
@@ -490,8 +490,8 @@ def ageing_summary(
             continue
         worst: AgeingBucket = "lt30"
         for k in ("d90p", "d60", "d30", "lt30"):
-            if a.buckets[k] > _ZERO:  # type: ignore[index]
-                worst = k  # type: ignore[assignment]
+            if a.buckets[k] > _ZERO:
+                worst = k
                 break
         out.append(
             AgeingRow(
@@ -603,6 +603,7 @@ def party_ledger(session: Session, party_id: str) -> list[LedgerEntry]:
                 )
             )
         else:
+            assert isinstance(obj, Payment)
             pay = obj
             is_reversed = pay.status == PaymentStatus.reversed
             credit_amt = _ZERO if is_reversed else pay.amount

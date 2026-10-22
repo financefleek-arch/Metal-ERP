@@ -16,6 +16,7 @@ Validation flags exclude a row from commit until resolved:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -64,7 +65,7 @@ class _ItemSnap:
     uom: str | None
     hsn_code: str | None
     default_rate: object | None
-    gst_rate: object | None
+    gst_rate: float | Decimal | None
 
 
 def _snap_has_blank(snap: _ItemSnap, si: TallyStockItem, hsn_ok: str | None) -> bool:

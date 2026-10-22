@@ -13,9 +13,9 @@ from app.schemas_item import MAX_BULK_FILTER, ItemFilter, NodeFilter
 from app.services.items import apply_search
 
 
-def filter_clauses(f: ItemFilter) -> list:  # type: ignore[type-arg]
+def filter_clauses(f: ItemFilter) -> list:
     """The `where` clauses for a filter (search text is applied separately)."""
-    out: list = []  # type: ignore[type-arg]
+    out: list = []
     if f.status is None:
         out.append(Item.status != ItemStatus.archived)
     else:
@@ -71,9 +71,9 @@ def filter_clauses(f: ItemFilter) -> list:  # type: ignore[type-arg]
     return out
 
 
-def _place_clauses(f: ItemFilter | NodeFilter) -> list:  # type: ignore[type-arg]
+def _place_clauses(f: ItemFilter | NodeFilter) -> list:
     """Where in the tree: a group, a category, and/or the "no group" bucket."""
-    out: list = []  # type: ignore[type-arg]
+    out: list = []
     if f.group_id:
         out.append(Item.group_id == f.group_id)
     if f.category_id:

@@ -9,6 +9,7 @@ follow-up migration once pg_trgm is confirmed present.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -155,9 +156,9 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     tally_status: Mapped[str] = mapped_column(
         String(8), default="none", server_default="none", nullable=False
     )
-    tally_price: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    tally_price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     tally_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    tally_seen_price: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    tally_seen_price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
 
     # In stock / expected / out of stock / discontinued. Customer catalogs offer In stock by
     # default. Items from a supplier price list start out of stock until marked.

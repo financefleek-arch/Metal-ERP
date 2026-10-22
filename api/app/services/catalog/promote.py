@@ -190,8 +190,9 @@ def promote(
             e.target = item
             plan.created_ids.append(item.id)
         else:
-            item = e.target
-            assert item is not None
+            target = e.target
+            assert target is not None
+            item = target
             if e.action == "reuse":  # our own item: the new offer's rates
                 item.default_rate = _f(row.sell_price)
                 item.last_purchase_rate = _f(row.cost_price)

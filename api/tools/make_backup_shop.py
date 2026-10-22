@@ -34,13 +34,13 @@ def run(
     shop = session.scalars(select(BackupShop).where(BackupShop.name == name)).first()
 
     if shop is None:
-        key = secrets.token_urlsafe(32)
+        new_key = secrets.token_urlsafe(32)
         shop = BackupShop(
-            name=name, api_key_hash=hash_shop_key(key), tenant_id=tenant_id, is_active=True
+            name=name, api_key_hash=hash_shop_key(new_key), tenant_id=tenant_id, is_active=True
         )
         session.add(shop)
         session.flush()
-        return shop.id, key, True
+        return shop.id, new_key, True
 
     if tenant_id is not None:
         shop.tenant_id = tenant_id

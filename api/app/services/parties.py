@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session
@@ -82,7 +83,7 @@ def phone_digits_col(col: ColumnElement[str] | None = None) -> ColumnElement[str
     `party_resolution` (exact identity match) so both compare the same shape.
     """
     target = Party.phone if col is None else col
-    stripped = func.coalesce(target, "")
+    stripped: Any = func.coalesce(target, "")
     for ch in ("+", "-", " ", "(", ")"):
         stripped = func.replace(stripped, ch, "")
     return stripped

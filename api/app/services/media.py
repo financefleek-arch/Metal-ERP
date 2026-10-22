@@ -72,16 +72,16 @@ def normalise(data: bytes) -> Rendition:
         raise ImageRejected("That photo is too large (over 40 megapixels). Resize it first.")
     try:
         im.seek(0)  # animated files: the first frame
-        im = ImageOps.exif_transpose(im)  # apply the phone's rotation, then drop the EXIF
-        if im.mode in ("RGBA", "LA", "P"):
-            rgba = im.convert("RGBA")
+        work: Image.Image = ImageOps.exif_transpose(im)  # apply the phone's rotation, drop the EXIF
+        if work.mode in ("RGBA", "LA", "P"):
+            rgba = work.convert("RGBA")
             flat = Image.new("RGB", rgba.size, (255, 255, 255))
             flat.paste(rgba, mask=rgba.getchannel("A"))
-            im = flat
+            work = flat
         else:
-            im = im.convert("RGB")
-        main, size = _encode(im, MAIN_EDGE, MAIN_QUALITY)
-        thumb, _ = _encode(im, THUMB_EDGE, THUMB_QUALITY)
+            work = work.convert("RGB")
+        main, size = _encode(work, MAIN_EDGE, MAIN_QUALITY)
+        thumb, _ = _encode(work, THUMB_EDGE, THUMB_QUALITY)
     except (OSError, ValueError, Image.DecompressionBombError) as exc:
         raise ImageRejected("That photo could not be processed.") from exc
     return Rendition(main=main, thumb=thumb, width=size[0], height=size[1])
@@ -157,7 +157,7 @@ def card_jpeg(storage: CatalogStorage, asset: MediaAsset) -> bytes | None:
     key = card_key(asset.tenant_id, asset.sha256)
     have = storage.get_many([key]).get(key)
     if have:
-        return have  # type: ignore[no-any-return]
+        return have
     try:
         im = Image.open(io.BytesIO(storage.get(asset.key))).convert("RGB")
         square = ImageOps.pad(
@@ -255,14 +255,15 @@ def copy_catalog_photos(
     for i in range(0, len(pairs), chunk):
         part = pairs[i : i + chunk]
         with SessionLocal() as s:
-            keys = dict(
-                s.execute(
+            keys = {
+                k: v
+                for k, v in s.execute(
                     select(SupplierCatalogItem.id, SupplierCatalogItem.image_key).where(
                         SupplierCatalogItem.id.in_([rid for _, rid in part]),
                         SupplierCatalogItem.image_key.is_not(None),
                     )
                 ).all()
-            )
+            }
             blobs = storage.get_many({k for k in keys.values() if k})
             for item_id, row_id in part:
                 item = s.get(Item, item_id)

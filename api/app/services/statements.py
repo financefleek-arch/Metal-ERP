@@ -166,6 +166,7 @@ def party_statement_data(
                     )
                 )
         else:
+            assert isinstance(obj, Payment)
             pay = obj
             is_reversed = pay.status == PaymentStatus.reversed
             credit_amt = _ZERO if is_reversed else pay.amount
@@ -202,6 +203,7 @@ def party_statement_data(
         if isinstance(obj, Invoice):
             pre += obj.grand_total or _ZERO
         else:
+            assert isinstance(obj, Payment)
             pay = obj
             if pay.status != PaymentStatus.reversed:
                 pre -= pay.amount

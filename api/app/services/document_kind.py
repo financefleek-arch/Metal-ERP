@@ -8,7 +8,9 @@ and can switch, and nothing is approved on the strength of it.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
+from typing import Any, cast
 
 import pymupdf
 
@@ -45,7 +47,7 @@ def guess(data: bytes) -> Guess:
     with doc:
         text = ""
         images = 0
-        for i, page in enumerate(doc):
+        for i, page in enumerate(cast(Iterable[Any], doc)):
             if i >= _MAX_PAGES:
                 break
             text += "\n" + page.get_text()

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -125,11 +126,12 @@ def _load_items(session: Session, tenant_id: str, ids: list[str]) -> dict[str, I
 
 
 def _category_names(session: Session, tenant_id: str) -> dict[str, str]:
-    return dict(
-        session.execute(
+    return {
+        k: v
+        for k, v in session.execute(
             select(ItemCategory.id, ItemCategory.name).where(ItemCategory.tenant_id == tenant_id)
         ).all()
-    )
+    }
 
 
 def plan(session: Session, tenant_id: str, ids: list[str], layout: CatalogLayout) -> Plan:
@@ -277,7 +279,7 @@ def build(
     layout: CatalogLayout,
     selection: CatalogSelection,
     item_ids: list[str],
-    progress=None,  # type: ignore[no-untyped-def]
+    progress: Callable[[int, int], None] | None = None,
 ) -> CustomerCatalog:
     """Build and store one version from exactly `item_ids` (already planned)."""
     items_by_id = _load_items(session, tenant.id, item_ids)

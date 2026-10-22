@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, field
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -44,7 +45,7 @@ _TARGETS = [
 ]
 
 
-def _live_rows(session: Session, model: type, tenant_id: str) -> list:
+def _live_rows(session: Session, model: Any, tenant_id: str) -> list:
     """Tenant rows the resolver would actually see — merged / archived items
     are excluded (they still exist for history but must not trip the
     UNIQUE(tenant, name_normalized) collision check)."""

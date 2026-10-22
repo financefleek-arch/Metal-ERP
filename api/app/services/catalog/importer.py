@@ -199,8 +199,9 @@ def import_catalog(
     matched = 0
     suggested_n = 0
     for cell, plan, new in zip(result.cells, plans, created, strict=True):
-        prod = plan.product or new
-        assert prod is not None
+        listed = plan.product or new
+        assert listed is not None
+        prod = listed
         if plan.product is not None:
             matched += 1
         sug = suggestions.get(new.id) if new is not None else None

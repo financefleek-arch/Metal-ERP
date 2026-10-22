@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from typing import Any
 
@@ -97,6 +97,15 @@ def _propose(tenant_id: str, as_on: date = TODAY) -> int:
         n = svc.propose(s, s.get(Tenant, tenant_id), as_on)
         s.commit()
         return n
+
+
+def _as_sent_on(reminder_id: str, day: date) -> None:
+    """Move a reminder's decision time onto the test's calendar (sending stamps the wall clock)."""
+    with SessionLocal() as s:
+        r = s.get(PaymentReminder, reminder_id)
+        assert r is not None and r.decided_at is not None
+        r.decided_at = datetime.combine(day, r.decided_at.timetz())
+        s.commit()
 
 
 def _rows(tenant_id: str) -> list[PaymentReminder]:
@@ -225,6 +234,7 @@ def test_a_second_stage_is_proposed_after_the_first_was_sent(client, sent) -> No
     _propose(tid)
     rid = client.get("/api/reminders", headers=h).json()[0]["id"]
     client.post("/api/reminders/send", headers=h, json={"ids": [rid]})
+    _as_sent_on(rid, TODAY)  # the send stamps the real clock; this test lives on TODAY's calendar
     assert _propose(tid, TODAY + timedelta(days=1)) == 0  # nothing new, and too soon anyway
     assert _propose(tid, TODAY + timedelta(days=8)) == 1  # now 16 days overdue: stage 15
 

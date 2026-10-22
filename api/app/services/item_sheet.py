@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import io
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
@@ -75,11 +76,12 @@ def availability_label(a: str) -> str:
 
 
 def export_xlsx(session: Session, tenant_id: str, items: list[Item]) -> bytes:
-    cats = dict(
-        session.execute(
+    cats = {
+        k: v
+        for k, v in session.execute(
             select(ItemCategory.id, ItemCategory.name).where(ItemCategory.tenant_id == tenant_id)
         ).all()
-    )
+    }
     wb = Workbook()
     ws = wb.active
     ws.title = "Items"
@@ -165,7 +167,7 @@ def apply_rows(
     rows: list[dict[str, str]],
     *,
     dry_run: bool,
-    normalize,  # callable(name) -> normalised key
+    normalize: Callable[[str], str],
 ) -> SheetResult:
     res = SheetResult(dry_run=dry_run)
     cats = {
@@ -212,9 +214,16 @@ def apply_rows(
     return res
 
 
-def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: ignore[no-untyped-def]
+def _diff(
+    session: Session,
+    tenant_id: str,
+    item: Item,
+    cells: dict[str, str],
+    cats: dict[str, str],
+    normalize: Callable[[str], str],
+) -> dict[str, tuple[object, object, Callable[[], None]]]:
     """{field: (old, new, apply)} for the cells that differ from the item."""
-    out: dict[str, tuple[object, object, object]] = {}
+    out: dict[str, tuple[object, object, Callable[[], None]]] = {}
 
     name = cells.get("name", "").strip()
     if name and name != item.name:
@@ -229,7 +238,7 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
         if not key or clash is not None:
             raise ValueError(f"name would match the existing item '{clash}'")
 
-        def set_name(item=item, name=name, key=key) -> None:
+        def set_name(item: Item = item, name: str = name, key: str = key) -> None:
             item.name, item.name_normalized = name, key
 
         out["name"] = (item.name, name, set_name)
@@ -242,7 +251,7 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
         if cid != item.category_id:
             old = next((n for n, c in cats.items() if c == item.category_id), "none")
 
-            def set_group(item=item, cid=cid) -> None:
+            def set_group(item: Item = item, cid: str = cid) -> None:
                 item.category_id = cid
 
             out["group"] = (old, group, set_group)
@@ -256,7 +265,7 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
             )
         if str(a.value) != str(item.availability):
 
-            def set_avail(item=item, a=a) -> None:
+            def set_avail(item: Item = item, a: Availability = a) -> None:
                 item.availability = a
 
             out["availability"] = (
@@ -275,7 +284,7 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
         )
         if old_p != p:
 
-            def set_price(item=item, p=p) -> None:
+            def set_price(item: Item = item, p: Decimal = p) -> None:
                 item.default_rate = float(p)
 
             out["price"] = (old_p, p, set_price)
@@ -291,7 +300,7 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
                 raise ValueError(f"{label} must be a whole number from 1 to 100000")
             if getattr(item, attr) != int(n):
 
-                def set_qty(item=item, attr=attr, n=int(n)) -> None:
+                def set_qty(item: Item = item, attr: str = attr, n: int = int(n)) -> None:
                     setattr(item, attr, n)
 
                 out[label] = (getattr(item, attr), int(n), set_qty)
@@ -304,7 +313,7 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
             raise ValueError(f"HSN {hsn} is not in the HSN list")
         if hsn != (item.hsn_code or ""):
 
-            def set_hsn(item=item, hsn=hsn) -> None:
+            def set_hsn(item: Item = item, hsn: str = hsn) -> None:
                 item.hsn_code = hsn
 
             out["hsn"] = (item.hsn_code, hsn, set_hsn)
@@ -321,7 +330,7 @@ def _diff(session, tenant_id, item: Item, cells, cats, normalize):  # type: igno
         )
         if old_g != g:
 
-            def set_gst(item=item, g=g) -> None:
+            def set_gst(item: Item = item, g: Decimal = g) -> None:
                 item.gst_rate = float(g)
 
             out["gst %"] = (old_g, g, set_gst)

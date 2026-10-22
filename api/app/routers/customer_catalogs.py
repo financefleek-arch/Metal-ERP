@@ -57,7 +57,7 @@ def _out(row: CustomerCatalog, *, stale: bool | None, latest: bool) -> CustomerC
         version=row.version,
         title=row.title,
         options=row.options_json or {},
-        selection_kind=svc.selection_kind(row.selection_json),  # type: ignore[arg-type]
+        selection_kind=svc.selection_kind(row.selection_json),
         item_count=row.item_count,
         page_count=row.page_count,
         byte_size=row.byte_size,
@@ -311,7 +311,7 @@ def list_catalogs(session: SessionDep, user: CatalogUser) -> list[CustomerCatalo
             .limit(200)
         )
     )
-    latest = {}
+    latest: dict[str, int] = {}
     for r in rows:
         if r.series_id not in latest or r.version > latest[r.series_id]:
             latest[r.series_id] = r.version
