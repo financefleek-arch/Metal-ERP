@@ -4,6 +4,7 @@ import { Shell } from "./components/Shell";
 import { AuthPage } from "./pages/AuthPage";
 import { PublicCatalogPage } from "./pages/public/PublicCatalogPage";
 import { PublicOrderPage } from "./pages/public/PublicOrderPage";
+import { DeleteAccountPage, PrivacyPage } from "./pages/public/LegalPages";
 import { OrdersPage } from "./pages/orders/OrdersPage";
 import { FirmPage } from "./pages/FirmPage";
 import { PartiesPage } from "./pages/PartiesPage";
@@ -35,6 +36,16 @@ function Loading() {
 export function App() {
   const { me, loading } = useAuth();
   const { pathname } = useLocation();
+
+  // The privacy policy and account-deletion pages Google Play links to: public, no login, no shell.
+  if (/^\/(privacy|delete-account)\/?$/.test(pathname)) {
+    return (
+      <Routes>
+        <Route path="/privacy" element={<PrivacyPage />} />
+        <Route path="/delete-account" element={<DeleteAccountPage />} />
+      </Routes>
+    );
+  }
 
   // A customer opening a shop's catalog link: no login, no shell.
   if (/^\/[co]\/[^/]+\/?$/.test(pathname)) {

@@ -51,6 +51,10 @@ const FIELDS: { name: keyof FormShape; label: string; full?: boolean; kind?: Fie
   { name: "jurisdiction_text", label: "Jurisdiction line", full: true },
 ];
 
+/** Interim copy served by this app. Once Section 12 (Metal ERP) is live on https://fleekfintech.com/privacy-policy/
+ *  point this at that page and delete pages/public/LegalPages.tsx's PrivacyPage. */
+const PRIVACY_POLICY_URL = "/privacy";
+
 export function FirmPage() {
   const qc = useQueryClient();
   const { me } = useAuth();
@@ -169,6 +173,26 @@ export function FirmPage() {
           </button>
         </div>
       </form>
+
+      <div className="card mt-5 p-4 sm:p-6">
+        <h2 className="font-serif text-lg font-semibold">Account and data</h2>
+        <p className="mt-1 text-sm text-muted">
+          How we handle your data is in our{" "}
+          <a className="text-accent underline underline-offset-2" href={PRIVACY_POLICY_URL}>
+            privacy policy
+          </a>
+          .
+        </p>
+        {me?.role === "owner" && (
+          <p className="mt-3 text-sm">
+            To close this firm&apos;s account and delete its data,{" "}
+            <a className="text-danger underline underline-offset-2" href="/delete-account">
+              request account deletion
+            </a>
+            . Download or export what you need first: deletion is permanent.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
