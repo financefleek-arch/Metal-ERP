@@ -51,37 +51,67 @@ Write-Host "Repo: $repo   Package: $($twa.packageId)"
 
 # 1. keystore ------------------------------------------------------------------------------------
 $ks = Join-Path $KeystoreDir "android.keystore"
-if (Test-Path $ks) { throw "$ks already exists. Not overwriting. Delete it deliberately if you really mean to start over." }
-New-Item -ItemType Directory -Force $KeystoreDir | Out-Null
-$storePass = New-Secret
-$keyPass = $storePass   # PKCS12 keystores use one password for store and key
+$cred = Join-Path $KeystoreDir "credentials.json"
 $keytool = Find-Keytool
-& $keytool -genkeypair -noprompt -keystore $ks -storetype PKCS12 -alias metalerp -keyalg RSA -keysize 2048 `
-  -validity 10000 -storepass $storePass -keypass $keyPass -dname "CN=Metal ERP, O=Fleek Finance, C=IN"
-if ($LASTEXITCODE -ne 0) { throw "keytool failed" }
-@{ keystore = $ks; alias = "metalerp"; storePassword = $storePass; keyPassword = $keyPass } |
-  ConvertTo-Json | Set-Content (Join-Path $KeystoreDir "credentials.json") -Encoding utf8
+if (Test-Path $ks) {
+  # A re-run after a failure further down: reuse the keystore, never replace it.
+  if (-not (Test-Path $cred)) { throw "$ks exists but $cred does not, so its passwords are unknown. Not overwriting; sort that out by hand." }
+  $saved = Get-Content $cred -Raw | ConvertFrom-Json
+  $storePass = $saved.storePassword
+  $keyPass = $saved.keyPassword
+  Write-Host "Reusing the existing keystore in $KeystoreDir"
+} else {
+  New-Item -ItemType Directory -Force $KeystoreDir | Out-Null
+  $storePass = New-Secret
+  $keyPass = $storePass   # PKCS12 keystores use one password for store and key
+  & $keytool -genkeypair -noprompt -keystore $ks -storetype PKCS12 -alias metalerp -keyalg RSA -keysize 2048 `
+    -validity 10000 -storepass $storePass -keypass $keyPass -dname "CN=Metal ERP, O=Fleek Finance, C=IN"
+  if ($LASTEXITCODE -ne 0) { throw "keytool failed" }
+  @{ keystore = $ks; alias = "metalerp"; storePassword = $storePass; keyPassword = $keyPass } |
+    ConvertTo-Json | Set-Content $cred -Encoding utf8
+}
 $fp = (& $keytool -list -v -keystore $ks -alias metalerp -storepass $storePass |
   Select-String "SHA256:\s*(\S+)").Matches[0].Groups[1].Value
 
 # 2. environment ---------------------------------------------------------------------------------
-$policy = @{ protected_branches = $false; custom_branch_policies = $true }
-$withReviewer = @{ reviewers = @(@{ type = "User"; id = [int]$me }); deployment_branch_policy = $policy } | ConvertTo-Json -Depth 5
-$withReviewer | gh api -X PUT "repos/$repo/environments/android-release" --input - 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  Write-Warning "Required reviewers are not available on this plan (private repo on Free). Creating the environment without them."
-  @{ deployment_branch_policy = $policy } | ConvertTo-Json -Depth 5 |
-    gh api -X PUT "repos/$repo/environments/android-release" --input - | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "could not create the android-release environment" }
+# Request bodies go through a UTF-8 (no BOM) FILE and `gh api --input <file>`. Piping the JSON in
+# (`$json | gh api --input -`) fails in Windows PowerShell 5.1 with "Problems parsing JSON (HTTP 400)".
+function Invoke-GhJson([string]$method, [string]$path, $body) {
+  $f = Join-Path ([IO.Path]::GetTempPath()) ("gh-body-" + [guid]::NewGuid().ToString("N") + ".json")
+  [IO.File]::WriteAllText($f, ($body | ConvertTo-Json -Depth 6), (New-Object System.Text.UTF8Encoding($false)))
+  try { gh api -X $method $path --input $f 2>$null | Out-Null; return $LASTEXITCODE }
+  finally { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
 }
-@{ name = "android-v*"; type = "tag" } | ConvertTo-Json |
-  gh api -X POST "repos/$repo/environments/android-release/deployment-branch-policies" --input - 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Warning "Could not add the android-v* tag rule (it may already exist). Check Settings > Environments." }
+$policy = @{ protected_branches = $false; custom_branch_policies = $true }
+$envPath = "repos/$repo/environments/android-release"
+$rc = Invoke-GhJson PUT $envPath @{ reviewers = @(@{ type = "User"; id = [int]$me }); deployment_branch_policy = $policy }
+if ($rc -ne 0) {
+  Write-Warning "Could not set you as a required reviewer (plan limitation?). Creating the environment without one; add it under Settings > Environments."
+  $rc = Invoke-GhJson PUT $envPath @{ deployment_branch_policy = $policy }
+  if ($rc -ne 0) { throw "could not create the android-release environment" }
+}
+$rc = Invoke-GhJson POST "$envPath/deployment-branch-policies" @{ name = "android-v*"; type = "tag" }
+if ($rc -ne 0) { Write-Warning "Could not add the android-v* tag rule (it may already exist). Check Settings > Environments." }
 
 # 3 + 4. secrets ---------------------------------------------------------------------------------
-function Set-EnvSecret($name, $value) {
-  $value | gh secret set $name --env android-release --repo $repo
-  if ($LASTEXITCODE -ne 0) { throw "could not set $name" }
+# The value goes to gh's stdin as exact bytes. `$value | gh secret set` would append a newline (and
+# pass-by-argument mangles the JSON's quotes), either of which corrupts a stored secret.
+$ghExe = (Get-Command gh).Source
+function Set-EnvSecret([string]$name, [string]$value) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $ghExe
+  $psi.Arguments = "secret set $name --env android-release --repo $repo"
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardInput = $true
+  $psi.RedirectStandardError = $true
+  $p = [System.Diagnostics.Process]::Start($psi)
+  $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes($value)
+  $p.StandardInput.BaseStream.Write($bytes, 0, $bytes.Length)
+  $p.StandardInput.Close()
+  $err = $p.StandardError.ReadToEnd()
+  $p.WaitForExit()
+  if ($p.ExitCode -ne 0) { throw "could not set ${name}: $err" }
+  Write-Host "  set $name"
 }
 Set-EnvSecret ANDROID_KEYSTORE_BASE64 ([Convert]::ToBase64String([IO.File]::ReadAllBytes($ks)))
 Set-EnvSecret ANDROID_KEYSTORE_PASSWORD $storePass

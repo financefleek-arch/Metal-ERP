@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "in.fleekfinance.metalerp",
+      "sha256_cert_fingerprints": [
+        "C6:7B:5F:BD:16:39:4C:9B:E1:62:27:0A:E2:1D:C2:FC:C4:0A:7B:FD:4B:1C:F9:1F:11:9C:E2:11:3E:CD:D9:15"
+      ]
+    }
+  }
+]
