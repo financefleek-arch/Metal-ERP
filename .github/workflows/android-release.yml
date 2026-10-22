@@ -55,6 +55,10 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: "17" }
       - uses: android-actions/setup-android@v3
+        with:
+          # The action's default also installs a `tools` package that no longer exists in current
+          # cmdline-tools ("Failed to find package 'tools'"). Bubblewrap/Gradle fetch the rest.
+          packages: platform-tools
       - uses: actions/setup-node@v4
         with: { node-version: "20" }
 
@@ -73,6 +77,8 @@ jobs:
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android.keystore
           jq --arg n "${{ steps.ver.outputs.name }}" --argjson c ${{ steps.ver.outputs.code }} \
              '.appVersion=$n | .appVersionCode=$c' twa-manifest.json > t.json && mv t.json twa-manifest.json
+          # a fresh checkout has only twa-manifest.json: generate the Android project from it first
+          bubblewrap update --skipVersionUpgrade
           bubblewrap build --skipPwaValidation
           keytool -list -v -keystore android.keystore -alias metalerp \
             -storepass "$BUBBLEWRAP_KEYSTORE_PASSWORD" | grep 'SHA256:' | tee upload-key-sha256.txt
