@@ -65,7 +65,7 @@ GST invoicing — it is not built yet.
 
 | Asset | Spec | State |
 |---|---|---|
-| App icon | 512×512 PNG | placeholder "M" exists in `web/public/icons/icon-512.png` — replace with real branding |
+| App icon | 512×512 PNG | ring-T icon in `web/public/icons/icon-512.png` (final) |
 | Feature graphic | 1024×500 PNG/JPG | not made |
 | Phone screenshots | at least 2, 16:9 or 9:16 | not taken — use a **demo shop**, never a real firm's data |
 
