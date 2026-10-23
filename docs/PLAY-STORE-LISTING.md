@@ -84,31 +84,43 @@ GST invoicing — it is not built yet.
 
 ## Data safety form
 
-Answers drawn from what the code stores and sends (see the privacy policy). Play asks about data the **app**
-collects; data that a shop owner enters about its own customers is still collected by us, so it is declared.
+Rebuilt 2026-10-23 from the code (sign-up, the firm profile, the party/invoice/photo/upload features) after the Fleek CRM form review.
+Every ticked type is **collected, not shared, not processed ephemerally** (it is all stored).
 
-| Data type | Collected | Shared | Purpose | Notes |
-|---|---|---|---|---|
-| Name | Yes | No | App functionality, account management | users and the shop's customers/suppliers |
-| Email address | Yes | No | Account management | login emails |
-| Phone number | Yes | No\* | App functionality | customers, suppliers; also the WhatsApp recipient |
-| Physical address | Yes | No | App functionality | optional customer/supplier address |
-| Other financial info | Yes | No | App functionality | invoices, payments, balances (not card/bank details) |
-| Photos | Yes | No | App functionality | item photos the user adds |
-| Files and docs | Yes | No | App functionality | uploaded PDFs, price lists, Tally files |
-| Location | No | — | — | |
-| Contacts (phone book) | No | — | — | |
-| Audio | No | — | — | microphone is not requested |
-| Device or other IDs | No | — | — | no advertising ID, no analytics SDK |
+Account creation: **Username and password** only (register with firm name, email, password; no Google, no OTP). Account deletion URL and data
+deletion URL: `https://metal.fleekfinance.in/delete-account`. Privacy policy: `https://fleekfintech.com/privacy-policy/` (Section 12).
 
-\* Messages are sent through WhatsApp (Meta) because the user asks for them. Google's form treats a
-service provider acting for you as "processing", not "sharing"; **CONFIRM** that reading against Google's current
-definition, because answering "shared" is the safer side if in doubt.
+| Type | Required or optional | Purposes | What it is |
+|---|---|---|---|
+| Email address | Required | App functionality, Account management | the login |
+| User IDs | Required | App functionality, Account management | the login account identifiers |
+| Name | Optional | App functionality | customers' and suppliers' names the shop enters (sign-up asks only for a firm name) |
+| Phone number | Optional | App functionality | customers', suppliers' and the firm's phone; also the WhatsApp recipient |
+| Address | Optional | App functionality | the firm's and parties' addresses |
+| Other info | Optional | App functionality | PAN and GSTIN |
+| User payment info | Optional | App functionality | the firm's bank account number, IFSC and UPI ID, printed on invoices |
+| Purchase history | Required | App functionality | the items on sales invoices and purchase bills |
+| Other financial info | Required | App functionality | invoices, payments, balances, opening balances |
+| Other in-app messages | Optional | App functionality | the WhatsApp messages a shop sends (invoices, reminders, statements, order updates) and their delivery status |
+| Photos | Optional | App functionality | item photos taken or chosen from the gallery |
+| Files and docs | Optional | App functionality | supplier PDFs and price lists, purchase bills, spreadsheets, Tally files |
+| **Voice or sound recordings** (Audio files) | Optional | App functionality | the push-to-talk **voice line** on the invoice screen: the browser asks for the microphone, the audio streams through our server to Deepgram for speech-to-text, and the words fill the invoice line. We do not store the recording |
 
-Security practices:
-- **Data is encrypted in transit:** Yes (HTTPS everywhere).
-- **Users can request deletion:** Yes — the deletion page above.
-- **Follows the Families policy / independent security review:** No.
+Leave unticked: Location, Contacts, Calendar, Health and fitness, Videos, Music and other audio files, Emails, App activity (no analytics runs in this app), Device or
+other IDs, Crash logs and Diagnostics.
+
+**CONFIRM** before submitting:
+- **Audio and Deepgram.** Our server does not store the audio (it relays the stream and keeps only the resulting text on the invoice line), but the Deepgram
+  call sets no model-improvement opt-out, so Deepgram's own retention is not under our control. If Deepgram may keep or learn from the audio, declare
+  it **shared** and not ephemeral. If you set `mip_opt_out=true` on the call and confirm Deepgram's retention, it is a service provider acting for us
+  and "not shared" is defensible. Only call it "processed ephemerally" if you are confident neither we nor Deepgram retain it. Also: the call sends the
+  shop's most-used item names to Deepgram as recognition hints.
+- If document reading is switched on in production, the uploaded file goes to Anthropic; same reading (service provider vs shared).
+- WhatsApp (Meta) delivers the messages a shop asks for; same reading as the CRM form (processing, not sharing).
+- "Purchase history" is a judgment call: the invoice line items are the shop's business records, not a consumer's shopping history. Declaring it
+  costs nothing and avoids an under-declaration.
+
+Security practices: **encrypted in transit** Yes (HTTPS); **users can request deletion** Yes (the page above); **independent security review** No.
 
 ## Open items before submitting for production
 

@@ -96,6 +96,18 @@ export function DeleteAccountPage() {
         </p>
       </Section>
 
+      <Section title="Delete only some of your data">
+        <p>
+          You do not have to close the account. Email us and say what you want removed, for example a customer, a supplier, some items or
+          photos, or an uploaded document, and we delete it within 30 days of confirming the request. Many of these you can also remove yourself
+          in the app.
+        </p>
+        <p>
+          Finalised invoices, and the payment records tied to them, are accounting records. The app does not allow them to be deleted, and we keep
+          them while you are required to.
+        </p>
+      </Section>
+
       <Section title="If you are a shop's customer">
         <p>
           To have data about you removed, ask the shop you bought from. You can also write to {EMAIL} and
