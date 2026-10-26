@@ -9,6 +9,7 @@ import { OrdersPage } from "./pages/orders/OrdersPage";
 import { FirmPage } from "./pages/FirmPage";
 import { PartiesPage } from "./pages/PartiesPage";
 import { ItemsPage } from "./pages/ItemsPage";
+import { SortGroupsPage } from "./pages/items/SortGroupsPage";
 import { ImportPage } from "./pages/parties/ImportPage";
 import { ItemsImportPage } from "./pages/items/ImportPage";
 import { InvoiceListPage } from "./pages/invoices/InvoiceListPage";
@@ -90,6 +91,7 @@ export function App() {
         <Route path="/parties/:id" element={<PartiesPage />} />
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/items/import" element={<ItemsImportPage />} />
+        <Route path="/items/sort-groups" element={<SortGroupsPage />} />
         {catalogs && <Route path="/items/catalogs" element={<CustomerCatalogsPage />} />}
         {catalogs && <Route path="/orders" element={<OrdersPage />} />}
         {catalogs && <Route path="/orders/:id" element={<OrdersPage />} />}

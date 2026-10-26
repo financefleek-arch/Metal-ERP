@@ -131,3 +131,42 @@ class SizeOrderIn(BaseModel):
         if not self.leaf_ids:
             raise ValueError("leaf_ids must not be empty")
         return self
+
+
+class BreakdownEntry(BaseModel):
+    category_name: str
+    share: float
+
+
+class GroupSuggestionOut(BaseModel):
+    group_id: str
+    name: str
+    item_count: int
+    category_id: str | None = None
+    category_name: str | None = None
+    confidence: float = 0.0
+    breakdown: list[BreakdownEntry] = Field(default_factory=list)
+    # a short group name that looks like a brand; offered as "make it a category"
+    new_category_name: str | None = None
+
+
+class GroupSuggestionsOut(BaseModel):
+    groups: int
+    items: int
+    suggestions: list[GroupSuggestionOut]
+
+
+class GroupMoveIn(BaseModel):
+    group_id: str
+    category_id: str | None = None
+    new_category_name: Annotated[str | None, Field(max_length=60)] = None
+
+
+class GroupAssignIn(BaseModel):
+    moves: Annotated[list[GroupMoveIn], Field(min_length=1, max_length=500)]
+
+
+class GroupAssignOut(BaseModel):
+    groups: int
+    items: int
+    created_categories: list[str] = Field(default_factory=list)

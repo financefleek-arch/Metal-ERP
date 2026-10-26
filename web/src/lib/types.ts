@@ -1060,3 +1060,34 @@ export interface AgeingRow {
   last_payment_date: string | null;
   open_invoice_count: number;
 }
+
+export interface GroupSuggestion {
+  group_id: string;
+  name: string;
+  item_count: number;
+  category_id: string | null;
+  category_name: string | null;
+  /** share of the group's items whose name points at that category, 0 to 1 */
+  confidence: number;
+  breakdown: { category_name: string; share: number }[];
+  /** a short group name that looks like a brand, offered as "make it a category" */
+  new_category_name: string | null;
+}
+
+export interface GroupSuggestions {
+  groups: number;
+  items: number;
+  suggestions: GroupSuggestion[];
+}
+
+export interface GroupMove {
+  group_id: string;
+  category_id?: string | null;
+  new_category_name?: string | null;
+}
+
+export interface GroupAssignResult {
+  groups: number;
+  items: number;
+  created_categories: string[];
+}

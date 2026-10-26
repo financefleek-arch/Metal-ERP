@@ -207,6 +207,11 @@ export function ItemTree({
   // A firm with no categories has one "Uncategorised" wrapper around every group. Show the groups
   // straight away under a slim "All items" row (it keeps the select-everything box and menu).
   const flat = (tree.data ?? []).length === 1 && tree.data![0].id === null;
+  // groups with no category, in a shop that does use categories: offer to sort them
+  const unsorted = (tree.data ?? []).find((c) => c.id === null);
+  const unsortedItems = unsorted
+    ? unsorted.groups.reduce((a, g) => a + g.leaf_count, 0) + unsorted.loose_count
+    : 0;
 
   const dropCls = (key: string) => (dropKey === key ? " outline outline-2 -outline-offset-2 outline-accent" : "");
 
@@ -237,6 +242,23 @@ export function ItemTree({
           Close all
         </button>
       </div>
+      {writable && !flat && unsorted && unsorted.groups.length > 0 && (
+        <div className="m-3 flex flex-col gap-2 rounded-xl border border-[#d9b45a] bg-[#faf1d6] p-3.5">
+          <div className="flex flex-col gap-0.5">
+            <strong className="text-sm font-semibold text-[#4a3a10]">
+              {unsorted.groups.length} {unsorted.groups.length === 1 ? "group has" : "groups have"} no
+              category
+            </strong>
+            <span className="text-xs leading-snug text-[#5f5120]">
+              {unsortedItems.toLocaleString("en-IN")} items sit under Uncategorised. We can suggest a
+              category for most of them.
+            </span>
+          </div>
+          <button className="btn-primary w-full" onClick={() => nav("/items/sort-groups")}>
+            Sort groups
+          </button>
+        </div>
+      )}
       {note && (
         <div className="border-b border-line bg-[#f4dcd8] px-3 py-2 text-[11px] text-danger" role="alert">
           {note}

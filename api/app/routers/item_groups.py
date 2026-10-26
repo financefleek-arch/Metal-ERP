@@ -17,14 +17,20 @@ from app.domain.normalize import load_synonym_map, normalize_name
 from app.domain.product_parse import generated_name
 from app.models import Item, ItemAlias, ItemCategory, ItemClassifyRule, ProductGroup
 from app.schemas_catalogue import (
+    BreakdownEntry,
+    GroupAssignIn,
+    GroupAssignOut,
     GroupDetail,
     GroupIn,
     GroupLeaf,
     GroupMergeIn,
     GroupOut,
+    GroupSuggestionOut,
+    GroupSuggestionsOut,
     GroupUpdate,
     SizeOrderIn,
 )
+from app.services.catalogue import group_sort
 
 router = APIRouter(prefix="/api/item-groups", tags=["item-groups"])
 
@@ -130,6 +136,51 @@ def create_group(body: GroupIn, user: WriteUser, session: SessionDep) -> GroupDe
     session.add(g)
     session.flush()
     return GroupDetail(**_group_out(session, g).model_dump(), leaves=[])
+
+
+@router.get("/uncategorised", response_model=GroupSuggestionsOut)
+def uncategorised_groups(user: CurrentUser, session: SessionDep) -> GroupSuggestionsOut:
+    """Groups with no category, each with a suggested one (nothing is moved)."""
+    n_groups, n_items = group_sort.count_uncategorised(session, user.tenant_id)
+    found = group_sort.suggest(session, user.tenant_id)
+    return GroupSuggestionsOut(
+        groups=n_groups,
+        items=n_items,
+        suggestions=[
+            GroupSuggestionOut(
+                group_id=s.group_id,
+                name=s.name,
+                item_count=s.item_count,
+                category_id=s.category_id,
+                category_name=s.category_name,
+                confidence=s.confidence,
+                breakdown=[BreakdownEntry(category_name=n, share=sh) for n, sh in s.breakdown],
+                new_category_name=s.new_category_name,
+            )
+            for s in found
+        ],
+    )
+
+
+@router.post("/assign", response_model=GroupAssignOut)
+def assign_groups(body: GroupAssignIn, user: WriteUser, session: SessionDep) -> GroupAssignOut:
+    """Put groups under categories in one step; each group's items follow it. A move with no
+    category and no new name takes the group out of its category, which undoes an earlier move.
+    """
+    try:
+        res = group_sort.assign(
+            session,
+            user.tenant_id,
+            [
+                group_sort.Move(m.group_id, m.category_id, m.new_category_name)
+                for m in body.moves
+            ],
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return GroupAssignOut(
+        groups=res.groups, items=res.items, created_categories=res.created_categories
+    )
 
 
 @router.get("/{gid}", response_model=GroupDetail)
