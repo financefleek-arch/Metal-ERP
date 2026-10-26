@@ -82,6 +82,16 @@ def main() -> None:
     stock = parse_stock_items(small)
     print(f"  ledgers {len(masters.ledgers)}, groups {len(masters.groups)}")
     print(f"  stock items {len(stock.items)}, stock groups {len(stock.groups)}")
+    rates = [i.standard_rate for i in stock.items if i.standard_rate is not None]
+    mrps = [i.mrp for i in stock.items if i.mrp is not None]
+    gst = [i.gst_rate for i in stock.items if i.gst_rate is not None]
+    print(f"  with a selling rate {len(rates)}, with an MRP {len(mrps)}, with a GST rate {len(gst)}")
+    if rates:
+        print(f"  rate  min {min(rates):g}, max {max(rates):g}")
+    if mrps:
+        print(f"  MRP   min {min(mrps):g}, max {max(mrps):g}")
+    if gst:
+        print(f"  GST   min {min(gst):g}, max {max(gst):g}")
     if not args.apply:
         print("\n(dry run - nothing written; pass --apply to stage)")
         return
