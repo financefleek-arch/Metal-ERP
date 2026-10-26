@@ -31,7 +31,38 @@ from datetime import UTC, datetime
 
 from lxml import etree
 
+from tools.tally_import import parser as _parser
 from tools.tally_import.parser import _decode, parse_masters, parse_stock_items
+
+
+def _gst_rate_fixed(si: etree._Element) -> float | None:
+    """The parser's fixed `_gst_rate` (a bare <RATE> is a price, not a tax rate).
+
+    Patched in so this tool works against an image that predates the parser fix;
+    harmless once the fix is deployed.
+    """
+    for sw in si.iter("STATEWISEDETAILS.LIST"):
+        heads: dict[str, float] = {}
+        for rd in sw.iter("RATEDETAILS.LIST"):
+            head = (rd.findtext("GSTRATEDUTYHEAD") or "").strip().upper()
+            rate = _parser._num(rd.findtext("GSTRATE"))
+            if head and rate is not None:
+                heads[head] = rate
+        if "IGST" in heads:
+            return heads["IGST"]
+        if "CGST" in heads or "SGST/UTGST" in heads or "SGST" in heads:
+            return (
+                heads.get("CGST", 0.0)
+                + heads.get("SGST/UTGST", heads.get("SGST", 0.0))
+            ) or None
+    for node in si.iter("GSTRATE"):
+        r = _parser._num(node.text)
+        if r is not None and 0 <= r <= 100:
+            return r
+    return None
+
+
+_parser._gst_rate = _gst_rate_fixed
 
 _WANTED = {"GROUP", "LEDGER", "STOCKGROUP", "STOCKITEM"}
 _R2_CAP = 400 * 1024 * 1024

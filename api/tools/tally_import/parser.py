@@ -268,12 +268,12 @@ def _gst_rate(si: etree._Element) -> float | None:
                 + heads.get("SGST/UTGST", heads.get("SGST", 0.0))
             ) or None
 
-    # Flat / legacy shape.
-    for tag in ("GSTRATE", "RATE"):
-        for node in si.iter(tag):
-            r = _num(node.text)
-            if r is not None:
-                return r
+    # Flat / legacy shape. Only <GSTRATE>: a bare <RATE> is the item's price
+    # (STANDARDPRICELIST / STANDARDCOST entries), never a tax rate.
+    for node in si.iter("GSTRATE"):
+        r = _num(node.text)
+        if r is not None and 0 <= r <= 100:
+            return r
     return None
 
 
