@@ -67,6 +67,7 @@ class TallyStockItem:
     standard_rate: float | None = None
     # the current standard selling price (latest dated entry of STANDARDPRICELIST), if any
     selling_price: float | None = None
+    mrp: float | None = None  # the latest dated MRPRATE entry ("200.00/PCS" -> 200.0)
     opening_balance: str | None = None  # kept only to detect "zero-history" dummies
     has_transactions: bool = False
     raw_xml: str | None = None
@@ -308,10 +309,12 @@ def parse_stock_items(raw: bytes) -> TallyStock:
                 base_units=_first(si, "BASEUNITS", "ADDITIONALUNITS"),
                 hsn=_hsn(si),
                 gst_rate=_gst_rate(si),
-                standard_rate=_num(
-                    _first(si, "STANDARDPRICE", "OPENINGRATE", "STANDARDCOST")
-                ),
+                # The selling rate: latest price-list entry, else STANDARDPRICE
+                # (a selling price in older exports). OPENINGRATE and
+                # STANDARDCOST are costs - never read them as a price.
+                standard_rate=_selling_price(si) or _num(_first(si, "STANDARDPRICE")),
                 selling_price=_selling_price(si),
+                mrp=_mrp(si),
                 opening_balance=_first(si, "OPENINGBALANCE", "OPENINGVALUE"),
                 has_transactions=has_txn,
                 raw_xml=etree.tostring(si, encoding="unicode"),
@@ -329,6 +332,20 @@ def _selling_price(si: etree._Element) -> float | None:
         if rate is None:
             continue
         date = (pl.findtext("DATE") or "").strip()
+        if best is None or date >= best[0]:
+            best = (date, rate)
+    return best[1] if best else None
+
+
+def _mrp(si: etree._Element) -> float | None:
+    """The latest dated MRPRATE ("200.00/PCS" -> 200.0). Zero means unset."""
+    best: tuple[str, float] | None = None
+    for node in si.iter("MRPRATE"):
+        rate = _num((node.text or "").split("/")[0])
+        if not rate:
+            continue
+        parent = node.getparent()
+        date = ((parent.findtext("FROMDATE") if parent is not None else "") or "").strip()
         if best is None or date >= best[0]:
             best = (date, rate)
     return best[1] if best else None

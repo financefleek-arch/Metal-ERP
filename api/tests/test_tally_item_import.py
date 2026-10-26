@@ -367,3 +367,33 @@ def test_real_all_masters_export_imports(client: TestClient) -> None:
 
     items = client.get("/api/items", headers=h).json()
     assert len(items) > 2000
+
+
+def _stock_xml(item: str) -> bytes:
+    return f"<ENVELOPE><TALLYMESSAGE>{item}</TALLYMESSAGE></ENVELOPE>".encode()
+
+
+def test_parser_reads_the_latest_mrp_and_the_price_list_rate_not_the_cost() -> None:
+    xml = _stock_xml(
+        '<STOCKITEM NAME="Kadai 23"><NAME>Kadai 23</NAME><BASEUNITS>PCS</BASEUNITS>'
+        "<OPENINGRATE>90.00/PCS</OPENINGRATE>"
+        "<MRPDETAILS.LIST><MRPRATEDETAILS.LIST><FROMDATE>20240401</FROMDATE>"
+        "<MRPRATE>1200.00/PCS</MRPRATE></MRPRATEDETAILS.LIST>"
+        "<MRPRATEDETAILS.LIST><FROMDATE>20250401</FROMDATE>"
+        "<MRPRATE>1260.00/PCS</MRPRATE></MRPRATEDETAILS.LIST></MRPDETAILS.LIST>"
+        "<STANDARDPRICELIST.LIST><DATE>20250401</DATE><RATE>1050.00/PCS</RATE>"
+        "</STANDARDPRICELIST.LIST></STOCKITEM>"
+    )
+    item = parse_stock_items(xml).items[0]
+    assert item.mrp == 1260.0
+    assert item.standard_rate == 1050.0  # the price list, never OPENINGRATE (a cost)
+
+
+def test_parser_has_no_rate_or_mrp_when_tally_has_none() -> None:
+    xml = _stock_xml(
+        '<STOCKITEM NAME="Plain"><NAME>Plain</NAME><OPENINGRATE>90.00/PCS</OPENINGRATE>'
+        "<MRPRATE>0.00/PCS</MRPRATE></STOCKITEM>"
+    )
+    item = parse_stock_items(xml).items[0]
+    assert item.mrp is None
+    assert item.standard_rate is None

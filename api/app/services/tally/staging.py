@@ -292,6 +292,7 @@ def stage_stock_items_xml(
                 hsn=si.hsn,
                 gst_rate=si.gst_rate,
                 standard_rate=si.standard_rate,
+                mrp=si.mrp,
                 raw_xml=(si.raw_xml or "")[:_RAW_XML_KEEP] or None,
                 proposed_type=_proposed_type(si.base_units),
                 proposed_uom=_map_uom(si.base_units),

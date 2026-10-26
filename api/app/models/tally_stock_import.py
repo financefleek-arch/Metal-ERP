@@ -41,6 +41,7 @@ class StagingTallyItem(PkUuidMixin, Base):
     hsn: Mapped[str | None] = mapped_column(String(20))
     gst_rate: Mapped[float | None] = mapped_column(Numeric(5, 2))
     standard_rate: Mapped[float | None] = mapped_column(Numeric(15, 2))
+    mrp: Mapped[float | None] = mapped_column(Numeric(15, 2))
     raw_xml: Mapped[str | None] = mapped_column(Text)
 
     # --- parsed (product_parse) ---

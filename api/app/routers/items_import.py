@@ -461,6 +461,8 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 it.hsn_code = hsn
             if row.standard_rate is not None and it.default_rate is None:
                 it.default_rate = row.standard_rate
+            if row.mrp is not None and it.mrp is None:
+                it.mrp = row.mrp
             if row.gst_rate is not None and float(it.gst_rate or 0) == 0.0:
                 it.gst_rate = float(row.gst_rate)
             if not it.tally_guid:
@@ -517,6 +519,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 size_label=(row.parsed_size_text or None) and row.parsed_size_text[:50],
                 sku=row.parsed_sku,
                 default_rate=row.standard_rate,
+                mrp=row.mrp,
                 gst_rate=float(row.gst_rate) if row.gst_rate is not None else 0.0,
                 source=ItemSource.import_,
                 status=item_status,
