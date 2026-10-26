@@ -324,11 +324,26 @@ def parse_stock_items(raw: bytes) -> TallyStock:
     return TallyStock(items=items, groups=groups)
 
 
+def _rate_in_base_unit(si: etree._Element, text: str | None) -> float | None:
+    """A Tally rate ("120.00/Nos" -> 120.0), only when it is per the item's own
+    unit. A rate quoted per another unit (a set priced per piece) can't be
+    converted without the pack size, so it is left out rather than misread.
+    """
+    if not text:
+        return None
+    amount, _, unit = text.partition("/")
+    base = (si.findtext("BASEUNITS") or "").strip().lower()
+    unit = unit.strip().lower()
+    if unit and base and unit != base:
+        return None
+    return _num(amount)
+
+
 def _selling_price(si: etree._Element) -> float | None:
-    """The latest dated STANDARDPRICELIST rate ("120.00/Nos" -> 120.0)."""
+    """The latest dated STANDARDPRICELIST rate, per the item's base unit."""
     best: tuple[str, float] | None = None
     for pl in si.iter("STANDARDPRICELIST.LIST"):
-        rate = _num((pl.findtext("RATE") or "").split("/")[0])
+        rate = _rate_in_base_unit(si, pl.findtext("RATE"))
         if rate is None:
             continue
         date = (pl.findtext("DATE") or "").strip()
@@ -338,10 +353,12 @@ def _selling_price(si: etree._Element) -> float | None:
 
 
 def _mrp(si: etree._Element) -> float | None:
-    """The latest dated MRPRATE ("200.00/PCS" -> 200.0). Zero means unset."""
+    """The latest dated MRPRATE ("200.00/PCS" -> 200.0), per the item's base
+    unit. Zero means unset.
+    """
     best: tuple[str, float] | None = None
     for node in si.iter("MRPRATE"):
-        rate = _num((node.text or "").split("/")[0])
+        rate = _rate_in_base_unit(si, node.text)
         if not rate:
             continue
         parent = node.getparent()

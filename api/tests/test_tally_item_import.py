@@ -397,3 +397,16 @@ def test_parser_has_no_rate_or_mrp_when_tally_has_none() -> None:
     item = parse_stock_items(xml).items[0]
     assert item.mrp is None
     assert item.standard_rate is None
+
+
+def test_a_rate_per_another_unit_is_left_out_not_misread() -> None:
+    xml = _stock_xml(
+        '<STOCKITEM NAME="Glass set"><NAME>Glass set</NAME><BASEUNITS>SET</BASEUNITS>'
+        "<MRPDETAILS.LIST><MRPRATEDETAILS.LIST><FROMDATE>20250401</FROMDATE>"
+        "<MRPRATE>930.00/PCS</MRPRATE></MRPRATEDETAILS.LIST></MRPDETAILS.LIST>"
+        "<STANDARDPRICELIST.LIST><DATE>20250401</DATE><RATE>500.00/SET</RATE>"
+        "</STANDARDPRICELIST.LIST></STOCKITEM>"
+    )
+    item = parse_stock_items(xml).items[0]
+    assert item.mrp is None  # per PCS, but the item is a SET
+    assert item.standard_rate == 500.0  # per SET: matches
