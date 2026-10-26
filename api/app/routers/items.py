@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, TypeAdapter
-from sqlalchemy import Integer, case, func, select
+from sqlalchemy import Integer, case, func, or_, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
@@ -120,6 +120,7 @@ def list_items(
     price_review: bool = Query(default=False),
     availability: list[Availability] | None = Query(default=None),
     no_photo: bool = Query(default=False),
+    no_code: bool = Query(default=False),
     in_tally: bool | None = Query(default=None),
     tally_price_due: bool = Query(default=False),
     supplier_id: str | None = Query(default=None, description="came from this supplier"),
@@ -156,6 +157,7 @@ def list_items(
         price_review=price_review,
         availability=availability,
         no_photo=no_photo,
+        no_code=no_code,
         in_tally=in_tally,
         tally_price_due=tally_price_due,
         supplier_id=supplier_id,
@@ -212,6 +214,7 @@ class TreeLeaf(BaseModel):
     default_rate: str | None
     status: ItemStatus
     thumb_url: str | None = None
+    sku: str | None = None
     availability: Availability = Availability.in_stock
     tally_state: str = "none"
 
@@ -361,11 +364,38 @@ def item_tree_leaves(
             default_rate=str(it.default_rate) if it.default_rate is not None else None,
             status=it.status,
             thumb_url=media_url(it.primary_media_id, "thumb") if it.primary_media_id else None,
+            sku=it.sku,
             availability=it.availability,
             tally_state=ItemListItem.model_validate(it).tally_state,
         )
         for it in rows
     ]
+
+
+def _check_code_free(
+    session: SessionDep, tenant_id: str, code: str | None, exclude_id: str | None = None
+) -> None:
+    """A code identifies one item, so a hand-typed one may not repeat another item's code
+    (or barcode). Scanning a repeated code could not tell the items apart."""
+    low = (code or "").strip().lower()
+    if not low:
+        return
+    stmt = select(Item).where(
+        Item.tenant_id == tenant_id,
+        Item.merged_into_id.is_(None),
+        or_(
+            func.lower(func.trim(func.coalesce(Item.sku, ""))) == low,
+            func.lower(func.trim(func.coalesce(Item.barcode, ""))) == low,
+        ),
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Item.id != exclude_id)
+    clash = session.scalars(stmt.limit(1)).first()
+    if clash is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"The code {(code or '').strip()} is already on {clash.name}",
+        )
 
 
 @router.post("", response_model=ItemOut, status_code=status.HTTP_201_CREATED)
@@ -386,6 +416,9 @@ def create_item(body: ItemCreate, user: WriteUser, session: SessionDep) -> ItemO
         )
 
     data = body.model_dump(exclude_none=True)
+    if "sku" in data:
+        data["sku"] = data["sku"].strip() or None
+        _check_code_free(session, user.tenant_id, data["sku"])
     it = Item(
         tenant_id=user.tenant_id,
         name_normalized=key,
@@ -908,6 +941,11 @@ def update_item(
 ) -> ItemOut:
     it = _owned(session, user.tenant_id, item_id)
     patch = body.model_dump(exclude_unset=True)
+
+    if "sku" in patch:
+        patch["sku"] = (patch["sku"] or "").strip() or None
+        if patch["sku"] != it.sku:
+            _check_code_free(session, user.tenant_id, patch["sku"], it.id)
 
     if "name" in patch:
         key = _normalized(session, user.tenant_id, patch["name"])

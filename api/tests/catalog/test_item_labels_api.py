@@ -121,3 +121,58 @@ def test_other_firm_cannot_label_my_items(shop) -> None:
     other = auth(register(client, "other@example.com"))
     r = client.post(f"{URL}/check", headers=other, json=_body(items))
     assert r.status_code == 404  # the catalog module is off for that firm
+
+
+def test_no_code_filter_lists_only_items_without_a_code(shop) -> None:
+    client, h, items = shop
+    r = client.get("/api/items?no_code=true", headers=h)
+    assert r.status_code == 200, r.text
+    assert {i["name"] for i in r.json()} == {"Juice Glass 190 ML", "Dessert Bowl Set"}
+    n = client.post("/api/items/count", headers=h, json={"no_code": True}).json()["count"]
+    assert n == 2
+
+
+def test_assign_codes_numbers_the_uncoded_without_printing(shop) -> None:
+    client, h, items = shop
+    r = client.post(f"{URL}/assign-codes", headers=h, json=_body(items))
+    assert r.status_code == 200, r.text
+    assert r.json() == {"selected": 3, "assigned": 2, "already_coded": 1, "inactive": 0}
+    codes = [_sku(i["id"]) for i in items]
+    assert codes[0] == "100500"  # an existing code is never changed
+    assert all(codes) and len(set(codes)) == 3
+    # nothing left to do the second time
+    again = client.post(f"{URL}/assign-codes", headers=h, json=_body(items)).json()
+    assert again["assigned"] == 0 and again["already_coded"] == 3
+    assert client.get("/api/items?no_code=true", headers=h).json() == []
+
+
+def test_numbering_skips_a_number_someone_typed_in_by_hand(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    typed = _item(client, h, "Hand Coded Item", sku="100001")  # the first number the counter issues
+    plain = _item(client, h, "Plain Item")
+    r = client.post(f"{URL}/assign-codes", headers=h, json=_body([typed, plain]))
+    assert r.json()["assigned"] == 1
+    assert _sku(typed["id"]) == "100001"
+    new = _sku(plain["id"])
+    assert new and new != "100001"
+
+
+def test_a_code_cannot_repeat_on_another_item(shop) -> None:
+    client, h, items = shop
+    dup = client.post(
+        "/api/items", headers=h, json={"name": "Another Mug", "uom": "nos", "sku": "100500"}
+    )
+    assert dup.status_code == 409
+    assert "Beer Mug 480 ML" in dup.json()["detail"]
+
+    other = items[1]
+    taken = client.patch(f"/api/items/{other['id']}", headers=h, json={"sku": " 100500 "})
+    assert taken.status_code == 409
+    free = client.patch(f"/api/items/{other['id']}", headers=h, json={"sku": "JG-190"})
+    assert free.status_code == 200 and free.json()["sku"] == "JG-190"
+    # keeping its own code is not a clash
+    same = client.patch(f"/api/items/{other['id']}", headers=h, json={"sku": "JG-190"})
+    assert same.status_code == 200
+    # blank clears it
+    blank = client.patch(f"/api/items/{other['id']}", headers=h, json={"sku": "  "})
+    assert blank.status_code == 200 and blank.json()["sku"] is None

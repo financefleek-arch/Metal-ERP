@@ -84,6 +84,7 @@ function buildQuery(f: ItemFilter, cursor?: string | null) {
   if (f.price_review) p.set("price_review", "true");
   for (const a of f.availability ?? []) p.append("availability", a);
   if (f.no_photo) p.set("no_photo", "true");
+  if (f.no_code) p.set("no_code", "true");
   if (f.in_tally != null) p.set("in_tally", String(f.in_tally));
   if (f.tally_price_due) p.set("tally_price_due", "true");
   if (f.catalog_id) p.set("catalog_id", f.catalog_id);
@@ -164,6 +165,7 @@ export function ItemsPage() {
     () => (params.get("avail")?.split(",").filter(Boolean) ?? []) as Availability[],
   );
   const [noPhoto, setNoPhoto] = useState(false);
+  const [noCode, setNoCode] = useState(false);
   const [notInTally, setNotInTally] = useState(false);
   const [tallyDue, setTallyDue] = useState(false);
   const [allMatching, setAllMatching] = useState(false);
@@ -206,13 +208,14 @@ export function ItemsPage() {
       price_review: scopes.has("price_review") || undefined,
       availability: avail.length ? avail : undefined,
       no_photo: noPhoto || undefined,
+      no_code: noCode || undefined,
       in_tally: notInTally ? false : undefined,
       tally_price_due: tallyDue || undefined,
       catalog_id: catalogId ?? undefined,
       supplier_id: supplierId ?? undefined,
       any_of: placeNodes(catSel, grpSel),
     }),
-    [dq, scopes, avail, noPhoto, notInTally, tallyDue, catalogId, supplierId, catSel, grpSel],
+    [dq, scopes, avail, noPhoto, noCode, notInTally, tallyDue, catalogId, supplierId, catSel, grpSel],
   );
   const filterKey = JSON.stringify(itemFilter);
 
@@ -333,12 +336,13 @@ export function ItemsPage() {
         api<{ count: number }>("/items/count", { method: "POST", body: { ...base, ...f } }).then(
           (r) => r.count,
         );
-      const [a, b, c, d, np, nt, td] = await Promise.all([
+      const [a, b, c, d, np, nc, nt, td] = await Promise.all([
         n({ availability: ["in_stock"] }),
         n({ availability: ["expected"] }),
         n({ availability: ["out_of_stock"] }),
         n({ availability: ["discontinued"] }),
         n({ no_photo: true }),
+        n({ no_code: true }),
         n({ in_tally: false }),
         n({ tally_price_due: true }),
       ]);
@@ -348,6 +352,7 @@ export function ItemsPage() {
         out_of_stock: c,
         discontinued: d,
         no_photo: np,
+        no_code: nc,
         not_in_tally: nt,
         tally_due: td,
       };
@@ -749,6 +754,16 @@ export function ItemsPage() {
                   {counts.data && <span className="ml-1 tabular-nums opacity-70">{counts.data.no_photo}</span>}
                 </button>
                 <button
+                  aria-pressed={noCode}
+                  onClick={() => setNoCode((v) => !v)}
+                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                    noCode ? "border-warn bg-warn text-ground" : "border-line bg-card text-muted hover:bg-ground"
+                  }`}
+                >
+                  No code
+                  {counts.data && <span className="ml-1 tabular-nums opacity-70">{counts.data.no_code}</span>}
+                </button>
+                <button
                   aria-pressed={notInTally}
                   onClick={() => setNotInTally((v) => !v)}
                   className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
@@ -973,12 +988,23 @@ export function ItemsPage() {
                         )}
                       </div>
                       <div className="mt-0.5 text-[10px] text-muted">
-                        {[it.shape, it.grade && `${it.metal ?? ""} ${it.grade}`.trim()]
+                        {it.sku ? (
+                          <span className="font-mono">{it.sku}</span>
+                        ) : (
+                          <span className="text-warn">no code</span>
+                        )}
+                        {" · "}
+                        {[
+                          [it.shape, it.grade && `${it.metal ?? ""} ${it.grade}`.trim()]
+                            .filter(Boolean)
+                            .join(" · "),
+                          it.default_rate != null
+                            ? `₹${it.default_rate}${it.uom ? `/${uomDisplay(it.uom)}` : ""}`
+                            : "",
+                          `billed ${it.times_billed}×`,
+                        ]
                           .filter(Boolean)
                           .join(" · ")}
-                        {it.default_rate != null &&
-                          ` · ₹${it.default_rate}${it.uom ? `/${uomDisplay(it.uom)}` : ""}`}
-                        {` · billed ${it.times_billed}×`}
                       </div>
                     </button>
                   </div>

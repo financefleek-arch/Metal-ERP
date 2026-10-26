@@ -679,8 +679,13 @@ function LeafList({
                   {tb.label}
                 </span>
               )}
+              {l.sku && <span className="ml-auto shrink-0 font-mono text-[9px] text-faint">{l.sku}</span>}
               {l.default_rate != null && (
-                <span className="ml-auto shrink-0 font-mono text-[9px] text-muted">₹{l.default_rate}</span>
+                <span
+                  className={`${l.sku ? "" : "ml-auto "}shrink-0 font-mono text-[9px] text-muted`}
+                >
+                  ₹{l.default_rate}
+                </span>
               )}
             </button>
           </div>

@@ -189,6 +189,8 @@ class ItemFilter(BaseModel):
     price_review: bool = False
     availability: list[Availability] | None = None
     no_photo: bool = False
+    # no code of its own yet (no sku and no barcode): what a label print would number
+    no_code: bool = False
     in_tally: bool | None = None
     # in Tally, but at a different selling price than the item's rate now
     tally_price_due: bool = False

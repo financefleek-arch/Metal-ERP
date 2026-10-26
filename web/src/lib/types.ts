@@ -505,6 +505,7 @@ export interface ItemFilter {
   price_review?: boolean;
   availability?: Availability[];
   no_photo?: boolean;
+  no_code?: boolean;
   in_tally?: boolean;
   /** in Tally, but at a different selling price than the item's rate now */
   tally_price_due?: boolean;
@@ -690,6 +691,7 @@ export interface TreeLeaf {
   default_rate: string | null;
   status: ItemStatus;
   thumb_url?: string | null;
+  sku?: string | null;
   availability?: Availability;
   tally_state?: TallyState;
 }

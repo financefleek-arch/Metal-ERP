@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../../lib/api";
 import { useDebounced } from "../../lib/useDebounced";
 import {
@@ -78,7 +78,9 @@ export function LabelsDialog({
   count: number;
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
   const [assignCodes, setAssignCodes] = useState(true);
+  const [assignMsg, setAssignMsg] = useState<string | null>(null);
   const [opts, setOpts] = useState<LabelOptions>(DEFAULTS);
   const [phase, setPhase] = useState<"idle" | "working" | "done">("idle");
   const [job, setJob] = useState<OutputJob | null>(null);
@@ -101,6 +103,18 @@ export function LabelsDialog({
   const check = useQuery({
     queryKey: ["item-labels-check", previewKey],
     queryFn: () => api<LabelCheck>("/item-labels/check", { method: "POST", body: JSON.parse(previewKey) }),
+  });
+  // number the uncoded items now, without making a PDF
+  const numberThem = useMutation({
+    mutationFn: () =>
+      api<{ assigned: number }>("/item-labels/assign-codes", { method: "POST", body: { selection } }),
+    onSuccess: (r) => {
+      setAssignMsg(`${r.assigned} item${r.assigned === 1 ? "" : "s"} numbered.`);
+      setErr(null);
+      for (const key of ["item-labels-check", "items", "item-tree-leaves", "item-counts"])
+        qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not assign codes."),
   });
   const c = check.data;
   const labels = c?.labels ?? 0;
@@ -255,12 +269,28 @@ export function LabelsDialog({
                     </span>
                   </label>
                 )}
+                {c.no_code > 0 && (
+                  <button
+                    type="button"
+                    className="btn-ghost mt-2 h-10 px-3 text-sm"
+                    disabled={numberThem.isPending}
+                    onClick={() => numberThem.mutate()}
+                  >
+                    {numberThem.isPending ? "Numbering…" : "Number them without printing"}
+                  </button>
+                )}
                 {c.inactive > 0 && (
                   <p className="mt-1 text-xs text-muted">
                     {c.inactive} archived or merged item{c.inactive === 1 ? " is" : "s are"} left out.
                   </p>
                 )}
               </div>
+            )}
+
+            {assignMsg && (
+              <p className="rounded-md border border-line bg-ground p-3 text-sm text-ok" role="status">
+                {assignMsg}
+              </p>
             )}
 
             <fieldset>

@@ -17,7 +17,7 @@ import logging
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
@@ -85,11 +85,41 @@ def plan(session: Session, tenant_id: str, ids: list[str]) -> LabelPlan:
     return p
 
 
+def _codes_in_use(session: Session, tenant_id: str, codes: list[str]) -> set[str]:
+    """Which of `codes` are already some item's code or barcode (lower-cased)."""
+    low = [c.lower() for c in codes]
+    used: set[str] = set()
+    for i in range(0, len(low), _CHUNK):
+        part = low[i : i + _CHUNK]
+        for col in (Item.sku, Item.barcode):
+            used.update(
+                v
+                for v in session.scalars(
+                    select(func.lower(func.trim(col))).where(
+                        Item.tenant_id == tenant_id, func.lower(func.trim(col)).in_(part)
+                    )
+                )
+                if v
+            )
+    return used
+
+
 def assign_missing_codes(session: Session, tenant: Tenant, items: list[Item]) -> int:
-    """Give each item without a code the next firm-wide number. Caller commits."""
+    """Give each item without a code the next firm-wide number. Caller commits.
+
+    A number someone already typed in by hand is skipped (and not reused), so two items never
+    end up with the same code.
+    """
     missing = [it for it in items if not code_of(it)]
-    for it, code in zip(missing, allocate_codes(session, tenant, len(missing)), strict=True):
-        it.sku = code
+    given = 0
+    while given < len(missing):
+        batch = allocate_codes(session, tenant, len(missing) - given)
+        taken = _codes_in_use(session, tenant.id, batch)
+        for code in batch:
+            if code.lower() in taken:
+                continue
+            missing[given].sku = code
+            given += 1
     session.flush()
     return len(missing)
 

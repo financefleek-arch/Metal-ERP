@@ -30,6 +30,13 @@ def filter_clauses(f: ItemFilter) -> list:
         out.append(Item.availability.in_([a.value for a in f.availability]))
     if f.no_photo:
         out.append(Item.primary_media_id.is_(None))
+    if f.no_code:
+        out.append(
+            and_(
+                func.coalesce(func.trim(Item.sku), "") == "",
+                func.coalesce(func.trim(Item.barcode), "") == "",
+            )
+        )
     if f.in_tally is True:
         out.append(or_(Item.tally_guid.is_not(None), Item.tally_status == "synced"))
     elif f.in_tally is False:

@@ -39,6 +39,17 @@ class LabelsCheckOut(BaseModel):
     no_price: int
 
 
+class AssignCodesRequest(BaseModel):
+    selection: CatalogSelection
+
+
+class AssignCodesOut(BaseModel):
+    selected: int
+    assigned: int  # items that had no code and got the next number
+    already_coded: int
+    inactive: int  # archived or merged away, left alone
+
+
 def _opts(body: LabelsRequest) -> labels_svc.LabelOptions:
     return labels_svc.LabelOptions(
         show_name=body.show_name,
@@ -81,6 +92,27 @@ def check(body: LabelsRequest, session: SessionDep, user: CatalogUser) -> Labels
         no_code=p.no_code,
         inactive=p.inactive,
         no_price=p.no_price if body.show_price else 0,
+    )
+
+
+@router.post("/assign-codes", response_model=AssignCodesOut)
+def assign_codes(
+    body: AssignCodesRequest, session: SessionDep, user: CatalogWriteUser
+) -> AssignCodesOut:
+    """Give every selected item without a code the next firm-wide number, without printing."""
+    ids = svc.resolve_selection(session, user.tenant_id, body.selection)
+    if not ids:
+        raise HTTPException(status_code=422, detail="No items selected.")
+    p = svc.plan(session, user.tenant_id, ids)
+    tenant = session.get(Tenant, user.tenant_id)
+    assert tenant is not None
+    assigned = svc.assign_missing_codes(session, tenant, p.items)
+    session.commit()
+    return AssignCodesOut(
+        selected=p.selected,
+        assigned=assigned,
+        already_coded=len(p.items) - assigned,
+        inactive=p.inactive,
     )
 
 

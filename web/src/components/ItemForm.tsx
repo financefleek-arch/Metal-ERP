@@ -15,6 +15,7 @@ type Fields = { [k: string]: string };
 
 const TEXT_FIELDS = [
   "name",
+  "sku",
   "grade",
   "size_text",
   "thickness_mm",
@@ -62,6 +63,7 @@ function toBody(f: Fields) {
     item_type: g("item_type") as ItemType,
     category: str("category"),
     uom: str("uom"),
+    sku: str("sku"),
     hsn_code: str("hsn_code"),
     metal: str("metal"),
     shape: str("shape"),
@@ -336,6 +338,21 @@ export function ItemForm({
           <input className="field" value={v.name} onChange={(e) => patch({ name: e.target.value })} />
           <p className="mt-1 font-mono text-[10px] text-muted">
             normalized → {item.name_normalized}
+          </p>
+        </div>
+        <div>
+          <Label>Code</Label>
+          <input
+            className="field font-mono"
+            value={v.sku}
+            placeholder="No code yet"
+            maxLength={64}
+            onChange={(e) => patch({ sku: e.target.value })}
+          />
+          <p className="mt-1 text-[10px] text-muted">
+            {(v.sku ?? "").trim()
+              ? "The barcode on this item's labels. Each code is used once."
+              : "Numbered when you print this item's label, or type your own."}
           </p>
         </div>
         <Field label="Metal">
