@@ -439,3 +439,19 @@ def test_viewers_can_read_but_not_create_or_delete(shop) -> None:
     assert _create(client, vh, _ids(*items)).status_code == 403
     assert client.delete(f"{URL}/{cc['id']}", headers=vh).status_code == 403
     assert client.post(f"{URL}/{cc['id']}/rebuild", headers=vh, json={}).status_code == 403
+
+
+def test_a_catalog_section_is_the_category_else_the_group() -> None:
+    """A firm that keeps only groups (no categories) still gets section headings."""
+
+    class _It:
+        def __init__(self, category_id=None, group_id=None) -> None:
+            self.category_id = category_id
+            self.group_id = group_id
+
+    cats = {"c1": "Cookware"}
+    groups = {"g1": "HOTEL WARE"}
+    assert svc._heading(_It("c1", "g1"), cats, groups) == "Cookware"
+    assert svc._heading(_It(None, "g1"), cats, groups) == "HOTEL WARE"
+    assert svc._heading(_It(None, None), cats, groups) is None
+    assert svc._heading(_It("gone", "g1"), cats, groups) == "HOTEL WARE"

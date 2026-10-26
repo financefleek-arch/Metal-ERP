@@ -30,6 +30,7 @@ from app.models import (
     Item,
     ItemCategory,
     MediaAsset,
+    ProductGroup,
     Tenant,
 )
 from app.models._mixins import Availability
@@ -134,11 +135,34 @@ def _category_names(session: Session, tenant_id: str) -> dict[str, str]:
     }
 
 
+def _group_names(session: Session, tenant_id: str) -> dict[str, str]:
+    return {
+        k: v
+        for k, v in session.execute(
+            select(ProductGroup.id, ProductGroup.name).where(ProductGroup.tenant_id == tenant_id)
+        ).all()
+    }
+
+
+def _heading(it: Item, cats: dict[str, str], groups: dict[str, str]) -> str | None:
+    """The section heading an item prints under: its category, else its group.
+
+    A firm that organises by groups alone (e.g. one taken straight from its Tally stock groups)
+    has no categories, and its catalog still needs sections.
+    """
+    if it.category_id and it.category_id in cats:
+        return cats[it.category_id]
+    if it.group_id and it.group_id in groups:
+        return groups[it.group_id]
+    return None
+
+
 def plan(session: Session, tenant_id: str, ids: list[str], layout: CatalogLayout) -> Plan:
     """What would be printed from `ids`, and what is left out and why."""
     p = Plan(selected=len(ids))
     items = _load_items(session, tenant_id, ids)
     cats = _category_names(session, tenant_id)
+    groups = _group_names(session, tenant_id)
     allowed = {Availability.in_stock.value}
     if layout.include_expected:
         allowed.add(Availability.expected.value)
@@ -159,7 +183,7 @@ def plan(session: Session, tenant_id: str, ids: list[str], layout: CatalogLayout
 
     keep.sort(
         key=lambda it: (
-            cats.get(it.category_id or "", "").casefold() or "￿",
+            (_heading(it, cats, groups) or "").casefold() or "￿",
             it.name.casefold(),
             it.id,
         )
@@ -184,6 +208,7 @@ def load_entries(
 ) -> list[CatalogEntry]:
     """Printable entries, in `items` order. Only our price and our code leave this function."""
     cats = _category_names(session, tenant_id)
+    groups = _group_names(session, tenant_id)
     media_ids = [it.primary_media_id for it in items if it.primary_media_id]
     assets: list[MediaAsset] = []
     for i in range(0, len(media_ids), _CHUNK):
@@ -202,7 +227,7 @@ def load_entries(
             CatalogEntry(
                 code=(it.sku or it.barcode or ""),
                 name=it.name,
-                group=cats.get(it.category_id) if it.category_id else None,
+                group=_heading(it, cats, groups),
                 price=Decimal(str(it.default_rate)),
                 pack_qty=int(it.pack_qty or 1),
                 image=jpegs.get(it.primary_media_id) if it.primary_media_id else None,

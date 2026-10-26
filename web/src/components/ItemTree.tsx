@@ -51,20 +51,28 @@ function Check({
   useEffect(() => {
     if (ref.current) ref.current.indeterminate = !!partial && !checked;
   }, [partial, checked]);
+  // The label is the tap target: 44 px square on a phone around a 22 px box, tight again on desktop.
   return (
-    <input
-      ref={ref}
-      type="checkbox"
-      aria-label={label}
-      checked={checked || !!lockedBy}
-      disabled={!!lockedBy}
-      title={lockedBy ? `Included because “${lockedBy}” is ticked. Untick that to choose differently.` : undefined}
-      onChange={onChange}
-      onClick={(e) => e.stopPropagation()}
-      className={`h-4 w-4 shrink-0 accent-[color:theme(colors.accent.DEFAULT)] md:h-3.5 md:w-3.5 ${
-        lockedBy ? "opacity-60" : ""
+    <label
+      className={`grid h-11 w-11 shrink-0 place-items-center md:h-6 md:w-6 ${
+        lockedBy ? "cursor-not-allowed" : "cursor-pointer"
       }`}
-    />
+      onClick={(e) => e.stopPropagation()}
+    >
+      <input
+        ref={ref}
+        type="checkbox"
+        aria-label={label}
+        checked={checked || !!lockedBy}
+        disabled={!!lockedBy}
+        title={lockedBy ? `Included because “${lockedBy}” is ticked. Untick that to choose differently.` : undefined}
+        onChange={onChange}
+        onClick={(e) => e.stopPropagation()}
+        className={`h-[22px] w-[22px] shrink-0 accent-[color:theme(colors.accent.DEFAULT)] md:h-3.5 md:w-3.5 ${
+          lockedBy ? "opacity-60" : ""
+        }`}
+      />
+    </label>
   );
 }
 
@@ -196,6 +204,10 @@ export function ItemTree({
       .getQueriesData<TreeLeaf[]>({ queryKey: ["item-tree-leaves", query] })
       .some(([, leaves]) => leaves?.some((l) => selectedIds.has(l.id)));
 
+  // A firm with no categories has one "Uncategorised" wrapper around every group. Show the groups
+  // straight away under a slim "All items" row (it keeps the select-everything box and menu).
+  const flat = (tree.data ?? []).length === 1 && tree.data![0].id === null;
+
   const dropCls = (key: string) => (dropKey === key ? " outline outline-2 -outline-offset-2 outline-accent" : "");
 
   return (
@@ -260,18 +272,21 @@ export function ItemTree({
 
       {cats.map((c) => {
         const catKey = c.id ?? "__none__";
-        const open = openCats.has(catKey) || !!q;
+        const label = flat ? "All items" : c.name;
+        const open = flat || openCats.has(catKey) || !!q;
         const nGroups = c.groups.length;
         const nItems = c.groups.reduce((a, g) => a + g.leaf_count, 0) + c.loose_count;
         const looseKey = c.id ?? "__uncat__";
-        const cNode = categoryNode(c.id, c.name, nItems);
-        const lNode = looseNode(c.id, c.name, c.loose_count);
+        const cNode = categoryNode(c.id, label, nItems);
+        const lNode = looseNode(c.id, label, c.loose_count);
         const catDropKey = `drop:cat:${catKey}`;
         const catPicked = nodeKeys.has(cNode.key);
         return (
           <div key={catKey}>
             <div
-              className={`flex items-center border-b border-[#f3eee4] bg-[#efe6d4]/50 text-[10px] font-bold uppercase tracking-wide text-[#5a4a2f]${dropCls(catDropKey)}`}
+              className={`flex items-center border-b border-[#f3eee4] ${
+                catPicked ? "bg-accent-soft" : "bg-[#efe6d4]/50"
+              } text-[10px] font-bold uppercase tracking-wide text-[#5a4a2f]${dropCls(catDropKey)}`}
               {...dropOn(catDropKey, () => true)}
               onDrop={(e) => {
                 e.preventDefault();
@@ -291,7 +306,7 @@ export function ItemTree({
               {writable && (
                 <span className="pl-3">
                   <Check
-                    label={`Select all of ${c.name}`}
+                    label={`Select all of ${label}`}
                     checked={nodeKeys.has(cNode.key)}
                     onChange={() => onPickNode(cNode)}
                   />
@@ -299,11 +314,12 @@ export function ItemTree({
               )}
               <button
                 className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2.5 text-left uppercase md:py-1.5"
-                aria-expanded={open}
+                aria-expanded={flat ? undefined : open}
+                disabled={flat}
                 onClick={() => toggle(openCats, setOpenCats, catKey)}
               >
-                <span className="text-[8px] text-faint">{open ? "▾" : "▸"}</span>
-                <span className="truncate">{c.name}</span>
+                {!flat && <span className="text-[8px] text-faint">{open ? "▾" : "▸"}</span>}
+                <span className="truncate">{label}</span>
                 <span className="ml-auto shrink-0 font-mono text-[9px] font-normal text-muted">
                   {nGroups} grp · {nItems}
                 </span>
@@ -311,7 +327,7 @@ export function ItemTree({
               {writable && (
                 <span className="pr-2 normal-case tracking-normal">
                   <NodeMenu
-                    title={c.name}
+                    title={label}
                     count={nItems}
                     catalogModule={catalogModule}
                     onAction={(a) => onNodeAction(cNode, a)}
@@ -352,9 +368,11 @@ export function ItemTree({
                             });
                         }}
                         className={`flex items-center border-b border-[#f3eee4] pl-3 ${
-                          g.id === selectedGroupId
-                            ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
-                            : "hover:bg-accent-soft"
+                          catPicked || nodeKeys.has(gNode.key)
+                            ? "bg-accent-soft"
+                            : g.id === selectedGroupId
+                              ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
+                              : "hover:bg-accent-soft"
                         }${dropCls(gDropKey)}`}
                       >
                         <button
@@ -370,7 +388,7 @@ export function ItemTree({
                             <Check
                               label={`Select all of ${g.name}`}
                               checked={nodeKeys.has(gNode.key)}
-                              lockedBy={catPicked ? c.name : undefined}
+                              lockedBy={catPicked ? label : undefined}
                               partial={leafPartial(gQuery)}
                               onChange={() => onPickNode(gNode)}
                             />
@@ -392,6 +410,18 @@ export function ItemTree({
                           <span className="truncate">{g.name}</span>
                         </button>
                         <span className="px-1.5 font-mono text-[9px] text-muted">{g.leaf_count}</span>
+                        {writable && gOpen && !catPicked && (
+                          <button
+                            className={`mr-1 h-8 shrink-0 rounded-lg border px-2.5 text-[10px] font-semibold uppercase tracking-wide md:hidden ${
+                              nodeKeys.has(gNode.key)
+                                ? "border-accent bg-accent text-ground"
+                                : "border-accent bg-accent-soft text-accent"
+                            }`}
+                            onClick={() => onPickNode(gNode)}
+                          >
+                            {nodeKeys.has(gNode.key) ? "Selected" : "Select all"}
+                          </button>
+                        )}
                         {writable && (
                           <span className="pr-2">
                             <NodeMenu
@@ -410,7 +440,7 @@ export function ItemTree({
                           query={gQuery}
                           total={g.leaf_count}
                           lockedBy={
-                            catPicked ? c.name : nodeKeys.has(gNode.key) ? g.name : undefined
+                            catPicked ? label : nodeKeys.has(gNode.key) ? g.name : undefined
                           }
                           pad="pl-10"
                           selectedItemId={selectedItemId}
@@ -452,9 +482,9 @@ export function ItemTree({
                       {writable && (
                         <span className="mr-1.5">
                           <Check
-                            label={`Select all ungrouped in ${c.name}`}
+                            label={`Select all ungrouped in ${label}`}
                             checked={nodeKeys.has(lNode.key)}
-                            lockedBy={catPicked ? c.name : undefined}
+                            lockedBy={catPicked ? label : undefined}
                             partial={leafPartial(
                               c.id ? `category_id=${c.id}` : "uncategorised=true",
                             )}
@@ -476,7 +506,7 @@ export function ItemTree({
                       {writable && (
                         <span className="pr-2 normal-case tracking-normal">
                           <NodeMenu
-                            title={`${c.name} · ungrouped`}
+                            title={`${label} · ungrouped`}
                             count={c.loose_count}
                             catalogModule={catalogModule}
                             onAction={(a) => onNodeAction(lNode, a)}
@@ -490,7 +520,7 @@ export function ItemTree({
                         query={c.id ? `category_id=${c.id}` : "uncategorised=true"}
                         total={c.loose_count}
                         lockedBy={
-                          catPicked ? c.name : nodeKeys.has(lNode.key) ? `${c.name} · ungrouped` : undefined
+                          catPicked ? label : nodeKeys.has(lNode.key) ? `${label} · ungrouped` : undefined
                         }
                         pad="pl-10"
                         selectedItemId={selectedItemId}
@@ -583,7 +613,7 @@ function LeafList({
             }`}
           >
             {writable ? (
-              <span className="pl-6">
+              <span className="pl-10 md:pl-6">
                 <Check
                   label={`Select ${l.name}`}
                   checked={on}
