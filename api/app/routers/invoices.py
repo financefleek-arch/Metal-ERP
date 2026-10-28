@@ -57,7 +57,7 @@ from app.schemas_invoice import (
     VoiceLineOut,
     VoiceLineTranscriptIn,
 )
-from app.services import order_notify
+from app.services import features, order_notify
 from app.services.invoices.common import (
     download_name,
     finalize_blockers,
@@ -410,7 +410,12 @@ def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) ->
     return _out(session, inv)
 
 
-@router.post("/from-slip", response_model=SlipCaptureOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/from-slip",
+    response_model=SlipCaptureOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[features.require("slip")],
+)
 def create_invoice_from_slip(
     user: DraftUser,
     session: SessionDep,
@@ -518,7 +523,7 @@ def _resolve_transcript(session: SessionDep, tenant_id: str, transcript: str) ->
     )
 
 
-@router.post("/voice-line", response_model=VoiceLineOut)
+@router.post("/voice-line", response_model=VoiceLineOut, dependencies=[features.require("voice")])
 def resolve_voice_line(
     user: DraftUser,
     session: SessionDep,
@@ -542,7 +547,9 @@ def resolve_voice_line(
     return _resolve_transcript(session, user.tenant_id, tx.text)
 
 
-@router.post("/voice-line/resolve-text", response_model=VoiceLineOut)
+@router.post(
+    "/voice-line/resolve-text", response_model=VoiceLineOut, dependencies=[features.require("voice")]
+)
 def resolve_voice_line_transcript(
     user: DraftUser,
     session: SessionDep,

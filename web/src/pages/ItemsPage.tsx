@@ -27,6 +27,7 @@ import { PhotoBulkDialog } from "../components/PhotoBulkDialog";
 import { GroupForm } from "../components/GroupForm";
 import { CategoryManager } from "../components/CategoryManager";
 import { useAuth } from "../lib/auth";
+import { useFeature } from "../lib/features";
 import { ShareLinkDialog } from "../components/catalog/ShareLinkDialog";
 import { OffersDialog } from "../components/catalog/OffersDialog";
 import { PhotoQueueDialog } from "../components/PhotoQueueDialog";
@@ -181,6 +182,8 @@ export function ItemsPage() {
   const [offersOpen, setOffersOpen] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
   const { me } = useAuth();
+  const importOn = useFeature("import");
+  const docsOn = !!(me?.ext_inward_import || me?.ext_supplier_catalog);
   const writable = canWrite(me?.role);
   const catalogModule = !!me?.ext_supplier_catalog;
   const [q, setQ] = useState("");
@@ -558,14 +561,22 @@ export function ItemsPage() {
   const mobileMenu: MenuEntry[] = [
     ...(writable
       ? ([
-          { label: "Import from a supplier price list", onClick: () => nav("/documents") },
-          { label: "Import from a supplier bill", onClick: () => nav("/documents") },
-          { label: "Import from Tally (stock items XML)", onClick: () => nav("/items/import") },
-          { label: "Update from Excel…", onClick: () => setSheetOpen(true) },
+          ...(docsOn
+            ? ([
+                { label: "Import from a supplier price list", onClick: () => nav("/documents") },
+                { label: "Import from a supplier bill", onClick: () => nav("/documents") },
+              ] as MenuEntry[])
+            : []),
+          ...(importOn
+            ? ([
+                { label: "Import from Tally (stock items XML)", onClick: () => nav("/items/import") },
+                { label: "Update from Excel…", onClick: () => setSheetOpen(true) },
+              ] as MenuEntry[])
+            : []),
           "sep",
         ] as MenuEntry[])
       : []),
-    { label: exportLabel, onClick: () => void exportSheet() },
+    ...(importOn ? ([{ label: exportLabel, onClick: () => void exportSheet() }] as MenuEntry[]) : []),
     ...(writable
       ? ([
           { label: "Add photos to many items", onClick: () => setPhotosOpen(true) },
@@ -596,22 +607,27 @@ export function ItemsPage() {
         <HeaderMenu
           label="Import"
           entries={[
-            { label: "From a supplier price list", onClick: () => nav("/documents") },
-            { label: "From a supplier bill", onClick: () => nav("/documents") },
-            { label: "From Tally (stock items XML)", onClick: () => nav("/items/import") },
+            ...(docsOn
+              ? [
+                  { label: "From a supplier price list", onClick: () => nav("/documents") },
+                  { label: "From a supplier bill", onClick: () => nav("/documents") },
+                ]
+              : []),
+            ...(importOn ? [{ label: "From Tally (stock items XML)", onClick: () => nav("/items/import") }] : []),
             { label: "Add one by hand", onClick: () => nav("/items/new") },
-            "sep",
-            { label: "Update from Excel…", onClick: () => setSheetOpen(true) },
+            ...(importOn ? (["sep", { label: "Update from Excel…", onClick: () => setSheetOpen(true) }] as MenuEntry[]) : []),
           ]}
         />
       )}
-      <button
-        className="btn-ghost"
-        title={exportTitle}
-        onClick={() => void exportSheet()}
-      >
-        {exportLabel}
-      </button>
+      {importOn && (
+        <button
+          className="btn-ghost"
+          title={exportTitle}
+          onClick={() => void exportSheet()}
+        >
+          {exportLabel}
+        </button>
+      )}
       {writable && (
         <HeaderMenu
           label="Photos"

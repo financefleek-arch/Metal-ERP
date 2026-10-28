@@ -21,12 +21,14 @@ from app.schemas_catalog import (
     TallyPushIn,
     TallyRunOut,
 )
-from app.services import audit
+from app.services import audit, features
 from app.services.catalog import item_labels
 from app.services.catalog import tally_items as ti
 from app.services.item_filter import resolve_ids
 
-router = APIRouter(prefix="/api/item-tally", tags=["item-tally"])
+router = APIRouter(
+    prefix="/api/item-tally", tags=["item-tally"], dependencies=[features.require("tally")]
+)
 
 
 def _items(session: SessionDep, tenant_id: str, body: TallyPushIn) -> list[Item]:

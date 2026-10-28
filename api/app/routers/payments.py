@@ -30,6 +30,7 @@ from app.schemas_payments import (
     PaymentOut,
     ReversePaymentIn,
 )
+from app.services import features
 from app.services.payments import (
     ageing_summary,
     balance_due_for_invoice,
@@ -250,7 +251,9 @@ def reverse_payment(
 # /api/collections.
 # --------------------------------------------------------------------------
 
-collections_router = APIRouter(prefix="/api/collections", tags=["payments"])
+collections_router = APIRouter(
+    prefix="/api/collections", tags=["payments"], dependencies=[features.require("collections")]
+)
 
 
 @collections_router.get("", response_model=list[CollectionsRow])

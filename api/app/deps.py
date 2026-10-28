@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,9 +24,14 @@ SessionDep = Annotated[Session, Depends(get_session)]
 _bearer = HTTPBearer(auto_error=True)
 
 
+# A person whose password was set by someone else may do nothing but replace it.
+_PASSWORD_CHANGE_PATHS = {"/api/auth/me", "/api/auth/change-password"}
+
+
 def get_current_user(
     creds: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
     session: SessionDep,
+    request: Request,
 ) -> User:
     cred_exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -44,6 +49,15 @@ def get_current_user(
     user = session.scalar(select(User).where(User.id == user_id))
     if user is None or not user.is_active:
         raise cred_exc
+    # `tv` is the user's token_version when the token was made; a password change or "sign out everywhere"
+    # bumps it, which ends every older session. Tokens made before this existed carry none and count as 0.
+    if int(payload.get("tv", 0)) != user.token_version:
+        raise cred_exc
+    if user.must_change_password and request.url.path not in _PASSWORD_CHANGE_PATHS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "password_change_required", "message": "Choose a new password to continue."},
+        )
     return user
 
 
@@ -108,12 +122,8 @@ def get_shop(
     `tools.make_backup_shop`, sent as `X-Shop-Key`. No JWT/User is involved.
     """
     if not x_shop_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="X-Shop-Key header required"
-        )
-    shop = session.scalar(
-        select(BackupShop).where(BackupShop.api_key_hash == hash_shop_key(x_shop_key))
-    )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="X-Shop-Key header required")
+    shop = session.scalar(select(BackupShop).where(BackupShop.api_key_hash == hash_shop_key(x_shop_key)))
     if shop is None or not shop.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid shop key")
     return shop

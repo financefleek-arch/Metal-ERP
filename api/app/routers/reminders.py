@@ -13,9 +13,12 @@ from sqlalchemy import select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Invoice, Party, PaymentReminder, Tenant
+from app.services import features
 from app.services import reminders as svc
 
-router = APIRouter(prefix="/api/reminders", tags=["reminders"])
+router = APIRouter(
+    prefix="/api/reminders", tags=["reminders"], dependencies=[features.require("reminders")]
+)
 
 MAX_PER_CALL = 25  # each send is a Meta round trip (plus a PDF upload), so keep a request short
 

@@ -12,6 +12,7 @@ import { ReminderSettingsCard } from "../components/ReminderSettingsCard";
 import { WhatsappConnectCard } from "../components/WhatsappConnectCard";
 import { PhotoUsageLine } from "../components/PhotoUsageLine";
 import { useAuth } from "../lib/auth";
+import { useFeature } from "../lib/features";
 import { canWrite } from "../lib/roles";
 import { panError } from "../lib/reference";
 
@@ -57,6 +58,9 @@ const PRIVACY_POLICY_URL = "https://fleekfintech.com/privacy-policy/";
 export function FirmPage() {
   const qc = useQueryClient();
   const { me } = useAuth();
+  const tallyOn = useFeature("tally");
+  const whatsappOn = useFeature("whatsapp");
+  const remindersOn = useFeature("reminders");
   const { data, isLoading } = useQuery({
     queryKey: ["tenant"],
     queryFn: () => api<Tenant>("/tenant"),
@@ -120,10 +124,14 @@ export function FirmPage() {
         </div>
       </div>
 
-      <TallyConnectCard />
-      <TallyBackupsCard />
-      {me?.role === "owner" && <WhatsappConnectCard />}
-      {canWrite(me?.role) && <ReminderSettingsCard tenant={data} />}
+      {tallyOn && (
+        <>
+          <TallyConnectCard />
+          <TallyBackupsCard />
+        </>
+      )}
+      {whatsappOn && me?.role === "owner" && <WhatsappConnectCard />}
+      {remindersOn && canWrite(me?.role) && <ReminderSettingsCard tenant={data} />}
       {me?.ext_supplier_catalog && (
         <>
           <CatalogSettingsCard tenant={data} />

@@ -13,6 +13,52 @@ export interface Me {
   ext_inward_import: boolean;
   /** ext_supplier_catalog — gates the Catalogs nav item and its routes. */
   ext_supplier_catalog: boolean;
+  firm_name: string | null;
+  mobile_masked: string | null;
+  mobile_verified: boolean;
+  email_verified: boolean;
+  /** Fleek set this password: the person must replace it before anything else opens. */
+  must_change_password: boolean;
+  /** "free" = the Free plan (some features off); "full" = everything the firm's switches allow. */
+  plan_tier: "free" | "full";
+  /** Plan features: key -> may use it. A missing key means allowed. */
+  features: Partial<Record<FeatureKey, boolean>>;
+}
+
+export type FeatureKey = "import" | "slip" | "voice" | "collections" | "reminders" | "whatsapp" | "tally";
+
+// --- Setup (/api/onboarding) ---
+
+export interface SetupStep {
+  key: string;
+  title: string;
+  hint: string;
+  done: boolean;
+  route: string;
+}
+
+export type FeatureStatus = "active" | "setup" | "requested" | "locked";
+
+export interface SetupFeature {
+  key: string;
+  title: string;
+  summary: string;
+  who: string;
+  ready: string[];
+  minutes: number;
+  route: string;
+  status: FeatureStatus;
+  requested_at: string | null;
+}
+
+export interface SetupOverview {
+  dismissed: boolean;
+  steps: SetupStep[];
+  done: number;
+  total: number;
+  features: SetupFeature[];
+  plan_tier: "free" | "full";
+  plan_label: string | null;
 }
 
 // --- platform admin (/api/admin/*) ---

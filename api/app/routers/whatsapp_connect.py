@@ -17,10 +17,12 @@ from sqlalchemy.orm import Session
 from app.deps import CurrentUser, SessionDep
 from app.models import Tenant, User
 from app.models._mixins import UserRole
-from app.services import audit
+from app.services import audit, features
 from app.services import whatsapp_connect as svc
 
-router = APIRouter(prefix="/api/whatsapp-integrations", tags=["whatsapp"])
+router = APIRouter(
+    prefix="/api/whatsapp-integrations", tags=["whatsapp"], dependencies=[features.require("whatsapp")]
+)
 
 
 def require_owner(user: CurrentUser) -> User:

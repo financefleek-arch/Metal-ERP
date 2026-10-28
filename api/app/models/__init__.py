@@ -9,6 +9,7 @@ Importing this package registers every model on `Base.metadata`, which is
 what `alembic/env.py` targets for autogenerate.
 """
 
+from app.models.account import AuthAttempt, OtpChallenge, SignupRequest
 from app.models.audit import AuditLog
 from app.models.catalog import (
     CatalogOutputJob,
@@ -95,6 +96,9 @@ __all__ = [
     "TallySyncJob",
     "Tenant",
     "TenantEntitlement",
+    "AuthAttempt",
+    "OtpChallenge",
+    "SignupRequest",
     "TenantWhatsappConfig",
     "User",
     "WhatsappMessage",

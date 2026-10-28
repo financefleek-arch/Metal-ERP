@@ -41,6 +41,7 @@ from app.routers import (
     jobs,
     media,
     offers,
+    onboarding,
     orders,
     parties,
     parties_import,
@@ -182,6 +183,7 @@ app.include_router(item_labels.router)
 app.include_router(item_sheet.router)
 app.include_router(item_tally.router)
 app.include_router(jobs.router)
+app.include_router(onboarding.router)
 app.include_router(orders.router)
 app.include_router(whatsapp_connect.router)
 app.include_router(reminders.router)

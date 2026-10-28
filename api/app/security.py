@@ -40,12 +40,13 @@ def hash_shop_key(plain: str) -> str:
     return hmac.new(_settings.jwt_secret.encode(), plain.encode(), hashlib.sha256).hexdigest()
 
 
-def create_access_token(*, user_id: str, tenant_id: str, role: str) -> str:
+def create_access_token(*, user_id: str, tenant_id: str, role: str, token_version: int = 0) -> str:
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
         "sub": user_id,
         "tid": tenant_id,
         "role": role,
+        "tv": token_version,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=_settings.jwt_expiry_minutes)).timestamp()),
     }

@@ -6,6 +6,8 @@ import { downloadFile } from "../../lib/download";
 import { inr } from "../../lib/previewTotal";
 import { NAV_ACTIVE, useListNav } from "../../lib/useListNav";
 import { WhatsappBadge } from "../../components/WhatsappStatus";
+import { SetupCard } from "../SetupPage";
+import { useFeature } from "../../lib/features";
 import { TallySyncBadge } from "../../components/TallySyncStatus";
 import type { InvoiceListItem, InvoicePaymentStatus, InvoiceStatus } from "../../lib/types";
 
@@ -60,6 +62,7 @@ export function InvoiceListPage() {
   const [scope, setScope] = useState<Scope>("");
   const [err, setErr] = useState<string | null>(null);
   const slipInputRef = useRef<HTMLInputElement>(null);
+  const slipOn = useFeature("slip");
 
   const params = new URLSearchParams();
   if (q.trim()) params.set("q", q.trim());
@@ -140,6 +143,7 @@ export function InvoiceListPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-3">
+      <SetupCard />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-serif text-lg font-semibold">Sales invoices</h1>
         <div className="flex gap-2">
@@ -153,14 +157,16 @@ export function InvoiceListPage() {
               e.target.value = "";
             }}
           />
-          <button
-            className="btn-ghost h-9 px-4 text-sm"
-            disabled={slipCapture.isPending}
-            onClick={() => slipInputRef.current?.click()}
-            title="Pilot: photograph a kachcha slip to draft an invoice from it"
-          >
-            {slipCapture.isPending ? "Reading slip…" : "From slip"}
-          </button>
+          {slipOn && (
+            <button
+              className="btn-ghost h-9 px-4 text-sm"
+              disabled={slipCapture.isPending}
+              onClick={() => slipInputRef.current?.click()}
+              title="Pilot: photograph a kachcha slip to draft an invoice from it"
+            >
+              {slipCapture.isPending ? "Reading slip…" : "From slip"}
+            </button>
+          )}
           <button className="btn-primary h-9 px-4 text-sm" onClick={() => nav("/invoices/new")}>
             + New invoice
           </button>

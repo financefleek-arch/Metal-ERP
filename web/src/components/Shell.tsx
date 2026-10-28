@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { COUNTER_HIDDEN_NAV, canDraft } from "../lib/roles";
 import { JobsIndicator } from "./JobsIndicator";
+import { useSetup } from "../lib/setup";
 import { CommandPalette, ShortcutHelp } from "./CommandPalette";
 
 /** "g" then this letter jumps to the section (shown in each nav link's tooltip). */
@@ -38,6 +39,7 @@ function NavIcon({ to }: { to: string }) {
     "/items": "M4 8l8-4 8 4v8l-8 4-8-4zM4 8l8 4 8-4M12 12v8",
     "/orders": "M5 4h14v16H5zM9 9h6M9 13h6",
     "/documents": "M4 6h6l2 2h8v11H4z",
+    "/setup": "M5 12l4 4 10-10",
     "/firm": "M12 15a3 3 0 100-6 3 3 0 000 6zM19 12l2-1-2-4-2 1-2-1-1-2h-4l-1 2-2 1-2-1-2 4 2 1v2l-2 1 2 4 2-1 2 1 1 2h4l1-2 2-1 2 1 2-4-2-1z",
     more: "M5 12h.01M12 12h.01M19 12h.01",
   };
@@ -64,12 +66,17 @@ export function Shell({ children }: { children: ReactNode }) {
   });
   const newOrders = orderCounts.data?.new ?? 0;
 
+  // first-run steps left (the owner's "Setup" entry); gone once everything is done
+  const setup = useSetup(me?.role === "owner" && !me?.is_platform_admin);
+  const setupLeft = setup.data && setup.data.done < setup.data.total ? setup.data : null;
+
   const allNav: { to: string; label: string; badge?: number }[] = [
     ...baseNav,
     ...(me?.ext_supplier_catalog ? [{ to: "/orders", label: "Orders", badge: newOrders }] : []),
     ...(me?.ext_inward_import || me?.ext_supplier_catalog
       ? [{ to: "/documents", label: "Supplier documents" }]
       : []),
+    ...(setupLeft ? [{ to: "/setup", label: `Setup ${setupLeft.done}/${setupLeft.total}` }] : []),
   ];
   // a counter works on drafts and orders; money, items and settings are not theirs to open
   const nav = me?.role === "counter" ? allNav.filter((n) => !COUNTER_HIDDEN_NAV.includes(n.to)) : allNav;
@@ -168,7 +175,9 @@ export function Shell({ children }: { children: ReactNode }) {
           >
             ? Shortcuts
           </button>
-          <span className="text-[#b9b3a7]">{me?.email}</span>
+          <NavLink to="/account" className="text-[#b9b3a7] hover:text-ground" title="My account">
+            {me?.email}
+          </NavLink>
           <button onClick={logout} className="text-[#b9b3a7] hover:text-ground">
             Sign out
           </button>
@@ -200,6 +209,9 @@ export function Shell({ children }: { children: ReactNode }) {
             </NavLink>
           ))}
           <div className="mx-3 my-1 border-t border-line" />
+          <NavLink to="/account" className="flex h-[3.25rem] items-center gap-3.5 rounded-lg px-3 text-base hover:bg-ground">
+            <span className="w-6 text-center text-muted">☺</span>My account
+          </NavLink>
           <button onClick={() => { setMoreOpen(false); setHelpOpen(true); }} className="flex h-[3.25rem] w-full items-center gap-3.5 rounded-lg px-3 text-base hover:bg-ground">
             <span className="w-6 text-center text-muted">?</span>Shortcuts
           </button>

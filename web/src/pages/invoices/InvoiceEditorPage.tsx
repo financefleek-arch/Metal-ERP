@@ -10,6 +10,7 @@ import { uomDisplay } from "../../lib/uom";
 import { normalizePhone, phoneError } from "../../lib/reference";
 import { lastSeenLabel } from "../../lib/format";
 import { useAuth } from "../../lib/auth";
+import { useFeature } from "../../lib/features";
 import { focusField, focusId, useDialogKeys } from "../../lib/keyboard";
 import { canDraft, canWrite } from "../../lib/roles";
 import { PaymentDialog } from "../../components/PaymentDialog";
@@ -260,6 +261,7 @@ export function InvoiceEditorPage() {
   const { id } = useParams();
   const isNew = !id;
   const { me } = useAuth();
+  const voiceOn = useFeature("voice");
   // a counter prepares drafts; only an owner or accountant finalizes, takes money and pushes to Tally
   const mayFinalize = canWrite(me?.role);
   const mayEdit = canDraft(me?.role);
@@ -1365,18 +1367,20 @@ export function InvoiceEditorPage() {
                     + Add line
                   </button>
                   {/* Speech-invoice-capture pilot — push to talk, one line per recording */}
-                  <button
-                    type="button"
-                    disabled={voiceBusy}
-                    onClick={recording ? stopVoiceLine : startVoiceLine}
-                    className={`rounded-md border px-3 py-2 text-xs font-semibold md:py-1 ${
-                      recording
-                        ? "border-danger bg-[#f4e3df] text-danger"
-                        : "border-line bg-card text-ink hover:bg-ground"
-                    } disabled:opacity-60`}
-                  >
-                    {recording ? "● Recording — tap to stop" : voiceBusy ? "Reading…" : "Speak a line"}
-                  </button>
+                  {voiceOn && (
+                    <button
+                      type="button"
+                      disabled={voiceBusy}
+                      onClick={recording ? stopVoiceLine : startVoiceLine}
+                      className={`rounded-md border px-3 py-2 text-xs font-semibold md:py-1 ${
+                        recording
+                          ? "border-danger bg-[#f4e3df] text-danger"
+                          : "border-line bg-card text-ink hover:bg-ground"
+                      } disabled:opacity-60`}
+                    >
+                      {recording ? "● Recording — tap to stop" : voiceBusy ? "Reading…" : "Speak a line"}
+                    </button>
+                  )}
                 </div>
                 <p className="hidden text-[11px] text-muted md:block">
                   <b className="font-semibold text-ink">Keys:</b> Enter → next field, and after Rate →

@@ -1,14 +1,17 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, getToken, setToken } from "./api";
+import { SESSION_ENDED, api, getToken, setToken } from "./api";
 import type { Me } from "./types";
 
 interface AuthState {
   me: Me | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (firm_name: string, email: string, password: string) => Promise<void>;
+  /** Take a token an auth call handed back (sign-up, password reset or change) and load the user. */
+  acceptToken: (token: string) => Promise<void>;
+  /** Re-read /auth/me (after a password change, or when Setup changes). */
+  refresh: () => Promise<void>;
   logout: () => void;
 }
 
@@ -39,6 +42,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void loadMe();
   }, [loadMe]);
 
+  const acceptToken = useCallback(
+    async (token: string) => {
+      setToken(token);
+      setLoading(true);
+      await loadMe();
+    },
+    [loadMe],
+  );
+
   const login = useCallback(
     async (email: string, password: string) => {
       const r = await api<{ access_token: string }>("/auth/login", {
@@ -46,26 +58,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         auth: false,
         body: { email, password },
       });
-      setToken(r.access_token);
-      setLoading(true);
-      await loadMe();
+      await acceptToken(r.access_token);
     },
-    [loadMe],
+    [acceptToken],
   );
 
-  const register = useCallback(
-    async (firm_name: string, email: string, password: string) => {
-      const r = await api<{ access_token: string }>("/auth/register", {
-        method: "POST",
-        auth: false,
-        body: { firm_name, email, password },
-      });
-      setToken(r.access_token);
-      setLoading(true);
-      await loadMe();
-    },
-    [loadMe],
-  );
+  const refresh = useCallback(async () => {
+    await loadMe();
+  }, [loadMe]);
 
   const logout = useCallback(() => {
     setToken(null);
@@ -73,9 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     qc.clear();
   }, [qc]);
 
+  useEffect(() => {
+    window.addEventListener(SESSION_ENDED, logout);
+    return () => window.removeEventListener(SESSION_ENDED, logout);
+  }, [logout]);
+
   const value = useMemo(
-    () => ({ me, loading, login, register, logout }),
-    [me, loading, login, register, logout],
+    () => ({ me, loading, login, acceptToken, refresh, logout }),
+    [me, loading, login, acceptToken, refresh, logout],
   );
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

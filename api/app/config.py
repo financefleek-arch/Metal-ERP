@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     # treated as unverified, which never blocks it (the licence rules are deliberately lenient).
     control_plane_url: str | None = None
 
+    # Sign-up (docs/PLAN-onboarding-and-account.md). Cloudflare Turnstile secret for the CAPTCHA on sign-up, "send
+    # code" and forgot-password. Unset: skipped outside production, refused in production (fail closed).
+    turnstile_secret_key: str | None = None
+    # The old one-call POST /api/auth/register (no verification, no Fleek org). OFF in production; the test suite
+    # and a developer laptop switch it on to make a firm quickly.
+    registration_open: bool = False
+
     # Tally companion agent — cloud backup sync. A dedicated Cloudflare R2
     # bucket/token, deliberately separate from the infra/postgres backup
     # container's own R2_* env vars (different bucket/account — this is a

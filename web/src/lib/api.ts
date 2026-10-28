@@ -23,6 +23,9 @@ export function setToken(token: string | null): void {
   }
 }
 
+/** Fired when the server stops accepting this device's token. */
+export const SESSION_ENDED = "metalerp:session-ended";
+
 export class ApiError extends Error {
   status: number;
   /** Raw `detail` from the response body — a string for most errors, but an
@@ -83,7 +86,11 @@ export async function api<T>(path: string, opts: Options = {}): Promise<T> {
   const data = text ? JSON.parse(text) : undefined;
 
   if (!res.ok) {
-    if (res.status === 401) setToken(null);
+    if (res.status === 401) {
+      setToken(null);
+      // a session that was ended elsewhere (password changed, signed out everywhere): let the app show sign-in
+      if (auth) window.dispatchEvent(new Event(SESSION_ENDED));
+    }
     const { message, detail } = parseError(data, res.statusText);
     throw new ApiError(res.status, message, detail);
   }

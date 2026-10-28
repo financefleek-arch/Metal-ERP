@@ -77,6 +77,50 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class SignupStartRequest(BaseModel):
+    firm_name: LegalName
+    owner_name: Annotated[str, Field(min_length=2, max_length=100)]
+    email: Annotated[EmailStr, Field(max_length=200)]
+    mobile: Annotated[str, Field(min_length=10, max_length=20)]
+    password: str = Field(min_length=8, max_length=200)
+    accept_terms: bool
+    captcha_token: str | None = None
+
+
+class SignupStarted(BaseModel):
+    request_id: str
+    mobile_masked: str
+    email_masked: str
+
+
+class SignupResendRequest(BaseModel):
+    request_id: str
+    channel: Literal["whatsapp", "email"]
+
+
+class SignupVerifyRequest(BaseModel):
+    request_id: str
+    whatsapp_code: Annotated[str, Field(min_length=6, max_length=6, pattern=r"^\d{6}$")]
+    email_code: Annotated[str, Field(min_length=6, max_length=6, pattern=r"^\d{6}$")]
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    channel: Literal["email", "whatsapp"] = "email"
+    captcha_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: Annotated[str, Field(min_length=6, max_length=6, pattern=r"^\d{6}$")]
+    new_password: str = Field(min_length=8, max_length=200)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(max_length=200)
+    new_password: str = Field(min_length=8, max_length=200)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -106,6 +150,16 @@ class UserOut(BaseModel):
     ext_supplier_catalog: bool = False
     # Fleek licence (additive): drives a trial / lapsed banner. None for a firm not linked to Fleek.
     licence: LicenceOut | None = None
+    # Account (docs/PLAN-onboarding-and-account.md). Additive.
+    firm_name: str | None = None
+    mobile_masked: str | None = None
+    mobile_verified: bool = False
+    email_verified: bool = False
+    must_change_password: bool = False
+    # 'free' = the Free plan (some features off); 'full' = everything the firm's switches allow.
+    plan_tier: str = "full"
+    # feature key -> may use it (see services/features.py)
+    features: dict[str, bool] = {}
 
 
 # --------------------------------------------------------------------------
@@ -135,9 +189,7 @@ class TenantUpdate(BaseModel):
     document_label: str | None = Field(default=None, max_length=50)
     catalog_code_prefix: CatalogPrefix = None
     catalog_group_create_policy: Literal["auto", "suggest_only"] | None = None
-    order_min_value: Annotated[
-        Decimal | None, Field(ge=0, le=Decimal("99999999"), decimal_places=2)
-    ] = None
+    order_min_value: Annotated[Decimal | None, Field(ge=0, le=Decimal("99999999"), decimal_places=2)] = None
     order_terms_line: str | None = Field(default=None, max_length=300)
     order_alert_phone: Phone = None
     reminder_enabled: bool | None = None

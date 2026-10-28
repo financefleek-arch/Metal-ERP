@@ -18,12 +18,15 @@ from app.deps import SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import HsnCode, Item, ItemCategory, ProductGroup, StagingTallyItem
 from app.models._mixins import ItemSource, ItemStatus, ItemType
+from app.services import features
 from app.services.catalogue.classify_apply import Classifier
 from app.services.item_resolution import resolve_group
 from app.services.tally.jobs import assert_no_pull_in_flight
 from app.services.tally.staging import NoStockItemsError, stage_stock_items_xml
 
-router = APIRouter(prefix="/api/items/import", tags=["items-import"])
+router = APIRouter(
+    prefix="/api/items/import", tags=["items-import"], dependencies=[features.require("import")]
+)
 
 # A full-catalogue TallyPrime "All Masters" export runs 30-40 MB (UTF-16,
 # every stock item with its GST/HSN detail lists). Only STOCKITEM nodes are

@@ -6,10 +6,13 @@ multi-tenant is not a retrofit.
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     Boolean,
+    DateTime,
     ForeignKey,
     Integer,
     Numeric,
@@ -19,10 +22,13 @@ from sqlalchemy import (
     false,
     true,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
 from app.models._mixins import PkUuidMixin, TimestampMixin, UserRole
+
+_JSON = JSON().with_variant(JSONB(), "postgresql")
 
 
 class Tenant(PkUuidMixin, TimestampMixin, Base):
@@ -116,6 +122,13 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     # The Fleek control-plane organisation this firm belongs to (docs/PLAN-fleek-control-plane.md). NULL =
     # not linked yet (every firm today). Set once, by the control plane, via /api/internal/control-plane.
     fleek_org_id: Mapped[str | None] = mapped_column(String(64), unique=True)
+    # How the firm came to exist: 'self' = signed up in the app (starts on the Free plan), NULL = made by Fleek or
+    # the operator. Used only to keep the Free limits in force when Fleek cannot be asked.
+    signup_source: Mapped[str | None] = mapped_column(String(12))
+    # The owner closed the Setup checklist (it can be reopened from the menu).
+    onboarding_dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Where the owner asked Fleek to switch a feature on: {feature_key: iso time}.
+    feature_requests: Mapped[dict | None] = mapped_column(_JSON)
 
     users: Mapped[list[User]] = relationship(back_populates="tenant", cascade="all, delete-orphan")
 
@@ -135,5 +148,17 @@ class User(PkUuidMixin, TimestampMixin, Base):
     # Set exclusively by tools.make_platform_admin; these users belong to the
     # dedicated "Fleek Operations" tenant and have no real firm data.
     is_platform_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    # Sign-in security (docs/PLAN-onboarding-and-account.md). Existing users keep the defaults and see no change.
+    mobile: Mapped[str | None] = mapped_column(String(20))  # +91XXXXXXXXXX
+    mobile_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    email_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Carried in the token as `tv`; bumping it ends every session that holds an older number.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # Set when someone else chose the password (a Fleek admin): the person must replace it before anything else.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     tenant: Mapped[Tenant] = relationship(back_populates="users")

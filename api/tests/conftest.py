@@ -19,6 +19,8 @@ import tempfile
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./_pytest.db")
 os.environ.setdefault("APP_ENV", "test")
+# the old one-call POST /api/auth/register is how the suite makes a firm; it is off unless asked for
+os.environ.setdefault("REGISTRATION_OPEN", "true")
 
 # File outputs default to /data/... (a mounted volume in prod). That path is not writable on a CI
 # runner, and on a dev box it litters a real C:\data, so tests write to a throwaway directory.

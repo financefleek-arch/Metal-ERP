@@ -7,6 +7,9 @@ import { PublicOrderPage } from "./pages/public/PublicOrderPage";
 import { DeleteAccountPage } from "./pages/public/LegalPages";
 import { OrdersPage } from "./pages/orders/OrdersPage";
 import { FirmPage } from "./pages/FirmPage";
+import { AccountPage, ForcedPasswordPage } from "./pages/AccountPage";
+import { SetupPage } from "./pages/SetupPage";
+import { FeatureRoute } from "./components/FeatureRoute";
 import { PartiesPage } from "./pages/PartiesPage";
 import { ItemsPage } from "./pages/ItemsPage";
 import { SortGroupsPage } from "./pages/items/SortGroupsPage";
@@ -60,6 +63,9 @@ export function App() {
   if (loading) return <Loading />;
   if (!me) return <AuthPage />;
 
+  // Fleek set this password: nothing else opens until the person chooses their own.
+  if (me.must_change_password) return <ForcedPasswordPage />;
+
   // Platform operator: the whole app IS the admin console. A firm user who
   // somehow reaches /admin/* falls through to the normal app below.
   if (me.is_platform_admin) {
@@ -81,16 +87,39 @@ export function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/invoices" replace />} />
         <Route path="/firm" element={<FirmPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/setup" element={<SetupPage />} />
         <Route path="/invoices" element={<InvoiceListPage />} />
         <Route path="/invoices/new" element={<InvoiceEditorPage />} />
         <Route path="/invoices/:id" element={<InvoiceEditorPage />} />
-        <Route path="/collections" element={<CollectionsPage />} />
+        <Route
+          path="/collections"
+          element={
+            <FeatureRoute feature="collections">
+              <CollectionsPage />
+            </FeatureRoute>
+          }
+        />
         <Route path="/parties" element={<PartiesPage />} />
-        <Route path="/parties/import" element={<ImportPage />} />
+        <Route
+          path="/parties/import"
+          element={
+            <FeatureRoute feature="import">
+              <ImportPage />
+            </FeatureRoute>
+          }
+        />
         <Route path="/parties/new" element={<PartiesPage />} />
         <Route path="/parties/:id" element={<PartiesPage />} />
         <Route path="/items" element={<ItemsPage />} />
-        <Route path="/items/import" element={<ItemsImportPage />} />
+        <Route
+          path="/items/import"
+          element={
+            <FeatureRoute feature="import">
+              <ItemsImportPage />
+            </FeatureRoute>
+          }
+        />
         <Route path="/items/sort-groups" element={<SortGroupsPage />} />
         {catalogs && <Route path="/items/catalogs" element={<CustomerCatalogsPage />} />}
         {catalogs && <Route path="/orders" element={<OrdersPage />} />}

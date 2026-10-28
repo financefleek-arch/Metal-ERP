@@ -21,8 +21,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import User
+from app.models import Tenant, User
 from app.security import JWTError, decode_access_token
+from app.services import features
 from app.services.speech.keyterms import top_item_keyterms
 from app.services.speech.stream import StreamNotConfigured, open_deepgram_stream
 
@@ -39,7 +40,10 @@ def _authenticate(token: str) -> User | None:
         return None
     with SessionLocal() as session:
         user = session.scalar(select(User).where(User.id == user_id))
-        if user is None or not user.is_active:
+        if user is None or not user.is_active or int(payload.get("tv", 0)) != user.token_version:
+            return None
+        tenant = session.get(Tenant, user.tenant_id)
+        if tenant is not None and not features.allowed(session, tenant, "voice"):
             return None
         session.expunge(user)
         return user

@@ -18,6 +18,7 @@ import { PartyAccountTab } from "../components/PartyAccountTab";
 import { PartyCatalogsTab } from "../components/catalog/PartyCatalogsTab";
 import { OffersConsent } from "../components/OffersConsent";
 import { useAuth } from "../lib/auth";
+import { useFeature } from "../lib/features";
 
 type Scope = "" | PartyRole | "incomplete" | "archived";
 type Offers = "" | "agreed" | "not_asked" | "opted_out";
@@ -97,6 +98,7 @@ export function PartiesPage() {
   });
   const [detailTab, setDetailTab] = useState<"details" | "account" | "catalogs">("details");
   const { me } = useAuth();
+  const importOn = useFeature("import");
   const isDesktop = useIsDesktop();
   // On mobile we show one pane at a time, driven by the route.
   const showDetailPane = isDesktop || isNew || !!selectedId;
@@ -145,21 +147,25 @@ export function PartiesPage() {
   return (
     <div className="mx-auto max-w-5xl">
 <PageHeader className={showRailPane ? "" : "hidden md:flex"} title="Parties" subtitle="Customers and suppliers." actions={<>
-        <div className="md:hidden">
-          <HeaderMenu
-            label="⋯"
-            caret={false}
-            className="btn-ghost w-11 px-0 text-xl"
-            entries={[{ label: "Import from Tally (masters XML)", onClick: () => nav("/parties/import") }]}
-          />
-        </div>
-        <button
-          className="btn-ghost max-md:hidden"
-          title="Bulk import from a Tally masters XML"
-          onClick={() => nav("/parties/import")}
-        >
-          ⇧ Tally
-        </button>
+        {importOn && (
+          <div className="md:hidden">
+            <HeaderMenu
+              label="⋯"
+              caret={false}
+              className="btn-ghost w-11 px-0 text-xl"
+              entries={[{ label: "Import from Tally (masters XML)", onClick: () => nav("/parties/import") }]}
+            />
+          </div>
+        )}
+        {importOn && (
+          <button
+            className="btn-ghost max-md:hidden"
+            title="Bulk import from a Tally masters XML"
+            onClick={() => nav("/parties/import")}
+          >
+            ⇧ Tally
+          </button>
+        )}
         <button className="btn-primary max-md:hidden" onClick={() => nav("/parties/new")}>
           + New
         </button>

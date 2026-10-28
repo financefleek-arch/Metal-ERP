@@ -25,6 +25,7 @@ from sqlalchemy.orm import selectinload
 from app.config import get_settings
 from app.deps import SessionDep, WriteUser
 from app.models import Invoice
+from app.services import features
 from app.services.whatsapp import (
     TEMPLATE_BODY_PARAMS,
     WhatsappError,
@@ -132,7 +133,11 @@ class InvoiceWhatsappOut(BaseModel):
 invoice_router = APIRouter(prefix="/api/invoices", tags=["whatsapp"])
 
 
-@invoice_router.post("/{invoice_id}/whatsapp", response_model=InvoiceWhatsappOut)
+@invoice_router.post(
+    "/{invoice_id}/whatsapp",
+    response_model=InvoiceWhatsappOut,
+    dependencies=[features.require("whatsapp")],
+)
 def send_invoice_whatsapp(
     invoice_id: str,
     body: InvoiceWhatsappSend,

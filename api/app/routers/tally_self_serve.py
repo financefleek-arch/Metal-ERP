@@ -27,13 +27,16 @@ from app.schemas_admin import (
     FirmTallyShopOut,
 )
 from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
+from app.services import features
 from app.services.tally.agent_health import agent_online, assert_tally_reachable
 from app.services.tally.backup_retention import effective_retention_count
 from app.services.tally.installer import installer_filename
 from app.services.tally.jobs import assert_no_push_in_flight, enqueue_push_sales
 from app.services.tally.push_readiness import get_tally_company, push_blockers
 
-router = APIRouter(prefix="/api/tally", tags=["tally-self-serve"])
+router = APIRouter(
+    prefix="/api/tally", tags=["tally-self-serve"], dependencies=[features.require("tally")]
+)
 
 
 def _owned_invoice(session: SessionDep, user: WriteUser, invoice_id: str) -> Invoice:

@@ -517,6 +517,8 @@ def create_firm_user(
         email=email,
         password_hash=hash_password(body.password),
         role=body.role,
+        # the operator chose this password, so the person must replace it at first sign-in
+        must_change_password=True,
     )
     session.add(user)
     session.flush()
@@ -563,6 +565,9 @@ def update_firm_user(
         user.is_active = data["is_active"]
     if data.get("password"):
         user.password_hash = hash_password(data["password"])
+        # someone else chose it: end the old sessions and make the person replace it
+        user.token_version += 1
+        user.must_change_password = True
 
     session.flush()
     return AdminUserOut.model_validate(user)

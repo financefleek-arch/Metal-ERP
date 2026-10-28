@@ -12,11 +12,13 @@ from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Item
 from app.routers.items import _normalized
 from app.schemas_item import MAX_BULK_FILTER, ItemFilter
-from app.services import audit
+from app.services import audit, features
 from app.services import item_sheet as svc
 from app.services.item_filter import filter_stmt
 
-router = APIRouter(prefix="/api/item-sheet", tags=["item-sheet"])
+router = APIRouter(
+    prefix="/api/item-sheet", tags=["item-sheet"], dependencies=[features.require("import")]
+)
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metal ERP: sign-up, sign-in, My account, Setup (mockup)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+  :root { --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a; --accent:#2f6f89; --accent-d:#245771; --accent-s:#eef4f7; --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font:14px/1.45 'IBM Plex Sans',system-ui,sans-serif; }
+  .serif { font-family:'Fraunces',Georgia,serif; }
+  h1.sheet { font:600 24px 'Fraunces',serif; margin:0 0 4px; }
+  .lead { color:var(--muted); max-width:860px; margin:0 0 26px; }
+  .wrap { max-width:1280px; margin:0 auto; padding:28px 24px 60px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:26px 22px; align-items:start; }
+  .frame h3 { font:600 13px 'IBM Plex Sans'; margin:0 0 8px; }
+  .frame h3 span { color:var(--muted); font-weight:400; }
+  .phone { width:360px; max-width:100%; background:var(--ground); border:1px solid var(--line); border-radius:22px; padding:18px 16px 20px; min-height:560px; position:relative; box-shadow:0 1px 0 #fff inset; }
+  .wide { grid-column:1 / -1; }
+  .desk { background:var(--ground); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .bar { background:var(--ink); color:#b9b3a7; display:flex; gap:22px; align-items:center; padding:0 22px; height:48px; font-size:13px; }
+  .bar b { color:var(--ground); font:600 17px 'Fraunces',serif; margin-right:10px; }
+  .bar .on { color:var(--ground); border-bottom:2px solid var(--accent); padding:14px 0 12px; }
+  .bar .r { margin-left:auto; display:flex; gap:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  label.l { display:block; font:500 11px 'IBM Plex Sans'; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 4px; }
+  .in { height:44px; border:1px solid var(--line); border-radius:6px; background:#fff; padding:0 12px; display:flex; align-items:center; color:var(--ink); }
+  .in.ph { color:#aaa397; } .in.focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,111,137,.2); }
+  .row { margin-bottom:13px; }
+  .btn { height:44px; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; display:flex; align-items:center; justify-content:center; }
+  .btn.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  .btn.sm { height:32px; padding:0 14px; display:inline-flex; font-size:13px; }
+  .link { color:var(--accent); font-size:13px; }
+  .muted { color:var(--muted); } .small { font-size:12px; }
+  .err { color:var(--danger); font-size:12px; margin-top:4px; }
+  .note { font-size:12px; color:var(--muted); }
+  .pill { display:inline-block; font-size:11px; padding:2px 9px; border-radius:10px; font-weight:500; }
+  .p-ok { background:#e6efe8; color:#3a5a48; } .p-wait { background:#f6ecd5; color:#7a5c14; } .p-lock { background:#efe9df; color:#7c766a; } .p-setup { background:#e3eef2; color:#2f6f89; }
+  .code { display:flex; gap:7px; } .code i { flex:1; height:50px; border:1px solid var(--line); border-radius:6px; background:#fff; font:600 22px 'IBM Plex Sans'; display:grid; place-items:center; font-style:normal; }
+  .code i.f { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,111,137,.2); }
+  .captcha { height:56px; border:1px solid var(--line); border-radius:6px; background:#fafaf8; display:flex; align-items:center; gap:10px; padding:0 12px; font-size:13px; }
+  .captcha b { width:22px; height:22px; border:2px solid var(--ok); border-radius:4px; display:grid; place-items:center; color:var(--ok); font-size:14px; }
+  .steps { display:flex; gap:6px; margin:0 0 16px; } .steps i { flex:1; height:4px; border-radius:3px; background:var(--line); } .steps i.d { background:var(--accent); }
+  .ck { display:flex; gap:10px; padding:11px 0; border-top:1px solid var(--line); align-items:flex-start; }
+  .ck:first-child { border-top:0; }
+  .dot { flex:none; width:22px; height:22px; border-radius:50%; border:2px solid var(--line); display:grid; place-items:center; font-size:12px; color:#fff; margin-top:1px; }
+  .dot.d { background:var(--ok); border-color:var(--ok); } .dot.n { border-color:var(--accent); }
+  .ring { width:54px; height:54px; border-radius:50%; background:conic-gradient(var(--accent) 0 50%, var(--line) 0); display:grid; place-items:center; }
+  .ring span { width:42px; height:42px; background:var(--card); border-radius:50%; display:grid; place-items:center; font:600 13px 'IBM Plex Sans'; }
+  .feat { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+  .fc { background:#fff; border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .fc.lock { background:#fbfaf7; }
+  .fc h4 { margin:0 0 3px; font:600 14px 'IBM Plex Sans'; }
+  ul.rd { margin:6px 0 10px; padding-left:18px; font-size:12px; color:var(--muted); }
+  .banner { background:var(--accent-s); border:1px solid #cfe0e8; border-radius:10px; padding:10px 14px; font-size:13px; display:flex; gap:12px; align-items:center; }
+  .banner.warn { background:#faf3e0; border-color:#ecdca7; }
+  .tab { position:absolute; left:0; right:0; bottom:0; height:54px; border-top:1px solid var(--line); background:#fff; border-radius:0 0 22px 22px; display:grid; grid-template-columns:repeat(5,1fr); font-size:11px; color:var(--muted); text-align:center; padding-top:10px; }
+  .tab .on { color:var(--accent); font-weight:500; }
+  .legend { font-size:12px; color:var(--muted); margin:8px 0 0; }
+  .sec { font:600 16px 'Fraunces',serif; margin:0 0 8px; }
+  hr { border:0; border-top:1px solid var(--line); margin:14px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="sheet">Metal ERP: sign-up, sign-in, My account and Setup</h1>
+  <p class="lead">Mockup for review before it is built (plan: <code>docs/PLAN-onboarding-and-account.md</code>). Same colours, fonts and controls as the app. Phone frames are the Android app; the wide frames are the web. Nothing here is wired yet.</p>
+
+  <div class="grid">
+
+    <!-- 1 sign in -->
+    <div class="frame"><h3>1. Sign in <span>(existing users see no change except two links)</span></h3>
+      <div class="phone">
+        <div style="margin:44px 0 22px"><div class="serif" style="font-size:26px;font-weight:600">Metal ERP</div><div class="muted">Sign in to your firm</div></div>
+        <div class="card">
+          <div class="row"><label class="l">Email</label><div class="in">ravi@sethia.example.com</div></div>
+          <div class="row"><label class="l" style="display:flex;justify-content:space-between">Password <span class="link" style="text-transform:none;letter-spacing:0">Forgot password?</span></label><div class="in focus">••••••••••</div></div>
+          <div class="err">Incorrect email or password</div>
+          <div class="btn" style="margin-top:14px">Sign in</div>
+        </div>
+        <div style="margin-top:18px;text-align:center" class="small muted">New to Metal ERP? <span class="link">Create a free account</span></div>
+        <div style="margin-top:14px;text-align:center" class="note">Too many tries shows: "Too many sign-in attempts. Try again in 15 minutes, or reset your password."</div>
+      </div></div>
+
+    <!-- 2 sign up details -->
+    <div class="frame"><h3>2. Create a free account <span>(step 1 of 2)</span></h3>
+      <div class="phone">
+        <div class="steps"><i class="d"></i><i></i></div>
+        <div class="serif" style="font-size:22px;font-weight:600;margin-bottom:2px">Create your free account</div>
+        <div class="muted small" style="margin-bottom:14px">Invoices, customers, items and payments. Free, no card.</div>
+        <div class="card">
+          <div class="row"><label class="l">Firm name</label><div class="in">Sethia Metal Store</div></div>
+          <div class="row"><label class="l">Your name</label><div class="in">Ravi Sethia</div></div>
+          <div class="row"><label class="l">Mobile (WhatsApp)</label><div class="in"><span class="muted" style="margin-right:8px">+91</span>98765 43210</div><div class="note">We send a code here on WhatsApp.</div></div>
+          <div class="row"><label class="l">Email</label><div class="in">ravi@sethia.example.com</div><div class="note">We send a second code here.</div></div>
+          <div class="row"><label class="l">Password</label><div class="in">••••••••••</div><div class="note">8+ characters with a digit or symbol.</div></div>
+          <div class="row" style="display:flex;gap:9px;align-items:flex-start"><span class="dot d" style="border-radius:4px;width:18px;height:18px;font-size:11px">✓</span><span class="small">I agree to the <span class="link">Terms</span> and <span class="link">Privacy Policy</span></span></div>
+          <div class="captcha"><b>✓</b> Verified you are human <span style="margin-left:auto" class="note">Turnstile</span></div>
+          <div class="btn" style="margin-top:14px">Send codes</div>
+        </div>
+        <div style="margin-top:14px;text-align:center" class="small muted">Already have an account? <span class="link">Sign in</span></div>
+      </div></div>
+
+    <!-- 3 verify -->
+    <div class="frame"><h3>3. Enter both codes <span>(step 2 of 2)</span></h3>
+      <div class="phone">
+        <div class="steps"><i class="d"></i><i class="d"></i></div>
+        <div class="serif" style="font-size:22px;font-weight:600;margin-bottom:2px">Confirm it is you</div>
+        <div class="muted small" style="margin-bottom:14px">Your account is created only after both codes are right.</div>
+        <div class="card">
+          <div class="row"><label class="l">WhatsApp code <span style="text-transform:none;letter-spacing:0">sent to +91 98••••••10</span></label>
+            <div class="code"><i>4</i><i>8</i><i>1</i><i class="f">&nbsp;</i><i>&nbsp;</i><i>&nbsp;</i></div>
+            <div class="note" style="margin-top:6px"><span class="link">Resend</span> in 0:42</div></div>
+          <hr>
+          <div class="row"><label class="l">Email code <span style="text-transform:none;letter-spacing:0">sent to r•••••@sethia.example.com</span></label>
+            <div class="code"><i>&nbsp;</i><i>&nbsp;</i><i>&nbsp;</i><i>&nbsp;</i><i>&nbsp;</i><i>&nbsp;</i></div>
+            <div class="note" style="margin-top:6px"><span class="link">Resend</span> in 0:42</div></div>
+          <div class="err">One of the codes is wrong or has expired. Check both and try again.</div>
+          <div class="btn" style="margin-top:14px">Create my account</div>
+        </div>
+        <div style="margin-top:12px;text-align:center" class="small"><span class="link">← Change my details</span></div>
+        <div class="note" style="margin-top:10px;text-align:center">If Fleek cannot be reached: "We could not set up your account just now. Please try again in a minute." Nothing is created.</div>
+      </div></div>
+
+    <!-- 4 forgot -->
+    <div class="frame"><h3>4. Forgot password <span>(two steps, same screen)</span></h3>
+      <div class="phone">
+        <div class="serif" style="font-size:22px;font-weight:600;margin:30px 0 2px">Reset your password</div>
+        <div class="muted small" style="margin-bottom:14px">We send a code to the email on your account.</div>
+        <div class="card">
+          <div class="row"><label class="l">Email</label><div class="in">ravi@sethia.example.com</div></div>
+          <div class="captcha" style="margin-bottom:12px"><b>✓</b> Verified you are human</div>
+          <div class="btn">Send code</div>
+          <div class="note" style="margin-top:8px">Have a verified mobile? <span class="link">Send it on WhatsApp instead</span></div>
+          <hr>
+          <div class="note" style="margin-bottom:8px">After sending (always the same message, whether or not the email has an account): "If that email has an account, a code is on its way."</div>
+          <div class="row"><label class="l">Code</label><div class="code"><i>2</i><i>9</i><i>0</i><i class="f">&nbsp;</i><i>&nbsp;</i><i>&nbsp;</i></div></div>
+          <div class="row"><label class="l">New password</label><div class="in ph">8+ characters with a digit or symbol</div></div>
+          <div class="btn">Set new password and sign in</div>
+        </div>
+      </div></div>
+
+    <!-- 5 forced change -->
+    <div class="frame"><h3>5. Choose a new password <span>(after Fleek set one for you)</span></h3>
+      <div class="phone">
+        <div class="serif" style="font-size:22px;font-weight:600;margin:30px 0 8px">Choose a new password</div>
+        <div class="banner warn" style="margin-bottom:14px">Your password was set by Fleek. Choose your own to continue.</div>
+        <div class="card">
+          <div class="row"><label class="l">Current password</label><div class="in">••••••••</div></div>
+          <div class="row"><label class="l">New password</label><div class="in focus">••••••••••••</div></div>
+          <div class="row"><label class="l">Confirm new password</label><div class="in">••••••••••••</div></div>
+          <div class="btn">Save and continue</div>
+        </div>
+        <div class="note" style="margin-top:12px">Nothing else in the app opens until this is done. Other devices are signed out.</div>
+      </div></div>
+
+    <!-- 6 my account -->
+    <div class="frame"><h3>6. My account <span>(header menu → My account)</span></h3>
+      <div class="phone">
+        <div class="serif" style="font-size:22px;font-weight:600;margin:6px 0 12px">My account</div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="sec" style="font-size:14px">Profile</div>
+          <div class="small" style="display:grid;grid-template-columns:90px 1fr;row-gap:7px">
+            <span class="muted">Firm</span><span>Sethia Metal Store</span>
+            <span class="muted">Email</span><span>ravi@sethia.example.com <span class="pill p-ok">Verified</span></span>
+            <span class="muted">Mobile</span><span>+91 98••••••10 <span class="pill p-ok">Verified</span></span>
+            <span class="muted">Role</span><span>Owner</span>
+          </div>
+          <div class="note" style="margin-top:8px">Wrong mobile or email? Ask Fleek to correct it.</div>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="sec" style="font-size:14px">Password</div>
+          <div class="row"><label class="l">Current password</label><div class="in">••••••••</div></div>
+          <div class="row"><label class="l">New password</label><div class="in ph">8+ characters with a digit or symbol</div></div>
+          <div class="btn sm">Change password</div>
+          <div class="note" style="margin-top:6px">Signs you out everywhere else.</div>
+        </div>
+        <div class="card">
+          <div class="sec" style="font-size:14px">Devices</div>
+          <div class="small muted" style="margin-bottom:8px">Lost a phone or signed in on a shared computer?</div>
+          <div class="btn ghost sm">Sign out of all other devices</div>
+          <hr>
+          <div class="small"><span class="link" style="color:var(--danger)">Delete my account…</span></div>
+        </div>
+      </div></div>
+
+    <!-- 7 setup, web -->
+    <div class="frame wide"><h3>7. Setup <span>(web; the same page on the phone stacks into one column)</span></h3>
+      <div class="desk">
+        <div class="bar"><b>Metal ERP</b><span>Sales</span><span>Collections</span><span>Parties</span><span>Items</span><span>Firm</span><span class="on">Setup · 2/6</span><div class="r"><span>ravi@sethia.example.com ▾</span></div></div>
+        <div style="padding:26px 30px">
+          <div style="display:flex;gap:16px;align-items:center;margin-bottom:6px">
+            <div class="ring"><span>2/6</span></div>
+            <div><div class="serif" style="font-size:24px;font-weight:600">Get invoicing going</div><div class="muted">You are on the <b>Free</b> plan: invoices, customers, items and payments, for one user.</div></div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:26px;margin-top:20px">
+            <div class="card">
+              <div class="sec">Your first six steps</div>
+              <div class="ck"><span class="dot d">✓</span><div><b>Confirm your firm details</b><div class="note">Address and state print on every invoice.</div></div></div>
+              <div class="ck"><span class="dot d">✓</span><div><b>Add your bank or UPI and terms</b><div class="note">Printed at the bottom of the invoice.</div></div></div>
+              <div class="ck"><span class="dot n"></span><div style="flex:1"><b>Add your first customer</b><div class="note">A name and a phone number is enough to start.</div><div class="btn sm" style="margin-top:8px">Add customer</div></div></div>
+              <div class="ck"><span class="dot"></span><div><b>Add your first item</b><div class="note">Your item groups are already set up.</div></div></div>
+              <div class="ck"><span class="dot"></span><div><b>Make your first invoice</b><div class="note">Finalise it to get the PDF, then share it from your phone.</div></div></div>
+              <div class="ck"><span class="dot"></span><div><b>Record a payment</b><div class="note">Your customer's balance updates and the party ledger starts.</div></div></div>
+              <div class="note" style="margin-top:6px">Steps tick themselves when the data exists.</div>
+            </div>
+
+            <div>
+              <div class="sec">Add more when you are ready</div>
+              <div class="feat">
+                <div class="fc lock"><h4>Send from your own WhatsApp number</h4><span class="pill p-lock">Not on your plan</span>
+                  <div class="small muted" style="margin-top:6px">Invoices, statements and reminders go to customers from your shop's number, with the PDF.</div>
+                  <ul class="rd"><li>A number on the WhatsApp Business app</li><li>Facebook login of whoever manages your business</li><li>A card or UPI for Meta's own charges</li></ul>
+                  <div class="note" style="margin-bottom:8px">About 15 minutes · for shops that send bills daily</div>
+                  <div class="btn sm">Ask Fleek to switch this on</div></div>
+                <div class="fc lock"><h4>Collections and payment reminders</h4><span class="pill p-wait">Requested 28 Oct</span>
+                  <div class="small muted" style="margin-top:6px">See who owes you and how long. Reminders are proposed daily; you approve before they go.</div>
+                  <ul class="rd"><li>Your customers' phone numbers</li><li>WhatsApp connected</li></ul>
+                  <div class="note">Fleek will get back to you. Nothing to do now.</div></div>
+                <div class="fc lock"><h4>Bulk import of customers and items</h4><span class="pill p-lock">Not on your plan</span>
+                  <div class="small muted" style="margin-top:6px">Bring your lists in from Excel or Tally instead of typing.</div>
+                  <div class="btn sm" style="margin-top:8px">Ask Fleek to switch this on</div></div>
+                <div class="fc lock"><h4>Photo slip and voice entry</h4><span class="pill p-lock">Not on your plan</span>
+                  <div class="small muted" style="margin-top:6px">Photograph a handwritten slip or speak the items. You confirm before it is saved.</div>
+                  <div class="btn sm" style="margin-top:8px">Ask Fleek to switch this on</div></div>
+                <div class="fc lock"><h4>Customer catalogs and online ordering</h4><span class="pill p-lock">Not on your plan</span>
+                  <div class="small muted" style="margin-top:6px">Send each customer a link to your prices; orders arrive here.</div></div>
+                <div class="fc lock"><h4>Tally connection</h4><span class="pill p-lock">Not on your plan</span>
+                  <div class="small muted" style="margin-top:6px">Back up Tally data and push invoices into Tally.</div></div>
+              </div>
+              <div class="legend">A card turns <span class="pill p-setup">Set up now</span> (a paid plan, feature on, you finish setup) then <span class="pill p-ok">Active</span> by itself after Fleek switches it on. Each card opens a one-screen guide.</div>
+            </div>
+          </div>
+        </div>
+      </div></div>
+
+    <!-- 8 phone setup card + locked feature -->
+    <div class="frame"><h3>8. Setup on the phone <span>(card on top of Sales until closed)</span></h3>
+      <div class="phone">
+        <div class="serif" style="font-size:22px;font-weight:600;margin:6px 0 10px">Sales</div>
+        <div class="banner" style="flex-direction:column;align-items:stretch;gap:8px;margin-bottom:12px">
+          <div style="display:flex;gap:12px;align-items:center"><div class="ring" style="width:44px;height:44px"><span style="width:34px;height:34px;font-size:12px">2/6</span></div><div><b>Finish setting up</b><div class="note">Next: add your first customer</div></div></div>
+          <div style="display:flex;gap:8px"><div class="btn sm">Continue</div><div class="btn ghost sm">Hide for now</div></div>
+        </div>
+        <div class="card" style="color:var(--muted)">Your invoices appear here.</div>
+        <div class="tab"><span class="on">Sales</span><span>Collect</span><span>Parties</span><span>Items</span><span>More</span></div>
+      </div></div>
+
+    <div class="frame"><h3>9. A feature that is not on the Free plan <span>(whatever the person opens)</span></h3>
+      <div class="phone">
+        <div class="serif" style="font-size:22px;font-weight:600;margin:6px 0 10px">Collections</div>
+        <div class="card" style="text-align:center;padding:28px 18px">
+          <div style="font-size:30px;margin-bottom:6px">🔒</div>
+          <div class="sec" style="margin-bottom:4px">Not part of the Free plan</div>
+          <div class="small muted" style="margin-bottom:14px">The collections view and reminders are on paid plans. Recording payments and the party ledger stay free.</div>
+          <div class="btn">See what is included</div>
+          <div class="note" style="margin-top:10px">Opens Setup, where you can ask Fleek to switch it on.</div>
+        </div>
+        <div class="tab"><span>Sales</span><span class="on">Collect</span><span>Parties</span><span>Items</span><span>More</span></div>
+      </div></div>
+
+  </div>
+  <p class="legend" style="margin-top:28px">Decisions this sheet assumes: open sign-up with mobile + email verification (WhatsApp code uses Fleek's existing login template); CAPTCHA on sign-up, send-code and forgot-password; Free = one user, invoices, customers, items, payments; change email/mobile is not offered; existing firms see none of the new screens except Forgot password and My account.</p>
+</div>
+</body>
+</html>

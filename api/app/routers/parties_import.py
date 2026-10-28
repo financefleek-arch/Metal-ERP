@@ -24,10 +24,13 @@ from app.reference import (
     validate_pan,
     validate_phone,
 )
+from app.services import features
 from app.services.tally.jobs import assert_no_pull_in_flight
 from app.services.tally.staging import NoLedgersError, stage_masters_xml
 
-router = APIRouter(prefix="/api/parties/import", tags=["parties-import"])
+router = APIRouter(
+    prefix="/api/parties/import", tags=["parties-import"], dependencies=[features.require("import")]
+)
 
 # A full "All Masters" TallyPrime export (every ledger with its address /
 # GST detail, often stock items too) runs well past 10 MB. Only LEDGER nodes

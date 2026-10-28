@@ -138,7 +138,8 @@ def test_connect_goes_to_fleek_signed_with_the_popup_body_and_the_number_is_cach
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "success" and r.json()["connected"] is True
     assert "connection" not in r.json()  # the ids are for this app's server, not the page
-    req = fleek.seen[0]
+    # the plan gate may ask Fleek for the licence first (cached after that); the connect call is the one that matters here
+    req = next(r for r in fleek.seen if r.url.path.endswith("/connect"))
     assert req.url.path == f"{BASE}/connect" and json.loads(req.content) == POPUP
     check_signature(
         SECRET,
