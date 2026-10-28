@@ -17,6 +17,7 @@ from app.models.catalog import (
     CustomerCatalog,
     SupplierCatalog,
     SupplierCatalogDefault,
+    SupplierCatalogGroupMargin,
     SupplierCatalogItem,
     SupplierPricePoint,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "NumberSequence",
     "Synonym",
     "SupplierCatalog",
+    "SupplierCatalogGroupMargin",
     "SupplierCatalogItem",
     "ExtractionRun",
     "InwardBill",

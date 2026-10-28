@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ApiError, apiUpload } from "../../lib/api";
+import { api, ApiError, apiUploadWithProgress } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import type { CatalogListItem, CatalogUploadOut } from "../../lib/catalog";
 import type { InwardBillListItem } from "../../lib/inward";
@@ -53,6 +53,28 @@ function importNote(c: CatalogUploadOut): string {
 
 const KIND_LABEL: Record<Kind, string> = { bill: "Bill", price_list: "Price list" };
 
+/** A bar with a known fill, or a pulsing one when the amount is not known. */
+function ProgressBar({ pct }: { pct: number | null }) {
+  return (
+    <div
+      className="mx-auto mt-3 h-2 w-full max-w-md overflow-hidden rounded-full bg-line"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct === null ? undefined : Math.round(pct * 100)}
+    >
+      {pct === null ? (
+        <div className="h-full w-1/3 animate-pulse rounded-full bg-accent" />
+      ) : (
+        <div
+          className="h-full rounded-full bg-accent transition-all"
+          style={{ width: `${Math.round(pct * 100)}%` }}
+        />
+      )}
+    </div>
+  );
+}
+
 /**
  * Supplier documents: one front door for a supplier's bills and price lists. Drop a PDF, see
  * what it looks like (and switch if that is wrong), then it goes to the right place. The two
@@ -73,6 +95,8 @@ export function DocumentsPage() {
   const [filter, setFilter] = useState<"all" | Kind>("all");
   const [err, setErr] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  // what the person sees while a file is going up and being read
+  const [prog, setProg] = useState<{ label: string; pct: number | null } | null>(null);
 
   const bills = !!me?.ext_inward_import;
   const lists = !!me?.ext_supplier_catalog;
@@ -158,11 +182,16 @@ export function DocumentsPage() {
     try {
       const fd = new FormData();
       fd.append("file", f);
-      const d = await apiUpload<Detect>("/documents/detect", fd);
+      setProg({ label: "Sending the file…", pct: 0 });
+      const d = await apiUploadWithProgress<Detect>("/documents/detect", fd, (sent, total) =>
+        setProg({ label: "Sending the file…", pct: total ? sent / total : null }),
+      );
       setDetect(d);
       setKind(d.kind);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : "Could not look at that file. Try again.");
+    } finally {
+      setProg(null);
     }
   }
 
@@ -174,7 +203,36 @@ export function DocumentsPage() {
         fd.append("file", file);
         if (title.trim()) fd.append("title", title.trim());
         if (chosen) fd.append("supplier_party_id", chosen.id);
-        const c = await apiUpload<CatalogUploadOut>("/supplier-catalogs", fd);
+        const pid = crypto.randomUUID();
+        fd.append("progress_id", pid);
+        let timer: number | undefined;
+        const startPolling = () => {
+          if (timer !== undefined) return;
+          setProg({ label: "Reading the price list…", pct: null });
+          timer = window.setInterval(async () => {
+            try {
+              const r = await api<{ stage: string; done: number; total: number }>(
+                `/supplier-catalogs/import-progress/${pid}`,
+              );
+              if (r.total > 0) {
+                const what = r.stage === "saving" ? "Saving products" : "Reading pages";
+                setProg({ label: `${what}: ${r.done} of ${r.total}`, pct: r.done / r.total });
+              }
+            } catch {
+              /* the next tick tries again */
+            }
+          }, 800);
+        };
+        let c: CatalogUploadOut;
+        try {
+          c = await apiUploadWithProgress<CatalogUploadOut>("/supplier-catalogs", fd, (sent, total) => {
+            if (total && sent >= total) startPolling();
+            else setProg({ label: "Sending the file…", pct: total ? sent / total : null });
+          });
+        } finally {
+          if (timer !== undefined) window.clearInterval(timer);
+          setProg(null);
+        }
         const note = importNote(c);
         if (note && !c.already_exists) {
           try {
@@ -186,8 +244,17 @@ export function DocumentsPage() {
         return { to: `/catalogs/${c.id}` };
       }
       fd.append("files", file);
-      const made = await apiUpload<{ id: string }[]>("/inward-bills", fd);
-      return { to: `/inward/${made[0].id}` };
+      try {
+        const made = await apiUploadWithProgress<{ id: string }[]>("/inward-bills", fd, (sent, total) =>
+          setProg({
+            label: total && sent >= total ? "Reading the bill…" : "Sending the file…",
+            pct: total && sent < total ? sent / total : null,
+          }),
+        );
+        return { to: `/inward/${made[0].id}` };
+      } finally {
+        setProg(null);
+      }
     },
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["supplier-catalogs"] });
@@ -234,8 +301,9 @@ export function DocumentsPage() {
         />
         {upload.isPending ? (
           <div role="status" className="text-center">
-            <p className="font-medium">Reading the document…</p>
-            <p className="mt-1 text-sm text-muted">A large price list can take about half a minute.</p>
+            <p className="font-medium">{prog?.label ?? "Reading the document…"}</p>
+            <ProgressBar pct={prog?.pct ?? null} />
+            <p className="mt-2 text-sm text-muted">A large price list can take a few minutes. Keep this page open.</p>
           </div>
         ) : !file ? (
           <div className="text-center">
@@ -263,7 +331,12 @@ export function DocumentsPage() {
                 Choose another
               </button>
             </p>
-            {!detect && !err && <p className="mt-2 text-sm text-muted">Looking at it…</p>}
+            {!detect && !err && (
+              <div className="mt-2" role="status">
+                <p className="text-sm text-muted">{prog?.label ?? "Looking at it…"}</p>
+                <ProgressBar pct={prog?.pct ?? null} />
+              </div>
+            )}
             {detect && kind && (
               <>
                 <p className="mt-3 text-sm" role="status">

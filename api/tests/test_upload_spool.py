@@ -18,7 +18,8 @@ def test_the_file_lands_on_disk_with_its_hash_and_is_removed_after() -> None:
     with spool_pdf(io.BytesIO(_PDF), max_bytes=10_000_000, too_big="big") as pdf:
         assert pdf.size == len(_PDF)
         assert pdf.sha256 == hashlib.sha256(_PDF).hexdigest()
-        assert open(pdf.path, "rb").read() == _PDF
+        with open(pdf.path, "rb") as fh:
+            assert fh.read() == _PDF
         kept = pdf.path
     assert not os.path.exists(kept)
 

@@ -173,6 +173,10 @@ class ItemFilter(BaseModel):
     price_changed: bool | None = None
     # true = only rows whose photo was flagged for a look
     photo_check: bool | None = None
+    # rows whose proposed (not yet applied) group has this name, any case
+    suggested_group: str | None = None
+    # true = only rows the rules had no group suggestion for
+    no_suggestion: bool | None = None
 
 
 class BulkChanges(BaseModel):
@@ -202,6 +206,30 @@ class GroupSummary(BaseModel):
     name: str
     item_count: int
     included_count: int
+    # this group's own margin in this catalog (null = it follows the bulk margin)
+    margin_pct: MarginOrNone = None
+
+
+class GroupMarginIn(BaseModel):
+    """Set (a number) or clear (null) one group's margin; its rows are repriced."""
+
+    margin_pct: Margin = None
+
+
+class GroupSuggestion(BaseModel):
+    """Rows with no group yet, bunched by the group the rules proposed for them."""
+
+    name: str
+    count: int
+    # a few photos to recognise the bunch by
+    sample_urls: list[str] = []
+
+
+class GroupSuggestions(BaseModel):
+    clusters: list[GroupSuggestion]
+    # rows with no group and no proposal
+    unsuggested: int
+    ungrouped: int
 
 
 # --------------------------------------------------------------------------

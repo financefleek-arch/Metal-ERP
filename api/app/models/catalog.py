@@ -178,6 +178,25 @@ class SupplierCatalogDefault(PkUuidMixin, TimestampMixin, Base):
     mark_in_stock: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
+class SupplierCatalogGroupMargin(PkUuidMixin, TimestampMixin, Base):
+    """A margin for one group in one catalog. Sits between the item's own margin and the
+    catalog's bulk margin: item > group > bulk."""
+
+    __tablename__ = "supplier_catalog_group_margin"
+    __table_args__ = (
+        UniqueConstraint("catalog_id", "category_id", name="uq_catalog_group_margin"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    catalog_id: Mapped[str] = mapped_column(
+        ForeignKey("supplier_catalog.id"), nullable=False, index=True
+    )
+    category_id: Mapped[str] = mapped_column(
+        ForeignKey("item_category.id"), nullable=False, index=True
+    )
+    margin_pct: Mapped[Decimal] = mapped_column(_MARGIN, nullable=False)
+
+
 class SupplierPricePoint(PkUuidMixin, TimestampMixin, Base):
     """One observed price: what a supplier quoted in a price list, or what a bill charged."""
 

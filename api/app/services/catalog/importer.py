@@ -38,7 +38,7 @@ from app.models import (
     SupplierPricePoint,
     Tenant,
 )
-from app.services.catalog import image_check, names, price_points, products
+from app.services.catalog import image_check, names, price_points, products, progress
 from app.services.catalog.extract_grid import Cell, ExtractResult, extract_pages
 from app.services.catalog.groups import find_category, get_or_create_category
 from app.services.catalog.pricing import sell_price
@@ -110,6 +110,7 @@ def import_catalog(
     title: str | None = None,
     supplier_party_id: str | None = None,
     group_map: dict[str, str] | None = None,
+    progress_id: str | None = None,
 ) -> ImportResult:
     """Create the catalog from the PDF at `pdf_path` (`sha256` is its hash), or return the
     existing one for the same file.
@@ -143,6 +144,7 @@ def import_catalog(
             group_map=group_map,
             catalog_id=catalog_id,
             uploaded=uploaded,
+            progress_id=progress_id,
         )
     except BaseException:
         # best effort: the leftovers are harmless orphans
@@ -191,6 +193,7 @@ def _build_catalog(
     group_map: dict[str, str] | None,
     catalog_id: str,
     uploaded: set[str],
+    progress_id: str | None,
 ) -> ImportResult:
     # --- the photos: stored a page at a time; only small records stay in memory --------------
     result = ExtractResult()
@@ -198,6 +201,9 @@ def _build_catalog(
     for page_cells in extract_pages(pdf_path, result):  # may raise NotACatalog
         _store_page(storage, tenant.id, catalog_id, page_cells, uploaded)
         cells.extend(page_cells)
+        progress.report(
+            tenant.id, progress_id, "reading", page_cells[-1].page_no, result.page_count
+        )
 
     clean_title = (title or "").strip() or default_title(filename)
     brands = names.infer_brands([c.name_raw for c in cells], [c.supplier_code for c in cells])
@@ -232,6 +238,9 @@ def _build_catalog(
     for start in range(0, len(cells), _BATCH):
         _import_batch(session, run, cells[start : start + _BATCH])
         _forget_batch(session)
+        progress.report(
+            tenant.id, progress_id, "saving", min(start + _BATCH, len(cells)), len(cells)
+        )
 
     storage.put_file(catalog.source_key or "", pdf_path, "application/pdf")
     catalog.status = "ready"

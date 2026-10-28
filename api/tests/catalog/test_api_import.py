@@ -536,3 +536,19 @@ def test_storage_override_is_in_place(storage: LocalStorage) -> None:
     # guards the autouse fixture: tests must never reach R2 or /data
     provider: Callable[[], Any] = app.dependency_overrides[get_storage]
     assert provider() is storage
+
+
+def test_progress_can_be_read_after_an_upload_with_an_id(catalog_client: CatalogEnv) -> None:
+    client, h, _ = catalog_client
+    r = client.post(
+        "/api/supplier-catalogs",
+        headers=h,
+        files={"file": ("g.pdf", SAMPLE_PDF.read_bytes(), "application/pdf")},
+        data={"progress_id": "page-abc"},
+    )
+    assert r.status_code == 201, r.text
+    p = client.get("/api/supplier-catalogs/import-progress/page-abc", headers=h)
+    assert p.status_code == 200
+    assert p.json() == {"stage": "saving", "done": 24, "total": 24}
+    # an id nobody used is simply "waiting", not an error
+    assert client.get("/api/supplier-catalogs/import-progress/none", headers=h).json()["stage"] == "waiting"

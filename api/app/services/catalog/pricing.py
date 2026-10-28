@@ -3,8 +3,8 @@
     new = round(cost x (100 + margin) / 100 / step) x step
 
 The margin is a markup on the supplier's price: a 25% margin turns Rs 100 into Rs 125.
-One bulk margin applies to the whole catalog, with an optional item-level margin that
-takes its place for that item. Decimal end to end, half-up; a negative margin is a
+One bulk margin applies to the whole catalog. A group can carry its own margin, and an
+item its own, which takes precedence (item > group > bulk). Decimal end to end, half-up; a negative margin is a
 discount (down to, but not including, -100%).
 """
 
@@ -31,6 +31,10 @@ def sell_price(cost: Decimal, margin_pct: Decimal, step: int = 1) -> Decimal:
     return (units * step).quantize(_CENT)
 
 
-def effective_margin(item_margin: Decimal | None, bulk_margin: Decimal) -> Decimal:
-    """The item's own margin when it has one, else the catalog's bulk margin."""
-    return item_margin if item_margin is not None else bulk_margin
+def effective_margin(
+    item_margin: Decimal | None, bulk_margin: Decimal, group_margin: Decimal | None = None
+) -> Decimal:
+    """The item's own margin when it has one, else its group's, else the catalog's bulk margin."""
+    if item_margin is not None:
+        return item_margin
+    return group_margin if group_margin is not None else bulk_margin

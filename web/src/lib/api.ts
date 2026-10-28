@@ -150,3 +150,38 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
   }
   return data as T;
 }
+
+/**
+ * Like `apiUpload`, but reports how many bytes have gone up (`fetch` cannot), so a big file shows
+ * a real progress bar instead of a frozen screen.
+ */
+export function apiUploadWithProgress<T>(
+  path: string,
+  form: FormData,
+  onUpload: (sent: number, total: number) => void,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `/api${path}`);
+    const t = getToken();
+    if (t) xhr.setRequestHeader("Authorization", `Bearer ${t}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onUpload(e.loaded, e.total);
+    };
+    xhr.onerror = () => reject(new ApiError(0, "The upload was interrupted. Check the connection and try again.", undefined));
+    xhr.onload = () => {
+      if (xhr.status === 204) return resolve(undefined as T);
+      let data: unknown;
+      try {
+        data = xhr.responseText ? JSON.parse(xhr.responseText) : undefined;
+      } catch {
+        data = undefined;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data as T);
+      if (xhr.status === 401) setToken(null);
+      const { message, detail } = parseError(data, xhr.statusText);
+      reject(new ApiError(xhr.status, message, detail));
+    };
+    xhr.send(form);
+  });
+}

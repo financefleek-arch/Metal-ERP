@@ -23,29 +23,56 @@ import {
   type ItemFilter,
   type ItemPatch,
 } from "../../lib/catalog";
-import { Barcode } from "../../components/catalog/Barcode";
 import { SupplierPicker } from "../../components/catalog/SupplierPicker";
 import { EditableNumber, EditableText } from "../../components/catalog/Editable";
-import { PromoteDialog } from "../../components/catalog/PromoteDialog";
 import { MakeCatalogDialog } from "../../components/catalog/MakeCatalogDialog";
 import type { ItemFilter as ItemsFilter } from "../../lib/types";
 import { ImageLightbox } from "../../components/catalog/ImageLightbox";
-import { GroupsPanel } from "../../components/catalog/GroupsPanel";
-import { PricingBar } from "../../components/catalog/PricingBar";
 import { ReplacePhoto } from "../../components/catalog/ReplacePhoto";
-import { CatalogQueueBar } from "../../components/catalog/CatalogQueueBar";
+import { CatalogSteps } from "../../components/catalog/CatalogSteps";
 
-type IncludedFilter = "all" | "yes" | "no";
-type MarginFilter = "any" | "item" | "bulk";
-type MatchFilter = "any" | "possible";
+/** What the table shows. One choice instead of a chip and a dropdown for each question. */
+type View = "all" | "group" | "match" | "photo" | "price" | "new" | "margin" | "excluded";
+type Look = Pick<ItemFilter, "suggested_group" | "no_suggestion">;
+type Pop = "group" | "margin" | "more" | null;
 type ItemPages = InfiniteData<Page<CatalogItem[]>, string | null>;
+
+const VIEW_LABEL: Record<View, string> = {
+  all: "All items",
+  group: "Needs a group",
+  match: "Possible matches",
+  photo: "Photo to check",
+  price: "Price changed",
+  new: "Not in your items",
+  margin: "Has its own margin",
+  excluded: "Excluded",
+};
 
 // One column template for the header and every row, so columns line up. Below xl the row is
 // checkbox + photo + name on top, with the detail fields stacked under the photo column.
 const COLS =
-  "xl:grid-cols-[28px_100px_minmax(0,1fr)_100px_112px_100px_84px_112px_170px_92px] xl:items-center xl:gap-x-3";
+  "xl:grid-cols-[28px_100px_minmax(0,1fr)_84px_70px_112px_96px_104px_170px_118px] xl:items-center xl:gap-x-3";
 // Detail cells below xl start under the photo and span to the right edge.
 const DETAIL = "col-span-2 col-start-2 xl:col-span-1 xl:col-start-auto";
+
+function Status({ r, onInclude }: { r: CatalogItem; onInclude: () => void }) {
+  const base = "inline-flex h-7 items-center whitespace-nowrap rounded-full px-3 text-xs font-medium";
+  if (!r.included)
+    return (
+      <button
+        type="button"
+        className={`${base} border border-line bg-ground text-muted line-through hover:bg-card`}
+        title="Excluded from adding. Click to include it again."
+        onClick={onInclude}
+      >
+        Excluded
+      </button>
+    );
+  if (r.item_id) return <span className={`${base} bg-[#e6efe8] text-ok`}>In your items</span>;
+  if (r.suggestion) return <span className={`${base} bg-accent-soft text-accent`}>Possible match</span>;
+  if (!r.category_name) return <span className={`${base} bg-[#f6edd6] text-warn`}>Needs a group</span>;
+  return <span className={`${base} border border-line bg-ground text-muted`}>Ready</span>;
+}
 
 export function CatalogReviewPage() {
   const { id = "" } = useParams();
@@ -55,22 +82,22 @@ export function CatalogReviewPage() {
   const [q, setQ] = useState("");
   const dq = useDebounced(q, 250);
   const [groupSel, setGroupSel] = useState<string>("all"); // "all" | "none" | category id
-  const [incl, setIncl] = useState<IncludedFilter>("all");
-  const [marginSel, setMarginSel] = useState<MarginFilter>("any");
-  const [matchSel, setMatchSel] = useState<MatchFilter>("any");
-  const [notAdded, setNotAdded] = useState(false);
-  const [priceMoved, setPriceMoved] = useState(false);
-  const [photoCheck, setPhotoCheck] = useState(false);
-  const [showGroups, setShowGroups] = useState(false);
+  const [view, setView] = useState<View>("all");
+  const [look, setLook] = useState<Look | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [allMatching, setAllMatching] = useState(false);
   const [bulkGroup, setBulkGroup] = useState("");
   const [bulkMargin, setBulkMargin] = useState("");
+  const [pop, setPop] = useState<Pop>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [flash, setFlash] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [promoteOpen, setPromoteOpen] = useState(false);
   const [makeOpen, setMakeOpen] = useState(false);
+  const [zoomRow, setZoomRow] = useState<CatalogItem | null>(null);
+  const [pickSupplier, setPickSupplier] = useState(false);
+  const [importNote, setImportNote] = useState<string | null>(null);
+
   // how many of this price list's products are in Items now: the catalog can only be made from those
   const inItems = useQuery({
     queryKey: ["catalog-in-items", id],
@@ -79,23 +106,31 @@ export function CatalogReviewPage() {
   const itemCount = inItems.data?.count ?? 0;
   // the Items list's own filter (price list = this one), not the price list page's row filter
   const makeSelection: { filter: ItemsFilter } = { filter: { catalog_id: id } };
-  const [zoomRow, setZoomRow] = useState<CatalogItem | null>(null);
-  const [pickSupplier, setPickSupplier] = useState(false);
-  const [importNote, setImportNote] = useState<string | null>(null);
+
+  // included rows that are not in your items yet
+  const notAddedQ = useQuery({
+    queryKey: ["catalog-queues", id],
+    queryFn: () =>
+      apiPage<unknown[]>(
+        `/supplier-catalogs/${id}/items?${itemsQuery({ not_added: true, included: true }, null).replace(/limit=\d+/, "limit=1")}`,
+      ).then((p) => p.total ?? 0),
+  });
 
   const filter: ItemFilter = useMemo(
     () => ({
       q: dq.trim() || undefined,
-      no_group: groupSel === "none" || undefined,
+      no_group: groupSel === "none" || view === "group" || look !== null || undefined,
       category_id: groupSel !== "all" && groupSel !== "none" ? groupSel : undefined,
-      included: incl === "all" ? undefined : incl === "yes",
-      has_item_margin: marginSel === "any" ? undefined : marginSel === "item",
-      has_suggestion: matchSel === "possible" || undefined,
-      not_added: notAdded || undefined,
-      price_changed: priceMoved || undefined,
-      photo_check: photoCheck || undefined,
+      included: view === "excluded" ? false : undefined,
+      has_item_margin: view === "margin" ? true : undefined,
+      has_suggestion: view === "match" || undefined,
+      not_added: view === "new" || undefined,
+      price_changed: view === "price" || undefined,
+      photo_check: view === "photo" || undefined,
+      suggested_group: look?.suggested_group,
+      no_suggestion: look?.no_suggestion,
     }),
-    [dq, groupSel, incl, marginSel, matchSel, notAdded, priceMoved, photoCheck],
+    [dq, groupSel, view, look],
   );
 
   const catalog = useQuery({
@@ -122,7 +157,31 @@ export function CatalogReviewPage() {
   useEffect(() => {
     setSelected(new Set());
     setAllMatching(false);
+    setPop(null);
   }, [filter, id]);
+
+  // popovers and the ⋯ menu close on an outside click or Escape
+  useEffect(() => {
+    if (!pop && !menuOpen) return;
+    const away = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest("[data-pop-root]")) {
+        setPop(null);
+        setMenuOpen(false);
+      }
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPop(null);
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [pop, menuOpen]);
 
   // Load the next page when the bottom sentinel scrolls into view.
   const sentinel = useRef<HTMLDivElement>(null);
@@ -159,6 +218,7 @@ export function CatalogReviewPage() {
 
   function refreshGroups() {
     qc.invalidateQueries({ queryKey: ["catalog-groups", id] });
+    qc.invalidateQueries({ queryKey: ["catalog-group-suggestions", id] });
     qc.invalidateQueries({ queryKey: ["item-categories"] });
   }
 
@@ -193,9 +253,11 @@ export function CatalogReviewPage() {
             }
           : old,
       );
-      if ("group_name" in v.body || "included" in v.body) refreshGroups();
-      if ("item_margin_pct" in v.body)
-        qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
+      if ("group_name" in v.body || "included" in v.body) {
+        refreshGroups();
+        qc.invalidateQueries({ queryKey: ["catalog-queues", id] });
+      }
+      if ("item_margin_pct" in v.body) qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
     },
     onError: (e) => {
       onError(e);
@@ -205,13 +267,13 @@ export function CatalogReviewPage() {
     },
   });
 
-  // accept / dismiss the suggested match on the chosen rows
+  // accept / dismiss suggested matches: on the chosen rows, or on every row that has one
   const matchesBulk = useMutation({
-    mutationFn: (action: "accept" | "dismiss") =>
-      api<{ done: number; skipped: number }>(`/supplier-catalogs/${id}/matches/${action}`, {
+    mutationFn: (v: { action: "accept" | "dismiss"; all?: boolean }) =>
+      api<{ done: number; skipped: number }>(`/supplier-catalogs/${id}/matches/${v.action}`, {
         method: "POST",
-        body: target(),
-      }).then((r) => ({ ...r, action })),
+        body: v.all ? { filter: { has_suggestion: true } } : target(),
+      }).then((r) => ({ ...r, action: v.action })),
     onSuccess: (r) => {
       setErr(null);
       setFlash(
@@ -220,8 +282,8 @@ export function CatalogReviewPage() {
           : `${r.done} suggested matches dismissed.`,
       );
       qc.invalidateQueries({ queryKey: ["catalog-items", id] });
-      qc.invalidateQueries({ queryKey: ["catalog-queues", id] });
       qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
+      refreshGroups();
     },
     onError,
   });
@@ -240,7 +302,9 @@ export function CatalogReviewPage() {
       setAllMatching(false);
       setBulkGroup("");
       setBulkMargin("");
+      setPop(null);
       qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+      qc.invalidateQueries({ queryKey: ["catalog-queues", id] });
       qc.invalidateQueries({ queryKey: ["supplier-catalog", id] });
       refreshGroups();
     },
@@ -345,6 +409,10 @@ export function CatalogReviewPage() {
       return n;
     });
   }
+  function chooseView(v: View) {
+    setView(v);
+    setLook(null);
+  }
 
   if (catalog.isError) {
     return (
@@ -360,14 +428,27 @@ export function CatalogReviewPage() {
   const cat = catalog.data;
   const groupList = groups.data ?? [];
   const noGroupCount = groupList.find((g) => g.category_id === null)?.item_count ?? 0;
-  const filtered = !!(
-    filter.q ||
-    filter.no_group ||
-    filter.category_id ||
-    incl !== "all" ||
-    marginSel !== "any" ||
-    matchSel !== "any"
-  );
+  const excludedCount = groupList.reduce((n, g) => n + (g.item_count - g.included_count), 0);
+  const counts: Partial<Record<View, number>> = {
+    group: noGroupCount,
+    match: cat?.suggestion_count ?? 0,
+    photo: cat?.photo_check_count ?? 0,
+    price: cat?.price_change_count ?? 0,
+    new: notAddedQ.data ?? 0,
+    margin: cat?.item_margin_count ?? 0,
+    excluded: excludedCount,
+  };
+  const filtered = !!(filter.q || filter.no_group || filter.category_id || view !== "all");
+  const activeLabel = look
+    ? look.no_suggestion
+      ? "No group, no suggestion"
+      : `Suggested: ${look.suggested_group}`
+    : view !== "all"
+      ? VIEW_LABEL[view]
+      : null;
+
+  const menuItem =
+    "block w-full rounded px-3 py-2 text-left text-sm hover:bg-ground";
 
   return (
     <div>
@@ -377,7 +458,7 @@ export function CatalogReviewPage() {
         </Link>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+      <div className="mb-4 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           {cat ? (
             <EditableText
@@ -391,7 +472,7 @@ export function CatalogReviewPage() {
           )}
           {cat && (
             <p className="px-1.5 text-sm text-muted">
-              {cat.item_count} items · {cat.page_count} pages · {cat.source_filename} ·{" "}
+              {cat.item_count} items · {cat.page_count} pages ·{" "}
               {cat.supplier_name ? (
                 <>
                   from{" "}
@@ -422,7 +503,7 @@ export function CatalogReviewPage() {
                 disabled={setSupplier.isPending}
               />
               <p className="mt-1 text-xs text-muted">
-                With a supplier, a later catalog from them reuses these codes.
+                With a supplier, a later catalog from them reuses these codes and margin.
               </p>
             </div>
           )}
@@ -432,44 +513,75 @@ export function CatalogReviewPage() {
             </p>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="btn-ghost"
-            aria-expanded={showGroups}
-            onClick={() => setShowGroups((v) => !v)}
-          >
-            Manage groups
-          </button>
-          <button type="button" className="btn-ghost" onClick={() => setPromoteOpen(true)}>
-            Add to items
-          </button>
-          {itemCount > 0 && (
-            <button type="button" className="btn-ghost" onClick={() => setMakeOpen(true)}>
-              Make customer catalog ({itemCount})
-            </button>
-          )}
-          {confirmDelete ? (
-            <span className="flex items-center gap-2 text-sm">
-              Delete this catalog?
-              <button
-                type="button"
-                className="btn-primary bg-danger hover:bg-danger"
-                disabled={remove.isPending}
-                onClick={() => remove.mutate()}
-              >
-                Delete
-              </button>
-              <button type="button" className="btn-ghost" onClick={() => setConfirmDelete(false)}>
-                Keep
-              </button>
-            </span>
-          ) : (
-            <button type="button" className="btn-ghost" onClick={() => setConfirmDelete(true)}>
+
+        {confirmDelete ? (
+          <span className="flex items-center gap-2 text-sm">
+            Delete this price list?
+            <button
+              type="button"
+              className="btn-primary bg-danger hover:bg-danger"
+              disabled={remove.isPending}
+              onClick={() => remove.mutate()}
+            >
               Delete
             </button>
-          )}
-        </div>
+            <button type="button" className="btn-ghost" onClick={() => setConfirmDelete(false)}>
+              Keep
+            </button>
+          </span>
+        ) : (
+          <div className="relative" data-pop-root>
+            <button
+              type="button"
+              className="btn-ghost"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              aria-label="More actions"
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              ⋯
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                className="card absolute right-0 top-11 z-30 w-64 bg-card p-1 shadow-lg"
+              >
+                {cat?.supplier_party_id ? (
+                  <Link role="menuitem" className={menuItem} to={`/parties/${cat.supplier_party_id}`}>
+                    Supplier defaults
+                  </Link>
+                ) : (
+                  <button
+                    role="menuitem"
+                    type="button"
+                    className={menuItem}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setPickSupplier(true);
+                    }}
+                  >
+                    Set supplier
+                  </button>
+                )}
+                <Link role="menuitem" className={menuItem} to="/items/categories">
+                  Rename or merge groups in Items
+                </Link>
+                <hr className="my-1 border-line" />
+                <button
+                  role="menuitem"
+                  type="button"
+                  className={`${menuItem} text-danger`}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setConfirmDelete(true);
+                  }}
+                >
+                  Delete this price list
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {err && (
@@ -477,10 +589,15 @@ export function CatalogReviewPage() {
           {err}
         </p>
       )}
-      {showGroups && <GroupsPanel catalogId={id} groups={groupList} />}
+
       {cat && (
-        <PricingBar
+        <CatalogSteps
           catalog={cat}
+          groups={groupList}
+          noGroup={noGroupCount}
+          notAdded={notAddedQ.data}
+          inItems={itemCount}
+          selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
           resetting={bulk.isPending}
           onResetItemMargins={() =>
             bulk.mutate({
@@ -488,24 +605,13 @@ export function CatalogReviewPage() {
               changes: { item_margin_pct: null },
             })
           }
+          onLook={(f) => {
+            setView("group");
+            setLook(f);
+          }}
+          onMakeCatalog={() => setMakeOpen(true)}
         />
       )}
-
-      <CatalogQueueBar
-        catalogId={id}
-        groupSel={groupSel}
-        matchPossible={matchSel === "possible"}
-        notAdded={notAdded}
-        priceMoved={priceMoved}
-        priceMovedCount={catalog.data?.price_change_count ?? 0}
-        onPriceMoved={() => setPriceMoved((v) => !v)}
-        photoCheck={photoCheck}
-        photoCheckCount={catalog.data?.photo_check_count ?? 0}
-        onPhotoCheck={() => setPhotoCheck((v) => !v)}
-        onNeedGroup={() => setGroupSel((g) => (g === "none" ? "all" : "none"))}
-        onPossible={() => setMatchSel((m) => (m === "possible" ? "any" : "possible"))}
-        onNotAdded={() => setNotAdded((v) => !v)}
-      />
 
       {/* filters */}
       <div className="mb-3 flex flex-wrap items-end gap-3">
@@ -527,7 +633,7 @@ export function CatalogReviewPage() {
           </label>
           <select
             id="cat-group"
-            className="field w-56"
+            className="field w-52"
             value={groupSel}
             onChange={(e) => setGroupSel(e.target.value)}
           >
@@ -543,61 +649,75 @@ export function CatalogReviewPage() {
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="cat-incl">
+          <label className="label" htmlFor="cat-show">
             Show
           </label>
           <select
-            id="cat-incl"
-            className="field w-40"
-            value={incl}
-            onChange={(e) => setIncl(e.target.value as IncludedFilter)}
+            id="cat-show"
+            className="field w-60"
+            value={view}
+            onChange={(e) => chooseView(e.target.value as View)}
           >
-            <option value="all">All items</option>
-            <option value="yes">Included</option>
-            <option value="no">Excluded</option>
+            {(Object.keys(VIEW_LABEL) as View[]).map((v) => {
+              const n = counts[v];
+              return (
+                <option key={v} value={v} disabled={v !== "all" && v !== view && !n}>
+                  {VIEW_LABEL[v]}
+                  {v === "all" ? ` (${cat?.item_count ?? ""})` : ` (${n ?? 0})`}
+                </option>
+              );
+            })}
           </select>
         </div>
-        <div>
-          <label className="label" htmlFor="cat-margin">
-            Margin
-          </label>
-          <select
-            id="cat-margin"
-            className="field w-48"
-            value={marginSel}
-            onChange={(e) => setMarginSel(e.target.value as MarginFilter)}
-          >
-            <option value="any">Any</option>
-            <option value="item">Item-level margin</option>
-            <option value="bulk">Bulk margin</option>
-          </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="cat-match">
-            Matches
-          </label>
-          <select
-            id="cat-match"
-            className="field w-52"
-            value={matchSel}
-            onChange={(e) => setMatchSel(e.target.value as MatchFilter)}
-          >
-            <option value="any">Any</option>
-            <option value="possible">
-              Possible matches{catalog.data ? ` (${catalog.data.suggestion_count})` : ""}
-            </option>
-          </select>
-        </div>
+        {activeLabel && (
+          <span className="mb-1 inline-flex items-center gap-1 rounded-full bg-accent-soft py-1 pl-3 pr-1.5 text-sm font-medium text-accent">
+            {activeLabel}
+            <button
+              type="button"
+              aria-label="Clear filter"
+              className="px-1.5 text-base leading-none"
+              onClick={() => chooseView("all")}
+            >
+              ×
+            </button>
+          </span>
+        )}
       </div>
+
+      {view === "match" && (cat?.suggestion_count ?? 0) > 0 && (
+        <div className="card mb-3 flex flex-wrap items-center gap-3 p-3 text-sm">
+          <span>
+            {cat?.suggestion_count} rows look like products you already have. A match takes the
+            existing product&apos;s code, group and name.
+          </span>
+          <button
+            type="button"
+            className="btn-ghost h-9"
+            disabled={matchesBulk.isPending}
+            onClick={() => matchesBulk.mutate({ action: "accept", all: true })}
+          >
+            Accept all {cat?.suggestion_count}
+          </button>
+          <button
+            type="button"
+            className="btn-ghost h-9"
+            disabled={matchesBulk.isPending}
+            onClick={() => matchesBulk.mutate({ action: "dismiss", all: true })}
+          >
+            Not the same for all
+          </button>
+        </div>
+      )}
 
       {/* bulk bar */}
       {selectedCount > 0 && (
         <div
-          className="card sticky top-0 z-10 mb-3 flex flex-wrap items-center gap-3 border-accent bg-accent-soft p-3"
+          className="card sticky top-[7.5rem] z-10 mb-3 flex flex-wrap items-center gap-2 border-accent bg-accent-soft p-2.5"
           role="region"
           aria-label="Bulk actions"
+          data-pop-root
         >
-          <span className="text-sm font-medium">
+          <span className="mr-1 text-sm font-medium">
             {allMatching ? `All ${selectedCount} matching items` : `${selectedCount} selected`}
           </span>
           {!allMatching && allLoadedSelected && total !== null && total > selected.size && (
@@ -609,108 +729,143 @@ export function CatalogReviewPage() {
               Select all {total} matching
             </button>
           )}
-          <span className="flex items-center gap-2">
-            <label className="sr-only" htmlFor="bulk-group">
-              Set group
-            </label>
-            <input
-              id="bulk-group"
-              className="field h-9 w-48"
-              list="catalog-groups-list"
-              placeholder="Set group…"
-              value={bulkGroup}
-              onChange={(e) => setBulkGroup(e.target.value)}
-            />
+
+          <span className="relative">
             <button
               type="button"
-              className="btn-primary h-9"
-              disabled={!bulkGroup.trim() || bulk.isPending}
-              onClick={() =>
-                bulk.mutate({ target: target(), changes: { group_name: bulkGroup.trim() } })
-              }
+              className="btn-ghost h-9"
+              aria-expanded={pop === "group"}
+              onClick={() => setPop((p) => (p === "group" ? null : "group"))}
             >
-              Apply
+              Set group ▾
             </button>
+            {pop === "group" && (
+              <div className="card absolute left-0 top-11 z-30 flex items-center gap-2 bg-card p-2.5 shadow-lg">
+                <label className="sr-only" htmlFor="bulk-group">
+                  Group name
+                </label>
+                <input
+                  id="bulk-group"
+                  className="field h-9 w-48"
+                  list="catalog-groups-list"
+                  placeholder="Group name"
+                  value={bulkGroup}
+                  autoFocus
+                  onChange={(e) => setBulkGroup(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && bulkGroup.trim() && !bulk.isPending)
+                      bulk.mutate({ target: target(), changes: { group_name: bulkGroup.trim() } });
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-primary h-9"
+                  disabled={!bulkGroup.trim() || bulk.isPending}
+                  onClick={() => bulk.mutate({ target: target(), changes: { group_name: bulkGroup.trim() } })}
+                >
+                  Apply
+                </button>
+              </div>
+            )}
           </span>
-          <span className="flex items-center gap-2">
-            <label className="sr-only" htmlFor="bulk-margin">
-              Set item margin
-            </label>
-            <input
-              id="bulk-margin"
-              className="field h-9 w-32 text-right font-mono"
-              inputMode="decimal"
-              placeholder="Margin %…"
-              aria-invalid={bulkMargin.trim() !== "" && !validMargin(bulkMargin)}
-              value={bulkMargin}
-              onChange={(e) => setBulkMargin(e.target.value)}
-            />
+
+          <span className="relative">
             <button
               type="button"
-              className="btn-primary h-9"
-              disabled={!validMargin(bulkMargin) || bulk.isPending}
-              onClick={() =>
-                bulk.mutate({
-                  target: target(),
-                  changes: { item_margin_pct: Number(bulkMargin).toFixed(2) },
-                })
-              }
+              className="btn-ghost h-9"
+              aria-expanded={pop === "margin"}
+              onClick={() => setPop((p) => (p === "margin" ? null : "margin"))}
             >
-              Set margin
+              Set margin ▾
             </button>
+            {pop === "margin" && (
+              <div className="card absolute left-0 top-11 z-30 flex items-center gap-2 bg-card p-2.5 shadow-lg">
+                <label className="sr-only" htmlFor="bulk-margin">
+                  Item margin percent
+                </label>
+                <input
+                  id="bulk-margin"
+                  className="field h-9 w-28 text-right font-mono"
+                  inputMode="decimal"
+                  placeholder="Margin %"
+                  aria-invalid={bulkMargin.trim() !== "" && !validMargin(bulkMargin)}
+                  value={bulkMargin}
+                  autoFocus
+                  onChange={(e) => setBulkMargin(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && validMargin(bulkMargin) && !bulk.isPending)
+                      bulk.mutate({
+                        target: target(),
+                        changes: { item_margin_pct: Number(bulkMargin).toFixed(2) },
+                      });
+                  }}
+                />
+                <button
+                  type="button"
+                  className="btn-primary h-9"
+                  disabled={!validMargin(bulkMargin) || bulk.isPending}
+                  onClick={() =>
+                    bulk.mutate({
+                      target: target(),
+                      changes: { item_margin_pct: Number(bulkMargin).toFixed(2) },
+                    })
+                  }
+                >
+                  Apply
+                </button>
+              </div>
+            )}
           </span>
+
           <button
             type="button"
             className="btn-ghost h-9"
             disabled={bulk.isPending}
-            onClick={() => bulk.mutate({ target: target(), changes: { item_margin_pct: null } })}
+            onClick={() =>
+              bulk.mutate({ target: target(), changes: { included: view === "excluded" } })
+            }
           >
-            Clear margin
+            {view === "excluded" ? "Include" : "Exclude"}
           </button>
-          <button
-            type="button"
-            className="btn-ghost h-9"
-            disabled={bulk.isPending}
-            onClick={() => bulk.mutate({ target: target(), changes: { included: false } })}
-          >
-            Exclude
-          </button>
-          <button
-            type="button"
-            className="btn-ghost h-9"
-            disabled={bulk.isPending}
-            onClick={() => bulk.mutate({ target: target(), changes: { included: true } })}
-          >
-            Include
-          </button>
-          <button
-            type="button"
-            className="btn-ghost h-9"
-            disabled={bulk.isPending}
-            onClick={() => bulk.mutate({ target: target(), changes: { group_name: null } })}
-          >
-            Clear group
-          </button>
-          <button
-            type="button"
-            className="btn-ghost h-9"
-            disabled={matchesBulk.isPending}
-            title="For the chosen rows that have a possible match"
-            onClick={() => matchesBulk.mutate("accept")}
-          >
-            Accept matches
-          </button>
-          <button
-            type="button"
-            className="btn-ghost h-9"
-            disabled={matchesBulk.isPending}
-            onClick={() => matchesBulk.mutate("dismiss")}
-          >
-            Not the same
-          </button>
-          <button type="button" className="btn-ghost h-9" onClick={() => setPromoteOpen(true)}>
-            Add to items
-          </button>
+
+          <span className="relative">
+            <button
+              type="button"
+              className="btn-ghost h-9"
+              aria-haspopup="menu"
+              aria-expanded={pop === "more"}
+              onClick={() => setPop((p) => (p === "more" ? null : "more"))}
+            >
+              More ▾
+            </button>
+            {pop === "more" && (
+              <div role="menu" className="card absolute left-0 top-11 z-30 w-52 bg-card p-1 shadow-lg">
+                {(
+                  [
+                    ["Include", () => bulk.mutate({ target: target(), changes: { included: true } })],
+                    ["Clear group", () => bulk.mutate({ target: target(), changes: { group_name: null } })],
+                    ["Clear own margin", () => bulk.mutate({ target: target(), changes: { item_margin_pct: null } })],
+                    ["Accept matches", () => matchesBulk.mutate({ action: "accept" })],
+                    ["Not the same", () => matchesBulk.mutate({ action: "dismiss" })],
+                  ] as const
+                ).map(([label, run]) => (
+                  <button
+                    key={label}
+                    role="menuitem"
+                    type="button"
+                    className={menuItem}
+                    onClick={() => {
+                      setPop(null);
+                      run();
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </span>
+
           <button
             type="button"
             className="ml-auto text-sm text-muted underline"
@@ -753,7 +908,7 @@ export function CatalogReviewPage() {
           <span>Item code</span>
           <span>Unit</span>
           <span className="text-right">Supplier price</span>
-          <span className="text-right">Item margin</span>
+          <span className="text-right">Own margin</span>
           <span className="text-right">New price</span>
           <span>Group</span>
           <span>Status</span>
@@ -783,233 +938,229 @@ export function CatalogReviewPage() {
         )}
 
         <ul>
-          {rows.map((r) => (
-            <li
-              key={r.id}
-              className={`grid grid-cols-[24px_102px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-line px-3 py-3 last:border-0 ${COLS} ${
-                r.included ? "" : "bg-ground/60"
-              }`}
-            >
-              <input
-                type="checkbox"
-                aria-label={`Select ${r.display_name}`}
-                checked={selected.has(r.id) || allMatching}
-                onChange={() => toggleRow(r.id)}
-              />
-              <div>
-              {r.image_url ? (
-                <button
-                  type="button"
-                  aria-label={`View photo of ${r.display_name}`}
-                  className="h-[68px] w-[102px] shrink-0 cursor-zoom-in rounded"
-                  onClick={() => setZoomRow(r)}
-                >
-                  <img
-                    src={r.image_url}
-                    alt={r.display_name}
-                    loading="lazy"
-                    className={`h-[68px] w-[102px] rounded border border-line object-cover ${
-                      r.included ? "" : "opacity-50"
-                    }`}
-                  />
-                </button>
-              ) : (
-                <div className="h-[68px] w-[102px] rounded border border-line bg-ground" />
-              )}
-                {r.image_flag && (
-                  <p className="mt-0.5 w-[102px] text-center text-[10px] text-warn">
-                    {{ small: "Small picture", odd_shape: "Odd shape", blank: "Looks blank", unreadable: "Cannot read" }[
-                      r.image_flag
-                    ] ?? "Check photo"}{" "}
+          {rows.map((r) => {
+            const flagged = !!r.image_flag;
+            return (
+              <li
+                key={r.id}
+                className={`group grid grid-cols-[24px_102px_minmax(0,1fr)] gap-x-3 gap-y-2 border-b border-line px-3 py-3 last:border-0 ${COLS} ${
+                  r.included ? "" : "bg-ground/60"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  aria-label={`Select ${r.display_name}`}
+                  checked={selected.has(r.id) || allMatching}
+                  onChange={() => toggleRow(r.id)}
+                />
+                <div>
+                  {r.image_url ? (
                     <button
                       type="button"
-                      className="underline"
-                      onClick={() => patchItem.mutate({ itemId: r.id, body: { photo_ok: true } })}
+                      aria-label={`View photo of ${r.display_name}`}
+                      className="h-[68px] w-[102px] shrink-0 cursor-zoom-in rounded"
+                      onClick={() => setZoomRow(r)}
                     >
-                      It is fine
+                      <img
+                        src={r.image_url}
+                        alt={r.display_name}
+                        loading="lazy"
+                        className={`h-[68px] w-[102px] rounded border border-line object-cover ${
+                          r.included ? "" : "opacity-50"
+                        }`}
+                      />
                     </button>
-                  </p>
-                )}
-                <ReplacePhoto
-                  catalogId={id}
-                  rowId={r.id}
-                  hasPhoto={!!r.image_url}
-                  onDone={() => {
-                    qc.invalidateQueries({ queryKey: ["catalog-items", id] });
-                    qc.invalidateQueries({ queryKey: ["items"] });
-                  }}
-                />
-              </div>
-              <div className="min-w-0">
-                <EditableText
-                  label={`Name of ${r.code}`}
-                  value={r.display_name}
-                  onSave={(v) => v && patchItem.mutate({ itemId: r.id, body: { display_name: v } })}
-                  className="font-medium"
-                />
-                <p className="truncate px-1.5 text-[11px] text-muted">
-                  supplier ref {r.supplier_code}
-                  {r.brand ? ` · ${r.brand}` : ""}
-                  {r.size_text ? ` · ${r.size_text}` : ""}
-                  {r.carton_qty ? ` · carton of ${r.carton_qty}` : ""}
-                  {r.price_change === "up" || r.price_change === "down" ? (
-                    <span className={r.price_change === "up" ? "text-danger" : "text-ok"}>
-                      {` · price ${r.price_change === "up" ? "up" : "down"} from ₹${r.previous_cost ?? "?"}`}
-                    </span>
-                  ) : r.price_change === "new" && catalog.data?.supplier_party_id ? (
-                    <span> · new</span>
-                  ) : null}
-                  {r.last_paid ? ` · last bought at ₹${r.last_paid}` : ""}
-                  {r.tally_status === "synced" ? (
-                    <span className="text-ok"> · in Tally</span>
-                  ) : r.tally_status === "error" ? (
-                    <span className="text-danger"> · Tally rejected it</span>
-                  ) : r.item_id ? (
-                    <span> · in your items</span>
-                  ) : null}
-                </p>
-                {r.suggestion && (
-                  <div className="mx-1.5 mt-1.5 max-w-md rounded border border-accent/40 bg-accent-soft px-2 py-1.5 text-[11px] leading-snug">
-                    <p>
-                      Same as <b className="font-mono">{r.suggestion.code}</b>
-                      {" "}
-                      <span className="text-muted">
-                        {r.suggestion.name}
-                        {r.suggestion.supplier_name ? ` · ${r.suggestion.supplier_name}` : ""}
-                      </span>
-                      ?
+                  ) : (
+                    <div className="h-[68px] w-[102px] rounded border border-line bg-ground" />
+                  )}
+                  {flagged && (
+                    <p className="mt-0.5 w-[102px] text-center text-[10px] text-warn">
+                      {{ small: "Small picture", odd_shape: "Odd shape", blank: "Looks blank", unreadable: "Cannot read" }[
+                        r.image_flag as string
+                      ] ?? "Check photo"}{" "}
+                      <button
+                        type="button"
+                        className="underline"
+                        onClick={() => patchItem.mutate({ itemId: r.id, body: { photo_ok: true } })}
+                      >
+                        It is fine
+                      </button>
                     </p>
-                    <span className="mt-1 inline-flex gap-3">
-                      <button
-                        type="button"
-                        className="text-accent hover:underline"
-                        disabled={linkProduct.isPending}
-                        onClick={() =>
-                          linkProduct.mutate({ itemId: r.id, productId: r.suggestion!.product_id })
-                        }
-                      >
-                        Use it
-                      </button>
-                      <button
-                        type="button"
-                        className="text-muted hover:underline"
-                        disabled={dismissSuggestion.isPending}
-                        onClick={() => dismissSuggestion.mutate(r.id)}
-                      >
-                        Not the same
-                      </button>
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div className={`min-w-0 px-1.5 ${DETAIL}`}>
-                <span className="font-mono text-xs">{r.code}</span>
-                {r.barcode && (
-                  <Barcode
-                    pattern={r.barcode}
-                    label={`Barcode ${r.code}`}
-                    className="mt-1 block h-4 w-24"
-                  />
-                )}
-              </div>
-              <div className={`flex items-center gap-1.5 ${DETAIL}`}>
-                <span className="whitespace-nowrap pl-1.5 text-xs text-muted">Pack of</span>
-                <EditableNumber
-                  kind="int"
-                  label={`Pack quantity of ${r.code}`}
-                  value={String(r.pack_qty)}
-                  onSave={(v) => patchItem.mutate({ itemId: r.id, body: { pack_qty: Number(v) } })}
-                  className="w-12 text-center"
-                />
-              </div>
-              <div className={`flex items-center gap-1 xl:justify-end ${DETAIL}`}>
-                <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
-                  Supplier price
-                </span>
-                <span className="pl-1.5 text-xs text-muted xl:pl-0">₹</span>
-                <EditableNumber
-                  kind="money"
-                  label={`Supplier price of ${r.code}`}
-                  value={r.cost_price}
-                  onSave={(v) => patchItem.mutate({ itemId: r.id, body: { cost_price: v } })}
-                  className="w-24"
-                />
-              </div>
-              <div className={`flex items-center gap-1.5 xl:justify-end ${DETAIL}`}>
-                <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
-                  Item margin
-                </span>
-                <EditableNumber
-                  kind="margin"
-                  allowEmpty
-                  placeholder="—"
-                  label={`Item margin of ${r.code}`}
-                  value={r.item_margin_pct !== null ? trimMargin(r.item_margin_pct) : ""}
-                  onSave={(v) =>
-                    patchItem.mutate({
-                      itemId: r.id,
-                      body: { item_margin_pct: v === "" ? null : Number(v).toFixed(2) },
-                    })
-                  }
-                  className={`w-16 ${r.item_margin_pct !== null ? "!bg-[#f1e7d6] border-line font-medium" : ""}`}
-                />
-                <span className="text-xs text-muted" aria-hidden>
-                  %
-                </span>
-              </div>
-              <div className={`flex items-center gap-1.5 xl:justify-end ${DETAIL}`}>
-                <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
-                  New price
-                </span>
-                <span
-                  className={`px-1.5 text-right text-sm font-semibold tabular-nums ${
-                    Number(r.sell_price) < Number(r.cost_price) ? "text-danger" : ""
-                  }`}
-                  title={
-                    Number(r.sell_price) < Number(r.cost_price)
-                      ? "Below the supplier price"
-                      : undefined
-                  }
-                >
-                  ₹{money(r.sell_price)}
-                </span>
-              </div>
-              <div className={`min-w-0 ${DETAIL}`}>
-                <EditableText
-                  label={`Group of ${r.code}`}
-                  value={r.category_name ?? ""}
-                  placeholder="No group"
-                  list="catalog-groups-list"
-                  onSave={(v) =>
-                    patchItem.mutate({ itemId: r.id, body: { group_name: v === "" ? null : v } })
-                  }
-                />
-                {!r.category_name && r.suggested_group && (
-                  <button
-                    type="button"
-                    className="px-1.5 text-[11px] text-accent underline"
-                    onClick={() =>
-                      patchItem.mutate({ itemId: r.id, body: { group_name: r.suggested_group } })
+                  )}
+                  {/* a photo that looks right only offers a replacement on hover or focus */}
+                  <div
+                    className={
+                      r.image_url && !flagged
+                        ? "opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
+                        : ""
                     }
                   >
-                    Use “{r.suggested_group}”
-                  </button>
-                )}
-              </div>
-              <button
-                type="button"
-                aria-pressed={r.included}
-                className={`h-8 rounded-full border px-3 text-xs font-medium ${DETAIL} ${
-                  r.included
-                    ? "border-line bg-[#e6efe8] text-ok"
-                    : "border-line bg-ground text-muted"
-                }`}
-                onClick={() => patchItem.mutate({ itemId: r.id, body: { included: !r.included } })}
-              >
-                {r.included ? "Included" : "Excluded"}
-              </button>
-            </li>
-          ))}
+                    <ReplacePhoto
+                      catalogId={id}
+                      rowId={r.id}
+                      hasPhoto={!!r.image_url}
+                      onDone={() => {
+                        qc.invalidateQueries({ queryKey: ["catalog-items", id] });
+                        qc.invalidateQueries({ queryKey: ["items"] });
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="min-w-0">
+                  <EditableText
+                    label={`Name of ${r.code}`}
+                    value={r.display_name}
+                    onSave={(v) => v && patchItem.mutate({ itemId: r.id, body: { display_name: v } })}
+                    className="font-medium"
+                  />
+                  <p className="truncate px-1.5 text-[11px] text-muted">
+                    supplier ref {r.supplier_code}
+                    {r.brand ? ` · ${r.brand}` : ""}
+                    {r.size_text ? ` · ${r.size_text}` : ""}
+                    {r.carton_qty ? ` · carton of ${r.carton_qty}` : ""}
+                    {r.price_change === "up" || r.price_change === "down" ? (
+                      <span className={r.price_change === "up" ? "text-danger" : "text-ok"}>
+                        {` · price ${r.price_change === "up" ? "up" : "down"} from ₹${r.previous_cost ?? "?"}`}
+                      </span>
+                    ) : r.price_change === "new" && catalog.data?.supplier_party_id ? (
+                      <span> · new</span>
+                    ) : null}
+                    {r.last_paid ? ` · last bought at ₹${r.last_paid}` : ""}
+                    {r.tally_status === "synced" ? (
+                      <span className="text-ok"> · in Tally</span>
+                    ) : r.tally_status === "error" ? (
+                      <span className="text-danger"> · Tally rejected it</span>
+                    ) : null}
+                  </p>
+                  {r.suggestion && (
+                    <div className="mx-1.5 mt-1.5 max-w-md rounded border border-accent/40 bg-accent-soft px-2 py-1.5 text-[11px] leading-snug">
+                      <p>
+                        Same as <b className="font-mono">{r.suggestion.code}</b>{" "}
+                        <span className="text-muted">
+                          {r.suggestion.name}
+                          {r.suggestion.supplier_name ? ` · ${r.suggestion.supplier_name}` : ""}
+                        </span>
+                        ?
+                      </p>
+                      <span className="mt-1 inline-flex gap-3">
+                        <button
+                          type="button"
+                          className="text-accent hover:underline"
+                          disabled={linkProduct.isPending}
+                          onClick={() =>
+                            linkProduct.mutate({ itemId: r.id, productId: r.suggestion!.product_id })
+                          }
+                        >
+                          Use it
+                        </button>
+                        <button
+                          type="button"
+                          className="text-muted hover:underline"
+                          disabled={dismissSuggestion.isPending}
+                          onClick={() => dismissSuggestion.mutate(r.id)}
+                        >
+                          Not the same
+                        </button>
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className={`min-w-0 px-1.5 ${DETAIL}`}>
+                  <span className="font-mono text-xs">{r.code}</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${DETAIL}`}>
+                  <span className="whitespace-nowrap pl-1.5 text-xs text-muted">Pack of</span>
+                  <EditableNumber
+                    kind="int"
+                    label={`Pack quantity of ${r.code}`}
+                    value={String(r.pack_qty)}
+                    onSave={(v) => patchItem.mutate({ itemId: r.id, body: { pack_qty: Number(v) } })}
+                    className="w-12 text-center"
+                  />
+                </div>
+                <div className={`flex items-center gap-1 xl:justify-end ${DETAIL}`}>
+                  <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
+                    Supplier price
+                  </span>
+                  <span className="pl-1.5 text-xs text-muted xl:pl-0">₹</span>
+                  <EditableNumber
+                    kind="money"
+                    label={`Supplier price of ${r.code}`}
+                    value={r.cost_price}
+                    onSave={(v) => patchItem.mutate({ itemId: r.id, body: { cost_price: v } })}
+                    className="w-24"
+                  />
+                </div>
+                <div className={`flex items-center gap-1.5 xl:justify-end ${DETAIL}`}>
+                  <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
+                    Own margin
+                  </span>
+                  <EditableNumber
+                    kind="margin"
+                    allowEmpty
+                    placeholder="—"
+                    label={`Own margin of ${r.code}`}
+                    value={r.item_margin_pct !== null ? trimMargin(r.item_margin_pct) : ""}
+                    onSave={(v) =>
+                      patchItem.mutate({
+                        itemId: r.id,
+                        body: { item_margin_pct: v === "" ? null : Number(v).toFixed(2) },
+                      })
+                    }
+                    className={`w-16 ${r.item_margin_pct !== null ? "!bg-[#f1e7d6] border-line font-medium" : ""}`}
+                  />
+                  <span className="text-xs text-muted" aria-hidden>
+                    %
+                  </span>
+                </div>
+                <div className={`flex items-center gap-1.5 xl:justify-end ${DETAIL}`}>
+                  <span className="whitespace-nowrap pl-1.5 text-xs text-muted xl:hidden">
+                    New price
+                  </span>
+                  <span
+                    className={`px-1.5 text-right text-sm font-semibold tabular-nums ${
+                      Number(r.sell_price) < Number(r.cost_price) ? "text-danger" : ""
+                    }`}
+                    title={
+                      Number(r.sell_price) < Number(r.cost_price)
+                        ? "Below the supplier price"
+                        : undefined
+                    }
+                  >
+                    ₹{money(r.sell_price)}
+                  </span>
+                </div>
+                <div className={`min-w-0 ${DETAIL}`}>
+                  <EditableText
+                    label={`Group of ${r.code}`}
+                    value={r.category_name ?? ""}
+                    placeholder="No group"
+                    list="catalog-groups-list"
+                    onSave={(v) =>
+                      patchItem.mutate({ itemId: r.id, body: { group_name: v === "" ? null : v } })
+                    }
+                  />
+                  {!r.category_name && r.suggested_group && (
+                    <button
+                      type="button"
+                      className="px-1.5 text-[11px] text-accent underline"
+                      onClick={() =>
+                        patchItem.mutate({ itemId: r.id, body: { group_name: r.suggested_group } })
+                      }
+                    >
+                      Use “{r.suggested_group}”
+                    </button>
+                  )}
+                </div>
+                <div className={DETAIL}>
+                  <Status
+                    r={r}
+                    onInclude={() => patchItem.mutate({ itemId: r.id, body: { included: true } })}
+                  />
+                </div>
+              </li>
+            );
+          })}
         </ul>
         <div ref={sentinel} aria-hidden className="h-1" />
         {isFetchingNextPage && <p className="p-3 text-center text-sm text-muted">Loading more…</p>}
@@ -1021,25 +1172,6 @@ export function CatalogReviewPage() {
           title={zoomRow.display_name}
           caption={`${zoomRow.code} · supplier ref ${zoomRow.supplier_code}`}
           onClose={() => setZoomRow(null)}
-        />
-      )}
-      {promoteOpen && cat && (
-        <PromoteDialog
-          catalogId={id}
-          selection={selectedCount > 0 ? { count: selectedCount, target: target() } : null}
-          filtered={filtered ? { count: total ?? 0, filter } : null}
-          includedTotal={groupList.reduce((n, g) => n + g.included_count, 0)}
-          onMakeCatalog={() => {
-            setPromoteOpen(false);
-            qc.invalidateQueries({ queryKey: ["catalog-items", id] });
-            qc.invalidateQueries({ queryKey: ["catalog-in-items", id] });
-            setMakeOpen(true);
-          }}
-          onClose={() => {
-            setPromoteOpen(false);
-            qc.invalidateQueries({ queryKey: ["catalog-items", id] });
-            qc.invalidateQueries({ queryKey: ["catalog-in-items", id] });
-          }}
         />
       )}
       {makeOpen && cat && (

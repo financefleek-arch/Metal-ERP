@@ -29,9 +29,9 @@ def _noise_jpeg(seed: int) -> bytes:
 def big_pdf(tmp_path_factory: pytest.TempPathFactory) -> str:
     n = 0
     pages = []
-    for p in range(PAGES):
+    for _ in range(PAGES):
         cells = []
-        for i in range(12):
+        for _ in range(12):
             n += 1
             cells.append(TestCell(code=f"C{n:05d}", image=_noise_jpeg(n)))
         pages.append(cells)
@@ -82,3 +82,14 @@ def test_a_failed_import_deletes_the_photos_it_already_stored(monkeypatch: pytes
         )
     (deleted,) = storage.delete_many.call_args.args
     assert {"catalog/t/c/img/aa.jpeg", "catalog/t/c/img/bb.jpeg"} <= set(deleted)
+
+
+def test_progress_store_answers_only_its_own_firm_and_forgets() -> None:
+    from app.services.catalog import progress
+
+    progress.report("firm-a", "p1", "saving", 250, 1000)
+    assert progress.read("firm-a", "p1") == {"stage": "saving", "done": 250, "total": 1000}
+    assert progress.read("firm-b", "p1") is None  # another firm cannot read it
+    progress.report("firm-a", None, "saving", 1, 1)  # no id: nothing stored
+    progress.clear("firm-a", "p1")
+    assert progress.read("firm-a", "p1") is None

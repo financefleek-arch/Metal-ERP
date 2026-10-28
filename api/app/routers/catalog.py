@@ -38,6 +38,7 @@ from app.models import (
     ItemCategory,
     Party,
     SupplierCatalog,
+    SupplierCatalogGroupMargin,
     SupplierCatalogItem,
     SupplierPricePoint,
     Tenant,
@@ -52,6 +53,9 @@ from app.schemas_catalog import (
     CatalogListItem,
     CatalogPatch,
     CatalogUploadOut,
+    GroupMarginIn,
+    GroupSuggestion,
+    GroupSuggestions,
     GroupSummary,
     ItemFilter,
     LabelRequest,
@@ -64,6 +68,7 @@ from app.services import media as media_svc
 from app.services.catalog import image_url, output_jobs, price_points
 from app.services.catalog import labels as labels_svc
 from app.services.catalog import products as products_svc
+from app.services.catalog import progress as progress_svc
 from app.services.catalog import supplier_defaults as defaults_svc
 from app.services.catalog import suppliers as suppliers_svc
 from app.services.catalog.barcode import modules as barcode_modules
@@ -71,7 +76,7 @@ from app.services.catalog.extract_grid import NotACatalog
 from app.services.catalog.groups import clean_group_name, get_or_create_category
 from app.services.catalog.importer import import_catalog
 from app.services.catalog.pricing import effective_margin, sell_price
-from app.services.catalog.reprice import reprice
+from app.services.catalog.reprice import group_margin_map, reprice
 from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.pagination import finish_page, paginate
 from app.services.upload_spool import SpooledPdf, spool_pdf
@@ -220,6 +225,7 @@ def upload_catalog(
     file: Annotated[UploadFile, File()],
     title: Annotated[str | None, Form()] = None,
     supplier_party_id: Annotated[str | None, Form()] = None,
+    progress_id: Annotated[str | None, Form()] = None,
 ) -> CatalogUploadOut:
     # The PDF goes to a temp file a megabyte at a time and is read from there page by page: a
     # 200 MB catalog never sits in memory (see services/catalog/importer.py).
@@ -229,7 +235,8 @@ def upload_catalog(
         too_big="That file is over 200 MB. Split the catalog and upload the parts.",
     ) as pdf:
         return _import_upload(
-            response, background, session, user, storage, file.filename, pdf, title, supplier_party_id
+            response, background, session, user, storage, file.filename, pdf, title,
+            supplier_party_id, (progress_id or "")[:64] or None,
         )
 
 
@@ -243,6 +250,7 @@ def _import_upload(
     pdf: SpooledPdf,
     title: str | None,
     supplier_party_id: str | None,
+    progress_id: str | None,
 ) -> CatalogUploadOut:
     supplier_id = (supplier_party_id or "").strip() or None
     if supplier_id:
@@ -263,6 +271,7 @@ def _import_upload(
             title=title,
             supplier_party_id=supplier_id,
             group_map=defaults_svc.group_lookup(defaults),
+            progress_id=progress_id,
         )
     except NotACatalog as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -343,6 +352,12 @@ def _detail(session: SessionDep, cat: SupplierCatalog) -> CatalogDetail:
             cat.supplier_party_id
         )
     return out
+
+
+@router.get("/import-progress/{progress_id}")
+def import_progress(progress_id: str, user: CatalogUser) -> dict[str, object]:
+    """Where a running import has got to: stage (reading | saving), done, total."""
+    return progress_svc.read(user.tenant_id, progress_id) or {"stage": "waiting", "done": 0, "total": 0}
 
 
 @router.get("/{catalog_id}", response_model=CatalogDetail)
@@ -432,6 +447,10 @@ def delete_catalog(
     }
     if cat.source_key:
         keys.add(cat.source_key)
+    for gm in session.scalars(
+        select(SupplierCatalogGroupMargin).where(SupplierCatalogGroupMargin.catalog_id == cat.id)
+    ):
+        session.delete(gm)
     for job in session.scalars(
         select(CatalogOutputJob).where(CatalogOutputJob.catalog_id == cat.id)
     ):
@@ -486,6 +505,10 @@ def _filter_clauses(f: ItemFilter) -> list[ColumnElement[bool]]:
         out.append(C.suggested_product_id.is_not(None))
     if f.photo_check is True:
         out.append(C.image_flag.is_not(None))
+    if f.suggested_group:
+        out.append(func.lower(C.suggested_group) == f.suggested_group.lower())
+    if f.no_suggestion is True:
+        out.append(C.suggested_group.is_(None))
     if f.price_changed is True:
         out.append(C.price_change.in_(("up", "down")))
     if f.not_added is True:
@@ -637,6 +660,8 @@ def list_items(
     not_added: bool | None = None,
     price_changed: bool | None = None,
     photo_check: bool | None = None,
+    suggested_group: str | None = Query(default=None, max_length=60),
+    no_suggestion: bool | None = None,
     limit: int | None = Query(default=100, ge=1, le=200),
     cursor: str | None = None,
 ) -> list[CatalogItemOut]:
@@ -653,6 +678,8 @@ def list_items(
         not_added=not_added,
         price_changed=price_changed,
         photo_check=photo_check,
+        suggested_group=suggested_group,
+        no_suggestion=no_suggestion,
     )
     base = select(C).where(
         C.tenant_id == user.tenant_id, C.catalog_id == catalog_id, *_filter_clauses(flt)
@@ -769,7 +796,7 @@ def bulk_patch_items(
     result = session.execute(
         update(C).where(*clauses).values(**values).execution_options(synchronize_session=False)
     )
-    if reprice_needed and target_ids:
+    if (reprice_needed or regroup) and target_ids:  # a new group can carry a different margin
         reprice(session, _get_catalog(session, user.tenant_id, catalog_id), target_ids)
     return BulkResult(updated=result.rowcount or 0)  # type: ignore[attr-defined]
 
@@ -785,6 +812,7 @@ def patch_item(
     cat = _get_catalog(session, user.tenant_id, catalog_id)
     item = _get_item(session, user.tenant_id, catalog_id, item_id)
     data = body.model_dump(exclude_unset=True)
+    regrouped = False
     expected = data.pop("expected_updated_at", None)
     if expected is not None and _changed_since(item.updated_at, expected):
         raise HTTPException(
@@ -812,14 +840,21 @@ def patch_item(
         target = session.get(ItemCategory, values["category_id"]) if values["category_id"] else None
         _regroup_rows(session, user.tenant_id, [item.id], target)
         session.refresh(item)
+        regrouped = True
     if "item_margin_pct" in data:
         item.item_margin_pct = data["item_margin_pct"]  # None clears it
     if data.get("cost_price") is not None:
         item.cost_price = data["cost_price"]
-    if data.get("cost_price") is not None or "item_margin_pct" in data:
+    if data.get("cost_price") is not None or "item_margin_pct" in data or regrouped:
         item.sell_price = sell_price(
             item.cost_price,
-            effective_margin(item.item_margin_pct, cat.bulk_margin_pct),
+            effective_margin(
+                item.item_margin_pct,
+                cat.bulk_margin_pct,
+                group_margin_map(session, cat.id).get(item.category_id)
+                if item.category_id
+                else None,
+            ),
             cat.rounding_step,
         )
     session.flush()
@@ -843,18 +878,103 @@ def list_groups(catalog_id: str, session: SessionDep, user: CatalogUser) -> list
         .group_by(C.category_id)
     ).all()
     cats = _category_names(session, user.tenant_id)
+    margins = group_margin_map(session, catalog_id)
     out = [
         GroupSummary(
             category_id=cid,
             name=cats.get(cid, "") if cid else "No group",
             item_count=int(n),
             included_count=int(inc or 0),
+            margin_pct=margins.get(cid) if cid else None,
         )
         for cid, n, inc in rows
     ]
     # named groups A-Z, "No group" last
     out.sort(key=lambda g: (g.category_id is None, g.name.lower()))
     return out
+
+
+@router.put("/{catalog_id}/groups/{category_id}/margin", response_model=BulkResult)
+def set_group_margin(
+    catalog_id: str,
+    category_id: str,
+    body: GroupMarginIn,
+    session: SessionDep,
+    user: CatalogWriteUser,
+) -> BulkResult:
+    """One margin for every row in this group that has no margin of its own; null removes it."""
+    cat = _get_catalog(session, user.tenant_id, catalog_id)
+    owned = session.scalar(
+        select(ItemCategory.id).where(
+            ItemCategory.id == category_id, ItemCategory.tenant_id == user.tenant_id
+        )
+    )
+    if owned is None:
+        raise HTTPException(status_code=404, detail="Group not found")
+    G = SupplierCatalogGroupMargin
+    row = session.scalar(select(G).where(G.catalog_id == catalog_id, G.category_id == category_id))
+    if body.margin_pct is None:
+        if row is not None:
+            session.delete(row)
+    elif row is None:
+        session.add(
+            G(
+                tenant_id=user.tenant_id,
+                catalog_id=catalog_id,
+                category_id=category_id,
+                margin_pct=body.margin_pct,
+            )
+        )
+    else:
+        row.margin_pct = body.margin_pct
+    session.flush()
+    ids = list(
+        session.scalars(
+            select(SupplierCatalogItem.id).where(
+                SupplierCatalogItem.catalog_id == catalog_id,
+                SupplierCatalogItem.category_id == category_id,
+            )
+        )
+    )
+    return BulkResult(updated=reprice(session, cat, ids) if ids else 0)
+
+
+@router.get("/{catalog_id}/group-suggestions", response_model=GroupSuggestions)
+def group_suggestions(
+    catalog_id: str, session: SessionDep, user: CatalogUser
+) -> GroupSuggestions:
+    """What still needs a group, bunched by the group the rules proposed. One call, so the
+    review shows accept-all with real counts instead of rows."""
+    _get_catalog(session, user.tenant_id, catalog_id)
+    C = SupplierCatalogItem
+    where = (C.tenant_id == user.tenant_id, C.catalog_id == catalog_id, C.category_id.is_(None))
+    rows = session.execute(
+        select(func.lower(C.suggested_group), func.min(C.suggested_group), func.count())
+        .where(*where, C.suggested_group.is_not(None))
+        .group_by(func.lower(C.suggested_group))
+    ).all()
+    clusters: list[GroupSuggestion] = []
+    for low, name, n in rows:
+        ids = list(
+            session.scalars(
+                select(C.id)
+                .where(*where, func.lower(C.suggested_group) == low, C.image_key.is_not(None))
+                .order_by(C.page_no, C.position)
+                .limit(3)
+            )
+        )
+        urls = [
+            f"/api/supplier-catalogs/{catalog_id}/items/{i}/image?{image_url.sign_query(i)}"
+            for i in ids
+        ]
+        clusters.append(GroupSuggestion(name=name, count=int(n), sample_urls=urls))
+    clusters.sort(key=lambda c: (-c.count, c.name.lower()))
+    ungrouped = int(session.scalar(select(func.count()).where(*where)) or 0)
+    return GroupSuggestions(
+        clusters=clusters,
+        unsuggested=ungrouped - sum(c.count for c in clusters),
+        ungrouped=ungrouped,
+    )
 
 
 def _apply_link(

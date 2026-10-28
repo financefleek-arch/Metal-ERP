@@ -102,6 +102,21 @@ export interface GroupSummary {
   name: string;
   item_count: number;
   included_count: number;
+  /** This group's own margin in this price list; null = it follows the bulk margin. */
+  margin_pct: string | null;
+}
+
+export interface GroupSuggestion {
+  name: string;
+  count: number;
+  sample_urls: string[];
+}
+
+export interface GroupSuggestions {
+  clusters: GroupSuggestion[];
+  /** Rows with no group and no proposal. */
+  unsuggested: number;
+  ungrouped: number;
 }
 
 export interface ItemFilter {
@@ -120,6 +135,10 @@ export interface ItemFilter {
   price_changed?: boolean;
   /** true = only rows whose photo was flagged for a look. */
   photo_check?: boolean;
+  /** Rows whose proposed group has this name. */
+  suggested_group?: string;
+  /** true = only rows the rules had no group proposal for. */
+  no_suggestion?: boolean;
 }
 
 export type ItemPatch = Partial<{
@@ -165,6 +184,8 @@ export function itemsQuery(filter: ItemFilter, cursor: string | null): string {
   if (filter.not_added) p.set("not_added", "true");
   if (filter.price_changed) p.set("price_changed", "true");
   if (filter.photo_check) p.set("photo_check", "true");
+  if (filter.suggested_group) p.set("suggested_group", filter.suggested_group);
+  if (filter.no_suggestion) p.set("no_suggestion", "true");
   if (cursor) p.set("cursor", cursor);
   return p.toString();
 }

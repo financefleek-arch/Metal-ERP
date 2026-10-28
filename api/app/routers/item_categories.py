@@ -10,7 +10,14 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select, update
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import CatalogProduct, Item, ItemCategory, ProductGroup, SupplierCatalogItem
+from app.models import (
+    CatalogProduct,
+    Item,
+    ItemCategory,
+    ProductGroup,
+    SupplierCatalog,
+    SupplierCatalogItem,
+)
 from app.schemas_catalogue import (
     CategoryDeleteIn,
     CategoryIn,
@@ -19,6 +26,7 @@ from app.schemas_catalogue import (
     CategoryUpdate,
 )
 from app.services import audit
+from app.services.catalog.reprice import drop_group_margins, reprice
 from app.services.items import hsn_exists, hsn_gst_rate
 
 router = APIRouter(prefix="/api/item-categories", tags=["item-categories"])
@@ -222,12 +230,17 @@ def _repoint(session: SessionDep, tenant_id: str, src_id: str, target: str | Non
     """Move everything that points at category `src_id` to `target` (None = detach):
     product groups, items, and supplier-catalog items.
     """
+    affected = drop_group_margins(session, tenant_id, src_id, target)
     for model in (ProductGroup, Item, SupplierCatalogItem, CatalogProduct):
         session.execute(
             update(model)
             .where(model.tenant_id == tenant_id, model.category_id == src_id)
             .values(category_id=target)
         )
+    for catalog_id in affected:  # their rows now follow another group's margin (or the bulk one)
+        cat = session.get(SupplierCatalog, catalog_id)
+        if cat is not None:
+            reprice(session, cat)
 
 
 @router.post("/{cat_id}/merge", response_model=CategoryOut)
