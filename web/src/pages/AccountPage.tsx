@@ -162,6 +162,7 @@ export function AccountPage() {
         {err && <p className="err" role="alert">{err}</p>}
       </Section>
 
+      <p className="meta">App build: {__BUILD_ID__}</p>
       <p className="text-sm text-muted">
         Need to close the account? <Link className="text-danger underline" to="/delete-account">Request deletion</Link>
       </p>

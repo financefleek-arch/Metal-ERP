@@ -4,6 +4,8 @@ import path from "node:path";
 
 export default defineConfig({
   plugins: [react()],
+  // shown in My account, so a phone and a browser can be compared at a glance
+  define: { __BUILD_ID__: JSON.stringify(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC") },
   resolve: {
     alias: { "@": path.resolve(__dirname, "src") },
   },

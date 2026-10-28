@@ -6,12 +6,14 @@ import { PASSWORD_HINT, passwordProblem } from "../lib/password";
 import { CodeField, ResendLink } from "../components/CodeField";
 import { Turnstile } from "../components/Turnstile";
 import { useCaptchaSiteKey } from "../lib/captcha";
+import { LandingPage } from "./LandingPage";
+import { markLandingSeen, shouldShowLanding } from "../lib/landing";
 
 // The policy of record (Section 12 covers Metal ERP); see pages/public/LegalPages.tsx.
 const PRIVACY_POLICY = "https://fleekfintech.com/privacy-policy/";
 const TERMS = "https://fleekfintech.com/terms/";
 
-type Mode = "login" | "signup" | "verify" | "forgot";
+type Mode = "landing" | "login" | "signup" | "verify" | "forgot";
 
 interface Started {
   request_id: string;
@@ -58,9 +60,15 @@ function Field({
 }
 
 export function AuthPage() {
-  const [mode, setMode] = useState<Mode>("login");
+  // a first visit in a browser (an ad click, say) sees what the product is before a form
+  const [mode, setMode] = useState<Mode>(() => (shouldShowLanding() ? "landing" : "login"));
   const [started, setStarted] = useState<Started | null>(null);
-  const go = (m: Mode) => setMode(m);
+  const go = (m: Mode) => {
+    if (m !== "landing") markLandingSeen();
+    setMode(m);
+  };
+
+  if (mode === "landing") return <LandingPage onSignup={() => go("signup")} onSignin={() => go("login")} />;
 
   if (mode === "signup")
     return <SignupForm onStarted={(s) => { setStarted(s); go("verify"); }} onBack={() => go("login")} />;

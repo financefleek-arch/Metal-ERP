@@ -70,13 +70,14 @@ export function Shell({ children }: { children: ReactNode }) {
   const setup = useSetup(me?.role === "owner" && !me?.is_platform_admin);
   const setupLeft = setup.data && setup.data.done < setup.data.total ? setup.data : null;
 
-  const allNav: { to: string; label: string; badge?: number }[] = [
-    ...baseNav,
+  const allNav: { to: string; label: string; badge?: number; note?: string; locked?: boolean }[] = [
+    // a screen that is not on the plan shows a lock, so it is clear before it is opened (phone and web alike)
+    ...baseNav.map((n) => ({ ...n, locked: n.to === "/collections" && me?.features?.collections === false })),
     ...(me?.ext_supplier_catalog ? [{ to: "/orders", label: "Orders", badge: newOrders }] : []),
     ...(me?.ext_inward_import || me?.ext_supplier_catalog
       ? [{ to: "/documents", label: "Supplier documents" }]
       : []),
-    ...(setupLeft ? [{ to: "/setup", label: `Setup ${setupLeft.done}/${setupLeft.total}` }] : []),
+    ...(setupLeft ? [{ to: "/setup", label: "Setup", note: `${setupLeft.done}/${setupLeft.total}` }] : []),
   ];
   // a counter works on drafts and orders; money, items and settings are not theirs to open
   const nav = me?.role === "counter" ? allNav.filter((n) => !COUNTER_HIDDEN_NAV.includes(n.to)) : allNav;
@@ -85,6 +86,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const tabNav = nav.filter((n) => TAB_PATHS.includes(n.to));
   const moreNav = nav.filter((n) => !TAB_PATHS.includes(n.to));
   const moreBadge = moreNav.reduce((t, n) => t + (n.badge ?? 0), 0);
+  // phone: Setup sits under More, so More shows a dot while first steps remain
+  const moreDot = moreNav.some((n) => n.to === "/setup");
   const moreActive = moreNav.some((n) => pathname === n.to || pathname.startsWith(n.to + "/"));
 
   // Close the "More" sheet whenever the route changes.
@@ -152,6 +155,8 @@ export function Shell({ children }: { children: ReactNode }) {
                 }
               >
                 {n.label}
+                {n.note && <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-ground">{n.note}</span>}
+                {n.locked && <span aria-label="not on your plan" title="Not on your plan"> 🔒</span>}
                 {n.badge ? <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[11px] font-semibold text-ground">{n.badge}</span> : null}
               </NavLink>
             ))}
@@ -203,6 +208,8 @@ export function Shell({ children }: { children: ReactNode }) {
             >
               <span className="w-6 text-center text-muted"><NavIcon to={n.to} /></span>
               {n.label}
+              {n.locked && <span aria-label="not on your plan"> 🔒</span>}
+              {n.note && <span className="ml-auto rounded-full bg-accent px-2 text-xs font-semibold text-white">{n.note}</span>}
               {n.badge ? (
                 <span className="ml-auto rounded-full bg-danger px-2 text-xs font-semibold text-white">{n.badge} new</span>
               ) : null}
@@ -241,7 +248,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <>
                 {isActive && <span className="absolute top-0 h-[3px] w-7 rounded-b bg-accent" />}
                 <NavIcon to={n.to} />
-                {TAB_LABEL[n.to] ?? n.label}
+                {TAB_LABEL[n.to] ?? n.label}{n.locked ? " 🔒" : ""}
               </>
             )}
           </NavLink>
@@ -256,6 +263,9 @@ export function Shell({ children }: { children: ReactNode }) {
           >
             <NavIcon to="more" />
             More
+            {moreBadge === 0 && moreDot && (
+              <span aria-hidden className="absolute left-[calc(50%+8px)] top-2 h-2 w-2 rounded-full bg-accent" />
+            )}
             {moreBadge > 0 && (
               <span className="absolute left-[calc(50%+6px)] top-1 min-w-4 rounded-full bg-danger px-1 text-center text-[11px] font-semibold text-white">
                 {moreBadge}
