@@ -10,10 +10,13 @@ import { uomDisplay } from "../../lib/uom";
 import { normalizePhone, phoneError } from "../../lib/reference";
 import { lastSeenLabel } from "../../lib/format";
 import { useAuth } from "../../lib/auth";
+import { focusField, focusId, useDialogKeys } from "../../lib/keyboard";
 import { canDraft, canWrite } from "../../lib/roles";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import { OffersConsent } from "../../components/OffersConsent";
 import { WhatsappLog } from "../../components/WhatsappStatus";
+import { PriceHistoryPanel } from "../../components/PriceHistoryPanel";
+import { priceCaption, sameUnit } from "../../lib/priceHistory";
 import { TallyPushPanel } from "../../components/TallySyncStatus";
 import { SimilarParties } from "../../components/SimilarParties";
 import { isDup409 } from "../../lib/types";
@@ -22,6 +25,7 @@ import type {
   Invoice,
   InvoiceLineIn,
   ItemListItem,
+  LastPrices,
   Party,
   PartyDuplicate409,
   PartyLedgerEntry,
@@ -29,6 +33,7 @@ import type {
   PartyMatchRef,
   PaymentCreate,
   PaymentOut,
+  PricePoint,
   ResolveResult,
   WeighmentSlipIn,
 } from "../../lib/types";
@@ -54,6 +59,10 @@ interface Row {
   _priceMax: string | null;
   _lastRate: string | null;
   _lastSoldAt: string | null;
+  /** the rate we filled in ourselves (pick / party price) — while the field still equals it,
+   *  the operator has not touched it, so a better price may replace it */
+  _autoRate: string | null;
+  _rateFrom: "party" | "item" | null;
 }
 
 /** desktop line-table column track — shared by the header and every row so
@@ -90,6 +99,8 @@ function blankRow(segmentNo = 1): Row {
     _priceMax: null,
     _lastRate: null,
     _lastSoldAt: null,
+    _autoRate: null,
+    _rateFrom: null,
   };
 }
 
@@ -118,6 +129,8 @@ function rowsFromInvoice(inv: Invoice): Row[] {
     _priceMax: null,
     _lastRate: null,
     _lastSoldAt: null,
+    _autoRate: null,
+    _rateFrom: null,
   }));
 }
 
@@ -362,6 +375,73 @@ export function InvoiceEditorPage() {
     if (partyRec.data) setPartyOpeningLocked(partyRec.data.opening_balance_locked);
   }, [partyRec.data]);
 
+  // What this party was last billed for each item on the bill (Tally's "last sale price").
+  // One request for all lines; finalized sales invoices only, so a draft never feeds itself.
+  const itemIdsKey = useMemo(
+    () => [...new Set(rows.map((r) => r.item_id).filter((x): x is string => !!x))].sort().join(","),
+    [rows],
+  );
+  const lastPrices = useQuery({
+    queryKey: ["party-last-prices", partyId, itemIdsKey],
+    queryFn: () =>
+      api<LastPrices>(
+        `/invoices/price-history/last?party_id=${encodeURIComponent(partyId)}&item_ids=${itemIdsKey}`,
+      ),
+    enabled: !!partyId && !!itemIdsKey && !readOnly,
+    staleTime: 30_000,
+  });
+  const partyPrices = useMemo(() => {
+    const m = new Map<string, PricePoint>();
+    for (const p of lastPrices.data?.prices ?? []) m.set(p.item_id, p);
+    return m;
+  }, [lastPrices.data]);
+
+  // A rate we filled from the item (not typed by the operator) is replaced by the party's own
+  // last price once it arrives. Anything the operator touched stays as typed.
+  useEffect(() => {
+    if (!lastPrices.data) return;
+    const better = (r: Row) => {
+      const p = r.item_id ? partyPrices.get(r.item_id) : undefined;
+      return p && r._rateFrom === "item" && r.unit_rate === r._autoRate && sameUnit(p, r.uom)
+        ? p
+        : undefined;
+    };
+    if (!rows.some((r) => better(r))) return;
+    setRows((rs) =>
+      rs.map((r) => {
+        const p = better(r);
+        return p ? { ...r, unit_rate: p.unit_rate, _autoRate: p.unit_rate, _rateFrom: "party" } : r;
+      }),
+    );
+    setDirty(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastPrices.data]);
+
+  // Party changed after lines were already priced: say so, never swap rates silently.
+  const [partySwitched, setPartySwitched] = useState(false);
+  const rateOffers = useMemo(
+    () =>
+      !partySwitched
+        ? []
+        : rows.filter((r) => {
+            const p = r.item_id ? partyPrices.get(r.item_id) : undefined;
+            return !!p && sameUnit(p, r.uom) && Number(p.unit_rate) !== Number(r.unit_rate);
+          }),
+    [partySwitched, rows, partyPrices],
+  );
+  function applyPartyRates() {
+    setRows((rs) =>
+      rs.map((r) => {
+        const p = r.item_id ? partyPrices.get(r.item_id) : undefined;
+        return p && sameUnit(p, r.uom) && Number(p.unit_rate) !== Number(r.unit_rate)
+          ? { ...r, unit_rate: p.unit_rate, _autoRate: null, _rateFrom: "party" as const }
+          : r;
+      }),
+    );
+    setDirty(true);
+    setPartySwitched(false);
+  }
+
 
   // subtotal-only pass so a % invoice discount has a base to resolve against
   const subtotalOnly = useMemo(
@@ -592,6 +672,19 @@ export function InvoiceEditorPage() {
     setRows((rs) => [...rs, r]);
     setOpenKey(r.key); // the fresh line is the one you're filling
     setDirty(true);
+    focusField(r.key, "item");
+  }
+  /** Enter on the last field of a line: on to the next line's item (a new
+   *  line if this was the last one) — the Tally rhythm. */
+  function advanceFrom(key: string) {
+    const i = rows.findIndex((r) => r.key === key);
+    const next = rows[i + 1];
+    if (next) focusField(next.key, "item");
+    else addRow();
+  }
+  /** Enter on an empty item: the lines are done — go to Finalize (or Save). */
+  function finishLines() {
+    if (!focusId("inv-finalize")) focusId("inv-save");
   }
 
   // Speech-invoice-capture pilot — real-time: a WebSocket proxy
@@ -855,6 +948,31 @@ export function InvoiceEditorPage() {
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Re-render failed"),
   });
 
+  // Editor-wide keys. Ctrl+S saves the draft; Alt+P cycles "payment on
+  // finalize" (none → full → partial) — or opens Record payment on a final bill.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        if (!readOnly && dirty && !save.isPending) {
+          setErr(null);
+          save.mutate();
+        }
+      } else if (e.altKey && e.key.toLowerCase() === "p" && mayFinalize) {
+        e.preventDefault();
+        if (finalized) {
+          if (inv?.party_id) setPayingOpen(true);
+        } else if (!readOnly) {
+          const next = finalizePayMode === "none" ? "full" : finalizePayMode === "full" ? "partial" : "none";
+          setFinalizePayMode(next);
+          if (next === "partial") setTimeout(() => document.getElementById("inv-pay-amount")?.focus(), 0);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   if (!isNew && detail.isLoading) {
     return <div className="grid h-full place-items-center text-sm text-muted">Loading…</div>;
   }
@@ -893,8 +1011,9 @@ export function InvoiceEditorPage() {
             <>
               <button
                 className="btn-ghost h-9 px-4 text-sm"
+                id="inv-save"
                 disabled={!dirty || save.isPending}
-                title="Saves everything entered so far — a party can be added later"
+                title="Saves everything entered so far — a party can be added later (Ctrl+S)"
                 onClick={() => {
                   setErr(null);
                   save.mutate();
@@ -904,7 +1023,7 @@ export function InvoiceEditorPage() {
               </button>
               {mayFinalize ? (
               <>
-              <div className="flex items-center gap-1.5" title="Record a cash payment against this invoice right after it's finalized — for customers who pay on the spot">
+              <div className="flex items-center gap-1.5" title="Record a cash payment against this invoice right after it's finalized — for customers who pay on the spot (Alt+P to cycle)">
                 <div className="inline-flex overflow-hidden rounded-md border border-line">
                   {(["none", "full", "partial"] as const).map((m) => (
                     <button
@@ -924,12 +1043,20 @@ export function InvoiceEditorPage() {
                     className="field h-9 w-24 text-right text-xs"
                     inputMode="decimal"
                     placeholder="0.00"
+                    id="inv-pay-amount"
                     value={finalizePayAmount}
                     onChange={(e) => setFinalizePayAmount(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        focusId("inv-finalize");
+                      }
+                    }}
                   />
                 )}
               </div>
               <button
+                id="inv-finalize"
                 className="btn-primary h-9 px-4 text-sm"
                 disabled={localBlockers.length > 0 || finalize.isPending}
                 onClick={() => {
@@ -1052,11 +1179,16 @@ export function InvoiceEditorPage() {
                 <PartyPicker
                   value={partyId}
                   label={partyLabel}
+                  autoFocus={isNew && !partyId}
                   onPick={(p) => {
                     setPartyId(p.id);
                     setPartyLabel(p.legal_name);
                     setPartyOpeningLocked(p.opening_balance_locked);
+                    setPartySwitched(rows.some((r) => r.item_id));
                     setDirty(true);
+                    // party chosen → straight into the first empty line
+                    const target = rows.find((r) => !r.description.trim()) ?? rows[0];
+                    if (target) focusField(target.key, "item");
                   }}
                 />
               )}
@@ -1097,6 +1229,24 @@ export function InvoiceEditorPage() {
             </div>
           </div>
 
+          {!readOnly && rateOffers.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded border border-[#e8d9b5] bg-[#fbf6ee] px-3 py-2 text-sm">
+              <span className="flex-1">
+                {partyLabel || "This party"} was last billed different rates on{" "}
+                <b>
+                  {rateOffers.length} line{rateOffers.length === 1 ? "" : "s"}
+                </b>
+                .
+              </span>
+              <button className="btn-primary h-9 px-3 text-xs" onClick={applyPartyRates}>
+                Use their last rates
+              </button>
+              <button className="btn-ghost h-9 px-3 text-xs" onClick={() => setPartySwitched(false)}>
+                Keep current
+              </button>
+            </div>
+          )}
+
           {/* line table */}
           <div className="card overflow-visible">
             <div className={`hidden ${LINE_GRID} gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase text-muted md:grid`}>
@@ -1136,7 +1286,14 @@ export function InvoiceEditorPage() {
                     }
                     onPatch={(p) => patchRow(r.key, p)}
                     onRemove={() => removeRow(r.key)}
+                    onAdvance={() => advanceFrom(r.key)}
+                    onFinish={finishLines}
+                    isLast={i === rows.length - 1}
                     forceSearchOpen={voiceRowKey === r.key}
+                    partyId={partyId}
+                    partyName={partyLabel}
+                    partyPrice={r.item_id ? partyPrices.get(r.item_id) : undefined}
+                    pricesChecked={lastPrices.isSuccess}
                   />
                   {seg && (
                     <SlipDivider
@@ -1203,6 +1360,7 @@ export function InvoiceEditorPage() {
                   <button
                     className="hidden text-sm text-accent hover:underline md:inline"
                     onClick={addRow}
+                    title="Or press Enter after the Rate"
                   >
                     + Add line
                   </button>
@@ -1220,6 +1378,11 @@ export function InvoiceEditorPage() {
                     {recording ? "● Recording — tap to stop" : voiceBusy ? "Reading…" : "Speak a line"}
                   </button>
                 </div>
+                <p className="hidden text-[11px] text-muted md:block">
+                  <b className="font-semibold text-ink">Keys:</b> Enter → next field, and after Rate →
+                  next line · Enter on an empty item → done, go to Finalize · Ctrl+Enter → use typed
+                  name as a new item · Ctrl+S save · Alt+P payment · <b>?</b> all shortcuts
+                </p>
                 {voiceNote && (
                   <p
                     className={`rounded-md px-3 py-2 text-xs ${
@@ -1560,6 +1723,11 @@ function WhatsappSendDialog({
     }
   }
 
+  // Esc closes; Enter sends once a recipient is set
+  useDialogKeys(onClose, () => {
+    if (canSend && !allDone) void run();
+  });
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
@@ -1666,6 +1834,7 @@ function WhatsappSendDialog({
                 : targets.length > 1
                   ? `Send to ${targets.length}`
                   : "Send"}
+              {!busy && <span className="ml-1.5 hidden text-[10px] opacity-70 md:inline">Enter ↵</span>}
             </button>
           )}
         </div>
@@ -1788,6 +1957,7 @@ function CloseSegmentDialog({
   const needsWeight = lineSumKg > 0;
   const parsed = parseFloat(val);
   const invalid = needsWeight && (!val.trim() || !isFinite(parsed) || parsed <= 0);
+  useDialogKeys(onCancel);
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4"
@@ -2002,14 +2172,18 @@ function PartyOpeningBlock({
 function PartyPicker({
   value,
   label,
+  autoFocus,
   onPick,
 }: {
   value: string;
   label: string;
+  autoFocus?: boolean;
   onPick: (p: PartyListItem) => void;
 }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  /** keyboard-highlighted result */
+  const [hi, setHi] = useState(0);
   const [creating, setCreating] = useState(false);
   const debQ = useDebounced(q.trim(), 250);
   // No role filter: a firm already on file as a *supplier* must surface here
@@ -2037,19 +2211,42 @@ function PartyPicker({
         className="field"
         placeholder={value ? label : "Search a party…"}
         value={open ? q : value ? label : q}
-        onFocus={() => setOpen(true)}
+        autoFocus={autoFocus}
+        onFocus={(e) => {
+          setOpen(true);
+          if (value) e.currentTarget.select();
+        }}
         onChange={(e) => {
           setQ(e.target.value);
+          setHi(0);
           setOpen(true);
         }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onKeyDown={(e) => {
+          const list = results.data ?? [];
+          if (e.key === "ArrowDown" && list.length) {
+            e.preventDefault();
+            setHi((h) => Math.min(h + 1, list.length - 1));
+          } else if (e.key === "ArrowUp" && list.length) {
+            e.preventDefault();
+            setHi((h) => Math.max(h - 1, 0));
+          } else if (e.key === "Enter" && open && list[hi]) {
+            e.preventDefault();
+            handlePick(list[hi]);
+          } else if (e.key === "Escape") {
+            setOpen(false);
+          }
+        }}
       />
       {open && (results.data?.length ?? 0) > 0 && (
         <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-line bg-card shadow-lg">
-          {results.data!.map((p) => (
+          {results.data!.map((p, idx) => (
             <button
               key={p.id}
-              className="block w-full border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
+              tabIndex={-1}
+              className={`block w-full border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft ${
+                idx === hi ? "bg-accent-soft" : ""
+              }`}
               onMouseDown={() => handlePick(p)}
             >
               <span className="font-medium">{p.legal_name}</span>
@@ -2147,6 +2344,11 @@ function QuickCreatePartyDialog({
 
   const blockedByDup = dupWarn?.code === "party_maybe_exists";
 
+  // Esc cancels; Enter anywhere in the form creates the party
+  useDialogKeys(onCancel, () => {
+    if (name.trim() && !blockedByDup && !create.isPending) create.mutate(false);
+  });
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/30 p-4"
@@ -2166,9 +2368,6 @@ function QuickCreatePartyDialog({
           onChange={(e) => {
             setDupWarn(null);
             setName(e.target.value);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && name.trim() && !blockedByDup) create.mutate(false);
           }}
         />
         {!dupWarn && (
@@ -2262,6 +2461,7 @@ function QuickCreatePartyDialog({
             onClick={() => create.mutate(false)}
           >
             {create.isPending ? "Creating…" : "Create & use"}
+            {!create.isPending && <span className="ml-1.5 hidden text-[10px] opacity-70 md:inline">Enter ↵</span>}
           </button>
         </div>
       </div>
@@ -2304,7 +2504,14 @@ function LineRow({
   otherItemLine,
   onPatch,
   onRemove,
+  onAdvance,
+  onFinish,
+  isLast,
   forceSearchOpen,
+  partyId,
+  partyName,
+  partyPrice,
+  pricesChecked,
 }: {
   n: number;
   row: Row;
@@ -2318,13 +2525,31 @@ function LineRow({
   otherItemLine: number;
   onPatch: (p: Partial<Row>) => void;
   onRemove: () => void;
+  /** desktop keyboard: Enter on the last field → next line's item */
+  onAdvance: () => void;
+  /** desktop keyboard: Enter on an empty item → lines are done */
+  onFinish: () => void;
+  isLast: boolean;
   /** Speech-invoice-capture pilot: keep the item-search dropdown open while
    *  this row is being filled by a live voice transcript, without a real
    *  DOM focus event (patchRow() from outside the component can't trigger
    *  the input's own onFocus). */
   forceSearchOpen?: boolean;
+  /** the bill's party, for "what did THEY pay last time" (empty until picked) */
+  partyId: string;
+  partyName: string;
+  /** this party's last finalized sale of this line's item, when there is one */
+  partyPrice: PricePoint | undefined;
+  /** the party lookup has answered (so no price means "never sold to them") */
+  pricesChecked: boolean;
 }) {
+  const rowRef = useRef(row);
+  rowRef.current = row;
+  const [histOpen, setHistOpen] = useState(false);
+  const [histNote, setHistNote] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  /** keyboard-highlighted result in the item dropdown (-1 = none) */
+  const [hi, setHi] = useState(-1);
   const [typed, setTyped] = useState(row.description);
   /** fields the user has left — an empty-required caption only shows after this */
   const [touched, setTouched] = useState<Set<LineProblem["field"]>>(new Set());
@@ -2376,6 +2601,9 @@ function LineRow({
       hsn_code: it.hsn_code ?? row.hsn_code,
       uom: nextUom,
       unit_rate: it.last_rate ?? it.default_rate ?? row.unit_rate ?? "",
+      // remember what we filled so the party's own price can replace it, but never a typed rate
+      _autoRate: it.last_rate ?? it.default_rate ?? null,
+      _rateFrom: it.last_rate ?? it.default_rate ? "item" : null,
       _priceMin: it.price_min,
       _priceMax: it.price_max,
       _lastRate: it.last_rate,
@@ -2383,6 +2611,8 @@ function LineRow({
     });
     setTyped(it.name);
     setOpen(false);
+    setHi(-1);
+    focusField(row.key, "qty");
   }
 
   function createNew() {
@@ -2397,8 +2627,12 @@ function LineRow({
       _priceMax: null,
       _lastRate: null,
       _lastSoldAt: null,
+      _autoRate: null,
+      _rateFrom: null,
     });
     setOpen(false);
+    setHi(-1);
+    focusField(row.key, "qty");
   }
 
   const problems = lineProblems(row);
@@ -2440,11 +2674,15 @@ function LineRow({
   }
   const working = workingBits.join(" ");
 
-  const lastRateGhost =
-    row._lastRate && Number(row._lastRate)
-      ? `last ₹${row._lastRate}` +
-        (row._lastSoldAt ? ` · ${new Date(row._lastSoldAt).toLocaleDateString()}` : "")
-      : "";
+  const lastRateGhost = row.item_id
+    ? priceCaption({
+        partyName,
+        partyPrice,
+        checked: pricesChecked,
+        itemLast: row._lastRate && Number(row._lastRate) ? row._lastRate : null,
+        rowUom: row.uom,
+      })
+    : "";
   const bandGhost =
     row._priceMin || row._priceMax
       ? `band ${row._priceMin ? `₹${row._priceMin}` : ""}${
@@ -2452,6 +2690,43 @@ function LineRow({
         }${row._priceMax ? `₹${row._priceMax}` : ""}`
       : "";
   const rateGhost = [lastRateGhost, bandGhost].filter(Boolean).join(" · ");
+
+  // Tally's Stock Query: Alt+S on a line shows what this party paid before for the item.
+  function openHistory() {
+    if (!partyId) return setHistNote("Pick the party first.");
+    if (!row.item_id) return setHistNote("Pick an item first.");
+    setHistNote(null);
+    setHistOpen(true);
+  }
+  function onHistoryKey(e: React.KeyboardEvent): boolean {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      openHistory();
+      return true;
+    }
+    return false;
+  }
+  function applyHistory(p: PricePoint) {
+    onPatch({
+      unit_rate: p.unit_rate,
+      uom: normalizeUom(p.uom) || rowRef.current.uom,
+      _autoRate: null,
+      _rateFrom: "party",
+    });
+    setHistOpen(false);
+    focusField(row.key, "rate");
+  }
+  const historyBtn = row.item_id && !readOnly && (
+    <button
+      type="button"
+      tabIndex={-1}
+      className="ml-1 whitespace-nowrap underline decoration-dotted"
+      onClick={openHistory}
+      title="Previous sales of this item to this party (Alt+S)"
+    >
+      history (Alt+S)
+    </button>
+  );
 
   // ---- shared sub-pieces ----
   const itemInput = (
@@ -2462,9 +2737,12 @@ function LineRow({
         value={typed}
         disabled={readOnly}
         title={typed}
+        data-ln={row.key}
+        data-f="item"
         onChange={(e) => {
           setTyped(e.target.value);
           onPatch({ description: e.target.value, item_id: null, group_id: null });
+          setHi(-1);
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
@@ -2473,10 +2751,25 @@ function LineRow({
           setTimeout(() => setOpen(false), 160);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") {
+          const listOpen = open && !row.item_id && typed.trim() && results.length > 0;
+          if (e.key === "ArrowDown" && listOpen) {
             e.preventDefault();
-            if (autoPick) pick(autoPick);
+            setHi((h) => Math.min(h + 1, results.length - 1));
+          } else if (e.key === "ArrowUp" && listOpen) {
+            e.preventDefault();
+            setHi((h) => Math.max(h - 1, -1));
+          } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            // Ctrl+Enter: use exactly what was typed as a new item
+            e.preventDefault();
+            if (typed.trim() && !row.item_id) createNew();
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (row.item_id) focusField(row.key, "qty");
+            else if (hi >= 0 && results[hi]) pick(results[hi]);
+            else if (autoPick) pick(autoPick);
             else if (results[0]) pick(results[0]);
+            else if (!typed.trim() && !isLast) onAdvance();
+            else if (!typed.trim()) onFinish();
           } else if (e.key === "Escape") {
             setOpen(false);
           }
@@ -2484,13 +2777,16 @@ function LineRow({
       />
       {(open || forceSearchOpen) && !row.item_id && typed.trim() && (
         <div className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg">
-          {results.map((it) => {
+          {results.map((it, idx) => {
             const badge = it.id === resolvedId && method ? METHOD_BADGE[method] : undefined;
             const size = it.size_text || it.grade;
             return (
               <button
                 key={it.id}
-                className="flex w-full items-center justify-between gap-2 border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft"
+                tabIndex={-1}
+                className={`flex w-full items-center justify-between gap-2 border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft ${
+                  idx === hi ? "bg-accent-soft" : ""
+                }`}
                 onMouseDown={() => pick(it)}
               >
                 <span className="min-w-0">
@@ -2521,10 +2817,12 @@ function LineRow({
             <div className="px-3 py-2 text-[11px] text-muted">No matching item.</div>
           )}
           <button
+            tabIndex={-1}
             className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
             onMouseDown={createNew}
           >
             + Use “{typed.trim()}” as a new item
+            <span className="ml-2 text-[10px] text-muted">Ctrl+Enter</span>
           </button>
         </div>
       )}
@@ -2542,6 +2840,7 @@ function LineRow({
         <button
           key={m}
           type="button"
+          tabIndex={-1}
           disabled={readOnly}
           title={m === "amt" ? "Discount in ₹" : "Discount in %"}
           className={`w-7 border-r border-line text-xs font-bold last:border-r-0 ${
@@ -2676,6 +2975,9 @@ function LineRow({
             value={row.unit_rate}
             disabled={readOnly}
             onChange={(e) => onPatch({ unit_rate: e.target.value })}
+            onKeyDown={(e) => {
+              onHistoryKey(e);
+            }}
             onBlur={() => touch("rate")}
           />
         </div>
@@ -2685,6 +2987,7 @@ function LineRow({
       {(rateMsg || rateGhost) && (
         <p className={`mt-1 text-[11px] ${rateMsg ? rateMsg.cls : "text-muted"}`}>
           {rateMsg ? rateMsg.text : rateGhost}
+          {historyBtn}
         </p>
       )}
 
@@ -2791,6 +3094,7 @@ function LineRow({
         <input
           className={`field h-9 text-xs ${fieldClass("hsn")}`}
           placeholder="HSN"
+          tabIndex={-1}
           value={row.hsn_code}
           disabled={readOnly}
           onChange={(e) => onPatch({ hsn_code: e.target.value })}
@@ -2799,9 +3103,18 @@ function LineRow({
           className={`field h-9 text-right text-sm ${fieldClass("qty")}`}
           inputMode="decimal"
           placeholder="0"
+          data-ln={row.key}
+          data-f="qty"
           value={row.quantity}
           disabled={readOnly}
           onChange={(e) => onPatch({ quantity: e.target.value })}
+          onKeyDown={(e) => {
+            if (onHistoryKey(e)) return;
+            if (e.key === "Enter") {
+              e.preventDefault();
+              focusField(row.key, "rate");
+            }
+          }}
         />
         <select
           className={`field h-9 px-1 text-xs ${fieldClass("unit")}`}
@@ -2823,7 +3136,17 @@ function LineRow({
           value={row.unit_rate}
           disabled={readOnly}
           title={rateGhost || undefined}
+          data-ln={row.key}
+          data-f="rate"
           onChange={(e) => onPatch({ unit_rate: e.target.value })}
+          onKeyDown={(e) => {
+            if (onHistoryKey(e)) return;
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (Number(row.quantity) > 0) onAdvance();
+              else focusField(row.key, "qty");
+            }
+          }}
         />
         <span className="flex items-center justify-end gap-1.5">
           {discSeg}
@@ -2831,22 +3154,36 @@ function LineRow({
             className={`field h-9 w-12 text-right text-xs ${fieldClass("disc")}`}
             inputMode="decimal"
             placeholder="0"
+            data-ln={row.key}
+            data-f="disc"
             value={row.discount}
             disabled={readOnly}
             onChange={(e) => onPatch({ discount: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onAdvance();
+              }
+            }}
           />
         </span>
         <span className="text-right font-mono text-sm" title={working || undefined}>
           {amount ? inr(amount) : "—"}
         </span>
         {!readOnly ? (
-          <button className="text-danger md:text-center" title="Remove line" onClick={onRemove}>
+          <button className="text-danger md:text-center" title="Remove line" tabIndex={-1} onClick={onRemove}>
             ×
           </button>
         ) : (
           <span />
         )}
       </div>
+      {!readOnly && row.item_id && (rateGhost || histNote) && (
+        <div className="px-3 pb-1 pl-11 text-[11px] text-muted">
+          {histNote ?? rateGhost}
+          {historyBtn}
+        </div>
+      )}
       {!readOnly && problems.length > 0 && (
         <div className="border-b border-[#f3eee4] bg-[#fbf6ee] px-3 py-1.5 pl-11 text-[11px]">
           <b className="mr-1 text-ink">Line {n}:</b>
@@ -2871,6 +3208,16 @@ function LineRow({
         <div className="px-3 pb-1 text-[10px] text-warn md:pl-11">
           also on line {otherItemLine + 1}
         </div>
+      )}
+      {histOpen && row.item_id && (
+        <PriceHistoryPanel
+          partyId={partyId}
+          partyName={partyName || "this party"}
+          itemId={row.item_id}
+          itemName={row.description}
+          onApply={applyHistory}
+          onClose={() => setHistOpen(false)}
+        />
       )}
     </div>
   );

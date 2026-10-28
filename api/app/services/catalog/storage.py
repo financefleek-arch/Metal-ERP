@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import uuid
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
@@ -20,12 +21,16 @@ from pathlib import Path
 from typing import Protocol
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 from botocore.client import Config as BotoConfig
 from fastapi import HTTPException
 
 from app.config import get_settings
 
 _UPLOAD_WORKERS = 16
+# A big file goes up in 5 MB parts, one at a time: its memory is one part, whatever the file size.
+# (5 MB is the smallest part S3-style storage accepts.)
+_PART_BYTES = 5 * 1024 * 1024
 
 
 class CatalogStorage(Protocol):
@@ -34,6 +39,8 @@ class CatalogStorage(Protocol):
     def get(self, key: str) -> bytes: ...
 
     def delete(self, key: str) -> None: ...
+
+    def put_file(self, key: str, path: str | os.PathLike[str], content_type: str = ...) -> None: ...
 
     def put_many(self, items: Iterable[tuple[str, bytes, str]]) -> None: ...
 
@@ -95,6 +102,18 @@ class LocalStorage:
         tmp.write_bytes(data)
         os.replace(tmp, path)  # atomic: a reader never sees half a file
 
+    def put_file(
+        self, key: str, path: str | os.PathLike[str], content_type: str = "application/octet-stream"
+    ) -> None:
+        """Copy a file in without reading it into memory."""
+        dest = self._path(key)
+        if dest.parent not in self._made:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            self._made.add(dest.parent)
+        tmp = dest.with_name(f"{dest.name}.{uuid.uuid4().hex[:8]}.tmp")
+        shutil.copyfile(path, tmp)
+        os.replace(tmp, dest)
+
     def get(self, key: str) -> bytes:
         return self._path(key).read_bytes()
 
@@ -130,6 +149,24 @@ class R2Storage:
     def put(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
         _check_key(key)
         self._client.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
+
+    def put_file(
+        self, key: str, path: str | os.PathLike[str], content_type: str = "application/octet-stream"
+    ) -> None:
+        """Stream a file up in parts: memory is one part, not the file."""
+        _check_key(key)
+        self._client.upload_file(
+            Filename=os.fspath(path),
+            Bucket=self._bucket,
+            Key=key,
+            ExtraArgs={"ContentType": content_type},
+            Config=TransferConfig(
+                multipart_threshold=_PART_BYTES,
+                multipart_chunksize=_PART_BYTES,
+                max_concurrency=1,
+                use_threads=False,
+            ),
+        )
 
     def get(self, key: str) -> bytes:
         _check_key(key)

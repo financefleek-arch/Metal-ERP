@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { inr } from "../lib/previewTotal";
+import { useDialogKeys } from "../lib/keyboard";
 import type {
   OpenInvoiceForAllocation,
   PaymentCreate,
@@ -172,18 +173,39 @@ export function PaymentDialog({
 
   const canSave = amountNum > 0 && !overAllocated && !save.isPending;
 
+  // Esc closes and focus returns to the opener; Enter in any field saves
+  // (it is a <form>); Alt+1-4 picks the mode, Alt+F pays in full.
+  useDialogKeys(onClose);
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/30 sm:items-center sm:p-4"
       onClick={onClose}
     >
-      <div
+      <form
         className="flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-2xl border border-line bg-card sm:max-w-md sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canSave) save.mutate();
+        }}
+        onKeyDown={(e) => {
+          if (!e.altKey) return;
+          const m = MODES[Number(e.key) - 1];
+          if (m) {
+            e.preventDefault();
+            setMode(m.key);
+          } else if (e.key.toLowerCase() === "f" && totalOutstanding > 0) {
+            e.preventDefault();
+            payInFull();
+          }
+        }}
       >
         <div className="flex items-center justify-between px-4 pb-1 pt-4">
           <h2 className="font-serif text-base font-semibold">Record payment</h2>
           <button
+            type="button"
+            tabIndex={-1}
             className="grid h-7 w-7 place-items-center rounded-full bg-ground text-muted"
             onClick={onClose}
           >
@@ -214,6 +236,8 @@ export function PaymentDialog({
                 {totalOutstanding > 0 && (
                   <button
                     type="button"
+                    tabIndex={-1}
+                    title="Alt+F"
                     className="normal-case tracking-normal text-accent hover:underline"
                     onClick={payInFull}
                   >
@@ -224,6 +248,7 @@ export function PaymentDialog({
               <input
                 className="field text-right font-semibold"
                 inputMode="decimal"
+                autoFocus
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
@@ -238,6 +263,7 @@ export function PaymentDialog({
                 <button
                   key={m.key}
                   type="button"
+                  title={`Alt+${MODES.indexOf(m) + 1}`}
                   className={`border-r border-line py-2 text-xs font-semibold last:border-r-0 ${
                     mode === m.key ? "bg-accent text-white" : "bg-card text-muted"
                   }`}
@@ -347,13 +373,17 @@ export function PaymentDialog({
         <div className="border-t border-line px-4 py-3">
           <button
             className="btn-primary h-11 w-full text-sm"
+            type="submit"
             disabled={!canSave}
-            onClick={() => save.mutate()}
           >
             {save.isPending ? "Saving…" : "Save payment"}
+            {!save.isPending && <span className="ml-1.5 hidden text-[11px] opacity-70 md:inline">Enter ↵</span>}
           </button>
+          <p className="mt-1.5 hidden text-center text-[10px] text-muted md:block">
+            Esc cancel · Alt+1-4 mode · Alt+F pay in full
+          </p>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

@@ -303,3 +303,35 @@ class VoiceLineTranscriptIn(BaseModel):
     WebSocket, already transcribed — this just needs parsing/resolving."""
 
     transcript: str = Field(min_length=1, max_length=2000)
+
+
+# --------------------------------------------------------------------------
+# party price history (Tally's Stock Query, Alt+S)
+# --------------------------------------------------------------------------
+
+
+class PricePointOut(BaseModel):
+    """One past sale of an item to a party. `source` is `native` (billed here) or `tally`
+    (imported from the shop's Tally)."""
+
+    invoice_id: str
+    series: str
+    number: int | None
+    date: date_t
+    item_id: str
+    quantity: Qty
+    uom: str | None
+    unit_rate: Money
+    discount_pct: Decimal | None
+    source: Literal["native", "tally"] = "native"
+
+
+class PriceHistoryOut(BaseModel):
+    item_id: str
+    rows: list[PricePointOut]
+
+
+class LastPricesOut(BaseModel):
+    """The latest sale of each requested item to the party; unsold items are simply absent."""
+
+    prices: list[PricePointOut]

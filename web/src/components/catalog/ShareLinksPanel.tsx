@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
+import { useDialogKeys } from "../../lib/keyboard";
 import type { ShareLink } from "./ShareLinkDialog";
 import { ShareLinkOptions } from "./ShareLinkOptions";
 import { copyText, linkUrl, optionsBad, optionsOf, whatsappShare, type LinkOptions } from "./shareLinkUtils";
@@ -135,6 +136,7 @@ function EditOptions({
   onSave: (o: LinkOptions) => void;
 }) {
   const [opts, setOpts] = useState<LinkOptions>(optionsOf(link));
+  useDialogKeys(onClose);
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/40 p-4"

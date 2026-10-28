@@ -23,7 +23,6 @@ logic) and the party guess (if any) via `party_resolution.resolve_party`.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
@@ -31,7 +30,7 @@ from anthropic import Anthropic
 
 from app.config import get_settings
 
-MODEL = "claude-opus-5-5"
+MODEL = "claude-haiku-5-5"
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 _SYSTEM_PROMPT = """You read photographed handwritten paper slips ("kachcha \
@@ -44,26 +43,52 @@ Hinglish trade terms (e.g. "patra", "kadai", "tar", "chadar", "gauge" \
 numbers). Numbers may use Indian number words or Devanagari numerals. \
 Rates are usually per-piece or per-kg in rupees.
 
-Return ONLY a JSON object, no prose, matching exactly this shape:
-{
-  "party_name": string or null,   // customer name if legible on the slip, else null
-  "lines": [
-    {
-      "description": string,      // the item text as best transcribed/expanded, not re-translated
-      "quantity": string,         // a plain decimal number as a string, e.g. "24" or "2.5"
-      "uom": string or null,      // unit word as written (e.g. "dozen", "kg", "pcs", "nos")
-      "rate": string or null      // a plain decimal number as a string, or null if not written
-    }
-  ],
-  "notes": string or null         // anything illegible, crossed out or ambiguous worth a look
-}
+The slip may also be a printed software bill photographed off a screen or \
+paper. Then: quantity written like "1X5=5" or "144X0=144" is packs x pieces = \
+total, so use the number AFTER the "=" as the quantity; rate is the "Rate" \
+column (before discount), not the net price or amount.
 
 If a field is illegible or missing, use null rather than guessing a value. \
-Never invent a line that is not on the slip."""
+Never invent a line that is not on the slip. Report via the tool."""
+
+_TOOL = {
+    "name": "record_slip",
+    "description": "Record the lines read from the slip.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "party_name": {"type": ["string", "null"], "description": "Customer name if legible, else null"},
+            "lines": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string", "description": "Item text as written"},
+                        "quantity": {"type": ["string", "null"], "description": "Plain decimal, e.g. 24"},
+                        "uom": {"type": ["string", "null"], "description": "Unit as written, e.g. dozen"},
+                        "rate": {"type": ["string", "null"], "description": "Plain decimal or null"},
+                    },
+                    "required": ["description"],
+                },
+            },
+            "notes": {"type": ["string", "null"], "description": "Anything illegible or ambiguous"},
+        },
+        "required": ["lines"],
+    },
+}
 
 
 class SlipExtractionError(Exception):
-    """The vision call failed, or returned something that isn't the expected shape."""
+    """The vision call failed, or returned something that isn't the expected shape.
+
+    `input_tokens`/`output_tokens` are set when the API answered but the answer was
+    unusable: that call was still billed, so the usage counter records it.
+    """
+
+    def __init__(self, message: str, input_tokens: int = 0, output_tokens: int = 0) -> None:
+        super().__init__(message)
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
 
 
 @dataclass
@@ -79,6 +104,8 @@ class SlipExtraction:
     party_name: str | None
     lines: list[ExtractedLine] = field(default_factory=list)
     notes: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def _to_decimal(v: object) -> Decimal | None:
@@ -128,26 +155,27 @@ def extract_slip(image_bytes: bytes) -> SlipExtraction:
                 "type": "image",
                 "source": {"type": "base64", "media_type": media_type, "data": b64},
             },
-            {"type": "text", "text": "Extract this slip as the specified JSON."},
+            {"type": "text", "text": "Read this slip and report it by calling the record_slip tool."},
         ]
         resp = client.messages.create(
             model=MODEL,
-            max_tokens=2000,
+            max_tokens=8000,
             system=_SYSTEM_PROMPT,
+            tools=[_TOOL],
+            tool_choice={"type": "auto"},
             messages=[{"role": "user", "content": content}],
         )
     except Exception as exc:  # network/API error — never a 500 to the caller
         raise SlipExtractionError(f"Vision call failed: {exc}") from exc
 
-    text = "".join(block.text for block in resp.content if block.type == "text").strip()
-    if text.startswith("```"):
-        text = text.strip("`")
-        if text.startswith("json"):
-            text = text[4:]
-    try:
-        payload = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise SlipExtractionError(f"Could not parse the model's response: {exc}") from exc
+    in_tok, out_tok = resp.usage.input_tokens, resp.usage.output_tokens
+    if resp.stop_reason == "max_tokens":
+        raise SlipExtractionError(
+            "That slip has too many lines to read in one go; try two photos.", in_tok, out_tok
+        )
+    payload = next((b.input for b in resp.content if b.type == "tool_use"), None)
+    if not isinstance(payload, dict):
+        raise SlipExtractionError("Could not read that slip, try retaking the photo.", in_tok, out_tok)
 
     lines = []
     for raw_line in payload.get("lines") or []:
@@ -167,4 +195,6 @@ def extract_slip(image_bytes: bytes) -> SlipExtraction:
         party_name=(payload.get("party_name") or None),
         lines=lines,
         notes=(payload.get("notes") or None),
+        input_tokens=in_tok,
+        output_tokens=out_tok,
     )

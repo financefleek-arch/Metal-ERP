@@ -132,6 +132,11 @@ public sealed class TallyMastersModule(
                     outcome = await ProcessPullAsync(
                         ctx, log, jobId, GetString(item.Payload, "company_name") ?? "", ct);
                     break;
+                case "pull_vouchers":
+                    outcome = await ProcessCaptureAsync(
+                        ctx, log, jobId, GetString(item.Payload, "label"),
+                        GetString(item.Payload, "export_xml"), ct);
+                    break;
                 case "push_sales":
                 case "push_purchase":
                 case "push_items":
@@ -299,6 +304,116 @@ public sealed class TallyMastersModule(
             }
             ctx.ReportModuleStatus(Name, "error");
             return JobOutcome.Failed;
+        }
+    }
+
+    /// <summary>True only for a read-only Export envelope (never an Import).</summary>
+    internal static bool IsExportRequest(string xml)
+    {
+        var low = xml.ToLowerInvariant();
+        return low.Contains("<tallyrequest>export</tallyrequest>")
+            && !low.Contains("<tallyrequest>import")
+            && !low.Contains("<importdata");
+    }
+
+    private static string SafeLabel(string? label)
+    {
+        var s = new string((label ?? "capture").Where(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_').ToArray());
+        return s.Length == 0 ? "capture" : s[..Math.Min(s.Length, 60)];
+    }
+
+    /// <summary>
+    /// Voucher-import capture (plan P0): send ONE backend-built Export request to the gateway
+    /// and park the unparsed XML in R2, reporting size and elapsed time inline. Pure transport
+    /// like the push path: the agent refuses anything that is not an Export and never parses
+    /// the answer. Same "Tally closed / no company" retry vocabulary as the masters pull.
+    /// </summary>
+    private async Task<JobOutcome> ProcessCaptureAsync(
+        AgentContext ctx, ILogger log, string jobId, string? label, string? exportXml,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(exportXml) || !IsExportRequest(exportXml))
+        {
+            log.LogWarning("capture job {Job} refused: not a read-only Export request", jobId);
+            await ReportCaptureErrorAsync(
+                ctx, log, jobId, "the agent only runs read-only Export requests", ct);
+            return JobOutcome.Failed;
+        }
+
+        string body;
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            body = await gateway.ExportAsync(_opts!.GatewayUrl, exportXml, ct);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is null)
+        {
+            log.LogInformation(ex, "Tally gateway unreachable — capture job {Job} will retry", jobId);
+            ctx.ReportModuleStatus(Name, "tally_unavailable");
+            await PingAsync(ctx, log, jobId, "tally_unavailable", ct);
+            return JobOutcome.Retry;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // A read-only export is safe to repeat, but a timeout usually means "too big":
+            // report it so the operator picks a smaller period instead of looping forever.
+            var why = ex is TaskCanceledException
+                ? "Tally did not answer in time. Try a shorter period."
+                : $"Tally answered with an error ({(int?)((HttpRequestException)ex).StatusCode}).";
+            await ReportCaptureErrorAsync(ctx, log, jobId, why, ct);
+            return JobOutcome.Failed;
+        }
+        var ms = (int)Math.Min(clock.ElapsedMilliseconds, int.MaxValue);
+
+        if (body.Contains("Could not find Company", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.ReportModuleStatus(Name, "no_company_loaded");
+            await PingAsync(ctx, log, jobId, "no_company_loaded", ct);
+            return JobOutcome.Retry;
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(body);
+        var sourceName = $"{SafeLabel(label)}-{DateTime.UtcNow:yyyyMMddTHHmmssZ}.xml";
+        var tmp = Path.Combine(Path.GetTempPath(), $"tally-{jobId}-{sourceName}");
+        try
+        {
+            await File.WriteAllBytesAsync(tmp, bytes, ct);
+            var req = await ctx.Backend.RequestUploadAsync(sourceName, bytes.Length, ct);
+            if (req is null)
+            {
+                await ReportCaptureErrorAsync(ctx, log, jobId, "upload-request returned no response", ct);
+                return JobOutcome.Failed;
+            }
+            await ctx.Backend.PutFileAsync(req.PutUrl, tmp, ct);
+            var meta = $"{{\"bytes\":{bytes.Length},\"ms\":{ms}}}";
+            await ctx.Backend.PostJobResultAsync(jobId, "ok", req.R2Key, null, ct, tallyResponse: meta);
+            log.LogInformation(
+                "Captured voucher export ({Bytes} bytes, {Ms} ms) for job {Job}", bytes.Length, ms, jobId);
+            return JobOutcome.Done;
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "capture upload/report failed for job {Job}", jobId);
+            await ReportCaptureErrorAsync(ctx, log, jobId, ex.Message, ct);
+            return JobOutcome.Failed;
+        }
+        finally
+        {
+            try { File.Delete(tmp); } catch { /* best effort */ }
+        }
+    }
+
+    private async Task ReportCaptureErrorAsync(
+        AgentContext ctx, ILogger log, string jobId, string why, CancellationToken ct)
+    {
+        ctx.ReportModuleStatus(Name, "error");
+        try
+        {
+            await ctx.Backend.PostJobResultAsync(jobId, "error", null, why, ct);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "could not report the capture error for job {Job}", jobId);
         }
     }
 

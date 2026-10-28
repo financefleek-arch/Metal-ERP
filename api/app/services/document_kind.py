@@ -7,6 +7,7 @@ and can switch, and nothing is approved on the strength of it.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -39,9 +40,14 @@ class Guess:
     pages: int = 0
 
 
-def guess(data: bytes) -> Guess:
+def guess(data: bytes | str | os.PathLike[str]) -> Guess:
+    """`data` is the PDF's bytes, or a path to it (a big upload is opened from disk, not read in)."""
     try:
-        doc = pymupdf.open(stream=data, filetype="pdf")
+        doc = (
+            pymupdf.open(stream=data, filetype="pdf")
+            if isinstance(data, bytes)
+            else pymupdf.open(data)
+        )
     except Exception:  # noqa: BLE001 - not a readable PDF
         return Guess("unknown", ["The file could not be read as a PDF."])
     with doc:

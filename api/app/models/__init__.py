@@ -39,6 +39,7 @@ from app.models.ordering import CatalogShareLink, CustomerOrder, CustomerOrderLi
 from app.models.party import Party, PartyAddress
 from app.models.payment import Payment, PaymentAllocation
 from app.models.reminder import PaymentReminder
+from app.models.slip_capture import SlipCapture
 from app.models.tally_agent import AgentOutboxItem, BackupShop, BackupUpload
 from app.models.tally_connector import TallyCompany, TallyLink, TallySyncJob
 from app.models.tally_import import StagingTallyParty
@@ -84,6 +85,7 @@ __all__ = [
     "PartyAddress",
     "Payment",
     "PaymentAllocation",
+    "SlipCapture",
     "StagingTallyItem",
     "StagingTallyParty",
     "TallyCompany",

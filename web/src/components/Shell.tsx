@@ -1,10 +1,22 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { COUNTER_HIDDEN_NAV } from "../lib/roles";
+import { COUNTER_HIDDEN_NAV, canDraft } from "../lib/roles";
 import { JobsIndicator } from "./JobsIndicator";
+import { CommandPalette, ShortcutHelp } from "./CommandPalette";
+
+/** "g" then this letter jumps to the section (shown in each nav link's tooltip). */
+const GO_KEYS: Record<string, string> = {
+  "/invoices": "s",
+  "/collections": "c",
+  "/parties": "p",
+  "/items": "i",
+  "/orders": "o",
+  "/documents": "d",
+  "/firm": "f",
+};
 
 const baseNav = [
   { to: "/invoices", label: "Sales" },
@@ -43,6 +55,49 @@ export function Shell({ children }: { children: ReactNode }) {
   // Close the mobile drawer whenever the route changes.
   useEffect(() => setDrawerOpen(false), [pathname]);
 
+  // Keyboard: Ctrl+K palette, N new invoice, "g" then a letter to go to a
+  // section, ? for the shortcut list. Plain keys only fire when not typing
+  // and no dialog is open.
+  const navigate = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const navRef = useRef(nav);
+  navRef.current = nav;
+  useEffect(() => {
+    let gAt = 0;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, select, [contenteditable='true']")) return;
+      if (document.querySelector(".fixed.inset-0")) return;
+      const k = e.key.toLowerCase();
+      if (gAt && Date.now() - gAt < 1200) {
+        gAt = 0;
+        const hit = navRef.current.find((n) => GO_KEYS[n.to] === k);
+        if (hit) {
+          e.preventDefault();
+          navigate(hit.to);
+        }
+        return;
+      }
+      if (k === "g") gAt = Date.now();
+      else if (k === "n" && canDraft(me?.role)) {
+        e.preventDefault();
+        navigate("/invoices/new");
+      } else if (e.key === "?") {
+        e.preventDefault();
+        setHelpOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navigate, me?.role]);
+
   return (
     <div className="flex min-h-[100dvh] flex-col">
       <header className="flex h-14 items-center justify-between bg-ink px-4 text-ground md:px-6">
@@ -54,6 +109,7 @@ export function Shell({ children }: { children: ReactNode }) {
               <NavLink
                 key={n.to}
                 to={n.to}
+                title={GO_KEYS[n.to] ? `G then ${GO_KEYS[n.to].toUpperCase()}` : undefined}
                 className={({ isActive }) =>
                   isActive
                     ? "border-b-2 border-accent pb-[18px] text-ground"
@@ -70,6 +126,20 @@ export function Shell({ children }: { children: ReactNode }) {
         {/* desktop account cluster */}
         <div className="hidden items-center gap-4 text-sm md:flex">
           {me?.ext_supplier_catalog && <JobsIndicator />}
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="rounded border border-white/20 px-2 py-0.5 text-[11px] text-[#b9b3a7] hover:text-ground"
+            title="Go to a page, party or invoice (Ctrl+K). Press ? for all shortcuts."
+          >
+            Ctrl+K
+          </button>
+          <button
+            onClick={() => setHelpOpen(true)}
+            className="text-[11px] text-[#b9b3a7] hover:text-ground"
+            title="All keyboard shortcuts (?)"
+          >
+            ? Shortcuts
+          </button>
           <span className="text-[#b9b3a7]">{me?.email}</span>
           <button onClick={logout} className="text-[#b9b3a7] hover:text-ground">
             Sign out
@@ -139,6 +209,15 @@ export function Shell({ children }: { children: ReactNode }) {
       </nav>
 
       <main className="flex-1 px-4 py-4 lg:px-8 lg:py-7">{children}</main>
+
+      {paletteOpen && (
+        <CommandPalette
+          pages={nav}
+          showParties={nav.some((n) => n.to === "/parties")}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
+      {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

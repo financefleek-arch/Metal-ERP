@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiUpload, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
 import { inr } from "../../lib/previewTotal";
+import { NAV_ACTIVE, useListNav } from "../../lib/useListNav";
 import { WhatsappBadge } from "../../components/WhatsappStatus";
 import { TallySyncBadge } from "../../components/TallySyncStatus";
 import type { InvoiceListItem, InvoicePaymentStatus, InvoiceStatus } from "../../lib/types";
@@ -124,6 +125,9 @@ export function InvoiceListPage() {
     if (f) slipCapture.mutate(f);
   }
 
+  // Keyboard: "/" search, ↓ into the list, ↑↓ move, Enter opens
+  const kb = useListNav(list.data ?? [], (iv) => nav(`/invoices/${iv.id}`));
+
   const canDelete = (s: InvoiceStatus) => s === "draft" || s === "cancelled";
 
   function openPdf(id: string) {
@@ -166,8 +170,9 @@ export function InvoiceListPage() {
       <div className="card flex flex-col gap-2 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <input
+            id={kb.searchId}
             className="field h-8 max-w-xs text-xs"
-            placeholder="search by party name…"
+            placeholder="search by party name…  ( / )"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -207,7 +212,7 @@ export function InvoiceListPage() {
           </div>
         )}
 
-        {list.data?.map((iv) => {
+        {list.data?.map((iv, idx) => {
           const st = stateLabel(iv.status);
           const dateStr = new Date(iv.date).toLocaleDateString("en-IN", {
             day: "2-digit",
@@ -296,7 +301,8 @@ export function InvoiceListPage() {
           return (
             <div
               key={iv.id}
-              className="border-b border-[#f3eee4] px-3 py-3 text-sm last:border-0 hover:bg-[#fcfbf8] md:grid md:grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] md:items-center md:gap-3 md:py-2.5"
+              {...kb.navProps(idx)}
+              className={`${kb.isActive(idx) ? NAV_ACTIVE : "hover:bg-[#fcfbf8]"} border-b border-[#f3eee4] px-3 py-3 text-sm last:border-0 md:grid md:grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] md:items-center md:gap-3 md:py-2.5`}
             >
               {/* ---- mobile: a plain stack, nothing can overlap ---- */}
               <div className="md:hidden">

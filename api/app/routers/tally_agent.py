@@ -39,6 +39,7 @@ from app.services.tally.backup_retention import prune_confirmed_backups
 from app.services.tally.jobs import mark_job_sent, record_agent_status
 from app.services.tally.pull import process_pull_result
 from app.services.tally.push import process_push_result
+from app.services.tally.voucher_capture import process_capture_result
 
 log = logging.getLogger(__name__)
 
@@ -140,6 +141,15 @@ def job_result(
             job,
             ok=(body.status == "ok"),
             tally_response=body.tally_response,
+            agent_error=body.error,
+        )
+    elif job.kind == "pull_vouchers":
+        process_capture_result(
+            session,
+            job,
+            ok=(body.status == "ok"),
+            r2_key=body.r2_key,
+            meta_json=body.tally_response,
             agent_error=body.error,
         )
     else:

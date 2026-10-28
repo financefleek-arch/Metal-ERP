@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { useDebounced } from "../lib/useDebounced";
+import { useDialogKeys } from "../lib/keyboard";
 import type { Item, ItemListItem } from "../lib/types";
 
 function Frame({
@@ -14,6 +15,7 @@ function Frame({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  useDialogKeys(onClose);
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4"

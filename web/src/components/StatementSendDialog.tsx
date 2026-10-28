@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { downloadFile } from "../lib/download";
 import { normalizePhone } from "../lib/reference";
+import { useDialogKeys } from "../lib/keyboard";
 
 /** Period presets for a party account statement (F3b). "This FY" is the
  *  Indian Apr–Mar year, hard-wired server-side. */
@@ -121,6 +122,11 @@ export function StatementSendDialog({
     }
   }
 
+  // Esc closes; Enter sends on WhatsApp once a recipient is set
+  useDialogKeys(onClose, () => {
+    if (canSend && !done) void send();
+  });
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4"
@@ -235,6 +241,7 @@ export function StatementSendDialog({
                 onClick={send}
               >
                 {busy ? "Working…" : "Send"}
+                {!busy && <span className="ml-1.5 hidden text-[10px] opacity-70 md:inline">Enter ↵</span>}
               </button>
             )}
           </div>

@@ -74,11 +74,11 @@ from app.services.catalog.pricing import effective_margin, sell_price
 from app.services.catalog.reprice import reprice
 from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.pagination import finish_page, paginate
+from app.services.upload_spool import SpooledPdf, spool_pdf
 
 router = APIRouter(prefix="/api/supplier-catalogs", tags=["supplier-catalog"])
 
-MAX_UPLOAD_BYTES = 60 * 1024 * 1024
-_PDF_MAGIC = b"%PDF-"
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 
 def _gate(session: SessionDep, user: User) -> User:
@@ -221,17 +221,29 @@ def upload_catalog(
     title: Annotated[str | None, Form()] = None,
     supplier_party_id: Annotated[str | None, Form()] = None,
 ) -> CatalogUploadOut:
-    data = file.file.read(MAX_UPLOAD_BYTES + 1)
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail="That file is over 60 MB. Split the catalog and upload the parts.",
-        )
-    if not data.startswith(_PDF_MAGIC):
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Upload a PDF file."
+    # The PDF goes to a temp file a megabyte at a time and is read from there page by page: a
+    # 200 MB catalog never sits in memory (see services/catalog/importer.py).
+    with spool_pdf(
+        file.file,
+        max_bytes=MAX_UPLOAD_BYTES,
+        too_big="That file is over 200 MB. Split the catalog and upload the parts.",
+    ) as pdf:
+        return _import_upload(
+            response, background, session, user, storage, file.filename, pdf, title, supplier_party_id
         )
 
+
+def _import_upload(
+    response: Response,
+    background: BackgroundTasks,
+    session: SessionDep,
+    user: CatalogWriteUser,
+    storage: StorageDep,
+    filename: str | None,
+    pdf: SpooledPdf,
+    title: str | None,
+    supplier_party_id: str | None,
+) -> CatalogUploadOut:
     supplier_id = (supplier_party_id or "").strip() or None
     if supplier_id:
         _check_supplier(session, user.tenant_id, supplier_id)
@@ -245,8 +257,9 @@ def upload_catalog(
             storage,
             tenant=tenant,
             user_id=user.id,
-            filename=file.filename or "catalog.pdf",
-            data=data,
+            filename=filename or "catalog.pdf",
+            pdf_path=pdf.path,
+            sha256=pdf.sha256,
             title=title,
             supplier_party_id=supplier_id,
             group_map=defaults_svc.group_lookup(defaults),

@@ -102,3 +102,11 @@ def test_upload_is_503_in_production_without_r2(
     )
     assert r.status_code == 503
     assert client.get("/api/supplier-catalogs", headers=h).json() == []  # nothing half-created
+
+
+def test_put_file_copies_a_file_in_without_reading_it_whole(tmp_path) -> None:
+    src = tmp_path / "in.pdf"
+    src.write_bytes(b"%PDF-1.4 source")
+    store = LocalStorage(tmp_path / "root")
+    store.put_file("catalog/t/c/source.pdf", src, "application/pdf")
+    assert store.get("catalog/t/c/source.pdf") == b"%PDF-1.4 source"

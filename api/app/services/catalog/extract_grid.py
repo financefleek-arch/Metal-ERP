@@ -15,8 +15,10 @@ Two PyMuPDF facts this depends on (see the execution plan, section 3):
 
 from __future__ import annotations
 
+import os
 import re
 from collections import defaultdict
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
@@ -41,6 +43,7 @@ _MAX_CODE_LEN = 40
 # Words on one text line further apart than this (pt) are separate segments: a
 # wrapped name word ('CTN') can sit on the same line as the left-aligned code.
 _SEGMENT_GAP = 18.0
+_MAX_WARNINGS = 200
 
 
 @dataclass
@@ -51,10 +54,14 @@ class Cell:
     name_raw: str
     cost_price: Decimal
     pack_qty: int
-    image: bytes
+    image: bytes | None  # dropped (None) once the importer has stored the photo
     image_ext: str
     image_w: int
     image_h: int
+    # set by the importer when it stores the photo
+    image_key: str | None = None
+    image_sha256: str | None = None
+    image_flag: str | None = None
 
 
 @dataclass
@@ -71,77 +78,111 @@ class NotACatalog(Exception):
     """The PDF could not be opened, or no product cells were found."""
 
 
-def extract(pdf: bytes) -> ExtractResult:
+def _open(pdf: bytes | str | os.PathLike[str]) -> pymupdf.Document:
     try:
-        doc = pymupdf.open(stream=pdf, filetype="pdf")
+        if isinstance(pdf, bytes):
+            return pymupdf.open(stream=pdf, filetype="pdf")
+        return pymupdf.open(pdf)  # a path: pages are read from disk as they are needed
     except Exception as exc:  # corrupt / not a PDF
         raise NotACatalog(f"Could not open the PDF: {exc}") from exc
 
-    out = ExtractResult(page_count=len(doc))
+
+def extract_pages(
+    pdf: bytes | str | os.PathLike[str], out: ExtractResult
+) -> Iterator[list[Cell]]:
+    """Yield the product cells of one page at a time; `out` collects the counts and warnings.
+
+    Memory stays at one page's photos however big the file is: nothing is kept across pages
+    except the counters, so a caller that stores each page's photos before asking for the next
+    one never holds more than a page. Raises NotACatalog (at the end) when no page had a product.
+    """
+    doc = _open(pdf)
     seen_codes: dict[str, int] = defaultdict(int)
+    total = 0
 
-    for page_idx in range(len(doc)):
-        page = doc[page_idx]
-        page_no = page_idx + 1
-        photos = [
-            b
-            for b in page.get_text("dict")["blocks"]
-            if b["type"] == 1
-            and (b["bbox"][2] - b["bbox"][0]) >= _MIN_PHOTO_W
-            and (b["bbox"][3] - b["bbox"][1]) >= _MIN_PHOTO_H
-        ]
-        if not photos:
-            continue
-        words = page.get_text("words")
-        read_before = len(out.cells)
-        page_h = page.rect.height
+    with doc:
+        out.page_count = len(doc)
+        for page_idx in range(len(doc)):
+            page_no = page_idx + 1
+            cells: list[Cell] = []
+            try:
+                page = doc[page_idx]
+                photos = [
+                    b
+                    for b in page.get_text("dict")["blocks"]
+                    if b["type"] == 1
+                    and (b["bbox"][2] - b["bbox"][0]) >= _MIN_PHOTO_W
+                    and (b["bbox"][3] - b["bbox"][1]) >= _MIN_PHOTO_H
+                ]
+                if not photos:
+                    continue
+                words = page.get_text("words")
+                page_h = page.rect.height
 
-        # reading order: rows top to bottom, then left to right
-        photos.sort(key=lambda b: (round(b["bbox"][1] / 40), b["bbox"][0]))
+                # reading order: rows top to bottom, then left to right
+                photos.sort(key=lambda b: (round(b["bbox"][1] / 40), b["bbox"][0]))
 
-        for pos, b in enumerate(photos, start=1):
-            x0, y0, x1, y1 = b["bbox"]
-            segs = _cell_lines(words, photos, b, page_h)
-            parsed = _parse_cell(segs)
-            if parsed is None:
-                out.skipped_no_price += 1
-                continue
-            price, pack, rest = parsed
-            code, name_raw = _split_code(rest)
-            if code is None:
-                code = f"P{page_no}-{pos}"
-                out.warnings.append(f"page {page_no} cell {pos}: no product code line; used {code}")
-            seen_codes[code] += 1
-            if seen_codes[code] > 1:
-                dup = f"{code}~{seen_codes[code]}"
-                out.warnings.append(
-                    f"page {page_no} cell {pos}: code {code} repeated; kept as {dup}"
-                )
-                code = dup
-            out.cells.append(
-                Cell(
-                    page_no=page_no,
-                    position=pos,
-                    supplier_code=code[:60],
-                    name_raw=(name_raw or code)[:400],
-                    cost_price=price,
-                    pack_qty=pack,
-                    image=b["image"],
-                    image_ext=(b.get("ext") or "jpeg").lower(),
-                    image_w=int(b["width"]),
-                    image_h=int(b["height"]),
-                )
-            )
-        # price lines on this page beyond the products we read: products with no picture
-        lines_on_page = _count_pack_lines(words)
-        out.unread_price_lines += max(0, lines_on_page - (len(out.cells) - read_before))
+                for pos, b in enumerate(photos, start=1):
+                    segs = _cell_lines(words, photos, b, page_h)
+                    parsed = _parse_cell(segs)
+                    if parsed is None:
+                        out.skipped_no_price += 1
+                        continue
+                    price, pack, rest = parsed
+                    code, name_raw = _split_code(rest)
+                    if code is None:
+                        code = f"P{page_no}-{pos}"
+                        _warn(out, f"page {page_no} cell {pos}: no product code line; used {code}")
+                    seen_codes[code] += 1
+                    if seen_codes[code] > 1:
+                        dup = f"{code}~{seen_codes[code]}"
+                        _warn(out, f"page {page_no} cell {pos}: code {code} repeated; kept as {dup}")
+                        code = dup
+                    cells.append(
+                        Cell(
+                            page_no=page_no,
+                            position=pos,
+                            supplier_code=code[:60],
+                            name_raw=(name_raw or code)[:400],
+                            cost_price=price,
+                            pack_qty=pack,
+                            image=b["image"],
+                            image_ext=(b.get("ext") or "jpeg").lower(),
+                            image_w=int(b["width"]),
+                            image_h=int(b["height"]),
+                        )
+                    )
+                # price lines on this page beyond the products we read: products with no picture
+                lines_on_page = _count_pack_lines(words)
+                out.unread_price_lines += max(0, lines_on_page - len(cells))
+                total += len(cells)
+            finally:
+                # drop this page's decoded data before the next one: MuPDF caches it otherwise
+                page = photos = words = None  # noqa: F841
+                pymupdf.TOOLS.store_shrink(100)
+            if cells:
+                yield cells
+            cells = []
 
-    if not out.cells:
+    if total == 0:
         raise NotACatalog(
             "No products found. This PDF's layout isn't recognised: each product needs a "
             "photo with a price line (for example 'Rs 190 for 6 pcs') under it."
         )
+
+
+def extract(pdf: bytes | str | os.PathLike[str]) -> ExtractResult:
+    """The whole file at once, photos included. Only for small files and tests: the importer
+    reads page by page through `extract_pages` instead."""
+    out = ExtractResult()
+    for cells in extract_pages(pdf, out):
+        out.cells.extend(cells)
     return out
+
+
+def _warn(out: ExtractResult, message: str) -> None:
+    if len(out.warnings) < _MAX_WARNINGS:  # a 4,000-product file must not grow this without end
+        out.warnings.append(message)
 
 
 def _cell_lines(words: list, photos: list[dict], photo: dict, page_h: float) -> list[list[str]]:

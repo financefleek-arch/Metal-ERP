@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiPage, ApiError } from "../../lib/api";
 import { itemsQuery, type ItemFilter, type PromoteOut } from "../../lib/catalog";
+import { useDialogKeys } from "../../lib/keyboard";
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
 
@@ -262,6 +263,7 @@ function UpdatePricesDialog({
     onError: (e) => setErr(errMsg(e, "Could not update. Try again.")),
   });
   const p = pre.data;
+  useDialogKeys(onClose);
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/40 p-4"

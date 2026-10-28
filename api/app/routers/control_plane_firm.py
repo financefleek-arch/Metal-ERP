@@ -30,8 +30,10 @@ from app.schemas_admin import (
     FirmTallyShopProvisionResult,
     FirmWhatsappTestIn,
     FirmWhatsappTestOut,
+    SlipUsageOut,
 )
 from app.services.control_plane_auth import require_control_plane
+from app.services.ocr import slip_usage
 
 router = APIRouter(
     prefix="/api/internal/control-plane/firms/{fleek_org_id}",
@@ -95,6 +97,14 @@ def patch_user(fleek_org_id: str, user_id: str, body: AdminUserPatch, session: S
 def disable_user(fleek_org_id: str, user_id: str, session: SessionDep) -> None:
     _user_of(session, _firm(session, fleek_org_id), user_id)
     admin.disable_firm_user(user_id, session)
+
+
+# ---------------------------------------------------------------- slip-reading usage (read only)
+
+
+@router.get("/slip-usage", response_model=SlipUsageOut)
+def get_slip_usage(fleek_org_id: str, session: SessionDep) -> dict:
+    return slip_usage.usage_summary(session, _firm(session, fleek_org_id).id)
 
 
 # ---------------------------------------------------------------- Tally companion agent

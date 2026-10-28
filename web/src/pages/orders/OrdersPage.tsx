@@ -3,6 +3,7 @@ import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../lib/api";
 import { useIsDesktop } from "../../lib/useIsDesktop";
+import { NAV_ACTIVE, useListNav } from "../../lib/useListNav";
 import { OrderDetail } from "./OrderDetail";
 
 export interface OrderLine {
@@ -90,6 +91,9 @@ export function OrdersPage() {
     },
   });
 
+  // Keyboard: ↑↓ move, Enter opens
+  const kb = useListNav(list.data ?? [], (x) => nav(`/orders/${x.id}`));
+
   const showRail = isDesktop || !selectedId;
   const showDetail = isDesktop || !!selectedId;
   const o = detail.data;
@@ -125,12 +129,15 @@ export function OrdersPage() {
               No orders yet. Share a catalog link from the Items page and customers can order from it.
             </p>
           )}
-          {list.data?.map((x) => (
+          {list.data?.map((x, idx) => (
             <NavLink
               key={x.id}
               to={`/orders/${x.id}`}
+              {...kb.navProps(idx)}
               className={({ isActive }) =>
-                `block border-b border-line px-3 py-3 text-xs hover:bg-accent-soft/60 md:py-2.5 ${isActive ? "bg-accent-soft" : ""}`
+                `block border-b border-line px-3 py-3 text-xs hover:bg-accent-soft/60 md:py-2.5 ${
+                  kb.isActive(idx) ? NAV_ACTIVE : isActive ? "bg-accent-soft" : ""
+                }`
               }
             >
               <div className="flex items-center justify-between gap-2">

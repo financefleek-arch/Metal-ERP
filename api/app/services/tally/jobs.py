@@ -74,11 +74,12 @@ def _expire_stuck_job(session: Session, job: TallySyncJob) -> bool:
     if age < _STUCK_AFTER:
         return False
     not_ready = job.last_agent_status in _NOT_READY
-    if job.kind == "pull_masters" and not not_ready and age < _PULL_CEILING:
+    is_pull = job.kind in ("pull_masters", "pull_vouchers")
+    if is_pull and not not_ready and age < _PULL_CEILING:
         return False
     if not_ready:
         job.error = "Tally stayed unavailable — retried, then cancelled."
-    elif job.kind == "pull_masters":
+    elif is_pull:
         job.error = (
             "The Tally agent did not report back, so this was cancelled. Check that the agent "
             "is running on the shop PC and TallyPrime is open, then try again."

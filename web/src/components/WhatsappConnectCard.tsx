@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../lib/api";
 import { almostReady, type TemplateCounts } from "../lib/whatsappSetup";
 import { WhatsappSetupChecklist } from "./WhatsappSetupChecklist";
+import { EscClose } from "./EscClose";
 
 /**
  * The owner's WhatsApp page, ported from Fleek's advisor page (fleek-frontend WhatsAppIntegration.vue) so a
@@ -379,6 +380,7 @@ export function WhatsappConnectCard() {
           className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/40 p-4"
           onClick={() => setDialog(null)}
         >
+          <EscClose onClose={() => setDialog(null)} />
           <div
             role="dialog"
             aria-modal="true"

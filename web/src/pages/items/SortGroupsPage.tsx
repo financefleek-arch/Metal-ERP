@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
+import { useDialogKeys } from "../../lib/keyboard";
 import type {
   GroupAssignResult,
   GroupMove,
@@ -310,6 +311,8 @@ function CategorySheet({
   const createPicked = canCreate && picked === null;
   const chosen = picked ?? (exact ? exact.id : null);
   const target = createPicked ? text : (all.find((c) => c.id === chosen)?.name ?? null);
+
+  useDialogKeys(onClose);
 
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-ink/45" onClick={onClose}>

@@ -48,7 +48,10 @@ from app.schemas_invoice import (
     InvoiceOut,
     InvoiceUpdate,
     InvoiceWhatsappMessageOut,
+    LastPricesOut,
     PartyBrief,
+    PriceHistoryOut,
+    PricePointOut,
     SlipCaptureOut,
     SlipLineReview,
     VoiceLineOut,
@@ -63,7 +66,9 @@ from app.services.invoices.common import (
     totals_for,
 )
 from app.services.invoices.finalize import FinalizeError, finalize_invoice
+from app.services.invoices.price_history import item_history, last_prices
 from app.services.item_resolution import resolve_item
+from app.services.ocr import slip_usage
 from app.services.ocr.extract_slip import SlipExtractionError, extract_slip
 from app.services.ocr.slip_to_draft import build_draft
 from app.services.payments import paid_amount_for_invoice
@@ -426,9 +431,11 @@ def create_invoice_from_slip(
     try:
         extraction = extract_slip(data)
     except SlipExtractionError as exc:
+        slip_usage.record_failure(session, user.tenant_id, user.id, exc, len(data))
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
         ) from exc
+    slip_usage.record_success(session, user.tenant_id, user.id, extraction, len(data))
 
     draft = build_draft(session, user.tenant_id, extraction)
 
@@ -547,6 +554,48 @@ def resolve_voice_line_transcript(
     same qty/uom/rate/item parse `/voice-line` does from text already in
     hand, so the parser stays in one place."""
     return _resolve_transcript(session, user.tenant_id, body.transcript)
+
+
+def _owned_party(session: SessionDep, tenant_id: str, party_id: str) -> None:
+    owned = session.scalar(
+        select(Party.id).where(Party.id == party_id, Party.tenant_id == tenant_id)
+    )
+    if owned is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Party not found")
+
+
+# Registered before `/{invoice_id}` so "price-history" is never read as an invoice id.
+@router.get("/price-history/last", response_model=LastPricesOut)
+def party_last_prices(
+    user: CurrentUser,
+    session: SessionDep,
+    party_id: str = Query(...),
+    item_ids: str = Query(..., description="comma-separated item ids (max 100)"),
+) -> LastPricesOut:
+    """The latest sale of each item to this party: prefills rates when a party is picked or
+    changed. Finalized sales invoices only."""
+    _owned_party(session, user.tenant_id, party_id)
+    ids = [i for i in (x.strip() for x in item_ids.split(",")) if i][:100]
+    found = last_prices(session, user.tenant_id, party_id, ids)
+    return LastPricesOut(
+        prices=[PricePointOut(**p.__dict__) for p in found.values()]
+    )
+
+
+@router.get("/price-history", response_model=PriceHistoryOut)
+def party_item_price_history(
+    user: CurrentUser,
+    session: SessionDep,
+    party_id: str = Query(...),
+    item_id: str = Query(...),
+    limit: int = Query(10, ge=1, le=20),
+) -> PriceHistoryOut:
+    """What this party was billed for this item, newest first (the editor's Alt+S panel)."""
+    _owned_party(session, user.tenant_id, party_id)
+    rows = item_history(session, user.tenant_id, party_id, item_id, limit)
+    return PriceHistoryOut(
+        item_id=item_id, rows=[PricePointOut(**p.__dict__) for p in rows]
+    )
 
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)

@@ -136,3 +136,45 @@ def test_slip_extraction_failure_is_a_422_not_a_500(
         files={"file": ("slip.png", _TINY_PNG, "image/png")},
     )
     assert r.status_code == 422, r.text
+
+
+def test_every_read_is_counted_with_its_tokens_and_cost(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from decimal import Decimal as D
+
+    from sqlalchemy import select
+
+    from app.db import SessionLocal
+    from app.models import SlipCapture, Tenant
+    from app.services.ocr import slip_usage
+
+    h = _h(_register(client, "slip4@x.example.com"))
+    line = ExtractedLine(description="Monin syrup", quantity=D("1"), uom="nos", rate=D("10"))
+    _mock_extraction(
+        monkeypatch,
+        SlipExtraction(party_name=None, lines=[line, line], input_tokens=3000, output_tokens=1000),
+    )
+    ok = client.post("/api/invoices/from-slip", headers=h, files={"file": ("s.png", _TINY_PNG, "image/png")})
+    assert ok.status_code == 201, ok.text
+
+    def _boom(_data: bytes) -> SlipExtraction:
+        raise SlipExtractionError("too long", 2000, 8000)
+
+    monkeypatch.setattr("app.routers.invoices.extract_slip", _boom)
+    bad = client.post("/api/invoices/from-slip", headers=h, files={"file": ("s.png", _TINY_PNG, "image/png")})
+    assert bad.status_code == 422
+
+    with SessionLocal() as s:
+        tenant_id = s.scalars(select(Tenant.id)).all()[-1]
+        rows = s.scalars(select(SlipCapture).where(SlipCapture.tenant_id == tenant_id)).all()
+        assert sorted(r.ok for r in rows) == [False, True]  # the failed read survives the 422
+        summary = slip_usage.usage_summary(s, tenant_id)
+
+    assert summary["all_time"]["reads"] == 2
+    assert summary["all_time"]["failed"] == 1
+    assert summary["all_time"]["input_tokens"] == 5000
+    assert summary["all_time"]["output_tokens"] == 9000
+    # Haiku 5.5: 5000 x $0.10/M + 9000 x $0.50/M
+    assert D(summary["all_time"]["cost_usd"]) == D("0.0050")
+    assert summary["all_time"]["priced"] is True

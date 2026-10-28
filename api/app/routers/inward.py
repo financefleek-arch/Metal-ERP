@@ -7,6 +7,7 @@ just hidden). Write actions need owner/accountant; viewer can list + read.
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from pathlib import Path
 from typing import Annotated
@@ -49,6 +50,7 @@ from app.services.tally.push_readiness import (
     is_pushable,
     purchase_push_blockers,
 )
+from app.services.upload_spool import spool_pdf
 
 router = APIRouter(prefix="/api/inward-bills", tags=["inward"])
 
@@ -222,12 +224,6 @@ def upload_bills(
 
     out: list[InwardBillOut] = []
     for f in files:
-        data = f.file.read()
-        if len(data) > _MAX_PDF_BYTES:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"{f.filename}: exceeds 20 MB",
-            )
         if not (f.filename or "").lower().endswith(".pdf"):
             raise HTTPException(
                 status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
@@ -235,7 +231,11 @@ def upload_bills(
             )
         bill_id = str(uuid.uuid4())
         rel = pdf_dir / f"{bill_id}.pdf"
-        rel.write_bytes(data)
+        # to disk a megabyte at a time: the cap is enforced as it arrives, nothing is held whole
+        with spool_pdf(
+            f.file, max_bytes=_MAX_PDF_BYTES, too_big=f"{f.filename}: exceeds 20 MB"
+        ) as pdf:
+            shutil.copyfile(pdf.path, rel)
 
         bill = InwardBill(
             id=bill_id,

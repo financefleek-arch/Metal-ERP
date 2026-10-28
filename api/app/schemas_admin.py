@@ -153,6 +153,23 @@ class FirmWhatsappTestOut(BaseModel):
 # --------------------------------------------------------------------------
 
 
+class SlipUsagePeriod(BaseModel):
+    reads: int
+    failed: int
+    input_tokens: int
+    output_tokens: int
+    cost_usd: str  # Decimal as a string, estimated from list price x real token counts
+    priced: bool  # False when a read used a model with no price on file (cost is then a floor)
+
+
+class SlipUsageOut(BaseModel):
+    """How many slip photos this firm sent for reading, and what they cost us."""
+
+    month: str  # YYYY-MM (UTC) that `this_month` covers
+    this_month: SlipUsagePeriod
+    all_time: SlipUsagePeriod
+
+
 class FirmTallyShopOut(BaseModel):
     """This firm's tally-agent status. The API key never appears here — it's
     baked into the downloadable installer, not shown to a human."""

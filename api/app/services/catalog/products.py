@@ -39,6 +39,25 @@ def products_by_supplier_code(
     return {p.supplier_code: p for p in rows}
 
 
+def products_by_supplier_codes(
+    session: Session, tenant_id: str, supplier_party_id: str, codes: Sequence[str]
+) -> dict[str, CatalogProduct]:
+    """The supplier's existing products for just these supplier codes (one import batch), so a
+    re-import never loads the supplier's whole range."""
+    out: dict[str, CatalogProduct] = {}
+    unique = list(dict.fromkeys(codes))
+    for i in range(0, len(unique), _CHUNK):
+        for p in session.scalars(
+            select(CatalogProduct).where(
+                CatalogProduct.tenant_id == tenant_id,
+                CatalogProduct.supplier_party_id == supplier_party_id,
+                CatalogProduct.supplier_code.in_(unique[i : i + _CHUNK]),
+            )
+        ):
+            out[p.supplier_code] = p
+    return out
+
+
 def new_product(
     *,
     tenant_id: str,

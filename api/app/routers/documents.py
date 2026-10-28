@@ -13,10 +13,11 @@ from sqlalchemy import select
 from app.deps import CurrentUser, SessionDep
 from app.models import InwardBill, Tenant
 from app.services import document_kind
+from app.services.upload_spool import spool_pdf
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
-MAX_BYTES = 60 * 1024 * 1024
+MAX_BYTES = 200 * 1024 * 1024
 
 
 class DetectOut(BaseModel):
@@ -36,12 +37,9 @@ def detect(
     assert tenant is not None
     if not (tenant.ext_inward_import or tenant.ext_supplier_catalog):
         raise HTTPException(status_code=404, detail="Not found")
-    data = file.file.read(MAX_BYTES + 1)
-    if len(data) > MAX_BYTES:
-        raise HTTPException(status_code=413, detail="That file is over 60 MB.")
-    if not data.startswith(b"%PDF-"):
-        raise HTTPException(status_code=415, detail="Upload a PDF file.")
-    g = document_kind.guess(data)
+    # to disk a megabyte at a time, then opened by path: only the first pages are ever looked at
+    with spool_pdf(file.file, max_bytes=MAX_BYTES, too_big="That file is over 200 MB.") as pdf:
+        g = document_kind.guess(pdf.path)
     kind = g.kind
     # never suggest something this firm cannot do
     if kind == "bill" and not tenant.ext_inward_import:

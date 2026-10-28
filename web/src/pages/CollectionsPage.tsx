@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import { inr } from "../lib/previewTotal";
 import { useDebounced } from "../lib/useDebounced";
+import { NAV_ACTIVE, useListNav } from "../lib/useListNav";
 import { PaymentDialog } from "../components/PaymentDialog";
 import { StatementSendDialog } from "../components/StatementSendDialog";
 import { RemindersPanel } from "../components/RemindersPanel";
@@ -102,6 +103,20 @@ export function CollectionsPage() {
     setBucket(null);
   }
 
+  // Keyboard: "/" search, ↓ into the list, ↑↓ move, Enter records a payment
+  const navItems = useMemo(
+    () =>
+      ageingView
+        ? visibleAgeing.map((r) => ({ party_id: r.party_id, legal_name: r.legal_name, balance: r.total }))
+        : (legacy.data ?? []).map((r) => ({
+            party_id: r.party_id,
+            legal_name: r.legal_name,
+            balance: r.outstanding_balance,
+          })),
+    [ageingView, visibleAgeing, legacy.data],
+  );
+  const nav = useListNav(navItems, (r) => setPayingFor(r));
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
       <h1 className="font-serif text-lg font-semibold">Collections</h1>
@@ -165,8 +180,9 @@ export function CollectionsPage() {
       )}
 
       <input
+        id={nav.searchId}
         className="field"
-        placeholder="Search a party…"
+        placeholder="Search a party…  ( / )"
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
@@ -174,6 +190,7 @@ export function CollectionsPage() {
       <div className="card overflow-hidden">
         {ageingView ? (
           <AgeingList
+            nav={nav}
             rows={visibleAgeing}
             loading={ageing.isLoading}
             emptyText={
@@ -190,6 +207,7 @@ export function CollectionsPage() {
           />
         ) : (
           <LegacyList
+            nav={nav}
             rows={legacy.data ?? []}
             loading={legacy.isLoading}
             emptyText={
@@ -246,13 +264,17 @@ export function CollectionsPage() {
   );
 }
 
+type ListNav = ReturnType<typeof useListNav>;
+
 function AgeingList({
+  nav,
   rows,
   loading,
   emptyText,
   onPay,
   onStatement,
 }: {
+  nav: ListNav;
   rows: AgeingRow[];
   loading: boolean;
   emptyText: string;
@@ -264,12 +286,15 @@ function AgeingList({
     return <div className="px-3 py-8 text-center text-xs text-muted">{emptyText}</div>;
   return (
     <>
-      {rows.map((r) => {
+      {rows.map((r, i) => {
         const pill = BUCKET_PILL[r.worst_bucket];
         return (
           <div
             key={r.party_id}
-            className="flex w-full items-center gap-2.5 border-b border-[#f3eee4] px-3.5 py-3 last:border-b-0"
+            {...nav.navProps(i)}
+            className={`flex w-full items-center gap-2.5 border-b border-[#f3eee4] px-3.5 py-3 last:border-b-0 ${
+              nav.isActive(i) ? NAV_ACTIVE : ""
+            }`}
           >
             <span className="grid h-8.5 w-8.5 flex-none place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
               {initials(r.legal_name)}
@@ -314,11 +339,13 @@ function AgeingList({
 }
 
 function LegacyList({
+  nav,
   rows,
   loading,
   emptyText,
   onPay,
 }: {
+  nav: ListNav;
   rows: CollectionsRow[];
   loading: boolean;
   emptyText: string;
@@ -329,13 +356,16 @@ function LegacyList({
     return <div className="px-3 py-8 text-center text-xs text-muted">{emptyText}</div>;
   return (
     <>
-      {rows.map((r) => {
+      {rows.map((r, i) => {
         const balance = Number(r.outstanding_balance);
         const isCredit = balance < 0;
         return (
           <button
             key={r.party_id}
-            className="flex w-full items-center gap-2.5 border-b border-[#f3eee4] px-3.5 py-3 text-left last:border-b-0 hover:bg-accent-soft"
+            {...nav.navProps(i)}
+            className={`flex w-full items-center gap-2.5 border-b border-[#f3eee4] px-3.5 py-3 text-left last:border-b-0 hover:bg-accent-soft ${
+              nav.isActive(i) ? NAV_ACTIVE : ""
+            }`}
             onClick={() => onPay(r)}
           >
             <span className="grid h-8.5 w-8.5 flex-none place-items-center rounded-full bg-accent-soft text-xs font-semibold text-accent">

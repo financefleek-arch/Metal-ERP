@@ -1093,3 +1093,26 @@ export interface GroupAssignResult {
   items: number;
   created_categories: string[];
 }
+
+/** One past sale of an item to a party (Tally's Stock Query). `source` says where it was billed. */
+export interface PricePoint {
+  invoice_id: string;
+  series: string;
+  number: number | null;
+  date: string;
+  item_id: string;
+  quantity: string;
+  uom: string | null;
+  unit_rate: string;
+  discount_pct: string | null;
+  source: "native" | "tally";
+}
+
+export interface PriceHistory {
+  item_id: string;
+  rows: PricePoint[];
+}
+
+export interface LastPrices {
+  prices: PricePoint[];
+}

@@ -7,7 +7,9 @@ import type { CatalogListItem, CatalogUploadOut } from "../../lib/catalog";
 import type { InwardBillListItem } from "../../lib/inward";
 import { SupplierPicker, type SupplierChoice } from "../../components/catalog/SupplierPicker";
 
-const MAX_MB = 60;
+// price lists may be big (many pages of photos); a supplier's bill is a few pages
+const MAX_MB = 200;
+const MAX_BILL_MB = 20;
 type Kind = "bill" | "price_list";
 
 interface Detect {
@@ -196,6 +198,7 @@ export function DocumentsPage() {
   });
 
   const needsSupplier = kind === "price_list" && !chosen && !noSupplier;
+  const billTooBig = kind === "bill" && !!file && file.size > MAX_BILL_MB * 1024 * 1024;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -240,6 +243,9 @@ export function DocumentsPage() {
             <button type="button" className="btn-primary mt-3" onClick={() => fileRef.current?.click()}>
               Choose PDF
             </button>
+            <p className="mt-3 text-xs text-muted">
+              PDF only. Price lists up to {MAX_MB} MB, bills up to {MAX_BILL_MB} MB.
+            </p>
           </div>
         ) : (
           <div>
@@ -325,12 +331,18 @@ export function DocumentsPage() {
                 <button
                   type="button"
                   className="btn-primary mt-4"
-                  disabled={needsSupplier}
+                  disabled={needsSupplier || billTooBig}
                   onClick={() => upload.mutate()}
                 >
                   {kind === "bill" ? "Read the bill" : "Read the price list"}
                 </button>
                 {needsSupplier && <p className="mt-2 text-xs text-muted">Pick a supplier first.</p>}
+                {billTooBig && (
+                  <p className="mt-2 text-xs text-muted" role="status">
+                    Bills can be up to {MAX_BILL_MB} MB and this file is larger. If it is a price list, choose
+                    &quot;It is a price list&quot;.
+                  </p>
+                )}
               </>
             )}
           </div>

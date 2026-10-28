@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { api, apiPage } from "../lib/api";
 import { useDebounced } from "../lib/useDebounced";
+import { NAV_ACTIVE, useListNav } from "../lib/useListNav";
 import { lastSeenLabel, missingLabel } from "../lib/format";
 import { useIsDesktop } from "../lib/useIsDesktop";
 import type { Party, PartyListItem, PartyRole, PartyStatus } from "../lib/types";
@@ -132,6 +133,9 @@ export function PartiesPage() {
     }
   }, [selectedId, rows, detail.isError, nav]);
 
+  // Keyboard: "/" search, ↓ into the list, ↑↓ move, Enter opens
+  const kb = useListNav(rows, (p) => nav(`/parties/${p.id}`));
+
   // a fresh party selection always opens on Details.
   useEffect(() => setDetailTab("details"), [selectedId]);
 
@@ -160,8 +164,9 @@ export function PartiesPage() {
             </div>
           </div>
           <input
+            id={kb.searchId}
             className="field h-8 text-xs"
-            placeholder="search name, address, phone…"
+            placeholder="search name, address, phone…  ( / )"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -214,14 +219,17 @@ export function PartiesPage() {
               {dq || scope || offers ? "No matches." : "No parties yet."}
             </div>
           )}
-          {rows.map((p) => (
+          {rows.map((p, idx) => (
             <button
               key={p.id}
+              {...kb.navProps(idx)}
               onClick={() => nav(`/parties/${p.id}`)}
               className={`block w-full border-b border-[#f3eee4] px-3 py-3 text-left md:py-2 ${
-                p.id === selectedId
-                  ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
-                  : "hover:bg-accent-soft"
+                kb.isActive(idx)
+                  ? NAV_ACTIVE
+                  : p.id === selectedId
+                    ? "bg-card shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]"
+                    : "hover:bg-accent-soft"
               } ${p.status === "archived" ? "opacity-55" : ""}`}
             >
               <div className="flex items-center gap-1.5 text-xs">

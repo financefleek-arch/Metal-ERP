@@ -245,3 +245,13 @@ def test_an_unlinked_firm_still_takes_a_pasted_number(client: TestClient) -> Non
     body = {"phone_number_id": "pn-9", "waba_id": "waba-9", "is_active": True}
     assert client.put(f"/api/admin/firms/{firm_id}/whatsapp", json=body, headers=h).status_code == 200
     assert client.delete(f"/api/admin/firms/{firm_id}/whatsapp", headers=h).status_code == 204
+
+
+def test_slip_usage_is_readable_by_fleek_and_empty_for_a_new_firm(client: TestClient, firm: str) -> None:
+    r = _req(client, "GET", f"{BASE}/slip-usage")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["all_time"]["reads"] == 0
+    assert body["this_month"]["cost_usd"] == "0.0000"
+    assert _req(client, "GET", "/api/internal/control-plane/firms/not-linked/slip-usage").status_code == 404
+    assert _req(client, "GET", f"{BASE}/slip-usage", secret="wrong").status_code in (401, 403)
