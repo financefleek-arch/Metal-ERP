@@ -32,13 +32,24 @@ class FakeFleek:
         self.feature_requests: list[dict[str, Any]] = []
         self.down = False
         self.signup_status = 201
+        # Fleek's CAPTCHA answer: None = no key set in Fleek; else {"success": bool, ...}
+        self.captcha: dict[str, Any] | None = None
+        self.site_key: str | None = None
+        self.captcha_tokens: list[str] = []
 
     def __call__(
         self, method: str, path: str, payload: dict[str, Any] | None = None, **_: Any
     ) -> tuple[int, dict[str, Any]]:
         if self.down:
             raise FleekUnavailable("down")
+        if path.endswith("/captcha/site-key"):
+            return 200, {"site_key": self.site_key}
         assert payload is not None
+        if path.endswith("/captcha/verify"):
+            self.captcha_tokens.append(payload["token"])
+            if self.captcha is None:
+                return 200, {"configured": False}
+            return 200, {"configured": True, **self.captcha}
         if path.endswith("/codes/whatsapp"):
             self.whatsapp.append((payload["to"], payload["code"]))
             return 200, {"status": "sent"}
@@ -67,6 +78,8 @@ def fleek(monkeypatch: pytest.MonkeyPatch) -> FakeFleek:
     f = FakeFleek()
     monkeypatch.setattr("app.services.account.fleek_request", f)
     monkeypatch.setattr("app.routers.onboarding.fleek_request", f)
+    monkeypatch.setattr("app.services.captcha.fleek_request", f)
+    captcha.reset_cache()
     return f
 
 
@@ -218,27 +231,55 @@ def test_resend_respects_the_one_minute_gap(client: TestClient, fleek: FakeFleek
     assert r.status_code == 429
 
 
-def test_captcha_is_required_when_a_secret_is_set(
-    client: TestClient, fleek: FakeFleek, monkeypatch: pytest.MonkeyPatch
+def test_captcha_checked_by_fleek_blocks_a_bad_token_and_sends_nothing(
+    client: TestClient, fleek: FakeFleek
 ) -> None:
-    class S:
-        turnstile_secret_key = "secret"
-        app_env = "test"
+    fleek.captcha = {"success": False}
+    r = _start(client, captcha_token="bad")
+    assert r.status_code == 400 and fleek.captcha_tokens == ["bad"]
+    assert fleek.whatsapp == [] and fleek.email == []
+    fleek.captcha = {"success": True}
+    assert _start(client, captcha_token="good").status_code == 200
 
-    monkeypatch.setattr(captcha, "get_settings", lambda: S())
-    assert _start(client).status_code == 400
+
+def test_captcha_outage_is_a_retry_not_a_pass(client: TestClient, fleek: FakeFleek) -> None:
+    fleek.captcha = {"success": False, "unavailable": True}
+    assert _start(client, captcha_token="t").status_code == 503
     assert fleek.whatsapp == []
 
 
-def test_captcha_refuses_in_production_without_a_secret(
+def test_captcha_refuses_in_production_when_fleek_has_no_key_or_is_down(
     client: TestClient, fleek: FakeFleek, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class S:
-        turnstile_secret_key = None
         app_env = "production"
 
     monkeypatch.setattr(captcha, "get_settings", lambda: S())
-    assert _start(client).status_code == 503
+    assert _start(client).status_code == 503  # Fleek answers "not configured"
+    fleek.down = True
+    assert _start(client).status_code == 503  # Fleek unreachable
+    assert fleek.whatsapp == []
+
+
+def test_captcha_skipped_outside_production_without_a_key(client: TestClient, fleek: FakeFleek) -> None:
+    assert _start(client).status_code == 200
+
+
+def test_forgot_password_is_behind_the_captcha_too(client: TestClient, fleek: FakeFleek) -> None:
+    fleek.captcha = {"success": False}
+    r = client.post("/api/auth/password/forgot", json={"email": SIGNUP["email"], "captcha_token": "x"})
+    assert r.status_code == 400
+
+
+def test_page_config_serves_the_site_key_from_fleek_cached(client: TestClient, fleek: FakeFleek) -> None:
+    fleek.site_key = "0xSITE"
+    assert client.get("/api/auth/config").json() == {"captcha_site_key": "0xSITE"}
+    fleek.site_key = "changed"
+    assert client.get("/api/auth/config").json() == {"captcha_site_key": "0xSITE"}  # cached for a few minutes
+    captcha.reset_cache()
+    fleek.down = True
+    # Fleek down: no widget, and not an error
+    assert client.get("/api/auth/config").json() == {"captcha_site_key": None}
 
 
 def test_old_register_is_closed_unless_switched_on(

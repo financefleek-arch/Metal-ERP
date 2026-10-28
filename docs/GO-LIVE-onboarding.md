@@ -5,12 +5,11 @@ Built 2026-10-28, uncommitted. Plan: `docs/PLAN-onboarding-and-account.md`. Mock
 ## Order (Fleek first, because sign-up calls it)
 
 1. **Fleek:** deploy fleek-backend (self-signup, code routes, feature-request route, Free plan). Run the DB tests listed in B67 first.
-2. **Cloudflare Turnstile:** create a widget for `metal.fleekfinance.in`; you get a site key (public) and a secret key.
-3. **Infra repo (`fleek-infra`, push it first):** three places per new variable (infra-alignment rule).
-   - `TURNSTILE_SECRET_KEY` on the `metalerp-api` service (API: `settings.turnstile_secret_key`).
-   - `VITE_TURNSTILE_SITE_KEY` as a build arg of the SPA, same way `VITE_WHATSAPP_APP_ID` is wired (web Dockerfile, compose arg, CI).
-   - **Do not set `REGISTRATION_OPEN`** in production. It is the old one-call, unverified `/api/auth/register`; unset it is a 404.
-   - With no `TURNSTILE_SECRET_KEY` in production, sign-up answers 503 on purpose (fail closed).
+2. **Cloudflare Turnstile (no infra change):** create a widget for `metal.fleekfinance.in`, then add the two keys in the Fleek admin **platform secrets**
+   screen (category Auth): `TURNSTILE_SECRET_KEY` (secret) and `TURNSTILE_SITE_KEY` (the public key). Metal ERP holds no Cloudflare key: it sends the
+   visitor's token to Fleek, and the sign-in page fetches the site key from Metal ERP, which gets it from Fleek (cached 5 minutes).
+3. **Do NOT set `REGISTRATION_OPEN`** in production. It is the old one-call, unverified `/api/auth/register`; unset it is a 404.
+   With no `TURNSTILE_SECRET_KEY` in Fleek, or Fleek unreachable, production sign-up answers 503 on purpose (fail closed).
 4. **Metal ERP:** deploy; `alembic upgrade head` runs migration `0064` (adds columns with harmless defaults and three new tables; existing firms and users are unchanged).
 5. **Play Store:** create the reviewer account from the Fleek admin (password sign-in, no code needed). The reviewer will be asked to choose a new password on first sign-in because Fleek set it: either use the app once and give the reviewer the new password, or clear `must_change_password` for that user in the database.
 

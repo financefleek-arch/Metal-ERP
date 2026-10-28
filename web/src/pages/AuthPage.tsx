@@ -4,7 +4,8 @@ import { ApiError, api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { PASSWORD_HINT, passwordProblem } from "../lib/password";
 import { CodeField, ResendLink } from "../components/CodeField";
-import { Turnstile, CAPTCHA_ON } from "../components/Turnstile";
+import { Turnstile } from "../components/Turnstile";
+import { useCaptchaSiteKey } from "../lib/captcha";
 
 // The policy of record (Section 12 covers Metal ERP); see pages/public/LegalPages.tsx.
 const PRIVACY_POLICY = "https://fleekfintech.com/privacy-policy/";
@@ -126,6 +127,7 @@ function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () 
 function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; onBack: () => void }) {
   const [f, setF] = useState({ firm_name: "", owner_name: "", mobile: "", email: "", password: "" });
   const [terms, setTerms] = useState(false);
+  const { siteKey, ready: captchaReady } = useCaptchaSiteKey();
   const [token, setToken] = useState<string | null>(null);
   const [tsKey, setTsKey] = useState(0);
   const [err, setErr] = useState<string | null>(null);
@@ -135,7 +137,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
   const pwProblem = f.password ? passwordProblem(f.password) : null;
   const ready =
     f.firm_name.trim().length >= 2 && f.owner_name.trim().length >= 2 && f.mobile.replace(/\D/g, "").length >= 10 &&
-    f.email.includes("@") && !passwordProblem(f.password) && terms && (!CAPTCHA_ON || !!token);
+    f.email.includes("@") && !passwordProblem(f.password) && terms && captchaReady && (!siteKey || !!token);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -187,7 +189,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
             <a className="text-accent underline" href={PRIVACY_POLICY} target="_blank" rel="noreferrer">Privacy Policy</a>
           </span>
         </label>
-        <Turnstile key={tsKey} onToken={setToken} />
+        <Turnstile key={tsKey} siteKey={siteKey} onToken={setToken} />
         {err && <p className="err" role="alert">{err}</p>}
         <button type="submit" className="btn-primary w-full" disabled={busy || !ready}>
           {busy ? "Sending codes…" : "Send codes"}
@@ -265,6 +267,7 @@ function VerifyForm({ started, onBack }: { started: Started; onBack: () => void 
 
 function ForgotForm({ onBack }: { onBack: () => void }) {
   const { acceptToken } = useAuth();
+  const { siteKey, ready: captchaReady } = useCaptchaSiteKey();
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [code, setCode] = useState("");
@@ -307,7 +310,7 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
     }
   }
 
-  const needToken = CAPTCHA_ON && !token;
+  const needToken = !captchaReady || (!!siteKey && !token);
   return (
     <Shell title="Reset your password" sub="We send a code to the email on your account.">
       <div className="card space-y-4 p-6">
@@ -316,7 +319,7 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
         </Field>
         {!sent && (
           <>
-            <Turnstile key={tsKey} onToken={setToken} />
+            <Turnstile key={tsKey} siteKey={siteKey} onToken={setToken} />
             <button className="btn-primary w-full" disabled={busy || !email.includes("@") || needToken} onClick={() => void send("email")}>
               {busy ? "Sending…" : "Send code"}
             </button>

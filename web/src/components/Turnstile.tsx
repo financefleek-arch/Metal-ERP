@@ -1,10 +1,8 @@
 import { useEffect, useRef } from "react";
 
-// Cloudflare Turnstile, the check in front of sign-up, "send code" and forgot-password. The site key is public and
-// baked in at build time (VITE_TURNSTILE_SITE_KEY, same three places as the WhatsApp ids). With no key (development)
-// nothing is shown and no token is sent; the server then skips the check outside production.
-const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-const SITE_KEY = env?.VITE_TURNSTILE_SITE_KEY || "";
+// Cloudflare Turnstile, the check in front of sign-up, "send code" and forgot-password. The public site key comes from the
+// server (lib/captcha.ts), which gets it from Fleek's platform secrets. With no key nothing is shown and no token is
+// sent; the server then skips the check outside production and refuses in production.
 const SCRIPT = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
 
 interface TurnstileApi {
@@ -26,13 +24,13 @@ function loadScript(): Promise<void> {
 
 /** Calls `onToken` with a fresh token when the person passes, and with null when it expires or fails. Remount it
  *  (change `key`) after a submit: a token works once. */
-export function Turnstile({ onToken }: { onToken: (token: string | null) => void }) {
+export function Turnstile({ siteKey, onToken }: { siteKey: string | null; onToken: (token: string | null) => void }) {
   const box = useRef<HTMLDivElement>(null);
   const cb = useRef(onToken);
   cb.current = onToken;
 
   useEffect(() => {
-    if (!SITE_KEY) {
+    if (!siteKey) {
       cb.current(null);
       return;
     }
@@ -43,7 +41,7 @@ export function Turnstile({ onToken }: { onToken: (token: string | null) => void
         const api = (window as TsWindow).turnstile;
         if (gone || !api || !box.current) return;
         id = api.render(box.current, {
-          sitekey: SITE_KEY,
+          sitekey: siteKey,
           callback: (t) => cb.current(t),
           "expired-callback": () => cb.current(null),
           "error-callback": () => cb.current(null),
@@ -54,10 +52,9 @@ export function Turnstile({ onToken }: { onToken: (token: string | null) => void
       gone = true;
       if (id) (window as TsWindow).turnstile?.remove(id);
     };
-  }, []);
+  }, [siteKey]);
 
-  if (!SITE_KEY) return null;
+  if (!siteKey) return null;
   return <div ref={box} className="min-h-[65px]" />;
 }
 
-export const CAPTCHA_ON = Boolean(SITE_KEY);

@@ -55,6 +55,12 @@ def _token(user: User) -> TokenResponse:
     )
 
 
+@router.get("/config")
+def public_config() -> dict[str, str | None]:
+    """What the sign-in page needs before sign-in: the public CAPTCHA widget key (None = no widget)."""
+    return {"captcha_site_key": captcha.site_key()}
+
+
 # ------------------------------------------------------------------------------------------ sign-up
 
 

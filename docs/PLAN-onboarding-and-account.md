@@ -206,4 +206,6 @@ Differences from the plan above:
 - **"A disabled tenant refuses sign-in" was dropped:** a firm has no active flag today, and Fleek's lapsed rule is deliberately lenient. Revisit with the licence rules.
 - **Existing firms:** untouched (0.7). The Free limits apply only to a firm whose plan is `metal_erp_free` (or a self-signup firm Fleek has never answered for).
 - **Old `/api/auth/register`** stays only behind `REGISTRATION_OPEN` (off in production) because the test suite and developers make firms with it.
+- **CAPTCHA keys live in Fleek platform secrets** (`TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`), not in Metal ERP, Vault or the web build. Metal ERP asks Fleek to verify
+  the token (`/captcha/verify`) and serves the public site key at `GET /api/auth/config`. No infra change.
 - Admin-created users and Fleek/operator password sets now set `must_change_password` and end old sessions.
