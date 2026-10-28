@@ -9,6 +9,7 @@ import { OrdersPage } from "./pages/orders/OrdersPage";
 import { FirmPage } from "./pages/FirmPage";
 import { AccountPage, ForcedPasswordPage } from "./pages/AccountPage";
 import { SetupPage } from "./pages/SetupPage";
+import { WelcomePage } from "./pages/WelcomePage";
 import { FeatureRoute } from "./components/FeatureRoute";
 import { PartiesPage } from "./pages/PartiesPage";
 import { ItemsPage } from "./pages/ItemsPage";
@@ -89,6 +90,7 @@ export function App() {
         <Route path="/firm" element={<FirmPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/setup" element={<SetupPage />} />
+        <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/invoices" element={<InvoiceListPage />} />
         <Route path="/invoices/new" element={<InvoiceEditorPage />} />
         <Route path="/invoices/:id" element={<InvoiceEditorPage />} />
