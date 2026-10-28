@@ -44,8 +44,8 @@ def detect(
     # never suggest something this firm cannot do
     if kind == "bill" and not tenant.ext_inward_import:
         kind = "price_list"
-    if kind == "price_list" and not tenant.ext_supplier_catalog:
-        kind = "bill"
+    # a price list stays a price list even when this firm cannot import one: the page then says
+    # so, rather than reading it as a bill
     if kind == "unknown":
         kind = "bill" if tenant.ext_inward_import else "price_list"
         g.reasons.append("Defaulting; change it if that is wrong.")

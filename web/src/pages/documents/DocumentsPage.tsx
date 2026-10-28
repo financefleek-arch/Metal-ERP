@@ -293,7 +293,12 @@ export function DocumentsPage() {
                   })}
                 </div>
 
-                {kind === "price_list" && (
+                {kind === "price_list" && !detect.price_lists_enabled && (
+                  <p className="mt-3 text-sm text-muted" role="status">
+                    Price list import is not switched on for your firm. Ask Fleek to enable it.
+                  </p>
+                )}
+                {kind === "price_list" && detect.price_lists_enabled && (
                   <div className="mt-4 max-w-sm">
                     <label className="label" htmlFor="doc-supplier">
                       Supplier
@@ -331,7 +336,7 @@ export function DocumentsPage() {
                 <button
                   type="button"
                   className="btn-primary mt-4"
-                  disabled={needsSupplier || billTooBig}
+                  disabled={needsSupplier || billTooBig || (kind === "price_list" && !detect.price_lists_enabled)}
                   onClick={() => upload.mutate()}
                 >
                   {kind === "bill" ? "Read the bill" : "Read the price list"}

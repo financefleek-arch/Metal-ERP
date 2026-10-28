@@ -33,8 +33,9 @@ def test_detect_endpoint_respects_the_firms_flags(
     )
     assert r.status_code == 200, r.text
     body = r.json()
-    # it looks like a price list, but this firm only does bills: never suggest what it cannot do
-    assert body["kind"] == "bill"
+    # it is a price list: say so, and let the page explain this firm cannot import one
+    # (calling it a bill would send a price list into the bill reader)
+    assert body["kind"] == "price_list"
     assert body["bills_enabled"] is True and body["price_lists_enabled"] is False
     ok = client.post(
         "/api/documents/detect",
