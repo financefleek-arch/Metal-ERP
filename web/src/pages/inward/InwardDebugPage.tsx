@@ -142,7 +142,7 @@ export function InwardDebugPage() {
           </div>
           <div className="overflow-x-auto">
           <table className="w-full min-w-[32rem] text-xs">
-            <thead className="bg-ground text-[10px] uppercase text-muted">
+            <thead className="bg-ground text-[11px] uppercase text-muted">
               <tr>
                 <th className="p-1 text-left">#</th>
                 <th className="p-1 text-left">Description</th>

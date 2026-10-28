@@ -6,6 +6,7 @@ import { useAuth } from "../../lib/auth";
 import type { CatalogListItem, CatalogUploadOut } from "../../lib/catalog";
 import type { InwardBillListItem } from "../../lib/inward";
 import { SupplierPicker, type SupplierChoice } from "../../components/catalog/SupplierPicker";
+import { PageHeader } from "../../components/PageHeader";
 
 // price lists may be big (many pages of photos); a supplier's bill is a few pages
 const MAX_MB = 200;
@@ -269,12 +270,10 @@ export function DocumentsPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-5">
-        <h1 className="font-serif text-2xl font-semibold">Supplier documents</h1>
-        <p className="mt-1 text-sm text-muted">
-          A supplier&apos;s bill or price list: drop the PDF and we work out which it is.
-        </p>
-      </div>
+      <PageHeader
+        title="Supplier documents"
+        subtitle="A supplier's bill or price list: drop the PDF and we work out which it is."
+      />
 
       <div
         className={`card mb-6 border-2 border-dashed p-5 ${dragOver ? "border-accent bg-accent-soft" : ""}`}
@@ -489,7 +488,7 @@ export function DocumentsPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r.tone}`}>{r.status}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${r.tone}`}>{r.status}</span>
                   </td>
                 </tr>
               ))}

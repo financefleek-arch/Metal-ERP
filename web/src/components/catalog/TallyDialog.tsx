@@ -355,7 +355,7 @@ function GroupTable({
       <div className="max-h-52 overflow-y-auto rounded-md border border-line">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-line text-left text-[10px] uppercase tracking-wide text-muted">
+            <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
               <th className="px-3 py-1.5 font-medium">Your group</th>
               <th className="px-3 py-1.5 font-medium">Tally stock group</th>
               <th className="px-3 py-1.5 text-right font-medium">Items</th>
@@ -386,7 +386,7 @@ function GroupTable({
                         }}
                       />
                       <span
-                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${
                           g.status === "existing"
                             ? "bg-[#e6efe8] text-ok"
                             : g.status === "create"

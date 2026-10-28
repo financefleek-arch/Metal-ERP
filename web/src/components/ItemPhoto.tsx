@@ -75,7 +75,7 @@ export function ItemPhoto({ item, onChanged }: { item: Item; onChanged: () => vo
         </button>
       ) : (
         <div
-          className="grid h-20 w-20 shrink-0 place-items-center rounded-md border border-dashed border-line text-center text-[10px] text-muted"
+          className="grid h-20 w-20 shrink-0 place-items-center rounded-md border border-dashed border-line text-center text-[11px] text-muted"
           aria-label="No photo"
         >
           No photo

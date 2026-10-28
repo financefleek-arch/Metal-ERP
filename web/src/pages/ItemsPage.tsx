@@ -1,3 +1,5 @@
+import { HeaderMenu, type MenuEntry } from "../components/HeaderMenu";
+import { PageHeader } from "../components/PageHeader";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
@@ -552,8 +554,88 @@ export function ItemsPage() {
 
   const onClosedDialog = () => endNodeAction();
 
+  // phone: the header actions collapse into one ⋯ menu
+  const mobileMenu: MenuEntry[] = [
+    ...(writable
+      ? ([
+          { label: "Import from a supplier price list", onClick: () => nav("/documents") },
+          { label: "Import from a supplier bill", onClick: () => nav("/documents") },
+          { label: "Import from Tally (stock items XML)", onClick: () => nav("/items/import") },
+          { label: "Update from Excel…", onClick: () => setSheetOpen(true) },
+          "sep",
+        ] as MenuEntry[])
+      : []),
+    { label: exportLabel, onClick: () => void exportSheet() },
+    ...(writable
+      ? ([
+          { label: "Add photos to many items", onClick: () => setPhotosOpen(true) },
+          { label: "Photo queue (items with no photo)", onClick: () => setQueueOpen(true) },
+        ] as MenuEntry[])
+      : []),
+    ...(catalogModule ? ([{ label: "Customer catalogs", onClick: () => nav("/items/catalogs") }] as MenuEntry[]) : []),
+  ];
+
   return (
-    <div className="mx-auto flex min-h-[calc(100dvh-6.5rem)] max-w-7xl flex-col rounded-xl border border-line bg-card md:h-full md:min-h-0 md:flex-row md:overflow-hidden">
+    <div className="mx-auto max-w-7xl">
+<PageHeader
+  className={showRailPane ? "" : "hidden md:flex"}
+  title="Items"
+  subtitle="Your catalogue. Pick an item to edit it."
+  actions={
+    <>
+      <div className="md:hidden">
+        <HeaderMenu
+          label="⋯"
+          caret={false}
+          className="btn-ghost w-11 px-0 text-xl"
+          entries={mobileMenu}
+        />
+      </div>
+      <div className="contents max-md:hidden">
+      {writable && (
+        <HeaderMenu
+          label="Import"
+          entries={[
+            { label: "From a supplier price list", onClick: () => nav("/documents") },
+            { label: "From a supplier bill", onClick: () => nav("/documents") },
+            { label: "From Tally (stock items XML)", onClick: () => nav("/items/import") },
+            { label: "Add one by hand", onClick: () => nav("/items/new") },
+            "sep",
+            { label: "Update from Excel…", onClick: () => setSheetOpen(true) },
+          ]}
+        />
+      )}
+      <button
+        className="btn-ghost"
+        title={exportTitle}
+        onClick={() => void exportSheet()}
+      >
+        {exportLabel}
+      </button>
+      {writable && (
+        <HeaderMenu
+          label="Photos"
+          entries={[
+            { label: "Add photos to many items", onClick: () => setPhotosOpen(true) },
+            { label: "Photo queue (items with no photo)", onClick: () => setQueueOpen(true) },
+          ]}
+        />
+      )}
+      {catalogModule && (
+        <Link to="/items/catalogs" className="btn-ghost">
+          Catalogs
+        </Link>
+      )}
+      {writable && (
+        <button className="btn-primary" onClick={() => nav("/items/new")}>
+          + New
+        </button>
+      )}
+      </div>
+    </>
+  }
+/>
+<div className="flex min-h-[calc(100dvh-13rem)] flex-col rounded-xl border border-line bg-card md:min-h-[calc(100dvh-14rem)] md:flex-row md:overflow-hidden">
       {/* rail */}
       <div
         className={`${
@@ -561,58 +643,14 @@ export function ItemsPage() {
         } w-full shrink-0 flex-col border-b border-line bg-ground md:flex md:w-[340px] md:border-b-0 md:border-r`}
       >
         <div className="flex flex-col gap-2 border-b border-line p-3">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-            <span className="text-sm font-semibold">Items</span>
-            <div className="flex flex-wrap items-center gap-1.5 [&_a]:whitespace-nowrap [&_button]:whitespace-nowrap">
-              {writable && (
-                <HeaderMenu
-                  label="Import"
-                  entries={[
-                    { label: "From a supplier price list", onClick: () => nav("/documents") },
-                    { label: "From a supplier bill", onClick: () => nav("/documents") },
-                    { label: "From Tally (stock items XML)", onClick: () => nav("/items/import") },
-                    { label: "Add one by hand", onClick: () => nav("/items/new") },
-                    "sep",
-                    { label: "Update from Excel…", onClick: () => setSheetOpen(true) },
-                  ]}
-                />
-              )}
-              <button
-                className="btn-ghost h-7 px-2.5 text-xs"
-                title={exportTitle}
-                onClick={() => void exportSheet()}
-              >
-                {exportLabel}
-              </button>
-              {writable && (
-                <HeaderMenu
-                  label="Photos"
-                  entries={[
-                    { label: "Add photos to many items", onClick: () => setPhotosOpen(true) },
-                    { label: "Photo queue (items with no photo)", onClick: () => setQueueOpen(true) },
-                  ]}
-                />
-              )}
-              {catalogModule && (
-                <Link to="/items/catalogs" className="btn-ghost h-7 px-2.5 text-xs">
-                  Catalogs
-                </Link>
-              )}
-              {writable && (
-                <button className="btn-primary h-7 px-3 text-xs" onClick={() => nav("/items/new")}>
-                  + New
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-1.5 md:gap-1">
+          <div className="chip-row">
             {(["tree", "flat"] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
-                className={`rounded-full border px-3 py-1 text-xs capitalize md:px-2.5 md:py-0.5 md:text-[10px] ${
+                className={`chip capitalize ${
                   view === v
-                    ? "border-ink bg-ink text-ground"
+                    ? "border-ink bg-ink text-ground hover:bg-ink"
                     : "border-line bg-card text-muted hover:bg-ground"
                 }`}
               >
@@ -621,7 +659,7 @@ export function ItemsPage() {
             ))}
             <button
               onClick={() => nav("/items/categories")}
-              className="rounded-full border border-line bg-card px-3 py-1 text-xs text-muted hover:bg-ground md:px-2.5 md:py-0.5 md:text-[10px]"
+              className="chip"
             >
               Categories…
             </button>
@@ -629,7 +667,7 @@ export function ItemsPage() {
           {view === "flat" && (
             <>
               <input
-                className="field h-8 text-xs"
+                className="field"
                 placeholder="search name, grade, size, HSN…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -658,7 +696,7 @@ export function ItemsPage() {
                   {sources.data.suppliers.length > 0 && (
                     <select
                       aria-label="Supplier"
-                      className="field h-8 max-w-[14rem] text-xs"
+                      className="field max-w-[14rem]"
                       value={supplierId ?? ""}
                       onChange={(e) => setParam("supplier", e.target.value || null)}
                     >
@@ -676,7 +714,7 @@ export function ItemsPage() {
                   {sources.data.price_lists.length > 0 && (
                     <select
                       aria-label="Price list"
-                      className="field h-8 max-w-[14rem] text-xs"
+                      className="field max-w-[14rem]"
                       value={catalogId ?? ""}
                       onChange={(e) => setParam("catalog", e.target.value || null)}
                     >
@@ -694,13 +732,13 @@ export function ItemsPage() {
                   )}
                 </div>
               )}
-              <div className="flex flex-wrap gap-1.5 md:gap-1">
+              <div className="chip-row">
                 <button
                   onClick={() => setScopes(new Set())}
                   aria-pressed={scopes.size === 0}
-                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                  className={`chip ${
                     scopes.size === 0
-                      ? "border-ink bg-ink text-ground"
+                      ? "border-ink bg-ink text-ground hover:bg-ink"
                       : "border-line bg-card text-muted hover:bg-ground"
                   }`}
                 >
@@ -711,9 +749,9 @@ export function ItemsPage() {
                     key={f.key}
                     aria-pressed={scopes.has(f.key)}
                     onClick={() => toggleScope(f.key)}
-                    className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                    className={`chip ${
                       scopes.has(f.key)
-                        ? "border-ink bg-ink text-ground"
+                        ? "border-ink bg-ink text-ground hover:bg-ink"
                         : "border-line bg-card text-muted hover:bg-ground"
                     }`}
                   >
@@ -721,7 +759,7 @@ export function ItemsPage() {
                   </button>
                 ))}
               </div>
-              <div className="flex flex-wrap gap-1.5 md:gap-1" aria-label="Availability and photo filters">
+              <div className="chip-row" aria-label="Availability and photo filters">
                 {AVAILABILITY.map((a) => {
                   const on = avail.includes(a.value);
                   const n = counts.data?.[a.value];
@@ -734,8 +772,8 @@ export function ItemsPage() {
                           cur.includes(a.value) ? cur.filter((x) => x !== a.value) : [...cur, a.value],
                         )
                       }
-                      className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
-                        on ? "border-accent bg-accent text-ground" : "border-line bg-card text-muted hover:bg-ground"
+                      className={`chip ${
+                        on ? "border-accent bg-accent text-ground hover:bg-accent" : "border-line bg-card text-muted hover:bg-ground"
                       }`}
                     >
                       {a.label}
@@ -746,7 +784,7 @@ export function ItemsPage() {
                 <button
                   aria-pressed={noPhoto}
                   onClick={() => setNoPhoto((v) => !v)}
-                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                  className={`chip ${
                     noPhoto ? "border-warn bg-warn text-ground" : "border-line bg-card text-muted hover:bg-ground"
                   }`}
                 >
@@ -756,7 +794,7 @@ export function ItemsPage() {
                 <button
                   aria-pressed={noCode}
                   onClick={() => setNoCode((v) => !v)}
-                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                  className={`chip ${
                     noCode ? "border-warn bg-warn text-ground" : "border-line bg-card text-muted hover:bg-ground"
                   }`}
                 >
@@ -766,8 +804,8 @@ export function ItemsPage() {
                 <button
                   aria-pressed={notInTally}
                   onClick={() => setNotInTally((v) => !v)}
-                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
-                    notInTally ? "border-ink bg-ink text-ground" : "border-line bg-card text-muted hover:bg-ground"
+                  className={`chip ${
+                    notInTally ? "border-ink bg-ink text-ground hover:bg-ink" : "border-line bg-card text-muted hover:bg-ground"
                   }`}
                 >
                   Not in Tally
@@ -777,7 +815,7 @@ export function ItemsPage() {
                   aria-pressed={tallyDue}
                   onClick={() => setTallyDue((v) => !v)}
                   title="In Tally, but its price there is not your current price"
-                  className={`rounded-full border px-3 py-1 text-xs md:px-2.5 md:py-0.5 md:text-[10px] ${
+                  className={`chip ${
                     tallyDue ? "border-warn bg-warn text-ground" : "border-line bg-card text-muted hover:bg-ground"
                   }`}
                 >
@@ -854,7 +892,7 @@ export function ItemsPage() {
           {isNew && (
             <div className="border-b border-[#f3eee4] bg-card px-3 py-2 shadow-[inset_2px_0_0_theme(colors.accent.DEFAULT)]">
               <div className="text-[11px] font-medium text-accent">New item — unsaved</div>
-              <div className="text-[10px] text-muted">fill name to save</div>
+              <div className="text-[11px] text-muted">fill name to save</div>
             </div>
           )}
 
@@ -935,16 +973,16 @@ export function ItemsPage() {
                         src={it.thumb_url}
                         alt=""
                         loading="lazy"
-                        className="h-9 w-9 shrink-0 rounded border border-line object-cover"
+                        className="h-11 w-11 shrink-0 rounded-lg border border-line object-cover md:h-9 md:w-9 md:rounded"
                       />
                     )}
                     <button
                       onClick={() => nav(`/items/${it.id}`)}
                       className="min-w-0 flex-1 text-left"
                     >
-                      <div className="flex items-center gap-1.5 text-xs">
+                      <div className="flex items-center gap-1.5 text-[15px] md:text-sm">
                         <span
-                          className={`rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase ${
+                          className={`rounded-sm px-1 py-0.5 text-[11px] font-bold uppercase ${
                             it.item_type === "bulk"
                               ? "bg-accent-soft text-accent"
                               : "bg-[#f1e7d6] text-warn"
@@ -955,7 +993,7 @@ export function ItemsPage() {
                         <span className="truncate font-medium">{it.name}</span>
                         {it.availability !== "in_stock" && (
                           <span
-                            className={`shrink-0 rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase ${availabilityTone(it.availability)}`}
+                            className={`shrink-0 rounded-sm px-1 py-0.5 text-[11px] font-bold uppercase ${availabilityTone(it.availability)}`}
                           >
                             {availabilityLabel(it.availability)}
                           </span>
@@ -965,29 +1003,29 @@ export function ItemsPage() {
                           return tb && it.tally_state !== "synced" ? (
                             <span
                               title={tb.title}
-                              className={`shrink-0 rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase ${tb.tone}`}
+                              className={`shrink-0 rounded-sm px-1 py-0.5 text-[11px] font-bold uppercase ${tb.tone}`}
                             >
                               {tb.label}
                             </span>
                           ) : null;
                         })()}
                         {it.status === "unconfirmed" && (
-                          <span className="ml-auto shrink-0 rounded-sm bg-[#f1e7d6] px-1 py-0.5 text-[8px] font-bold uppercase text-warn">
+                          <span className="ml-auto shrink-0 rounded-sm bg-[#f1e7d6] px-1 py-0.5 text-[11px] font-bold uppercase text-warn">
                             unconfirmed
                           </span>
                         )}
                         {it.status === "archived" && (
-                          <span className="ml-auto shrink-0 rounded-sm bg-[#efe9df] px-1 py-0.5 text-[8px] font-bold uppercase text-muted">
+                          <span className="ml-auto shrink-0 rounded-sm bg-[#efe9df] px-1 py-0.5 text-[11px] font-bold uppercase text-muted">
                             archived
                           </span>
                         )}
                         {it.status === "confirmed" && !it.hsn_code && (
-                          <span className="ml-auto shrink-0 rounded-sm bg-[#efe9df] px-1 py-0.5 text-[8px] font-bold uppercase text-muted">
+                          <span className="ml-auto shrink-0 rounded-sm bg-[#efe9df] px-1 py-0.5 text-[11px] font-bold uppercase text-muted">
                             no HSN
                           </span>
                         )}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-muted">
+                      <div className="mt-0.5 text-xs text-muted">
                         {it.sku ? (
                           <span className="font-mono">{it.sku}</span>
                         ) : (
@@ -1018,7 +1056,7 @@ export function ItemsPage() {
                 />
               )}
               {dq && rows.length >= PAGE_SIZE && (
-                <div className="px-3 py-3 text-center text-[10px] text-muted">
+                <div className="px-3 py-3 text-center text-[11px] text-muted">
                   Showing the closest {PAGE_SIZE} — add another word to narrow.
                 </div>
               )}
@@ -1031,10 +1069,10 @@ export function ItemsPage() {
       <div className={`${showDetailPane ? "flex" : "hidden"} min-w-0 flex-1 flex-col md:flex`}>
         {!isDesktop && inDetail && (
           <button
-            className="flex items-center gap-2 border-b border-line px-4 py-3 text-sm font-medium text-accent md:hidden"
+            className="flex h-11 items-center gap-1 px-3 text-base font-medium text-accent md:hidden"
             onClick={() => (isBulk ? closeBulk() : nav("/items"))}
           >
-            ← Items
+            ‹ Items
           </button>
         )}
         <div className="flex-1 overflow-y-auto p-4 md:p-5">
@@ -1145,6 +1183,12 @@ export function ItemsPage() {
           }}
         />
       )}
+    {writable && showRailPane && (
+      <button className="btn-primary fixed bottom-[4.5rem] right-4 z-20 h-12 gap-1 rounded-full px-5 shadow-lg md:hidden" onClick={() => nav("/items/new")}>
+        ＋ New item
+      </button>
+    )}
+    </div>
     </div>
   );
 }
@@ -1153,7 +1197,7 @@ export function ItemsPage() {
 function LinkChip({ label, title, onClear }: { label: string; title: string; onClear: () => void }) {
   return (
     <button
-      className="rounded-full border border-accent bg-accent-soft px-3 py-1 text-xs text-accent md:px-2.5 md:py-0.5 md:text-[10px]"
+      className="rounded-full border border-accent bg-accent-soft px-3 py-1 text-xs text-accent md:px-2.5 md:py-0.5 md:text-[11px]"
       title={title}
       onClick={onClear}
     >
@@ -1162,47 +1206,3 @@ function LinkChip({ label, title, onClear }: { label: string; title: string; onC
   );
 }
 
-type MenuEntry = { label: string; onClick: () => void } | "sep";
-
-/** A small header dropdown: "Import ▾", "Photos ▾". */
-function HeaderMenu({ label, entries }: { label: string; entries: MenuEntry[] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button
-        className="btn-ghost h-7 px-2.5 text-xs"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
-      >
-        {label} ▾
-      </button>
-      {open && (
-        <div
-          role="menu"
-          className="absolute left-0 z-20 mt-1 w-max min-w-[220px] max-w-[min(20rem,calc(100vw-2rem))] overflow-hidden rounded-lg border border-line bg-card text-xs shadow-xl"
-        >
-          {entries.map((e, i) =>
-            e === "sep" ? (
-              <div key={i} className="border-t border-line" />
-            ) : (
-              <button
-                key={e.label}
-                role="menuitem"
-                className="block w-full whitespace-nowrap px-3 py-2 text-left hover:bg-ground"
-                onMouseDown={(ev) => ev.preventDefault()}
-                onClick={() => {
-                  setOpen(false);
-                  e.onClick();
-                }}
-              >
-                {e.label}
-              </button>
-            ),
-          )}
-        </div>
-      )}
-    </div>
-  );
-}

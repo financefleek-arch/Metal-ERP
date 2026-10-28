@@ -241,7 +241,7 @@ export function StatementSendDialog({
                 onClick={send}
               >
                 {busy ? "Working…" : "Send"}
-                {!busy && <span className="ml-1.5 hidden text-[10px] opacity-70 md:inline">Enter ↵</span>}
+                {!busy && <span className="ml-1.5 hidden text-[11px] opacity-70 md:inline">Enter ↵</span>}
               </button>
             )}
           </div>

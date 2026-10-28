@@ -180,12 +180,12 @@ export function OrderDetail({ order: o, onChanged }: { order: Order; onChanged?:
                         : "sold singly"}
                   </div>
                   <div className="mt-0.5 flex flex-wrap gap-1">
-                    {!l.item_id && <span className="rounded-sm bg-[#efe9df] px-1 text-[10px] text-muted">item removed</span>}
+                    {!l.item_id && <span className="rounded-sm bg-[#efe9df] px-1 text-[11px] text-muted">item removed</span>}
                     {l.item_id && !l.available && o.status !== "invoiced" && (
-                      <span className="rounded-sm bg-[#f1e7d6] px-1 text-[10px] text-warn">not in stock now</span>
+                      <span className="rounded-sm bg-[#f1e7d6] px-1 text-[11px] text-warn">not in stock now</span>
                     )}
                     {moved && (
-                      <span className="rounded-sm bg-[#f1e7d6] px-1 text-[10px] text-warn">price now ₹{money(l.current_rate as string)}</span>
+                      <span className="rounded-sm bg-[#f1e7d6] px-1 text-[11px] text-warn">price now ₹{money(l.current_rate as string)}</span>
                     )}
                   </div>
                 </td>

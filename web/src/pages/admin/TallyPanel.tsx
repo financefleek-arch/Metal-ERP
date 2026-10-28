@@ -318,7 +318,7 @@ function AgentSection({
             </p>
             <div className="mt-2 grid grid-cols-3 gap-2">
               <div className="rounded-lg border border-line bg-ground/40 p-2.5">
-                <p className="text-[10px] uppercase tracking-[0.05em] text-muted">
+                <p className="text-[11px] uppercase tracking-[0.05em] text-muted">
                   Agent → Fleek
                 </p>
                 <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold">
@@ -332,7 +332,7 @@ function AgentSection({
                 <p className="mt-0.5 text-[11px] text-muted">{checkin?.label}</p>
               </div>
               <div className="rounded-lg border border-line bg-ground/40 p-2.5">
-                <p className="text-[10px] uppercase tracking-[0.05em] text-muted">
+                <p className="text-[11px] uppercase tracking-[0.05em] text-muted">
                   Agent → TallyPrime
                 </p>
                 <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold">
@@ -346,7 +346,7 @@ function AgentSection({
                 <p className="mt-0.5 text-[11px] text-muted">{tally?.label}</p>
               </div>
               <div className="rounded-lg border border-line bg-ground/40 p-2.5">
-                <p className="text-[10px] uppercase tracking-[0.05em] text-muted">
+                <p className="text-[11px] uppercase tracking-[0.05em] text-muted">
                   Cloud backup
                 </p>
                 <p className="mt-1 flex items-center gap-1.5 text-xs font-semibold">
@@ -838,7 +838,7 @@ function LedgerSelect({
       <label className="label">
         {slot.label}
         {!slot.f1a && (
-          <span className="ml-1 normal-case text-[10px] text-muted">· F1b</span>
+          <span className="ml-1 normal-case text-[11px] text-muted">· F1b</span>
         )}
       </label>
       <select
@@ -879,7 +879,7 @@ function RecentPulls({ firmId }: { firmId: string }) {
       <div className="mt-2 overflow-x-auto rounded-lg border border-line">
         <table className="w-full min-w-[520px] text-xs">
           <thead>
-            <tr className="bg-ground/50 text-left text-[10px] uppercase tracking-[0.06em] text-muted">
+            <tr className="bg-ground/50 text-left text-[11px] uppercase tracking-[0.06em] text-muted">
               <th className="px-3 py-2 font-semibold">When</th>
               <th className="px-3 py-2 font-semibold">Status</th>
               <th className="px-3 py-2 font-semibold tabular-nums">Parties</th>
@@ -941,7 +941,7 @@ function JobStatusTag({ job }: { job: TallySyncJob }) {
   };
   const [label, cls] = map[job.status];
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}>
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${cls}`}>
       {label}
     </span>
   );

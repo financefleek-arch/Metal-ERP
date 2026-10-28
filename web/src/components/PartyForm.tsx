@@ -214,7 +214,7 @@ export function PartyForm({
     <div className="flex flex-col gap-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="font-serif text-lg font-semibold">{party.legal_name}</h2>
+          <h2 className="section-title max-md:hidden">{party.legal_name}</h2>
           <p className="mt-0.5 text-[11px] text-muted">
             {party.source === "inward_bill" ? (
               <span className="text-accent">◆ from inward bill</span>
@@ -235,7 +235,7 @@ export function PartyForm({
         </div>
         <div className="relative">
           <button
-            className="rounded-md border border-line bg-card px-2 py-1 text-sm text-muted hover:text-ink"
+            className="grid h-11 w-11 place-items-center rounded-md border border-line bg-card text-lg text-muted hover:text-ink md:h-8 md:w-8 md:text-sm"
             onClick={() => setMenuOpen((o) => !o)}
             aria-label="More actions"
           >

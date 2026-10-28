@@ -237,7 +237,7 @@ export function ItemsImportPage() {
 
       <div className="card overflow-x-auto">
         <div className="min-w-[620px]">
-          <div className="grid grid-cols-[1fr_120px_110px_120px_1fr] gap-3 bg-[#efe9df] px-4 py-2.5 text-[10px] uppercase tracking-wide text-muted">
+          <div className="grid grid-cols-[1fr_120px_110px_120px_1fr] gap-3 bg-[#efe9df] px-4 py-2.5 text-[11px] uppercase tracking-wide text-muted">
             <span>Stock item</span>
             <span>Unit · HSN</span>
             <span>Type</span>
@@ -298,7 +298,7 @@ function Stat({ n, label, tone }: { n: number; label: string; tone?: "accent" | 
   return (
     <div className={`min-w-[110px] rounded-lg border ${ring} bg-card px-3 py-2`}>
       <div className="font-serif text-lg font-semibold">{n}</div>
-      <div className="text-[10px] uppercase tracking-wide text-muted">{label}</div>
+      <div className="text-[11px] uppercase tracking-wide text-muted">{label}</div>
     </div>
   );
 }
@@ -321,10 +321,10 @@ function Row({ r, onPatch }: { r: StagedItemRow; onPatch: (body: Record<string, 
     >
       <div>
         <div className="font-medium">{r.edited_name ?? r.stock_name}</div>
-        <div className="text-[10px] text-muted">{r.parent_group ?? "—"}</div>
-        {parsedBits && <div className="text-[10px] text-ink-soft/70">{parsedBits}</div>}
+        <div className="text-[11px] text-muted">{r.parent_group ?? "—"}</div>
+        {parsedBits && <div className="text-[11px] text-ink-soft/70">{parsedBits}</div>}
       </div>
-      <span className="font-mono text-[10px] text-muted">
+      <span className="font-mono text-[11px] text-muted">
         {r.base_units ?? "—"} · {r.hsn ?? "—"}
       </span>
       <select
@@ -336,7 +336,7 @@ function Row({ r, onPatch }: { r: StagedItemRow; onPatch: (body: Record<string, 
         <option value="mrp">MRP</option>
       </select>
       <span
-        className={`inline-block w-fit rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${OUTCOME_CLASS[r.outcome]}`}
+        className={`inline-block w-fit rounded px-1.5 py-0.5 text-[11px] font-bold uppercase ${OUTCOME_CLASS[r.outcome]}`}
       >
         {OUTCOME_LABEL[r.outcome]}
       </span>
@@ -395,7 +395,7 @@ function Row({ r, onPatch }: { r: StagedItemRow; onPatch: (body: Record<string, 
         )}
         {r.outcome !== "skip" && (
           <button
-            className="ml-2 text-[10px] text-muted hover:text-danger"
+            className="ml-2 text-[11px] text-muted hover:text-danger"
             onClick={() => onPatch({ decision: "skip" })}
           >
             skip

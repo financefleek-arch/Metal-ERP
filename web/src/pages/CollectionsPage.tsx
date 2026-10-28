@@ -9,6 +9,8 @@ import { StatementSendDialog } from "../components/StatementSendDialog";
 import { RemindersPanel } from "../components/RemindersPanel";
 import { useAuth } from "../lib/auth";
 import { canWrite } from "../lib/roles";
+import { initials } from "../lib/initials";
+import { PageHeader } from "../components/PageHeader";
 import type { AgeingBucket, AgeingRow, CollectionsRow } from "../lib/types";
 
 /** Scope chips are radio-exclusive. "owes"/"overdue" read the ageing
@@ -36,11 +38,6 @@ const BUCKET_PILL: Record<AgeingBucket, { cls: string; label: string }> = {
   d60: { cls: "bg-[#f6e7dd] text-[#b5622f]", label: "60+" },
   d90p: { cls: "bg-[#f6dcd6] text-danger", label: ">3 mo" },
 };
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return (parts[0]?.[0] ?? "").toUpperCase() + (parts[1]?.[0] ?? "").toUpperCase();
-}
 
 export function CollectionsPage() {
   const { me } = useAuth();
@@ -119,7 +116,7 @@ export function CollectionsPage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
-      <h1 className="font-serif text-lg font-semibold">Collections</h1>
+      <PageHeader title="Collections" subtitle="Who owes you, oldest first." className="mb-0" />
 
       {canWrite(me?.role) && <RemindersPanel />}
 
@@ -128,7 +125,7 @@ export function CollectionsPage() {
           <button
             key={s.key}
             onClick={() => pickScope(s.key)}
-            className={`rounded-full border px-3 py-1 text-xs ${
+            className={`chip ${
               scope === s.key
                 ? s.key === "overdue"
                   ? "border-danger bg-danger text-white"
@@ -154,15 +151,15 @@ export function CollectionsPage() {
                     on ? "border-accent ring-2 ring-inset ring-accent-soft" : "border-line"
                   } ${b.key === "d90p" ? "bg-[#fdf3f1]" : "bg-card"}`}
                 >
-                  <div className="label text-[9px]">{b.label}</div>
-                  <div className="mt-0.5 font-mono text-xs font-semibold">
+                  <div className="micro">{b.label}</div>
+                  <div className="amount mt-0.5 max-md:text-xs">
                     {inr(bucketTotals[b.key])}
                   </div>
                 </button>
               );
             })}
           </div>
-          <p className="-mt-2 text-[11px] text-muted">
+          <p className="meta -mt-2">
             {scope === "overdue" ? (
               <>
                 Overdue: <b>{overdueCount}</b> {overdueCount === 1 ? "party" : "parties"} ·{" "}
@@ -301,7 +298,7 @@ function AgeingList({
             </span>
             <button className="min-w-0 flex-1 text-left" onClick={() => onPay(r)}>
               <span className="block truncate text-sm font-semibold">{r.legal_name}</span>
-              <span className="block text-[11px] text-muted">
+              <span className="meta block">
                 {r.phone ?? "—"}
                 {" · "}
                 {r.open_invoice_count > 0
@@ -313,7 +310,7 @@ function AgeingList({
               {r.is_overdue && (
                 <button
                   type="button"
-                  className="mt-1 text-[10.5px] font-semibold text-accent underline"
+                  className="mt-1 text-[11px] font-semibold text-accent underline"
                   onClick={(e) => {
                     e.stopPropagation();
                     onStatement(r);
@@ -324,9 +321,9 @@ function AgeingList({
               )}
             </button>
             <button className="flex-none text-right" onClick={() => onPay(r)}>
-              <span className="block font-serif text-sm font-semibold">{inr(r.total)}</span>
+              <span className="amount block">{inr(r.total)}</span>
               <span
-                className={`mt-0.5 inline-block rounded-[3px] px-1.5 py-px text-[10px] font-bold uppercase tracking-wide ${pill.cls}`}
+                className={`mt-0.5 inline-block rounded-[3px] px-1.5 py-px text-[11px] font-bold uppercase tracking-wide ${pill.cls}`}
               >
                 {pill.label}
               </span>
@@ -373,7 +370,7 @@ function LegacyList({
             </span>
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold">{r.legal_name}</span>
-              <span className="block text-[11px] text-muted">
+              <span className="meta block">
                 {r.phone ?? "—"} ·{" "}
                 {r.open_invoice_count > 0
                   ? `${r.open_invoice_count} open bill${r.open_invoice_count === 1 ? "" : "s"}`
@@ -381,10 +378,10 @@ function LegacyList({
               </span>
             </span>
             <span className="flex-none text-right">
-              <span className={`block font-serif text-sm font-semibold ${isCredit ? "text-ok" : ""}`}>
+              <span className={`block amount ${isCredit ? "text-ok" : ""}`}>
                 {inr(Math.abs(balance))}
               </span>
-              {isCredit && <span className="block text-[10px] text-ok">credit</span>}
+              {isCredit && <span className="block text-[11px] text-ok">credit</span>}
             </span>
             <span className="flex-none text-xs text-muted">›</span>
           </button>

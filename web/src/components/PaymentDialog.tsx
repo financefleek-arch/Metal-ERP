@@ -296,7 +296,7 @@ export function PaymentDialog({
 
           <div className="mb-1.5 flex items-baseline justify-between">
             <label className="label mb-0">Apply against open bills</label>
-            <span className="text-[10px] font-semibold text-accent">oldest first, edit any row</span>
+            <span className="text-[11px] font-semibold text-accent">oldest first, edit any row</span>
           </div>
 
           {openInvoices.isLoading && (
@@ -309,7 +309,7 @@ export function PaymentDialog({
           )}
           {rows.length > 0 && (
             <div className="mb-3 overflow-hidden rounded-md border border-line">
-              <div className="grid grid-cols-[1fr_74px_84px] gap-2 bg-ground px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+              <div className="grid grid-cols-[1fr_74px_84px] gap-2 bg-ground px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
                 <span>Invoice</span>
                 <span className="text-right">Due</span>
                 <span className="text-right">Apply ₹</span>
@@ -323,7 +323,7 @@ export function PaymentDialog({
                 >
                   <div>
                     <div className="text-sm font-semibold">#{r.number}</div>
-                    <div className="text-[10px] text-muted">
+                    <div className="text-[11px] text-muted">
                       {new Date(r.date).toLocaleDateString()} · {r.daysOld}d old
                     </div>
                   </div>
@@ -379,7 +379,7 @@ export function PaymentDialog({
             {save.isPending ? "Saving…" : "Save payment"}
             {!save.isPending && <span className="ml-1.5 hidden text-[11px] opacity-70 md:inline">Enter ↵</span>}
           </button>
-          <p className="mt-1.5 hidden text-center text-[10px] text-muted md:block">
+          <p className="mt-1.5 hidden text-center text-[11px] text-muted md:block">
             Esc cancel · Alt+1-4 mode · Alt+F pay in full
           </p>
         </div>

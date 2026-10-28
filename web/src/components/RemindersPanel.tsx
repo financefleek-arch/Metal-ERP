@@ -116,7 +116,7 @@ export function RemindersPanel() {
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                   <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                       r.kind === "statement" ? "bg-[#e3edf2] text-accent" : "bg-[#efe9df]"
                     }`}
                   >
@@ -128,7 +128,7 @@ export function RemindersPanel() {
                   <span className="font-semibold text-danger">{r.oldest_overdue_days} days overdue</span>
                   {r.phone && <span>{r.phone}</span>}
                   {noPhone && (
-                    <span className="rounded-full bg-[#f4e3df] px-2 py-0.5 text-[10px] font-semibold text-danger">
+                    <span className="rounded-full bg-[#f4e3df] px-2 py-0.5 text-[11px] font-semibold text-danger">
                       No phone number
                     </span>
                   )}

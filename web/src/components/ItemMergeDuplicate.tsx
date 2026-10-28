@@ -27,7 +27,7 @@ function Frame({
       <div className="card flex max-h-[90dvh] w-full max-w-md flex-col gap-3 overflow-y-auto p-4">
         <div className="flex items-start justify-between gap-3">
           <h2 className="font-serif text-base font-semibold">{title}</h2>
-          <button className="btn-ghost h-7 px-2.5 text-xs" onClick={onClose}>
+          <button className="btn-ghost h-8 px-3 text-xs" onClick={onClose}>
             Cancel
           </button>
         </div>
@@ -99,7 +99,7 @@ export function MergeItemDialog({ item, onClose }: { item: Item; onClose: () => 
                 onClick={() => setTarget(c)}
               >
                 <span className="truncate font-medium">{c.name}</span>
-                <span className="ml-auto shrink-0 font-mono text-[10px] text-muted">
+                <span className="ml-auto shrink-0 font-mono text-[11px] text-muted">
                   billed {c.times_billed}×
                 </span>
               </button>

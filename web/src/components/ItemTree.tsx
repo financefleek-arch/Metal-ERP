@@ -216,7 +216,7 @@ export function ItemTree({
   const dropCls = (key: string) => (dropKey === key ? " outline outline-2 -outline-offset-2 outline-accent" : "");
 
   return (
-    <div className="text-xs">
+    <div className="text-sm">
       <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-ground px-3 py-2">
         <input
           className="field h-7 min-w-0 flex-1 text-xs"
@@ -226,13 +226,13 @@ export function ItemTree({
           onChange={(e) => setSearch(e.target.value)}
         />
         <button
-          className="rounded-full border border-line bg-card px-2.5 py-1 text-[10px] text-muted hover:bg-ground"
+          className="chip"
           onClick={() => setOpenCats(new Set((tree.data ?? []).map((c) => c.id ?? "__none__")))}
         >
           Open all
         </button>
         <button
-          className="rounded-full border border-line bg-card px-2.5 py-1 text-[10px] text-muted hover:bg-ground"
+          className="chip"
           onClick={() => {
             setOpenCats(new Set());
             setOpenGroups(new Set());
@@ -266,7 +266,7 @@ export function ItemTree({
       )}
       {q && dq.length >= 2 && (hits.data?.length ?? 0) > 0 && (
         <div className="border-b border-line">
-          <div className="bg-[#efe6d4]/50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[#5a4a2f]">
+          <div className="bg-[#efe6d4]/50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-[#5a4a2f]">
             Items matching “{dq}”
           </div>
           {(hits.data ?? []).slice(0, 8).map((it) => (
@@ -277,12 +277,12 @@ export function ItemTree({
             >
               <span className="truncate">{it.name}</span>
               {it.default_rate != null && (
-                <span className="ml-auto font-mono text-[9px] text-muted">₹{it.default_rate}</span>
+                <span className="ml-auto font-mono text-[11px] text-muted">₹{it.default_rate}</span>
               )}
             </button>
           ))}
           {(hits.data?.length ?? 0) > 8 && (
-            <div className="px-3 py-1.5 text-[10px] text-muted">
+            <div className="px-3 py-1.5 text-[11px] text-muted">
               {hits.data!.length - 8} more — switch to Flat to see them all.
             </div>
           )}
@@ -308,7 +308,7 @@ export function ItemTree({
             <div
               className={`flex items-center border-b border-[#f3eee4] ${
                 catPicked ? "bg-accent-soft" : "bg-[#efe6d4]/50"
-              } text-[10px] font-bold uppercase tracking-wide text-[#5a4a2f]${dropCls(catDropKey)}`}
+              } text-[11px] font-bold uppercase tracking-wide text-[#5a4a2f]${dropCls(catDropKey)}`}
               {...dropOn(catDropKey, () => true)}
               onDrop={(e) => {
                 e.preventDefault();
@@ -340,9 +340,9 @@ export function ItemTree({
                 disabled={flat}
                 onClick={() => toggle(openCats, setOpenCats, catKey)}
               >
-                {!flat && <span className="text-[8px] text-faint">{open ? "▾" : "▸"}</span>}
+                {!flat && <span className="text-[11px] text-faint">{open ? "▾" : "▸"}</span>}
                 <span className="truncate">{label}</span>
-                <span className="ml-auto shrink-0 font-mono text-[9px] font-normal text-muted">
+                <span className="ml-auto shrink-0 font-mono text-[11px] font-normal text-muted">
                   {nGroups} grp · {nItems}
                 </span>
               </button>
@@ -398,7 +398,7 @@ export function ItemTree({
                         }${dropCls(gDropKey)}`}
                       >
                         <button
-                          className="-ml-1 grid h-9 w-7 shrink-0 place-items-center text-[8px] text-faint md:h-7"
+                          className="-ml-1 grid h-9 w-7 shrink-0 place-items-center text-[11px] text-faint md:h-7"
                           aria-label={gOpen ? `Close ${g.name}` : `Open ${g.name}`}
                           aria-expanded={gOpen}
                           onClick={() => toggle(openGroups, setOpenGroups, g.id)}
@@ -421,7 +421,7 @@ export function ItemTree({
                           onClick={() => nav(`/items/g/${g.id}`)}
                         >
                           <span
-                            className={`mr-1 shrink-0 rounded-sm px-1 py-0.5 text-[8px] font-bold uppercase ${
+                            className={`mr-1 shrink-0 rounded-sm px-1 py-0.5 text-[11px] font-bold uppercase ${
                               g.item_type === "bulk"
                                 ? "bg-accent-soft text-accent"
                                 : "bg-[#f1e7d6] text-warn"
@@ -431,10 +431,10 @@ export function ItemTree({
                           </span>
                           <span className="truncate">{g.name}</span>
                         </button>
-                        <span className="px-1.5 font-mono text-[9px] text-muted">{g.leaf_count}</span>
+                        <span className="px-1.5 font-mono text-[11px] text-muted">{g.leaf_count}</span>
                         {writable && gOpen && !catPicked && (
                           <button
-                            className={`mr-1 h-8 shrink-0 rounded-lg border px-2.5 text-[10px] font-semibold uppercase tracking-wide md:hidden ${
+                            className={`mr-1 h-8 shrink-0 rounded-lg border px-2.5 text-[11px] font-semibold uppercase tracking-wide md:hidden ${
                               nodeKeys.has(gNode.key)
                                 ? "border-accent bg-accent text-ground"
                                 : "border-accent bg-accent-soft text-accent"
@@ -487,7 +487,7 @@ export function ItemTree({
                   <>
                     {c.groups.length > 0 && (
                     <div
-                      className={`flex items-center border-b border-[#f3eee4] pl-6 text-[9px] uppercase tracking-wide text-muted${dropCls(`drop:loose:${looseKey}`)}`}
+                      className={`flex items-center border-b border-[#f3eee4] pl-6 text-[11px] uppercase tracking-wide text-muted${dropCls(`drop:loose:${looseKey}`)}`}
                       {...dropOn(`drop:loose:${looseKey}`, (d) => d.kind === "leaf")}
                       onDrop={(e) => {
                         e.preventDefault();
@@ -519,11 +519,11 @@ export function ItemTree({
                         aria-expanded={!closedLoose.has(looseKey)}
                         onClick={() => toggle(closedLoose, setClosedLoose, looseKey)}
                       >
-                        <span className="text-[8px] text-faint">
+                        <span className="text-[11px] text-faint">
                           {closedLoose.has(looseKey) ? "▸" : "▾"}
                         </span>
                         Ungrouped
-                        <span className="ml-auto pr-1.5 font-mono text-[9px]">{c.loose_count}</span>
+                        <span className="ml-auto pr-1.5 font-mono text-[11px]">{c.loose_count}</span>
                       </button>
                       {writable && (
                         <span className="pr-2 normal-case tracking-normal">
@@ -610,10 +610,10 @@ function LeafList({
   });
 
   if (leaves.isLoading)
-    return <div className={`${pad} py-2 pr-3 text-[10px] text-muted`}>Loading…</div>;
+    return <div className={`${pad} py-2 pr-3 text-[11px] text-muted`}>Loading…</div>;
   const rows = leaves.data ?? [];
   if (rows.length === 0)
-    return <div className={`${pad} py-2 pr-3 text-[10px] text-faint`}>(empty)</div>;
+    return <div className={`${pad} py-2 pr-3 text-[11px] text-faint`}>(empty)</div>;
 
   return (
     <>
@@ -660,13 +660,13 @@ function LeafList({
               )}
               <span className="truncate">{useSizeLabel ? (l.size_label ?? l.name) : l.name}</span>
               {l.status === "unconfirmed" && (
-                <span className="shrink-0 rounded-sm bg-[#f1e7d6] px-1 text-[8px] font-bold uppercase text-warn">
+                <span className="shrink-0 rounded-sm bg-[#f1e7d6] px-1 text-[11px] font-bold uppercase text-warn">
                   unconf
                 </span>
               )}
               {l.availability && l.availability !== "in_stock" && (
                 <span
-                  className={`shrink-0 rounded-sm px-1 text-[8px] font-bold uppercase ${availabilityTone(l.availability)}`}
+                  className={`shrink-0 rounded-sm px-1 text-[11px] font-bold uppercase ${availabilityTone(l.availability)}`}
                 >
                   {availabilityLabel(l.availability)}
                 </span>
@@ -674,15 +674,15 @@ function LeafList({
               {tb && l.tally_state !== "synced" && (
                 <span
                   title={tb.title}
-                  className={`shrink-0 rounded-sm px-1 text-[8px] font-bold uppercase ${tb.tone}`}
+                  className={`shrink-0 rounded-sm px-1 text-[11px] font-bold uppercase ${tb.tone}`}
                 >
                   {tb.label}
                 </span>
               )}
-              {l.sku && <span className="ml-auto shrink-0 font-mono text-[9px] text-faint">{l.sku}</span>}
+              {l.sku && <span className="ml-auto shrink-0 font-mono text-[11px] text-faint">{l.sku}</span>}
               {l.default_rate != null && (
                 <span
-                  className={`${l.sku ? "" : "ml-auto "}shrink-0 font-mono text-[9px] text-muted`}
+                  className={`${l.sku ? "" : "ml-auto "}shrink-0 font-mono text-[11px] text-muted`}
                 >
                   ₹{l.default_rate}
                 </span>

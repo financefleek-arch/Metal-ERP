@@ -315,7 +315,7 @@ export function PublicCatalogPage() {
                     <span className="text-sm font-semibold tabular-nums">₹{money(headline)}</span>
                     <span className="text-[11px] text-muted">{perPiece ? "per piece" : i.pack_qty > 1 ? "per pack" : "each"}</span>
                     {i.tag && (
-                      <span className="ml-auto rounded-sm bg-accent-soft px-1 py-0.5 text-[9px] font-bold uppercase text-accent">
+                      <span className="ml-auto rounded-sm bg-accent-soft px-1 py-0.5 text-[11px] font-bold uppercase text-accent">
                         {i.tag}
                       </span>
                     )}

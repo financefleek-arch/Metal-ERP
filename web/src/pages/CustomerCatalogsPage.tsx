@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, getToken } from "../lib/api";
 import { ShareLinksPanel } from "../components/catalog/ShareLinksPanel";
 import { fileSize, type CustomerCatalog, type OutputJob } from "../lib/catalog";
+import { PageHeader } from "../components/PageHeader";
 
 async function openFile(c: CustomerCatalog) {
   const t = getToken();
@@ -74,24 +75,26 @@ export function CustomerCatalogsPage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="font-serif text-2xl font-semibold">Customer catalogs</h1>
-          <p className="mt-1 text-sm text-muted">
+      <PageHeader
+        title="Customer catalogs"
+        subtitle={
+          <>
             PDFs made from your items, with your prices and photos. To make one, select items on the{" "}
             <Link to="/items" className="text-accent underline underline-offset-2">
               Items page
             </Link>{" "}
             and choose Make customer catalog.
-          </p>
-        </div>
-        {older > 0 && (
-          <label className="flex items-center gap-1.5 text-sm">
-            <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} />
-            Show older versions ({older})
-          </label>
-        )}
-      </div>
+          </>
+        }
+        actions={
+          older > 0 && (
+            <label className="flex items-center gap-1.5 text-sm">
+              <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} />
+              Show older versions ({older})
+            </label>
+          )
+        }
+      />
 
       {err && (
         <p className="err" role="alert">
@@ -110,7 +113,7 @@ export function CustomerCatalogsPage() {
               <p className="truncate font-medium">
                 {c.title} <span className="text-xs font-normal text-muted">v{c.version}</span>
                 {c.stale && (
-                  <span className="ml-2 rounded-full border border-warn px-2 py-0.5 text-[10px] font-medium text-warn">
+                  <span className="ml-2 rounded-full border border-warn px-2 py-0.5 text-[11px] font-medium text-warn">
                     Out of date
                   </span>
                 )}

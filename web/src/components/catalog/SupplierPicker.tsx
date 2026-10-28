@@ -112,7 +112,7 @@ export function SupplierPicker({
             >
               <span className="font-medium">{p.legal_name}</span>
               {p.role !== "customer" && (
-                <span className="ml-2 rounded-sm bg-[#f1e7d6] px-1 text-[9px] font-bold uppercase text-warn">
+                <span className="ml-2 rounded-sm bg-[#f1e7d6] px-1 text-[11px] font-bold uppercase text-warn">
                   supplier
                 </span>
               )}

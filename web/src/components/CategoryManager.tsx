@@ -128,7 +128,7 @@ export function CategoryManager({ onClose }: { onClose: () => void }) {
             ) : (
               <>
                 <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                <span className="hidden font-mono text-[10px] text-muted sm:inline">
+                <span className="hidden font-mono text-[11px] text-muted sm:inline">
                   {c.group_count} grp · {c.item_count} items
                 </span>
                 <button

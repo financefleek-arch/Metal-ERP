@@ -212,7 +212,7 @@ export function ItemForm({
       <ItemSourcesBlock itemId={item.id} />
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="font-serif text-lg font-semibold">{item.name}</h2>
+          <h2 className="font-serif text-[22px] font-semibold leading-tight md:text-base">{item.name}</h2>
           <p className="mt-0.5 text-[11px] text-muted">
             {item.source === "auto_from_purchase"
               ? "◆ from inward bill"
@@ -336,7 +336,7 @@ export function ItemForm({
         <div className="sm:col-span-2 lg:col-span-3">
           <Label>Name *</Label>
           <input className="field" value={v.name} onChange={(e) => patch({ name: e.target.value })} />
-          <p className="mt-1 font-mono text-[10px] text-muted">
+          <p className="mt-1 font-mono text-[11px] text-muted">
             normalized → {item.name_normalized}
           </p>
         </div>
@@ -349,7 +349,7 @@ export function ItemForm({
             maxLength={64}
             onChange={(e) => patch({ sku: e.target.value })}
           />
-          <p className="mt-1 text-[10px] text-muted">
+          <p className="mt-1 text-[11px] text-muted">
             {(v.sku ?? "").trim()
               ? "The barcode on this item's labels. Each code is used once."
               : "Numbered when you print this item's label, or type your own."}
@@ -605,7 +605,7 @@ function Section({
 }) {
   return (
     <div className="border-t border-line pt-3">
-      <p className="mb-2 text-[10px] uppercase tracking-[0.06em] text-muted">
+      <p className="mb-2 text-[11px] uppercase tracking-[0.06em] text-muted">
         {title}
         {note && <span className="ml-2 normal-case tracking-normal text-faint">· {note}</span>}
       </p>
@@ -627,7 +627,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <label className="mb-1 block text-[9px] uppercase tracking-[0.05em] text-muted">{children}</label>
+    <label className="mb-1 block text-[11px] uppercase tracking-[0.05em] text-muted">{children}</label>
   );
 }
 

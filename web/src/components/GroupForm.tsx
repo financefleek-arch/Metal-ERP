@@ -143,7 +143,7 @@ export function GroupForm({
         <h2 className="font-serif text-lg font-semibold">
           {g.name}{" "}
           <span
-            className={`align-middle rounded-sm px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+            className={`align-middle rounded-sm px-1.5 py-0.5 text-[11px] font-bold uppercase ${
               g.item_type === "bulk" ? "bg-accent-soft text-accent" : "bg-[#f1e7d6] text-warn"
             }`}
           >
@@ -310,14 +310,14 @@ export function GroupForm({
       </div>
 
       <div className="border-t border-line pt-3">
-        <p className="mb-2 text-[10px] uppercase tracking-[0.06em] text-muted">
+        <p className="mb-2 text-[11px] uppercase tracking-[0.06em] text-muted">
           Sizes
           <span className="ml-2 normal-case tracking-normal text-faint">
             · drag to reorder
           </span>
         </p>
         <div className="card divide-y divide-[#f3eee4] overflow-hidden">
-          <div className="grid grid-cols-[24px_1fr_90px] gap-2 bg-[#efe9df] px-3 py-1.5 text-[9px] uppercase tracking-wide text-muted">
+          <div className="grid grid-cols-[24px_1fr_90px] gap-2 bg-[#efe9df] px-3 py-1.5 text-[11px] uppercase tracking-wide text-muted">
             <span>#</span>
             <span>Size</span>
             <span>Rate</span>

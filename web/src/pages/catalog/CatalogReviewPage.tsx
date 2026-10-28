@@ -465,7 +465,7 @@ export function CatalogReviewPage() {
               label="Catalog name"
               value={cat.title}
               onSave={(t) => t && rename.mutate(t)}
-              className="font-serif text-2xl font-semibold"
+              className="page-title"
             />
           ) : (
             <div className="h-8 w-64 animate-pulse rounded bg-line" />
@@ -627,13 +627,13 @@ export function CatalogReviewPage() {
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <div>
+        <div className="max-md:w-full">
           <label className="label" htmlFor="cat-group">
             Group
           </label>
           <select
             id="cat-group"
-            className="field w-52"
+            className="field md:w-52"
             value={groupSel}
             onChange={(e) => setGroupSel(e.target.value)}
           >
@@ -648,13 +648,13 @@ export function CatalogReviewPage() {
               ))}
           </select>
         </div>
-        <div>
+        <div className="max-md:w-full">
           <label className="label" htmlFor="cat-show">
             Show
           </label>
           <select
             id="cat-show"
-            className="field w-60"
+            className="field md:w-60"
             value={view}
             onChange={(e) => chooseView(e.target.value as View)}
           >
@@ -692,7 +692,7 @@ export function CatalogReviewPage() {
           </span>
           <button
             type="button"
-            className="btn-ghost h-9"
+            className="btn-ghost"
             disabled={matchesBulk.isPending}
             onClick={() => matchesBulk.mutate({ action: "accept", all: true })}
           >
@@ -700,7 +700,7 @@ export function CatalogReviewPage() {
           </button>
           <button
             type="button"
-            className="btn-ghost h-9"
+            className="btn-ghost"
             disabled={matchesBulk.isPending}
             onClick={() => matchesBulk.mutate({ action: "dismiss", all: true })}
           >
@@ -712,7 +712,7 @@ export function CatalogReviewPage() {
       {/* bulk bar */}
       {selectedCount > 0 && (
         <div
-          className="card sticky top-[7.5rem] z-10 mb-3 flex flex-wrap items-center gap-2 border-accent bg-accent-soft p-2.5"
+          className="card sticky top-2 md:top-[7.5rem] z-10 mb-3 flex flex-wrap items-center gap-2 border-accent bg-accent-soft p-2.5"
           role="region"
           aria-label="Bulk actions"
           data-pop-root
@@ -733,7 +733,7 @@ export function CatalogReviewPage() {
           <span className="relative">
             <button
               type="button"
-              className="btn-ghost h-9"
+              className="btn-ghost"
               aria-expanded={pop === "group"}
               onClick={() => setPop((p) => (p === "group" ? null : "group"))}
             >
@@ -746,7 +746,7 @@ export function CatalogReviewPage() {
                 </label>
                 <input
                   id="bulk-group"
-                  className="field h-9 w-48"
+                  className="field w-48"
                   list="catalog-groups-list"
                   placeholder="Group name"
                   value={bulkGroup}
@@ -759,7 +759,7 @@ export function CatalogReviewPage() {
                 />
                 <button
                   type="button"
-                  className="btn-primary h-9"
+                  className="btn-primary"
                   disabled={!bulkGroup.trim() || bulk.isPending}
                   onClick={() => bulk.mutate({ target: target(), changes: { group_name: bulkGroup.trim() } })}
                 >
@@ -772,7 +772,7 @@ export function CatalogReviewPage() {
           <span className="relative">
             <button
               type="button"
-              className="btn-ghost h-9"
+              className="btn-ghost"
               aria-expanded={pop === "margin"}
               onClick={() => setPop((p) => (p === "margin" ? null : "margin"))}
             >
@@ -785,7 +785,7 @@ export function CatalogReviewPage() {
                 </label>
                 <input
                   id="bulk-margin"
-                  className="field h-9 w-28 text-right font-mono"
+                  className="field w-28 text-right font-mono"
                   inputMode="decimal"
                   placeholder="Margin %"
                   aria-invalid={bulkMargin.trim() !== "" && !validMargin(bulkMargin)}
@@ -802,7 +802,7 @@ export function CatalogReviewPage() {
                 />
                 <button
                   type="button"
-                  className="btn-primary h-9"
+                  className="btn-primary"
                   disabled={!validMargin(bulkMargin) || bulk.isPending}
                   onClick={() =>
                     bulk.mutate({
@@ -819,7 +819,7 @@ export function CatalogReviewPage() {
 
           <button
             type="button"
-            className="btn-ghost h-9"
+            className="btn-ghost"
             disabled={bulk.isPending}
             onClick={() =>
               bulk.mutate({ target: target(), changes: { included: view === "excluded" } })
@@ -831,7 +831,7 @@ export function CatalogReviewPage() {
           <span className="relative">
             <button
               type="button"
-              className="btn-ghost h-9"
+              className="btn-ghost"
               aria-haspopup="menu"
               aria-expanded={pop === "more"}
               onClick={() => setPop((p) => (p === "more" ? null : "more"))}
@@ -974,7 +974,7 @@ export function CatalogReviewPage() {
                     <div className="h-[68px] w-[102px] rounded border border-line bg-ground" />
                   )}
                   {flagged && (
-                    <p className="mt-0.5 w-[102px] text-center text-[10px] text-warn">
+                    <p className="mt-0.5 w-[102px] text-center text-[11px] text-warn">
                       {{ small: "Small picture", odd_shape: "Odd shape", blank: "Looks blank", unreadable: "Cannot read" }[
                         r.image_flag as string
                       ] ?? "Check photo"}{" "}

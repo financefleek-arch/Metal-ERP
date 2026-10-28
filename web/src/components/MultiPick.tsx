@@ -62,7 +62,7 @@ export function MultiPick({
         }`}
       >
         <span className="truncate">{summary}</span>
-        <span className="shrink-0 text-[8px] text-faint">▾</span>
+        <span className="shrink-0 text-[11px] text-faint">▾</span>
       </button>
       {open && (
         <>
@@ -96,7 +96,7 @@ export function MultiPick({
                     onChange={() => toggle(o.value)}
                   />
                   <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                  {o.hint && <span className="shrink-0 font-mono text-[10px] text-muted">{o.hint}</span>}
+                  {o.hint && <span className="shrink-0 font-mono text-[11px] text-muted">{o.hint}</span>}
                 </label>
               ))}
             </div>

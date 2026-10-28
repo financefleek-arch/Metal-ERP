@@ -100,7 +100,7 @@ function MissingRow({
       />
       <button
         type="button"
-        className="btn-ghost h-7 px-2.5 text-xs"
+        className="btn-ghost h-8 px-3 text-xs"
         disabled={up.isPending}
         onClick={() => ref.current?.click()}
       >

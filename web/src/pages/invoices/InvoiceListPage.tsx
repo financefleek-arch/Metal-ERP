@@ -197,7 +197,7 @@ export function InvoiceListPage() {
       {err && <p className="err">{err}</p>}
 
       <div className="card overflow-visible">
-        <div className="hidden grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] gap-3 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted md:grid">
+        <div className="hidden grid-cols-[48px_minmax(0,1fr)_128px_150px_84px] gap-3 border-b border-line bg-ground px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted md:grid">
           <span>No.</span>
           <span>Party</span>
           <span className="text-right">Amount</span>

@@ -137,7 +137,7 @@ export function CommandPalette({
               onClick={() => go(e)}
             >
               <span className="min-w-0 truncate">
-                <span className="mr-2 inline-block w-14 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                <span className="mr-2 inline-block w-14 text-[11px] font-semibold uppercase tracking-wide text-muted">
                   {i === 0 || entries[i - 1].group !== e.group ? e.group : ""}
                 </span>
                 {e.label}
@@ -146,7 +146,7 @@ export function CommandPalette({
             </button>
           ))}
         </div>
-        <div className="border-t border-line px-4 py-1.5 text-[10px] text-muted">
+        <div className="border-t border-line px-4 py-1.5 text-[11px] text-muted">
           ↑↓ choose · Enter open · Esc close
         </div>
       </div>

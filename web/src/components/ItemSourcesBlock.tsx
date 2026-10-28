@@ -13,11 +13,11 @@ export function ItemSourcesBlock({ itemId }: { itemId: string }) {
   if (!d || (d.catalogs.length === 0 && d.bills.length === 0)) return null;
   return (
     <section className="rounded-lg border border-line p-3" aria-label="Came from">
-      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted">Came from</h3>
+      <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">Came from</h3>
       <ul className="flex flex-col gap-1.5 text-xs">
         {d.catalogs.map((c) => (
           <li key={c.catalog_id} className="flex flex-wrap items-baseline gap-x-2">
-            <span className="rounded-sm bg-accent-soft px-1 text-[9px] font-bold uppercase text-accent">
+            <span className="rounded-sm bg-accent-soft px-1 text-[11px] font-bold uppercase text-accent">
               price list
             </span>
             <Link to={`/catalogs/${c.catalog_id}`} className="font-medium text-accent hover:underline">
@@ -31,7 +31,7 @@ export function ItemSourcesBlock({ itemId }: { itemId: string }) {
         ))}
         {d.bills.map((b) => (
           <li key={b.bill_id} className="flex flex-wrap items-baseline gap-x-2">
-            <span className="rounded-sm bg-[#f1e7d6] px-1 text-[9px] font-bold uppercase text-warn">
+            <span className="rounded-sm bg-[#f1e7d6] px-1 text-[11px] font-bold uppercase text-warn">
               bill
             </span>
             <Link to={`/inward/${b.bill_id}`} className="font-medium text-accent hover:underline">

@@ -4,7 +4,7 @@ import { api, ApiError } from "../lib/api";
 import { inr } from "../lib/previewTotal";
 import { PaymentDialog } from "./PaymentDialog";
 import { StatementSendDialog } from "./StatementSendDialog";
-import type { Party, PartyLedgerEntry } from "../lib/types";
+import type { OpenInvoiceForAllocation, Party, PartyLedgerEntry } from "../lib/types";
 
 /** Party detail page's "Account" tab — running statement + record-payment entry. */
 export function PartyAccountTab({ party }: { party: Party }) {
@@ -17,6 +17,12 @@ export function PartyAccountTab({ party }: { party: Party }) {
   const ledger = useQuery({
     queryKey: ["party-ledger", party.id],
     queryFn: () => api<PartyLedgerEntry[]>(`/parties/${party.id}/ledger`),
+  });
+
+  // same key as the payment dialog, so opening either warms the other
+  const openBills = useQuery({
+    queryKey: ["open-invoices", party.id],
+    queryFn: () => api<OpenInvoiceForAllocation[]>(`/parties/${party.id}/open-invoices`),
   });
 
   const reverse = useMutation({
@@ -53,28 +59,59 @@ export function PartyAccountTab({ party }: { party: Party }) {
   const isCredit = balance < 0;
 
   return (
-    <div>
+    <div className="max-md:pb-20">
       {err && <p className="err mb-3">{err}</p>}
       <div className="card p-4">
-        <div className="label mb-0.5">{isCredit ? "Credit balance" : "Outstanding balance"}</div>
-        <div className={`font-serif text-2xl font-semibold ${isCredit ? "text-ok" : ""}`}>
+        <div className="label mb-0.5">{isCredit ? "Credit balance" : "They owe you"}</div>
+        <div className={`font-serif text-[28px] font-semibold leading-tight md:text-2xl ${isCredit ? "text-ok" : ""}`}>
           {inr(Math.abs(balance))}
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-2 max-md:fixed max-md:inset-x-0 max-md:bottom-[calc(3.25rem+env(safe-area-inset-bottom,0px))] max-md:z-20 max-md:m-0 max-md:flex-nowrap max-md:border-t max-md:border-line max-md:bg-card max-md:p-3 max-md:[&>button]:flex-1 max-md:flex-row-reverse">
           <button
-            className="btn-primary h-10 px-4 text-sm"
+            className="btn-primary"
             onClick={() => setPayingOpen(true)}
           >
-            + Record payment
+            Record payment
           </button>
           <button
-            className="btn-ghost h-10 px-4 text-sm"
+            className="btn-ghost"
             onClick={() => setStatementOpen(true)}
           >
-            Statement
+            Send statement
           </button>
         </div>
       </div>
+
+      {(openBills.data?.length ?? 0) > 0 && (
+        <>
+          <div className="label mb-1.5 mt-5">Open bills</div>
+          <div className="card divide-y divide-[#f3eee4] overflow-hidden">
+            {openBills.data!.map((b) => {
+              const late = b.days_old >= 30;
+              return (
+                <div key={b.invoice_id} className="flex min-h-14 items-center gap-3 px-3.5 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[15px] font-medium md:text-sm">INV-{b.number}</div>
+                    <div className="meta">
+                      {new Date(b.date).toLocaleDateString()} · {b.days_old} days
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="amount">{inr(b.balance_due)}</div>
+                    <span
+                      className={`inline-block rounded-full px-2 text-[11px] font-semibold ${
+                        late ? "bg-[#fdf3f1] text-danger" : "bg-accent-soft text-accent"
+                      }`}
+                    >
+                      {b.days_old >= 90 ? "90+ days" : b.days_old >= 60 ? "60+ days" : late ? "30+ days" : "Within 30 days"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <div className="label mb-1.5 mt-5">Statement</div>
       <div className="card divide-y divide-[#f3eee4] overflow-hidden">
@@ -141,7 +178,7 @@ export function PartyAccountTab({ party }: { party: Party }) {
                 </div>
                 <div className="flex-none text-right">
                   <div
-                    className={`text-sm font-semibold tabular-nums ${
+                    className={`amount ${
                       isReversed
                         ? "text-muted"
                         : isPayment || openingIsCredit
@@ -152,11 +189,11 @@ export function PartyAccountTab({ party }: { party: Party }) {
                     {isPayment || openingIsCredit ? "− " : "+ "}
                     {inr(isPayment || openingIsCredit ? e.credit : e.debit)}
                   </div>
-                  <div className="text-[10px] text-muted">bal {inr(e.running_balance)}</div>
+                  <div className="text-[11px] text-muted">bal {inr(e.running_balance)}</div>
                   {isPayment && !isReversed && (
                     <button
                       type="button"
-                      className="mt-1 text-[10px] font-semibold text-danger hover:underline disabled:opacity-50"
+                      className="mt-1 text-[11px] font-semibold text-danger hover:underline disabled:opacity-50"
                       disabled={reverse.isPending}
                       onClick={() => confirmReverse(e.ref_id, e.ref_label)}
                     >

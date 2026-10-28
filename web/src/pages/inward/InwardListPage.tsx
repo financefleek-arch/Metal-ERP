@@ -27,7 +27,7 @@ const STATUS_CLASS: Record<InwardStatus, string> = {
 
 function StatusChip({ s }: { s: InwardStatus }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_CLASS[s]}`}>
+    <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATUS_CLASS[s]}`}>
       {STATUS_LABEL[s]}
     </span>
   );
@@ -118,7 +118,7 @@ export function InwardListPage() {
               : isDesktop
                 ? "Drop supplier PDFs, or click to choose"
                 : "Tap to choose supplier PDFs"}
-            <span className="mt-1 block text-[10px] text-muted">
+            <span className="mt-1 block text-[11px] text-muted">
               PDF only · 20 MB max · one file extracts now
             </span>
           </div>

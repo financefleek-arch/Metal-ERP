@@ -50,7 +50,7 @@ export function ReplacePhoto({
       >
         {up.isPending ? "Saving…" : hasPhoto ? "Replace photo" : "Add photo"}
       </button>
-      {err && <p className="text-[10px] text-danger">{err}</p>}
+      {err && <p className="text-[11px] text-danger">{err}</p>}
     </div>
   );
 }

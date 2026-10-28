@@ -142,7 +142,7 @@ export function OrdersPage() {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold">{x.number}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${TONE[x.status]}`}>{LABEL[x.status]}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${TONE[x.status]}`}>{LABEL[x.status]}</span>
               </div>
               <div className="mt-0.5 truncate font-medium">
                 {x.customer_name}
@@ -155,7 +155,7 @@ export function OrdersPage() {
                 <span className="font-mono">₹{money(x.total)}</span>
               </div>
               {!x.matched_party_id && x.status === "new" && (
-                <span className="mt-1 inline-block rounded-full bg-[#efe9df] px-2 py-0.5 text-[10px] text-muted">
+                <span className="mt-1 inline-block rounded-full bg-[#efe9df] px-2 py-0.5 text-[11px] text-muted">
                   new customer, confirm
                 </span>
               )}

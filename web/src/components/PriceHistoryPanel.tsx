@@ -80,12 +80,12 @@ export function PriceHistoryPanel({
                 >
                   <td className="py-1.5">
                     {new Date(p.date).toLocaleDateString()}
-                    {isStale(p.date) && <span className="ml-1 text-[10px] text-warn">old</span>}
+                    {isStale(p.date) && <span className="ml-1 text-[11px] text-warn">old</span>}
                   </td>
                   <td>
                     {billLabel(p)}
                     {p.source === "tally" && (
-                      <span className="ml-1 rounded bg-[#efe9dc] px-1 text-[10px]">Tally</span>
+                      <span className="ml-1 rounded bg-[#efe9dc] px-1 text-[11px]">Tally</span>
                     )}
                   </td>
                   <td className="text-right font-mono">

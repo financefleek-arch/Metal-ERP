@@ -1249,7 +1249,7 @@ export function InvoiceEditorPage() {
 
           {/* line table */}
           <div className="card overflow-visible">
-            <div className={`hidden ${LINE_GRID} gap-2 border-b border-line bg-ground px-3 py-2 text-[10px] font-semibold uppercase text-muted md:grid`}>
+            <div className={`hidden ${LINE_GRID} gap-2 border-b border-line bg-ground px-3 py-2 text-[11px] font-semibold uppercase text-muted md:grid`}>
               <span>#</span>
               <span>Item</span>
               <span>HSN</span>
@@ -1427,7 +1427,7 @@ export function InvoiceEditorPage() {
                       key={m}
                       type="button"
                       disabled={readOnly}
-                      className={`px-1.5 text-[9px] font-bold ${
+                      className={`px-1.5 text-[11px] font-bold ${
                         invDiscMode === m ? "bg-accent text-white" : "bg-card text-muted"
                       }`}
                       onClick={() => {
@@ -1453,7 +1453,7 @@ export function InvoiceEditorPage() {
               </span>
             </div>
             {invDiscMode === "pct" && invDiscAmt > 0 && (
-              <div className="flex justify-end text-[10px] text-muted">
+              <div className="flex justify-end text-[11px] text-muted">
                 = − {inr(invDiscAmt)}
               </div>
             )}
@@ -1484,7 +1484,7 @@ export function InvoiceEditorPage() {
                   <span className="text-muted">Balance after payment</span>
                   <span className="font-semibold">{inr(finalizePayPreview.balanceAfter)}</span>
                 </div>
-                <p className="mt-1.5 text-[10px] leading-snug text-accent-dark">
+                <p className="mt-1.5 text-[11px] leading-snug text-accent-dark">
                   Only recorded when you Finalize — “Save draft” does not record this payment.
                 </p>
               </div>
@@ -1494,7 +1494,7 @@ export function InvoiceEditorPage() {
           {/* weighment — always shown once there's a line */}
           {filledRows.length > 0 && (
             <div className="mt-4 rounded-md border border-[#c9ddc9] bg-[#eef3ee] p-3 text-xs">
-              <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-ok">
+              <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ok">
                 Weighment
               </div>
               <div className="flex justify-between py-0.5">
@@ -1522,7 +1522,7 @@ export function InvoiceEditorPage() {
                 </div>
               )}
               {measure.segments.length <= 1 && (
-                <div className="mt-1 text-[10px] text-muted">1 weighment</div>
+                <div className="mt-1 text-[11px] text-muted">1 weighment</div>
               )}
             </div>
           )}
@@ -1834,7 +1834,7 @@ function WhatsappSendDialog({
                 : targets.length > 1
                   ? `Send to ${targets.length}`
                   : "Send"}
-              {!busy && <span className="ml-1.5 hidden text-[10px] opacity-70 md:inline">Enter ↵</span>}
+              {!busy && <span className="ml-1.5 hidden text-[11px] opacity-70 md:inline">Enter ↵</span>}
             </button>
           )}
         </div>
@@ -1901,7 +1901,7 @@ function SlipDivider({
             value={recordedKg}
             onChange={(e) => onEdit(e.target.value)}
           />
-          <span className="text-[10px] text-muted">kg</span>
+          <span className="text-[11px] text-muted">kg</span>
         </span>
       )}
       <span className="text-[11px] text-muted">
@@ -1909,13 +1909,13 @@ function SlipDivider({
         {!pieceOnly && count > 0 && ` · ${count} pcs`}
       </span>
       {invalid ? (
-        <span className="text-[10px] font-semibold text-danger">
+        <span className="text-[11px] font-semibold text-danger">
           can't be blank/zero — this segment has weighed lines
         </span>
       ) : (
         !pieceOnly &&
         Math.abs(drift) >= 0.005 && (
-          <span className="text-[10px] text-warn">
+          <span className="text-[11px] text-warn">
             {drift > 0 ? "+" : "−"}
             {Math.abs(drift).toFixed(2)} kg vs line sum
           </span>
@@ -1924,7 +1924,7 @@ function SlipDivider({
       {!readOnly && isLastClosed && (
         <button
           type="button"
-          className="ml-auto text-[10px] text-accent hover:underline"
+          className="ml-auto text-[11px] text-accent hover:underline"
           onClick={onReopen}
         >
           re-open
@@ -2251,7 +2251,7 @@ function PartyPicker({
             >
               <span className="font-medium">{p.legal_name}</span>
               {p.role === "supplier" && (
-                <span className="ml-2 rounded-sm bg-[#f1e7d6] px-1 text-[9px] font-bold uppercase text-warn">
+                <span className="ml-2 rounded-sm bg-[#f1e7d6] px-1 text-[11px] font-bold uppercase text-warn">
                   supplier
                 </span>
               )}
@@ -2461,7 +2461,7 @@ function QuickCreatePartyDialog({
             onClick={() => create.mutate(false)}
           >
             {create.isPending ? "Creating…" : "Create & use"}
-            {!create.isPending && <span className="ml-1.5 hidden text-[10px] opacity-70 md:inline">Enter ↵</span>}
+            {!create.isPending && <span className="ml-1.5 hidden text-[11px] opacity-70 md:inline">Enter ↵</span>}
           </button>
         </div>
       </div>
@@ -2793,7 +2793,7 @@ function LineRow({
                   {it.name}
                   {size && <span className="ml-1 text-[11px] text-muted">{size}</span>}
                   <span
-                    className={`ml-1 rounded px-1 py-0.5 text-[9px] ${
+                    className={`ml-1 rounded px-1 py-0.5 text-[11px] ${
                       it.item_type === "bulk"
                         ? "bg-[#e3eef2] text-accent"
                         : "bg-[#f1e7d6] text-warn"
@@ -2802,7 +2802,7 @@ function LineRow({
                     {it.item_type === "bulk" ? "⚖" : "📦"}
                   </span>
                   {badge && (
-                    <span className={`ml-1 rounded px-1 py-0.5 text-[9px] ${badge.cls}`}>
+                    <span className={`ml-1 rounded px-1 py-0.5 text-[11px] ${badge.cls}`}>
                       {badge.label}
                     </span>
                   )}
@@ -2822,12 +2822,12 @@ function LineRow({
             onMouseDown={createNew}
           >
             + Use “{typed.trim()}” as a new item
-            <span className="ml-2 text-[10px] text-muted">Ctrl+Enter</span>
+            <span className="ml-2 text-[11px] text-muted">Ctrl+Enter</span>
           </button>
         </div>
       )}
       {row.item_id && (
-        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 whitespace-nowrap text-[10px] font-semibold text-[#3f7a4f]">
+        <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 whitespace-nowrap text-[11px] font-semibold text-[#3f7a4f]">
           ✓ matched
         </span>
       )}
@@ -3205,7 +3205,7 @@ function LineRow({
       {mobile}
       {desktop}
       {otherItemLine >= 0 && (
-        <div className="px-3 pb-1 text-[10px] text-warn md:pl-11">
+        <div className="px-3 pb-1 text-[11px] text-warn md:pl-11">
           also on line {otherItemLine + 1}
         </div>
       )}

@@ -19,7 +19,7 @@
 @layer components {
   /* Mobile-first: base = comfortable touch scale, md: = dense desktop editor. */
   .btn {
-    @apply inline-flex h-11 items-center justify-center rounded-md px-4 text-base font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed md:h-9 md:text-sm;
+    @apply inline-flex h-11 items-center justify-center rounded-md px-4 text-base font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed md:h-8 md:text-[13px];
   }
   .btn-primary {
     @apply btn bg-accent text-white hover:bg-accent-dark;
@@ -28,17 +28,44 @@
     @apply btn border border-line bg-card text-ink hover:bg-ground;
   }
   .field {
-    @apply h-11 w-full rounded-md border border-line bg-card px-3 text-base text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 md:h-9 md:text-sm;
+    @apply h-11 w-full rounded-md border border-line bg-card px-3 text-base text-ink outline-none focus:border-accent focus:ring-2 focus:ring-accent/25 md:h-8 md:text-[13px];
   }
   .label {
-    @apply mb-1 block text-xs font-medium uppercase tracking-[0.06em] text-muted md:text-[11px];
+    @apply mb-1 block text-[11px] font-medium uppercase tracking-[0.06em] text-muted;
   }
   /* compact per-field label inside a mobile line card */
   .fl-m {
-    @apply mb-1 flex items-baseline gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-muted;
+    @apply mb-1 flex items-baseline gap-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-muted;
   }
   .card {
     @apply rounded-xl border border-line bg-card;
+  }
+  /* Type scale: six roles, nothing below 11px. Use these instead of text-[Npx]. */
+  .page-title {
+    @apply font-serif text-[28px] font-semibold leading-tight md:text-2xl;
+  }
+  .section-title {
+    @apply font-serif text-base font-semibold leading-snug;
+  }
+  .meta {
+    @apply text-xs text-muted;
+  }
+  .micro {
+    @apply text-[11px] font-medium uppercase tracking-[0.06em] text-muted;
+  }
+  .amount {
+    @apply font-mono text-sm font-medium tabular-nums;
+  }
+  /* filter / view-toggle pill, one size everywhere */
+  .chip {
+    @apply inline-flex h-9 flex-none items-center gap-1 rounded-full border border-line bg-card px-3.5 text-[13px] font-medium text-muted hover:bg-ground md:h-7 md:px-3 md:text-xs;
+  }
+  .chip-on {
+    @apply border-ink bg-ink text-ground hover:bg-ink;
+  }
+  /* filter chips: one swipeable row on a phone, wrapping from md up */
+  .chip-row {
+    @apply -mx-3 flex gap-2 overflow-x-auto px-3 pb-0.5 [scrollbar-width:none] md:mx-0 md:flex-wrap md:gap-1 md:overflow-visible md:px-0 md:pb-0 [&::-webkit-scrollbar]:hidden;
   }
   .err {
     @apply mt-1 text-xs text-danger;

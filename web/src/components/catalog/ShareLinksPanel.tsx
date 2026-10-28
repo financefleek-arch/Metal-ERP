@@ -57,7 +57,7 @@ export function ShareLinksPanel() {
               <p className="truncate font-medium">
                 {l.title}
                 {!l.live && (
-                  <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[10px] text-muted">
+                  <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
                     {l.revoked_at ? "Stopped" : "Expired"}
                   </span>
                 )}

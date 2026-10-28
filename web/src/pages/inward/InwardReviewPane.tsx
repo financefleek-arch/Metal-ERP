@@ -29,7 +29,7 @@ function noteChip(flag: string | null | undefined, quoted: string | null | undef
         ? "item is discontinued"
         : flag;
   return (
-    <span className="ml-2 rounded-full bg-[#f1e7d6] px-2 py-0.5 text-[10px] text-warn" title="Check this line">
+    <span className="ml-2 rounded-full bg-[#f1e7d6] px-2 py-0.5 text-[11px] text-warn" title="Check this line">
       {text}
     </span>
   );
@@ -44,7 +44,7 @@ function flagChip(flag: string | null) {
     new: "bg-[#efe9df] text-muted",
   };
   return (
-    <span className={`ml-2 rounded-full px-2 py-0.5 text-[10px] ${map[flag] ?? "bg-line"}`}>
+    <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] ${map[flag] ?? "bg-line"}`}>
       {flag}
     </span>
   );
@@ -209,11 +209,11 @@ export function InwardReviewPane({ billId }: { billId: string }) {
         <div className="mb-2 flex items-center justify-between">
           <b className="text-[13px]">Supplier</b>
           {b.supplier.matched_party_id ? (
-            <span className="rounded-full bg-[#e6efe8] px-2 py-0.5 text-[10px] text-ok">
+            <span className="rounded-full bg-[#e6efe8] px-2 py-0.5 text-[11px] text-ok">
               ✓ matched
             </span>
           ) : (
-            <span className="rounded-full bg-[#efe9df] px-2 py-0.5 text-[10px] text-muted">
+            <span className="rounded-full bg-[#efe9df] px-2 py-0.5 text-[11px] text-muted">
               NEW — will be created
             </span>
           )}
@@ -318,11 +318,11 @@ export function InwardReviewPane({ billId }: { billId: string }) {
               <span className="font-mono font-semibold">{money(ln.line_total)}</span>
               <span className="flex items-center">
                 {ln.matched_item_id ? (
-                  <span className="rounded-full bg-[#e6efe8] px-2 py-0.5 text-[10px] text-ok">
+                  <span className="rounded-full bg-[#e6efe8] px-2 py-0.5 text-[11px] text-ok">
                     {ln.match_method}
                   </span>
                 ) : (
-                  <span className="rounded-full bg-[#efe9df] px-2 py-0.5 text-[10px] text-muted">
+                  <span className="rounded-full bg-[#efe9df] px-2 py-0.5 text-[11px] text-muted">
                     NEW
                   </span>
                 )}
@@ -336,7 +336,7 @@ export function InwardReviewPane({ billId }: { billId: string }) {
 
       {/* lines — desktop dense table */}
       <div className="hidden overflow-hidden rounded-xl border border-line md:block">
-        <div className="grid grid-cols-[24px_1fr_72px_44px_44px_70px_84px_150px] gap-2 bg-[#efe9df] px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wide text-muted">
+        <div className="grid grid-cols-[24px_1fr_72px_44px_44px_70px_84px_150px] gap-2 bg-[#efe9df] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
           <span>#</span>
           <span>Description</span>
           <span>HSN</span>
@@ -355,18 +355,18 @@ export function InwardReviewPane({ billId }: { billId: string }) {
           >
             <span className="text-muted">{ln.sl_no}</span>
             <span className="truncate">{ln.description}</span>
-            <span className="font-mono text-[10px] text-muted">{ln.hsn ?? "—"}</span>
+            <span className="font-mono text-[11px] text-muted">{ln.hsn ?? "—"}</span>
             <span>{ln.quantity ?? "—"}</span>
             <span>{ln.uom ? uomDisplay(ln.uom) : "—"}</span>
             <span className="font-mono">{money(ln.unit_rate)}</span>
             <span className="text-right font-mono">{money(ln.line_total)}</span>
             <span className="flex items-center truncate">
               {ln.matched_item_id ? (
-                <span className="rounded-full bg-[#e6efe8] px-2 py-0.5 text-[10px] text-ok">
+                <span className="rounded-full bg-[#e6efe8] px-2 py-0.5 text-[11px] text-ok">
                   {ln.match_method}
                 </span>
               ) : (
-                <span className="rounded-full bg-[#efe9df] px-2 py-0.5 text-[10px] text-muted">
+                <span className="rounded-full bg-[#efe9df] px-2 py-0.5 text-[11px] text-muted">
                   NEW
                 </span>
               )}

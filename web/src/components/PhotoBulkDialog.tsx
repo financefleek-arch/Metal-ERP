@@ -222,7 +222,7 @@ export function PhotoBulkDialog({ onClose }: { onClose: () => void }) {
                       <p className="truncate text-sm">
                         {names[s.media_id!]}
                         {s.match && choice[s.media_id!] === s.match.item_id && (
-                          <span className="ml-1 text-[10px] text-muted">matched by {s.match.method}</span>
+                          <span className="ml-1 text-[11px] text-muted">matched by {s.match.method}</span>
                         )}
                       </p>
                     ) : (
