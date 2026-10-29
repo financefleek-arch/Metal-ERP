@@ -16,14 +16,12 @@ from sqlalchemy.orm import Session
 from app.models import (
     BackupShop,
     Invoice,
-    Item,
-    Party,
     Payment,
     Tenant,
     TenantWhatsappConfig,
 )
 from app.models._mixins import InvoiceStatus
-from app.services import entitlements, features
+from app.services import activity, entitlements, features
 
 
 def _count(session: Session, model: Any, tenant_id: str, *extra: Any) -> int:
@@ -47,32 +45,18 @@ def steps(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
             "/firm",
         ),
         (
-            "bank",
-            "Add your bank or UPI and terms",
-            "Printed at the bottom of the invoice so customers know how to pay you.",
-            bool(tenant.bank_ac_no or tenant.upi_id),
-            "/firm",
-        ),
-        (
-            "party",
-            "Add your first customer",
-            "A name and a phone number is enough to start.",
-            _count(session, Party, tid) > 0,
-            "/parties/new",
-        ),
-        (
-            "item",
-            "Add your first item",
-            "Your item groups are already set up; add the products you sell.",
-            _count(session, Item, tid) > 0,
-            "/items/new",
-        ),
-        (
             "invoice",
             "Make your first invoice",
-            "Finalise it to get the PDF, then share it from your phone.",
+            "Add the customer and the items as you go. Finalise it to get the PDF.",
             _count(session, Invoice, tid, Invoice.status == InvoiceStatus.final) > 0,
             "/invoices/new",
+        ),
+        (
+            "pdf",
+            "Download or share the PDF",
+            "Send it to your customer from your phone.",
+            activity.has(session, tid, "invoice_pdf_out"),
+            "/invoices",
         ),
         (
             "payment",
@@ -80,6 +64,13 @@ def steps(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
             "Open a customer and record what they paid; their balance and ledger update.",
             _count(session, Payment, tid) > 0,
             "/parties",
+        ),
+        (
+            "bank",
+            "Add your bank or UPI and terms",
+            "Printed at the bottom of the invoice so customers know how to pay you.",
+            bool(tenant.bank_ac_no or tenant.upi_id),
+            "/firm",
         ),
     ]
     return [
@@ -154,7 +145,7 @@ _CATALOGUE: list[dict[str, Any]] = [
         "minutes": 20,
         "route": "/items/catalogs",
         "ext": "ext_supplier_catalog",
-        "needs": [],
+        "needs": ["orders", "catalog_parse"],
     },
     {
         "key": "inward",
@@ -165,7 +156,7 @@ _CATALOGUE: list[dict[str, Any]] = [
         "minutes": 10,
         "route": "/documents",
         "ext": "ext_inward_import",
-        "needs": [],
+        "needs": ["inward_prices"],
     },
     {
         "key": "tally",
@@ -205,9 +196,8 @@ def feature_cards(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     cards = []
     for c in _CATALOGUE:
         ext = c.get("ext")
-        allowed = all(features.allowed(session, tenant, k) for k in c["needs"]) and (
-            ext is None or bool(getattr(tenant, ext))
-        )
+        plan_ok = all(features.allowed(session, tenant, k) for k in c["needs"])
+        allowed = plan_ok and (ext is None or bool(getattr(tenant, ext)))
         if allowed:
             status = "active" if _set_up(session, tenant, c["key"]) else "setup"
         else:
@@ -222,6 +212,9 @@ def feature_cards(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
                 "minutes": c["minutes"],
                 "route": c["route"],
                 "status": status,
+                # locked because of the plan (show the price) rather than a switch only Fleek can flip (ask Fleek)
+                "plan_locked": not plan_ok,
+                "needs": list(c["needs"]),
                 "requested_at": _requested(tenant, c["key"]),
             }
         )

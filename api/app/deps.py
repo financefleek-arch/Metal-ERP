@@ -18,6 +18,7 @@ from app.db import get_session
 from app.models import BackupShop, User
 from app.models._mixins import UserRole
 from app.security import JWTError, decode_access_token, hash_shop_key
+from app.services import activity
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -58,6 +59,7 @@ def get_current_user(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "password_change_required", "message": "Choose a new password to continue."},
         )
+    activity.touch_seen(user)
     return user
 
 

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiUpload, ApiError } from "../../lib/api";
 import { downloadFile } from "../../lib/download";
+import { notOnPlanFeature, useUpgrade } from "../../lib/upgrade";
 import { inr } from "../../lib/previewTotal";
 import { NAV_ACTIVE, useListNav } from "../../lib/useListNav";
 import { WhatsappBadge } from "../../components/WhatsappStatus";
@@ -57,6 +58,7 @@ function PaymentDot({ s }: { s: InvoicePaymentStatus | null }) {
 
 export function InvoiceListPage() {
   const nav = useNavigate();
+  const upgrade = useUpgrade();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [scope, setScope] = useState<Scope>("");
@@ -136,9 +138,11 @@ export function InvoiceListPage() {
   function openPdf(id: string) {
     // stream endpoint needs the bearer header — fetch as blob then save with
     // the server-provided "<Party> <date> <total>.pdf" filename
-    downloadFile(`/invoices/${id}/pdf`, `invoice-${id}.pdf`).catch(() =>
-      setErr("PDF not ready — open the invoice and re-render."),
-    );
+    downloadFile(`/invoices/${id}/pdf`, `invoice-${id}.pdf`).catch((e: { detail?: unknown }) => {
+      const locked = notOnPlanFeature(e?.detail);
+      if (locked) upgrade.open(locked);
+      else setErr("PDF not ready — open the invoice and re-render.");
+    });
   }
 
   return (
@@ -214,7 +218,15 @@ export function InvoiceListPage() {
         {list.isLoading && <div className="px-3 py-8 text-center text-xs text-muted">Loading…</div>}
         {!list.isLoading && list.data?.length === 0 && (
           <div className="px-3 py-10 text-center text-xs text-muted">
-            {q || scope ? "No matches." : "No invoices yet — start one with “+ New invoice”."}
+            {q || scope ? (
+              "No matches."
+            ) : (
+              <>
+                <div className="mb-1 text-sm font-semibold text-ink">No invoices yet</div>
+                <div className="mb-3">Your first one takes about two minutes.</div>
+                <Link to="/invoices/new" className="btn-primary">Make my first invoice</Link>
+              </>
+            )}
           </div>
         )}
 

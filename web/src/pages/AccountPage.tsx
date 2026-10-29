@@ -151,6 +151,16 @@ export function AccountPage() {
         <ChangePasswordForm submitLabel="Change password" />
       </Section>
 
+      <Section title="Plan">
+        <p className="text-sm">
+          {me?.plan_tier === "free" ? "Free" : me?.licence?.plan_label ?? "Your plan"}
+          {me?.licence?.status === "trial" && me.plan_tier !== "free" && ` · free trial, ${me.licence.trial_days_left ?? 0} days left`}
+        </p>
+        {me?.role === "owner" && (
+          <Link to="/plans" className="btn-ghost mt-3 inline-flex">See plans and billing</Link>
+        )}
+      </Section>
+
       <Section title="Devices">
         <p className="meta mb-3">Lost a phone, or signed in on a shared computer?</p>
         <button className="btn-ghost" onClick={() => void signOutOthers()}>

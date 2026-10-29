@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Tenant
 from app.schemas import TenantOut, TenantUpdate
+from app.services import activity
 
 router = APIRouter(prefix="/api/tenant", tags=["tenant"])
 
@@ -42,9 +43,12 @@ def update_tenant(
         "reminder_days",
         "default_credit_days",
     }
+    had_details = bool(tenant.address and tenant.state_code)
     for field, value in body.model_dump(exclude_unset=True).items():
         if value is None and field in not_nullable:
             continue  # an explicit null means "leave it", not "erase it"
         setattr(tenant, field, value)
+    if not had_details and tenant.address and tenant.state_code:
+        activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="firm_details_saved")
     session.flush()
     return tenant

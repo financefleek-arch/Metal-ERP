@@ -11,6 +11,7 @@ import { normalizePhone, phoneError } from "../../lib/reference";
 import { lastSeenLabel } from "../../lib/format";
 import { useAuth } from "../../lib/auth";
 import { useFeature } from "../../lib/features";
+import { notOnPlanFeature, useUpgrade } from "../../lib/upgrade";
 import { focusField, focusId, useDialogKeys } from "../../lib/keyboard";
 import { canDraft, canWrite } from "../../lib/roles";
 import { PaymentDialog } from "../../components/PaymentDialog";
@@ -262,6 +263,8 @@ export function InvoiceEditorPage() {
   const isNew = !id;
   const { me } = useAuth();
   const voiceOn = useFeature("voice");
+  const whatsappOn = useFeature("whatsapp");
+  const upgrade = useUpgrade();
   // a counter prepares drafts; only an owner or accountant finalizes, takes money and pushes to Tally
   const mayFinalize = canWrite(me?.role);
   const mayEdit = canDraft(me?.role);
@@ -939,9 +942,11 @@ export function InvoiceEditorPage() {
   function openPdf() {
     if (!id) return;
     // saves as the server's "<Party> <date> <total>.pdf"
-    downloadFile(`/invoices/${id}/pdf`, `invoice-${id}.pdf`).catch(() =>
-      setErr("PDF not ready."),
-    );
+    downloadFile(`/invoices/${id}/pdf`, `invoice-${id}.pdf`).catch((e: { detail?: unknown }) => {
+      const locked = notOnPlanFeature(e?.detail);
+      if (locked) upgrade.open(locked);
+      else setErr("PDF not ready.");
+    });
   }
 
   const rerender = useMutation({
@@ -1087,10 +1092,20 @@ export function InvoiceEditorPage() {
           )}
           {finalized && (
             <>
-              <button className="btn-ghost h-9 px-4 text-sm" onClick={openPdf}>
+              <button className="btn-primary h-9 px-4 text-sm" onClick={openPdf}>
                 Download PDF
               </button>
-              {mayFinalize && (
+              {mayFinalize && !whatsappOn && (
+                // a teaser: shows what WhatsApp is and which plan has it; it sends nothing
+                <button
+                  className="btn-ghost h-9 px-4 text-sm text-muted"
+                  onClick={() => upgrade.open("whatsapp")}
+                  title="Sending on WhatsApp comes with a paid plan"
+                >
+                  Send on WhatsApp <span className="ml-1 rounded-full bg-[#efe9df] px-1.5 text-[10px] font-semibold">Upgrade</span>
+                </button>
+              )}
+              {mayFinalize && whatsappOn && (
               <button
                 className="btn-ghost h-9 px-4 text-sm"
                 onClick={() => setWaOpen(true)}
@@ -1103,6 +1118,11 @@ export function InvoiceEditorPage() {
               >
                 Send on WhatsApp
               </button>
+              )}
+              {me?.pdf_days_left != null && me.pdf_days_left > 0 && (
+                <span className="self-center text-xs text-muted">
+                  PDF download is free for {me.pdf_days_left} more {me.pdf_days_left === 1 ? "day" : "days"}
+                </span>
               )}
               {mayFinalize && inv?.pdf_status !== "rendered" && (
                 <button

@@ -47,6 +47,7 @@ from app.routers import (
     parties,
     parties_import,
     payments,
+    plans,
     reference,
     reminders,
     share_links,
@@ -120,12 +121,58 @@ async def _reminder_loop() -> None:
         await asyncio.sleep(REMINDER_CHECK_EVERY_SECONDS)
 
 
+ACTIVITY_ROLLUP_HOUR_IST = 2  # quiet hours: one roll-up per shop a day to Fleek, which is idempotent
+
+
+async def _activity_loop() -> None:
+    """Hourly check; once a day, in the small hours India time, send each linked shop's activity roll-up to Fleek (full state each time, so a
+    repeat or a missed day does no harm)."""
+    from app.services import activity_rollup
+
+    await asyncio.sleep(180)
+    last_day = None
+    while True:
+        try:
+            now = datetime.now(_IST)
+            if now.hour >= ACTIVITY_ROLLUP_HOUR_IST and last_day != now.date():
+                last_day = now.date()
+                sent = await asyncio.to_thread(activity_rollup.send_all)
+                log.info("activity roll-ups sent: %d", sent)
+        except Exception:  # noqa: BLE001 - never let the scheduler die
+            log.exception("activity roll-up run failed")
+        await asyncio.sleep(60 * 60)
+
+
+LEAD_FEED_EVERY_SECONDS = 10 * 60
+
+
+async def _lead_feed_loop() -> None:
+    """Every ten minutes send Fleek the sign-up leads (docs/PLAN-signup-followup-console.md). Full state each time and skipped while unchanged,
+    so a repeat, a missed run or two copies running do no harm."""
+    from app.services import lead_feed
+
+    await asyncio.sleep(240)
+    while True:
+        try:
+            sent = await asyncio.to_thread(lead_feed.send)
+            if sent:
+                log.info("lead feed sent: %d", sent)
+        except Exception:  # noqa: BLE001 - never let the scheduler die
+            log.exception("lead feed run failed")
+        await asyncio.sleep(LEAD_FEED_EVERY_SECONDS)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     tasks = (
         []
         if settings.app_env == "test"
-        else [asyncio.create_task(_sweep_loop()), asyncio.create_task(_reminder_loop())]
+        else [
+            asyncio.create_task(_sweep_loop()),
+            asyncio.create_task(_reminder_loop()),
+            asyncio.create_task(_activity_loop()),
+            asyncio.create_task(_lead_feed_loop()),
+        ]
     )
     try:
         yield
@@ -186,6 +233,7 @@ app.include_router(item_sheet.router)
 app.include_router(item_tally.router)
 app.include_router(jobs.router)
 app.include_router(onboarding.router)
+app.include_router(plans.router)
 app.include_router(orders.router)
 app.include_router(whatsapp_connect.router)
 app.include_router(reminders.router)

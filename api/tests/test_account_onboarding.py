@@ -547,14 +547,14 @@ def test_a_paid_plan_from_fleek_lifts_the_limits(client: TestClient, fleek: Fake
 def test_setup_checklist_follows_the_firm_data(client: TestClient, fleek: FakeFleek) -> None:
     t = _signup(client, fleek)
     ov = client.get("/api/onboarding", headers=_h(t)).json()
-    assert ov["done"] == 0 and ov["total"] == 6 and ov["plan_tier"] == "free"
+    assert ov["done"] == 0 and ov["total"] == 5 and ov["plan_tier"] == "free"
+    assert [s["key"] for s in ov["steps"]] == ["firm", "invoice", "pdf", "payment", "bank"]
     assert {c["key"]: c["status"] for c in ov["features"]}["whatsapp"] == "locked"
 
     client.patch("/api/tenant", headers=_h(t), json={"address": "12 Main Road", "state_code": "27"})
-    client.post("/api/parties", headers=_h(t), json={"legal_name": "Anil Traders", "role": "customer"})
     ov = client.get("/api/onboarding", headers=_h(t)).json()
     done = {s["key"]: s["done"] for s in ov["steps"]}
-    assert done["firm"] and done["party"] and not done["item"] and not done["invoice"]
+    assert done["firm"] and not done["invoice"] and not done["pdf"] and not done["payment"] and not done["bank"]
 
 
 def test_owner_can_ask_fleek_for_a_feature_once_fleek_has_heard(

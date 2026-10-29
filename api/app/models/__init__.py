@@ -10,6 +10,7 @@ what `alembic/env.py` targets for autogenerate.
 """
 
 from app.models.account import AuthAttempt, OtpChallenge, SignupRequest
+from app.models.activity import ActivityEvent
 from app.models.audit import AuditLog
 from app.models.catalog import (
     CatalogOutputJob,
@@ -50,6 +51,7 @@ from app.models.tenant import Tenant, User
 from app.models.whatsapp import TenantWhatsappConfig, WhatsappMessage
 
 __all__ = [
+    "ActivityEvent",
     "AgentOutboxItem",
     "AuditLog",
     "BackupShop",

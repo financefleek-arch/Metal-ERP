@@ -52,6 +52,8 @@ class Licence:
     trial_days_left: int | None = None
     users_limit: int | None = None
     campaign_monthly_cap: int | None = None
+    # The feature keys the plan switches on (Fleek's list). None = an older answer with no list: everything, as before.
+    features: tuple[str, ...] | None = None
     stale: bool = False  # the last good answer, used past its valid_until while Fleek is unreachable
 
     @property
@@ -109,6 +111,7 @@ def licence_from_payload(payload: dict[str, Any], *, stale: bool = False) -> Lic
         trial_days_left=payload.get("trial_days_left"),
         users_limit=limits.get("users"),
         campaign_monthly_cap=limits.get("campaign_monthly_cap"),
+        features=tuple(payload["features"]) if isinstance(payload.get("features"), list) else None,
         stale=stale,
     )
 
@@ -160,6 +163,15 @@ def current(
     row.status = str(payload.get("status") or UNVERIFIED)[:20]
     session.flush()
     return licence_from_payload(payload)
+
+
+def invalidate(session: Session, tenant: Tenant) -> None:
+    """Drop the cached answer so the next `current()` asks Fleek again (after the owner changed the plan, so the change shows at once)."""
+    row = session.scalar(select(TenantEntitlement).where(TenantEntitlement.tenant_id == tenant.id))
+    if row is not None:
+        row.valid_until = datetime(2000, 1, 1, tzinfo=UTC)
+        row.last_attempt_at = None
+        session.flush()
 
 
 def _fallback(row: TenantEntitlement, now: datetime) -> Licence:

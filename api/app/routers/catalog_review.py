@@ -36,13 +36,15 @@ from app.schemas_catalog import (
     SupplierDefaultsIn,
     SupplierDefaultsOut,
 )
-from app.services import audit
+from app.services import audit, features
 from app.services import media as media_svc
 from app.services.catalog import supplier_defaults as svc
 from app.services.catalog.storage import CatalogStorage, get_storage, image_key
 from app.services.items import detach_catalog_links
 
-router = APIRouter(prefix="/api/supplier-catalogs", tags=["supplier-catalog-review"])
+router = APIRouter(
+    prefix="/api/supplier-catalogs", tags=["supplier-catalog-review"], dependencies=[features.require("catalog_parse")]
+)
 
 
 # --------------------------------------------------------------------------

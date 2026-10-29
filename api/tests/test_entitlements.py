@@ -311,6 +311,7 @@ def test_me_carries_the_licence_for_the_banner(client: TestClient) -> None:
     lic = client.get("/api/auth/me", headers=h).json()["licence"]
     assert lic == {
         "status": "trial",
+        "plan_key": "metal_erp_standard",
         "plan_label": "Metal ERP Standard",
         "trial_days_left": 9,
         "stale": False,

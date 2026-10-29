@@ -27,7 +27,7 @@ from app.services.catalog import tally_items as ti
 from app.services.item_filter import resolve_ids
 
 router = APIRouter(
-    prefix="/api/item-tally", tags=["item-tally"], dependencies=[features.require("tally")]
+    prefix="/api/item-tally", tags=["item-tally"], dependencies=[features.require("tally_full")]
 )
 
 

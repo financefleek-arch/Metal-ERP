@@ -64,6 +64,7 @@ from app.schemas_catalog import (
     ProductRef,
     SupplierCatalogsOut,
 )
+from app.services import features
 from app.services import media as media_svc
 from app.services.catalog import image_url, output_jobs, price_points
 from app.services.catalog import labels as labels_svc
@@ -81,7 +82,9 @@ from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.pagination import finish_page, paginate
 from app.services.upload_spool import SpooledPdf, spool_pdf
 
-router = APIRouter(prefix="/api/supplier-catalogs", tags=["supplier-catalog"])
+router = APIRouter(
+    prefix="/api/supplier-catalogs", tags=["supplier-catalog"], dependencies=[features.require("catalog_parse")]
+)
 
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 

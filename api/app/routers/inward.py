@@ -41,6 +41,7 @@ from app.schemas_inward import (
     SupplierOut,
 )
 from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
+from app.services import features
 from app.services.inward.approve import ApproveError, approve_bill, approve_gate
 from app.services.inward.run_extraction import run_extraction
 from app.services.tally.agent_health import assert_tally_reachable
@@ -52,7 +53,7 @@ from app.services.tally.push_readiness import (
 )
 from app.services.upload_spool import spool_pdf
 
-router = APIRouter(prefix="/api/inward-bills", tags=["inward"])
+router = APIRouter(prefix="/api/inward-bills", tags=["inward"], dependencies=[features.require("inward_prices")])
 
 _MAX_PDF_BYTES = 20 * 1024 * 1024
 

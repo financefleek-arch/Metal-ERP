@@ -30,13 +30,15 @@ from app.schemas_customer_catalog import (
     CustomerCatalogOut,
     MissingPhoto,
 )
-from app.services import audit
+from app.services import audit, features
 from app.services.catalog import catalog_pdf as pdf_svc
 from app.services.catalog import item_catalogs as svc
 from app.services.catalog import output_jobs
 from app.services.catalog.storage import CatalogStorage, get_storage
 
-router = APIRouter(prefix="/api/customer-catalogs", tags=["customer-catalogs"])
+router = APIRouter(
+    prefix="/api/customer-catalogs", tags=["customer-catalogs"], dependencies=[features.require("catalog_parse")]
+)
 StorageDep = Annotated[CatalogStorage, Depends(get_storage)]
 
 

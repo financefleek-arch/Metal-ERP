@@ -45,6 +45,7 @@ from app.models._mixins import (
     ItemSource,
     PdfStatus,
 )
+from app.services import activity
 from app.services.catalogue.classify_apply import Classifier
 from app.services.catalogue.learn_from_invoice import learn_from_invoice
 from app.services.invoices.common import finalize_blockers
@@ -284,6 +285,7 @@ def finalize_invoice(
     # No Tally push here — see module docstring. The shop pushes a finalized
     # invoice to Tally explicitly via POST /api/tally/invoices/{id}/push.
 
+    activity.record(session, tenant_id=invoice.tenant_id, user_id=actor_user_id, key="invoice_finalised")
     return FinalizeResult(
         number=number,
         fy=invoice.fy,

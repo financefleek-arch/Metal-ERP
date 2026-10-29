@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plans, pricing and upgrade (mockup)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+  :root { --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a; --accent:#2f6f89; --accent-s:#eef4f7; --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font:14px/1.45 'IBM Plex Sans',system-ui,sans-serif; }
+  .wrap { max-width:1280px; margin:0 auto; padding:28px 24px 70px; }
+  h1 { font:600 24px 'Fraunces',serif; margin:0 0 4px; } h2 { font:600 18px 'Fraunces',serif; margin:44px 0 4px; }
+  .lead { color:var(--muted); max-width:900px; margin:0 0 16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:26px 22px; align-items:start; margin-top:12px; }
+  .wide { grid-column:1 / -1; }
+  .frame h3 { font:600 13px 'IBM Plex Sans'; margin:0 0 8px; } .frame h3 span { color:var(--muted); font-weight:400; }
+  .phone { width:360px; max-width:100%; background:var(--ground); border:1px solid var(--line); border-radius:22px; padding:18px 16px 20px; min-height:560px; position:relative; }
+  .desk { background:var(--ground); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .bar { background:var(--ink); color:#b9b3a7; display:flex; gap:20px; align-items:center; padding:0 22px; height:48px; font-size:13px; }
+  .bar b { color:var(--ground); font:600 17px 'Fraunces',serif; margin-right:8px; } .bar .on { color:var(--ground); border-bottom:2px solid var(--accent); padding:14px 0 12px; } .bar .r { margin-left:auto; display:flex; gap:14px; align-items:center; }
+  .chip { background:#f6ecd5; color:#7a5c14; border-radius:12px; padding:3px 10px; font-size:12px; font-weight:600; }
+  .pg { padding:22px 24px 28px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .btn { height:42px; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; display:flex; align-items:center; justify-content:center; }
+  .btn.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); } .btn.sm { height:32px; padding:0 14px; display:inline-flex; font-size:13px; }
+  .muted { color:var(--muted); } .small { font-size:12px; } .link { color:var(--accent); font-size:13px; }
+  .pill { display:inline-block; font-size:11px; padding:2px 9px; border-radius:10px; font-weight:500; }
+  .p-ok { background:#e6efe8; color:#3a5a48; } .p-wait { background:#f6ecd5; color:#7a5c14; } .p-bad { background:#f7e3e0; color:#8d2a1f; } .p-lock { background:#efe9df; color:#7c766a; } .p-cur { background:#e3eef2; color:#2f6f89; }
+  .plans { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px; }
+  .plan { background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; display:flex; flex-direction:column; gap:6px; }
+  .plan.cur { border-color:var(--accent); box-shadow:0 0 0 2px rgba(47,111,137,.15); } .plan.rec { border-color:var(--ok); }
+  .plan .nm { font:600 15px 'IBM Plex Sans'; } .plan .pr { font:600 26px 'Fraunces',serif; } .plan .pr small { font:400 12px 'IBM Plex Sans'; color:var(--muted); }
+  .plan ul { margin:6px 0 10px; padding:0; list-style:none; font-size:12.5px; } .plan li { padding:3px 0; } .plan li:before { content:"\2713  "; color:var(--ok); } .plan li.no:before { content:"\2013  "; color:#b5b0a4; } .plan li.no { color:#a39e92; }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; } th { text-align:left; font-size:11px; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line); } td { padding:8px; border-bottom:1px solid var(--line); } td.c, th.c { text-align:center; }
+  .sheet { position:absolute; left:0; right:0; bottom:0; background:#fff; border-top:1px solid var(--line); border-radius:18px 18px 22px 22px; padding:16px 16px 20px; box-shadow:0 -8px 24px rgba(0,0,0,.08); }
+  .dim { opacity:.35; }
+  .tab { position:absolute; left:0; right:0; bottom:0; height:54px; border-top:1px solid var(--line); background:#fff; border-radius:0 0 22px 22px; display:grid; grid-template-columns:repeat(5,1fr); font-size:11px; color:var(--muted); text-align:center; padding-top:9px; }
+  .ck { display:flex; gap:10px; padding:9px 0; border-top:1px solid var(--line); align-items:flex-start; } .ck:first-child { border-top:0; }
+  .mark { background:#fff7d6; border:1px solid #ecdca7; border-radius:8px; padding:8px 11px; font-size:12px; margin-top:12px; }
+  .bar2 { height:8px; background:var(--line); border-radius:4px; overflow:hidden; margin:4px 0; } .bar2 i { display:block; height:100%; background:var(--accent); }
+  .n { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:50%; background:var(--danger); color:#fff; font:600 11px 'IBM Plex Sans'; vertical-align:1px; }
+  @media (max-width:900px){ .plans { grid-template-columns:1fr 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Plans, pricing and upgrade</h1>
+  <p class="lead">Mockup only. <b>Today a newcomer sees no price anywhere in the app</b> (the landing page says "Free to start"; locked features say "Not on your plan" with an "Ask Fleek" button; the add-user limit says "Change the plan in Fleek"). This adds one plans page and puts upgrade in front of people at the moments they want it. Prices and plans shown are the owner's ladder (2026-10-29, revised); the page reads the live values from Fleek, so you edit them in the Fleek Plan templates screen and nothing here is hard-coded. Red numbers = gaps listed at the bottom.</p>
+
+  <h2>1. The Plans page a newcomer opens</h2>
+  <div class="grid">
+    <div class="frame wide"><h3>1A. Plan and billing, on the Free plan <span>desktop; reached from the header chip, My account, Setup and every locked feature <span class="n">1</span></span></h3>
+      <div class="desk">
+        <div class="bar"><b>Metal ERP</b><span>Invoices</span><span>Customers</span><span>Items</span><span class="r"><span class="chip">Free &middot; See plans</span><span>Sethia Metal Store</span></span></div>
+        <div class="pg">
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <div style="font:600 22px 'Fraunces',serif">Plan and billing</div><span class="pill p-cur">You are on Free</span>
+          </div>
+          <div class="card" style="margin-top:12px;display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:18px">
+            <div><b>What you have on Free</b><div class="small muted">Invoices, customers, items and payments. No time limit, no card.</div></div>
+            <div><span class="small muted">Users</span><div class="bar2"><i style="width:100%"></i></div><b>1 of 1</b></div>
+            <div><span class="small muted">Invoices this month</span><div class="bar2"><i style="width:8%"></i></div><b>3 <span class="small muted">unlimited</span></b></div>
+          </div>
+
+          <div style="margin:16px 0 4px;font:600 16px 'Fraunces',serif">Grow when you are ready</div>
+          <div class="small muted">Monthly price, no GST for now. Pay by UPI AutoPay or card. Stop any time. <span class="pill p-ok">New accounts: 7 days of Starter free. Growth and Complete: 3 days free, cancel any time</span></div>
+          <div class="plans">
+            <div class="plan cur"><span class="nm">Free</span><span class="pill p-cur" style="align-self:flex-start">Your plan</span><div class="pr">&#8377;0</div>
+              <ul><li>Invoices, customers, items, payments</li><li>1 user</li><li>Same as Starter for your first 7 days, then no PDF download</li><li class="no">Payment reminders, orders, WhatsApp</li><li class="no">Tally</li></ul></div>
+            <div class="plan"><span class="nm">Starter</span><div class="pr">&#8377;399 <small>/ month</small></div>
+              <ul><li>Everything in Free</li><li><b>Download and share invoice PDFs</b> from your phone</li><li>1 user</li><li class="no">WhatsApp, orders, reminders</li><li class="no">Tally</li></ul><div class="btn">Choose Starter</div></div>
+            <div class="plan rec"><span class="nm">Growth <span class="pill p-ok">Most shops</span></span><div class="pr">&#8377;999 <small>/ month</small></div>
+              <ul><li>Everything in Starter</li><li><b>WhatsApp from your own number</b> (we set it up with you)</li><li>Order tracking</li><li>Payment reminders</li><li>Customer catalog parsing</li><li>Inward price-list import</li><li>Tally backup to the cloud</li><li><b>3 users</b></li></ul><div class="btn">Try free for 3 days</div></div>
+            <div class="plan" style="border-color:#2f6f89;background:linear-gradient(#fff,#f3f8fa)"><span class="nm">Complete <span class="pill p-cur">Full Tally</span></span><div class="pr">&#8377;1,499 <small>/ month</small></div>
+              <ul><li>Everything in Growth</li><li><b>Full Tally integration:</b> masters in, invoices and payments pushed, both ways</li><li>Every feature, as we add them</li><li><b>Up to 5 users</b></li></ul><div class="btn">Try free for 3 days</div></div>
+          </div>
+          <div class="mark"><b>Free is Starter for 7 days.</b> A new account downloads and shares invoice PDFs straight away, no card. After 7 days it stays on Free with all its data; downloading PDFs needs Starter. <b>Growth and Complete: try free for 3 days.</b> Cancel in one tap, no questions. Nothing is charged until the 3 days end.</div>
+          <div style="margin-top:18px"><b>Compare</b>
+            <table style="margin-top:6px"><tr><th>Feature</th><th class="c">Free</th><th class="c">Starter 399</th><th class="c">Growth 999</th><th class="c">Complete 1,499</th></tr>
+              <tr><td>Invoices, customers, items, payments</td><td class="c">&#10003;</td><td class="c">&#10003;</td><td class="c">&#10003;</td><td class="c">&#10003;</td></tr>
+              <tr><td>Download and share invoice PDFs</td><td class="c">7 days</td><td class="c">&#10003;</td><td class="c">&#10003;</td><td class="c">&#10003;</td></tr>
+              <tr><td>Send on WhatsApp from your own number</td><td class="c">&ndash;</td><td class="c">&ndash;</td><td class="c">&#10003;</td><td class="c">&#10003;</td></tr>
+              <tr><td>Order tracking</td><td class="c">&ndash;</td><td class="c">&ndash;</td><td class="c">&#10003;</td><td class="c">&#10003;</td></tr>
+              <tr><td>Payment reminders</td><td class="c">&ndash;</td><td class="c">&ndash;</td><td class="c">&#10003;</td><td class="c">&#10003;</td></tr>
+              <tr><td>Customer catalog parsing, inward price-list import</td><td class="c">&ndash;</td><td class="c">&ndash;</td><td class="c">&#10003;</td><td class="c">&#10003;</td></tr>
+              <tr><td>Tally: backup to the cloud</td><td class="c">&ndash;</td><td class="c">&ndash;</td><td class="c">&#10003;</td><td class="c">&#10003;</td></tr>
+              <tr><td><b>Tally: full integration</b></td><td class="c">&ndash;</td><td class="c">&ndash;</td><td class="c">&ndash;</td><td class="c"><b>&#10003;</b></td></tr>
+              <tr><td>Users</td><td class="c">1</td><td class="c">1</td><td class="c">3</td><td class="c">up to 5</td></tr></table>
+            <div class="small muted" style="margin-top:6px">Rows come from Fleek: each plan lists the features it unlocks, so this table and the locked-feature sheets always match what is really switched on.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame"><h3>1B. Same page on a phone <span>owners often sign up on the phone <span class="n">2</span></span></h3>
+      <div class="phone">
+        <div style="font:600 19px 'Fraunces',serif">Plan and billing</div><span class="pill p-cur">You are on Free</span>
+        <div class="card" style="margin-top:10px"><span class="small muted">Users</span><div class="bar2"><i style="width:100%"></i></div><b>1 of 1</b></div>
+        <div class="plan rec" style="margin-top:12px"><span class="nm">Growth <span class="pill p-ok">Most shops</span></span><div class="pr">&#8377;999 <small>/ month</small></div>
+          <ul><li>WhatsApp from your own number</li><li>Orders and payment reminders</li><li>Tally backup, 3 users</li></ul><div class="btn">Try free for 3 days</div></div>
+        <div class="small muted" style="text-align:center;margin-top:10px"><span class="link">Starter &#8377;399</span> &middot; <span class="link">Complete &#8377;1,499, full Tally</span> &middot; <span class="link">Compare all</span></div>
+      </div></div>
+
+    <div class="frame"><h3>1C. After "Try free for 3 days" <span>approve autopay, then book the WhatsApp setup <span class="n">3</span></span></h3>
+      <div class="phone"><div class="dim"><div style="font:600 19px 'Fraunces',serif">Plan and billing</div></div>
+        <div class="sheet" style="top:90px;bottom:auto;border-radius:18px">
+          <div style="font:600 17px 'Fraunces',serif">Try Growth free for 3 days</div>
+          <div class="small muted" style="margin:2px 0 10px">WhatsApp from your own number, orders, reminders, Tally backup, 3 users.</div>
+          <div class="ck"><span>&#128197;</span><div class="small"><b>Nothing is charged today.</b> &#8377;999 is charged on <b>1 Nov</b> only if you keep it.</div></div>
+          <div class="ck"><span>&#10060;</span><div class="small"><b>Cancel in one tap</b> from Plan and billing, any time, no questions. Your invoices and data stay.</div></div>
+          <div class="ck"><span>&#128179;</span><div class="small">Approve UPI AutoPay on your own UPI app or card page, so it continues without a break. We never see your card.</div></div>
+          <div class="ck"><span>&#128172;</span><div class="small"><b>We set up WhatsApp with you</b>, about 20 minutes. Pick a time next.</div></div>
+          <div class="btn" style="margin-top:6px">Start my 3 days</div>
+          <div class="mark" style="margin-top:12px"><b>Payment details up front</b> (recommended): a trial that needs no payment page converts worse, because the owner has to come back and pay later. The mandate costs nothing until day 4.</div>
+        </div></div></div>
+  </div>
+
+  <h2>2. Upgrade in front of people, at the moment they want it</h2>
+  <div class="grid">
+    <div class="frame"><h3>2A. Header chip, on every page <span>Free only <span class="n">1</span></span></h3>
+      <div class="phone" style="min-height:230px"><div style="display:flex;justify-content:space-between;align-items:center"><div style="font:600 18px 'Fraunces',serif">Invoices</div><span class="chip">Free &middot; See plans</span></div>
+      <div class="card" style="margin-top:12px;font-size:13px">INV-0001 &middot; Ravi Sethia <span style="float:right">&#8377; 7,440</span></div>
+      <div class="small muted" style="margin-top:10px">Owners only. On a paid plan the chip becomes the plan name; during a trial it shows days left (as the licence banner does today).</div></div></div>
+
+    <div class="frame"><h3>2B. Tapping a locked feature <span>WhatsApp teaser, import, slip, voice, collections <span class="n">4</span></span></h3>
+      <div class="phone"><div class="dim"><div class="card">Invoice INV-0001 is ready<div class="btn" style="margin-top:8px">Download PDF</div><div class="btn ghost" style="margin-top:6px">Send on WhatsApp</div></div></div>
+        <div class="sheet">
+          <div style="font:600 17px 'Fraunces',serif">Send on WhatsApp</div>
+          <div class="small muted" style="margin:2px 0 8px">Invoices, statements and reminders go to your customers from your own shop number, with the PDF attached.</div>
+          <div class="card" style="background:var(--accent-s);border-color:#cfe0e8;padding:10px 12px"><b>Growth, &#8377;999 a month</b><div class="small muted">3 days free, cancel any time. WhatsApp from your own number, set up with you. Also orders, reminders, Tally backup, 3 users</div></div>
+          <div class="btn" style="margin-top:10px">See plans</div><div class="btn ghost" style="margin-top:6px">Download the PDF instead</div>
+        </div></div></div>
+
+    <div class="frame"><h3>2C. Setup page, locked cards <span>"Ask Fleek" becomes a price <span class="n">5</span></span></h3>
+      <div class="phone"><div style="font:600 18px 'Fraunces',serif;margin-bottom:8px">More you can switch on</div>
+        <div class="card" style="background:#fbfaf7;margin-bottom:10px"><b>Collections and reminders</b> <span class="pill p-lock">Growth and up</span><div class="small muted">See who owes you; reminders proposed daily.</div><div class="btn sm" style="margin-top:8px">Try free for 3 days &middot; &#8377;999 a month</div></div>
+        <div class="card" style="background:#fbfaf7;margin-bottom:10px"><b>Tally: push invoices and payments</b> <span class="pill p-lock">Complete</span><div class="small muted">Backup is in Growth; the full two-way integration is here.</div><div class="btn sm" style="margin-top:8px">Try free for 3 days &middot; &#8377;1,499 a month</div></div>
+        <div class="card" style="background:#fbfaf7"><b>Customer catalog and price-list import</b> <span class="pill p-lock">Growth and up</span><div class="btn sm" style="margin-top:8px">Try free for 3 days &middot; &#8377;999 a month</div></div></div></div>
+
+    <div class="frame"><h3>2D. After the first invoice <span>a quiet strip, once <span class="n">6</span></span></h3>
+      <div class="phone"><div class="card" style="text-align:center;padding:16px"><div style="font-size:24px">&#9989;</div><b>Invoice INV-0001 is ready</b><div class="btn" style="margin-top:10px">Download PDF</div><div class="btn ghost" style="margin-top:6px">Share PDF</div></div>
+        <div class="card" style="margin-top:12px"><b>What else Metal ERP can do</b>
+          <div class="ck"><span>&#128176;</span><div class="small"><b>Know who owes you</b> and send reminders</div></div>
+          <div class="ck"><span>&#128172;</span><div class="small"><b>Send on WhatsApp</b> from your own number</div></div>
+          <div class="ck"><span>&#128218;</span><div class="small"><b>Tally:</b> backup now, full integration on Complete</div></div>
+          <div class="small" style="margin-top:6px"><span class="link">3 days free on Growth and Complete &middot; plans from &#8377;399</span></div></div></div></div>
+
+    <div class="frame"><h3>2E. My account and add-user limit <span><span class="n">7</span></span></h3>
+      <div class="phone"><div class="card"><b>Plan</b><div style="display:flex;justify-content:space-between;margin-top:6px"><span>Metal ERP Free</span><span class="link">See plans</span></div><div class="small muted">1 of 1 users</div></div>
+        <div class="card" style="margin-top:12px"><b>Add a user</b><div class="small" style="margin-top:6px;color:var(--danger)">Every plan has one user until Growth, which allows 3. Complete allows 5.</div><div class="btn sm" style="margin-top:8px">See plans</div><div class="small muted" style="margin-top:6px">Replaces "Change the plan in Fleek to add more".</div></div></div></div>
+
+    <div class="frame"><h3>2F. Landing page <span>one honest line, with prices <span class="n">8</span></span></h3>
+      <div class="phone"><div class="card"><b>Free forever for one user</b><div class="small muted">Invoices, customers, items, payments.</div></div>
+        <div class="card" style="margin-top:10px"><b>Grow with your team</b><div class="small muted">Starter &#8377;399 &middot; Growth &#8377;999 &middot; Complete &#8377;1,499 a month. WhatsApp, orders, reminders, and full Tally integration. 3 days free, cancel any time.</div></div>
+        <div class="btn" style="margin-top:12px">Create free account</div></div></div>
+  </div>
+
+  <h2>3. Plan and billing once they pay</h2>
+  <div class="grid">
+    <div class="frame"><h3>3A. Free, first 7 days <span>Starter built in</span></h3><div class="phone" style="min-height:300px"><span class="pill p-wait">Free &middot; PDF download for 5 more days</span><div class="card" style="margin-top:10px"><div class="small muted">After 5 Nov, downloading and sharing invoice PDFs needs Starter (&#8377;399 a month). Your invoices and data stay. Or try Growth free for 3 days.</div><div class="btn" style="margin-top:8px">Keep PDF download, &#8377;399</div></div></div></div>
+    <div class="frame"><h3>3B. Growth trial <span>3 days, cancel in one tap</span></h3><div class="phone" style="min-height:300px"><span class="pill p-wait">Growth trial &middot; 2 days left</span><div class="card" style="margin-top:10px"><div class="small muted">&#8377;999 is charged on 1 Nov through the UPI AutoPay you approved, unless you cancel. Your invoices and data stay either way.</div><div class="ck"><span class="dot" style="background:var(--ok);border-color:var(--ok)">&#10003;</span><div class="small">Payment approved</div></div><div class="ck"><span class="dot" style="border-color:var(--accent)"></span><div class="small"><b>WhatsApp not connected yet</b><div class="muted">Setup call booked Thu 4 pm</div></div></div><div class="btn ghost" style="margin-top:8px">Cancel my trial</div><div class="small muted" style="text-align:center;margin-top:6px">No questions asked.</div></div></div></div>
+    <div class="frame"><h3>3C. Active <span>what Metal ERP can show; Fleek holds the rest</span></h3><div class="phone" style="min-height:300px"><span class="pill p-ok">Growth &middot; active</span><div class="card" style="margin-top:10px"><div class="small muted">Next renewal</div><b>5 Dec, &#8377;999</b><div class="small muted" style="margin-top:8px">Users 2 of 3</div><div class="small muted" style="margin-top:8px">Payment: UPI AutoPay on &bull;&bull;&bull;&bull; 42</div><div class="btn ghost" style="margin-top:10px">Change plan</div></div></div></div>
+    <div class="frame"><h3>3D. Lapsed <span>already a banner today; add the pay button</span></h3><div class="phone" style="min-height:300px"><span class="pill p-bad">Growth &middot; payment failed</span><div class="card" style="margin-top:10px"><div class="small muted">Invoices keep working. Reminders are paused until payment is made.</div><div class="btn" style="margin-top:8px">Pay now</div></div></div></div>
+  </div>
+
+  <h2>4. On the Fleek side</h2>
+  <div class="grid"><div class="frame wide"><h3>4A. Upgrade requests and demand signals <span>on the shop's Activity tab and the admin Home band</span></h3>
+    <div class="card"><table><tr><th>Shop</th><th>Signal</th><th>When</th><th>Asked for</th><th></th></tr>
+      <tr><td><b>Gupta Utensils</b></td><td><span class="pill p-ok">Growth trial day 2: WhatsApp not connected</span></td><td>today 10:12</td><td>Growth</td><td><span class="link">Open setup notes</span></td></tr>
+      <tr><td><b>Rao Brass Works</b></td><td><span class="pill p-lock">Tally teaser tapped 6x</span></td><td>this week</td><td>&ndash;</td><td><span class="link">Warm lead: email</span></td></tr>
+      <tr><td><b>Kumar Steel House</b></td><td><span class="pill p-lock">Hit the 1-user limit twice</span></td><td>yesterday</td><td>&ndash;</td><td><span class="link">Warm lead: email</span></td></tr></table>
+      <div class="small muted" style="margin-top:8px">Payment is self-serve, so Fleek is told rather than asked. A Growth shop that is in its trial or paid and whose WhatsApp is not connected by day 2 lands on the call list with the handhold notes, before the 3 days run out. Demand taps (teaser, limit, locked-feature views, plans page) show here too. Email nudge to warm leads, one email on Free day 5 ("PDF download ends in 2 days"), and one on trial day 2 ("charged tomorrow, cancel here").</div></div></div></div>
+
+  <h2>5. Gaps this closes, and questions for you</h2>
+  <div class="card" style="max-width:940px">
+    <table><tr><th>#</th><th>Gap today</th><th>Fix</th></tr>
+      <tr><td>1</td><td>No price or plans page anywhere in the app; no way to find "Upgrade"</td><td>Plan and billing page; header chip; entry from every locked place</td></tr>
+      <tr><td>2</td><td>Owners sign up on phones; nothing is built for the phone</td><td>Phone layout (1B) with the recommended plan first</td></tr>
+      <tr><td>3</td><td>Upgrade = "Ask Fleek", then a person sends a payment link by hand; owner cannot pay on their own</td><td>Self-serve: Metal ERP asks Fleek for the hosted authorisation link, so the owner approves autopay without waiting</td></tr>
+      <tr><td>4</td><td>Locked features say "Not on your plan" without saying which plan or what it costs</td><td>Name the cheapest plan that unlocks it and its price</td></tr>
+      <tr><td>5</td><td>Setup's locked cards end in "Ask Fleek to switch this on"</td><td>Price button to the plans page</td></tr>
+      <tr><td>6</td><td>No upgrade moment after the first success</td><td>One quiet "what else" strip after the first PDF</td></tr>
+      <tr><td>7</td><td>The user-limit error tells people to change the plan in Fleek, which they cannot open</td><td>Plain sentence plus See plans</td></tr>
+      <tr><td>8</td><td>Landing says "Free to start" and hides all prices</td><td>Show the ladder on the landing page</td></tr>
+      <tr><td>9</td><td>Fleek cannot tell who wants more</td><td>Count teaser taps, limit hits, plans page views, requests; show them on Fleek</td></tr></table>
+    <p style="margin:14px 0 4px"><b>Decided:</b> 399 / 999 / 1,499; monthly only; no GST; self-serve payment. Free is Starter for 7 days, then no PDF download. Growth and Complete: <b>3 days free, one-tap cancellation with no questions</b>, payment details taken up front and charged only after the 3 days. Users 1 / 1 / 3 / up to 5. WhatsApp from the shop's number and order tracking are Growth and up, set up with the shop by Fleek (<code>docs/RUNBOOK-whatsapp-handhold.md</code>).</p>
+    <p style="margin:14px 0 4px"><b>Still open</b></p>
+    <ol class="small" style="margin:0;padding-left:18px">
+      <li><b>Payment details up front?</b> You said we can choose. My recommendation is yes (UPI AutoPay mandate, nothing charged for 3 days): a trial that needs coming back to pay converts worse.</li>
+      <li><b>WhatsApp needs more than 3 days for some shops</b> (number not on the Business app yet, or the Facebook business admin is unavailable). Rule I suggest: the clock starts at enablement, our team may extend a Growth trial by up to 4 days if the delay is on Meta's side or ours, not the owner's wish to wait. OK?</li>
+      <li><b>After the first charge, cancel with no questions</b> stops the next renewal. Should the first month also be refunded if they cancel within a few days of being charged? I have not assumed a refund.</li>
+    </ol>
+  </div>
+</div>
+</body>
+</html>

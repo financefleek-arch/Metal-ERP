@@ -9,6 +9,8 @@ import { OrdersPage } from "./pages/orders/OrdersPage";
 import { FirmPage } from "./pages/FirmPage";
 import { AccountPage, ForcedPasswordPage } from "./pages/AccountPage";
 import { SetupPage } from "./pages/SetupPage";
+import { PlansPage } from "./pages/PlansPage";
+import { UpgradeProvider } from "./components/UpgradeProvider";
 import { WelcomePage } from "./pages/WelcomePage";
 import { FeatureRoute } from "./components/FeatureRoute";
 import { PartiesPage } from "./pages/PartiesPage";
@@ -84,9 +86,11 @@ export function App() {
   const catalogs = me.ext_supplier_catalog;
 
   return (
+    <UpgradeProvider>
     <Shell>
       <Routes>
         <Route path="/" element={<Navigate to="/invoices" replace />} />
+        <Route path="/plans" element={<PlansPage />} />
         <Route path="/firm" element={<FirmPage />} />
         <Route path="/account" element={<AccountPage />} />
         <Route path="/setup" element={<SetupPage />} />
@@ -146,5 +150,6 @@ export function App() {
         <Route path="*" element={<Navigate to="/invoices" replace />} />
       </Routes>
     </Shell>
+    </UpgradeProvider>
   );
 }

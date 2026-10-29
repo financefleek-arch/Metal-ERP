@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { beacon } from "../lib/beacon";
+import { rupees, usePlans } from "../lib/plans";
 import { SETUP_KEY, useSetup } from "../lib/setup";
 import type { FeatureStatus, SetupFeature, SetupStep } from "../lib/types";
 import { PageHeader } from "../components/PageHeader";
@@ -25,6 +27,14 @@ export function ProgressRing({ done, total, size = 54 }: { done: number; total: 
   );
 }
 
+const STEP_BUTTON: Record<string, string> = {
+  firm: "Open firm details",
+  invoice: "Make my first invoice",
+  pdf: "Open my invoices",
+  payment: "Record a payment",
+  bank: "Add bank or UPI",
+};
+
 function Step({ s, first }: { s: SetupStep; first: boolean }) {
   return (
     <li className={`flex gap-3 py-3 ${first ? "" : "border-t border-line"}`}>
@@ -40,8 +50,12 @@ function Step({ s, first }: { s: SetupStep; first: boolean }) {
         <div className={s.done ? "text-muted line-through decoration-line" : "font-medium"}>{s.title}</div>
         <div className="meta">{s.hint}</div>
         {!s.done && (
-          <Link to={s.route} className="btn-primary mt-2 !h-9 !px-3 md:!h-8">
-            {s.key === "party" ? "Add customer" : s.key === "item" ? "Add item" : s.key === "invoice" ? "New invoice" : "Open"}
+          <Link
+            to={s.route}
+            className="btn-primary mt-2 !h-9 !px-3 md:!h-8"
+            onClick={() => beacon("setup_step_clicked", { step: s.key })}
+          >
+            {STEP_BUTTON[s.key] ?? "Open"}
           </Link>
         )}
       </div>
@@ -58,6 +72,13 @@ const PILL: Record<FeatureStatus, { text: string; cls: string }> = {
 
 function FeatureCard({ f, canRequest }: { f: SetupFeature; canRequest: boolean }) {
   const qc = useQueryClient();
+  const { data: plans } = usePlans(f.plan_locked);
+  // the cheapest paid plan that switches on everything this card needs, so the card can show a price instead of "ask Fleek"
+  const unlockPlan = f.plan_locked
+    ? (plans?.plans ?? [])
+        .filter((p) => p.price_amount > 0 && f.needs.every((k) => p.unlocks.includes(k === "tally" ? "tally_backup" : k)))
+        .sort((a, b) => a.price_amount - b.price_amount)[0]
+    : undefined;
   const [open, setOpen] = useState(false);
   const ask = useMutation({
     mutationFn: () => api<{ requested_at: string }>("/onboarding/requests", { method: "POST", body: { feature: f.key } }),
@@ -88,12 +109,23 @@ function FeatureCard({ f, canRequest }: { f: SetupFeature; canRequest: boolean }
         </div>
       )}
       <div className="mt-3">
-        {f.status === "locked" && canRequest && (
+        {f.status === "locked" && f.plan_locked && (
+          <Link
+            to={unlockPlan ? `/plans?plan=${unlockPlan.plan}` : "/plans"}
+            className="btn-primary !h-9 !px-3 md:!h-8"
+            onClick={() => beacon("locked_feature_tapped", { feature: f.key })}
+          >
+            {unlockPlan
+              ? `${unlockPlan.trial_days ? `Try free for ${unlockPlan.trial_days} days` : "Choose"} · ${rupees(unlockPlan.price_amount)} a month`
+              : "See plans"}
+          </Link>
+        )}
+        {f.status === "locked" && !f.plan_locked && canRequest && (
           <button className="btn-primary !h-9 !px-3 md:!h-8" disabled={ask.isPending} onClick={() => ask.mutate()}>
             {ask.isPending ? "Asking…" : "Ask Fleek to switch this on"}
           </button>
         )}
-        {f.status === "locked" && !canRequest && <p className="meta">Ask the owner to request this.</p>}
+        {f.status === "locked" && !f.plan_locked && !canRequest && <p className="meta">Ask the owner to request this.</p>}
         {f.status === "requested" && <p className="meta">Fleek will get back to you. Nothing to do now.</p>}
         {(f.status === "setup" || f.status === "active") && (
           <Link to={f.route} className={f.status === "setup" ? "btn-primary !h-9 !px-3 md:!h-8" : "btn-ghost !h-9 !px-3 md:!h-8"}>
@@ -113,6 +145,9 @@ export function SetupPage() {
   const qc = useQueryClient();
   const { data, isLoading, isError } = useSetup();
   const owner = me?.role === "owner";
+  useEffect(() => {
+    beacon("setup_viewed");
+  }, []);
   const toggle = useMutation({
     mutationFn: (dismissed: boolean) => api<void>("/onboarding/dismissed", { method: "PUT", body: { dismissed } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: SETUP_KEY }),
@@ -179,7 +214,13 @@ export function SetupCard() {
         <div className="font-semibold">Finish setting up</div>
         {next && <div className="meta">Next: {next.title.toLowerCase()}</div>}
       </div>
-      <Link to="/setup" className="btn-primary !h-9 !px-3 md:!h-8">Continue</Link>
+      <Link
+        to={next?.route ?? "/setup"}
+        className="btn-primary !h-9 !px-3 md:!h-8"
+        onClick={() => next && beacon("setup_step_clicked", { step: next.key, from: "card" })}
+      >
+        {next ? STEP_BUTTON[next.key] ?? "Continue" : "Continue"}
+      </Link>
       <button className="btn-ghost !h-9 !px-3 md:!h-8" onClick={() => hide.mutate()}>Hide for now</button>
     </div>
   );

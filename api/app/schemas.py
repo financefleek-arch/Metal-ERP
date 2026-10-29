@@ -137,6 +137,7 @@ class LicenceOut(BaseModel):
     show)."""
 
     status: str  # trial | active | lapsed | unlicensed | unverified
+    plan_key: str | None = None
     plan_label: str | None = None
     trial_days_left: int | None = None
     stale: bool = False
@@ -164,6 +165,10 @@ class UserOut(BaseModel):
     mobile_verified: bool = False
     email_verified: bool = False
     must_change_password: bool = False
+    # Free plan only: whole days of invoice-PDF download left in the first 7 days (0 = ended). None on any other plan.
+    pdf_days_left: int | None = None
+    # True once, for a self-signed-up owner who has not yet seen the welcome page
+    show_welcome: bool = False
     # 'free' = the Free plan (some features off); 'full' = everything the firm's switches allow.
     plan_tier: str = "full"
     # feature key -> may use it (see services/features.py)

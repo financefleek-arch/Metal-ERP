@@ -24,12 +24,31 @@ function filenameFromDisposition(header: string | null): string | null {
  * `fallbackName`). Used for streamed endpoints that need an auth header,
  * where a plain `<a href>` can't carry one.
  */
+export class DownloadError extends Error {
+  status: number;
+  /** The server's `detail` when it sent one (for a plan refusal: {code: "not_on_plan", feature}). */
+  detail: unknown;
+  constructor(status: number, detail?: unknown) {
+    super(`download failed: ${status}`);
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
 export async function downloadFile(path: string, fallbackName: string): Promise<void> {
   const t = getToken();
   const res = await fetch(`/api${path}`, {
     headers: t ? { Authorization: `Bearer ${t}` } : {},
   });
-  if (!res.ok) throw new Error(`download failed: ${res.status}`);
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = ((await res.json()) as { detail?: unknown }).detail;
+    } catch {
+      /* not JSON: the status is enough */
+    }
+    throw new DownloadError(res.status, detail);
+  }
   const blob = await res.blob();
   const name =
     filenameFromDisposition(res.headers.get("Content-Disposition")) ?? fallbackName;

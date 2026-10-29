@@ -46,7 +46,7 @@ from app.schemas_item import (
     ItemUpdate,
     NodeFilter,
 )
-from app.services import audit
+from app.services import activity, audit
 from app.services.catalogue.learn_from_recategorize import learn_from_recategorize
 from app.services.item_filter import filter_clauses as _filter_clauses
 from app.services.item_filter import filter_stmt as _filter_stmt
@@ -451,6 +451,7 @@ def create_item(body: ItemCreate, user: WriteUser, session: SessionDep) -> ItemO
         it.gst_rate = float(rate)
     session.add(it)
     session.flush()
+    activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="item_created")
     return _out(session, it)
 
 

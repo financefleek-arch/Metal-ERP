@@ -20,15 +20,40 @@ export interface Me {
   mobile_masked: string | null;
   mobile_verified: boolean;
   email_verified: boolean;
+  /** Fleek's licence for the firm, for the trial chip. Null for a firm not linked to Fleek. */
+  licence?: {
+    status: string;
+    plan_key: string | null;
+    plan_label: string | null;
+    trial_days_left: number | null;
+    stale: boolean;
+  } | null;
   /** Fleek set this password: the person must replace it before anything else opens. */
   must_change_password: boolean;
+  /** True once, for a self-signed-up owner who has not yet seen the welcome page. */
+  show_welcome: boolean;
+  /** Free plan only: days of invoice-PDF download left in the first 7 days (0 = ended). Null on any other plan. */
+  pdf_days_left: number | null;
   /** "free" = the Free plan (some features off); "full" = everything the firm's switches allow. */
   plan_tier: "free" | "full";
   /** Plan features: key -> may use it. A missing key means allowed. */
   features: Partial<Record<FeatureKey, boolean>>;
 }
 
-export type FeatureKey = "import" | "slip" | "voice" | "collections" | "reminders" | "whatsapp" | "tally";
+export type FeatureKey =
+  | "pdf_out"
+  | "whatsapp"
+  | "orders"
+  | "collections"
+  | "reminders"
+  | "catalog_parse"
+  | "inward_prices"
+  | "import"
+  | "slip"
+  | "voice"
+  | "tally_backup"
+  | "tally_full"
+  | "tally"; // the old key: it means the Tally backup
 
 // --- Setup (/api/onboarding) ---
 
@@ -51,6 +76,10 @@ export interface SetupFeature {
   minutes: number;
   route: string;
   status: FeatureStatus;
+  /** Locked by the plan (show the price) rather than by a switch only Fleek can flip (ask Fleek). */
+  plan_locked: boolean;
+  /** The plan features this card needs. */
+  needs: string[];
   requested_at: string | null;
 }
 

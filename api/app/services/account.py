@@ -23,7 +23,7 @@ from app.models import SignupRequest, Tenant, User
 from app.models._mixins import UserRole
 from app.reference import validate_phone
 from app.security import hash_password
-from app.services import auth_codes, auth_throttle, firm_provisioning, passwords
+from app.services import activity, auth_codes, auth_throttle, firm_provisioning, passwords
 from app.services.auth_codes import CodeError
 from app.services.fleek_signed import FleekUnavailable
 from app.services.fleek_signed import request as fleek_request
@@ -244,6 +244,7 @@ def verify_signup(
     req.tenant_id = tenant.id
     req.fleek_org_id = org_id
     session.flush()
+    activity.record(session, tenant_id=tenant.id, user_id=user.id, key="signed_up")
     return user, tenant
 
 

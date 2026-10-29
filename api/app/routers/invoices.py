@@ -57,7 +57,7 @@ from app.schemas_invoice import (
     VoiceLineOut,
     VoiceLineTranscriptIn,
 )
-from app.services import features, order_notify
+from app.services import activity, features, order_notify
 from app.services.invoices.common import (
     download_name,
     finalize_blockers,
@@ -407,6 +407,7 @@ def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) ->
     _apply_lines(inv, body.lines)
     session.add(inv)
     session.flush()
+    activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="invoice_draft_created")
     return _out(session, inv)
 
 
@@ -822,13 +823,15 @@ def duplicate_invoice(invoice_id: str, user: DraftUser, session: SessionDep) -> 
 # --------------------------------------------------------------------------
 
 
-@router.get("/{invoice_id}/pdf")
+@router.get("/{invoice_id}/pdf", dependencies=[features.require("pdf_out")])
 def get_pdf(invoice_id: str, user: CurrentUser, session: SessionDep) -> FileResponse:
     inv = _load(session, user.tenant_id, invoice_id)
     from pathlib import Path
 
     if not inv.pdf_path or not Path(inv.pdf_path).exists():
         raise HTTPException(status_code=404, detail="PDF not available — try re-render")
+    # the web app fetches this only for a download or a share, so it is the moment the invoice leaves the app
+    activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="invoice_pdf_out")
     return FileResponse(inv.pdf_path, media_type="application/pdf", filename=download_name(inv))
 
 

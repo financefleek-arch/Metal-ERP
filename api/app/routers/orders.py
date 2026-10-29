@@ -18,11 +18,11 @@ from app.models import CustomerOrder, Invoice, Item, Party, Tenant, WhatsappMess
 from app.routers.catalog import CatalogDraftUser, CatalogUser
 from app.routers.invoices import create_invoice
 from app.schemas_invoice import InvoiceCreate, InvoiceLineIn
-from app.services import audit, crm_sync, order_notify, share_links
+from app.services import audit, crm_sync, features, order_notify, share_links
 from app.services import orders as svc
 from app.services.ratelimit import RateLimiter, client_key, limit_dependency
 
-router = APIRouter(prefix="/api/orders", tags=["orders"])
+router = APIRouter(prefix="/api/orders", tags=["orders"], dependencies=[features.require("orders")])
 public_router = APIRouter(prefix="/api/public", tags=["public"])
 
 # Placing an order is rare and costly to fake: a few per hour from one address or one phone.

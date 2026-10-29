@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from app.deps import CurrentUser, SessionDep
 from app.models import Tenant
 from app.models._mixins import UserRole
-from app.services import onboarding
+from app.services import activity, auth_throttle, onboarding
 from app.services.fleek_signed import FleekUnavailable
 from app.services.fleek_signed import request as fleek_request
 
@@ -56,6 +56,30 @@ def set_dismissed(body: DismissIn, user: CurrentUser, session: SessionDep) -> No
     _tenant(session, user).onboarding_dismissed_at = datetime.now(UTC) if body.dismissed else None
 
 
+class ActivityIn(BaseModel):
+    key: str
+    props: dict[str, Any] | None = None
+
+
+@router.post("/activity", status_code=status.HTTP_204_NO_CONTENT)
+def report_activity(body: ActivityIn, user: CurrentUser, session: SessionDep) -> None:
+    """A friction or demand beacon from the browser. Only the whitelisted keys, a few short labels, at most
+    300 an hour per person; anything else is dropped without an error, so it can never get in the way."""
+    if body.key not in activity.BEACON_KEYS or user.is_platform_admin:
+        return
+    if not auth_throttle.hit(session, "activity", user.id, limit=300, window_seconds=3600):
+        return
+    activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key=body.key, props=body.props)
+
+
+@router.post("/welcome-seen", status_code=status.HTTP_204_NO_CONTENT)
+def welcome_seen(user: CurrentUser, session: SessionDep) -> None:
+    from datetime import UTC, datetime
+
+    if user.welcome_seen_at is None:
+        user.welcome_seen_at = datetime.now(UTC)
+
+
 @router.post("/requests")
 def request_feature(body: FeatureRequestIn, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
     """Tell Fleek this shop wants a feature. Fleek is told first: an unseen request is worse than none."""
@@ -80,4 +104,7 @@ def request_feature(body: FeatureRequestIn, user: CurrentUser, session: SessionD
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "We could not reach Fleek just now. Please try again in a minute.",
         )
+    activity.record(
+        session, tenant_id=user.tenant_id, user_id=user.id, key="feature_requested", props={"feature": body.feature}
+    )
     return {"feature": body.feature, "requested_at": onboarding.mark_requested(tenant, body.feature)}

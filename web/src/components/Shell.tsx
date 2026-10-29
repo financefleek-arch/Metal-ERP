@@ -78,6 +78,7 @@ export function Shell({ children }: { children: ReactNode }) {
       ? [{ to: "/documents", label: "Supplier documents" }]
       : []),
     ...(setupLeft ? [{ to: "/setup", label: "Setup", note: `${setupLeft.done}/${setupLeft.total}` }] : []),
+    ...(me?.role === "owner" ? [{ to: "/plans", label: "Plan and billing" }] : []),
   ];
   // a counter works on drafts and orders; money, items and settings are not theirs to open
   const nav = me?.role === "counter" ? allNav.filter((n) => !COUNTER_HIDDEN_NAV.includes(n.to)) : allNav;
@@ -180,6 +181,16 @@ export function Shell({ children }: { children: ReactNode }) {
           >
             ? Shortcuts
           </button>
+          {me?.role === "owner" && me.plan_tier === "free" && (
+            <NavLink to="/plans" className="rounded-full bg-[#f6ecd5] px-2.5 py-0.5 text-[11px] font-semibold text-[#7a5c14]" title="See the plans">
+              Free · See plans
+            </NavLink>
+          )}
+          {me?.role === "owner" && me.licence?.status === "trial" && me.plan_tier !== "free" && (
+            <NavLink to="/plans" className="rounded-full bg-[#f6ecd5] px-2.5 py-0.5 text-[11px] font-semibold text-[#7a5c14]" title="Your free trial">
+              Trial · {me.licence.trial_days_left ?? 0}d left
+            </NavLink>
+          )}
           <NavLink to="/account" className="text-[#b9b3a7] hover:text-ground" title="My account">
             {me?.label}
           </NavLink>

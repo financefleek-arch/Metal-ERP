@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.deps import CurrentUser, SessionDep
 from app.models import Tenant, User
 from app.models._mixins import UserRole
-from app.services import audit, features
+from app.services import activity, audit, features
 from app.services import whatsapp_connect as svc
 
 router = APIRouter(
@@ -91,6 +91,7 @@ def connect(owner: Owner, session: SessionDep, payload: Annotated[dict[str, Any]
     code, body = _ask("POST", "/connect", owner, session, payload)
     if code < 300:
         _audited(session, owner, "connect")
+        activity.record(session, tenant_id=owner.tenant_id, user_id=owner.id, key="whatsapp_connected")
     return _out(code, body)
 
 

@@ -39,6 +39,7 @@ from app.schemas import (
     PartyUpdate,
 )
 from app.schemas_payments import OpenInvoiceForAllocation
+from app.services import activity
 from app.services.catalog.suppliers import catalog_ref_count
 from app.services.catalog_consent import OFFERS_FILTERS, offers_counts, set_catalog_consent
 from app.services.pagination import finish_page, paginate
@@ -295,6 +296,7 @@ def create_party(
     _apply_addresses(party, body.addresses)
     session.add(party)
     session.flush()
+    activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="party_created")
     return _out(session, party)
 
 

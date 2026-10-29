@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shop activity and first-invoice welcome (mockup)</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+  :root { --ground:#f4f1ec; --ink:#23201b; --card:#fff; --line:#e6e0d6; --muted:#7c766a; --accent:#2f6f89; --accent-s:#eef4f7; --warn:#b5892f; --ok:#4f8a5b; --danger:#c0392b;
+          --a-bg:#f6f7f9; --a-surface:#fff; --a-border:#e3e6ea; --a-text:#1c2330; --a-muted:#6b7480; --a-accent:#3b5bdb; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink); font:14px/1.45 'IBM Plex Sans',system-ui,sans-serif; }
+  .wrap { max-width:1280px; margin:0 auto; padding:28px 24px 70px; }
+  h1 { font:600 24px 'Fraunces',serif; margin:0 0 4px; }
+  h2 { font:600 18px 'Fraunces',serif; margin:44px 0 4px; }
+  .lead { color:var(--muted); max-width:880px; margin:0 0 18px; }
+  .legend { font-size:12px; color:var(--muted); margin:6px 0 0; max-width:880px; }
+  .n { display:inline-grid; place-items:center; width:18px; height:18px; border-radius:50%; background:var(--danger); color:#fff; font:600 11px 'IBM Plex Sans'; vertical-align:1px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:26px 22px; align-items:start; margin-top:14px; }
+  .wide { grid-column:1 / -1; }
+  .frame h3 { font:600 13px 'IBM Plex Sans'; margin:0 0 8px; } .frame h3 span { color:var(--muted); font-weight:400; }
+  .phone { width:360px; max-width:100%; background:var(--ground); border:1px solid var(--line); border-radius:22px; padding:18px 16px 20px; min-height:600px; position:relative; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .btn { height:44px; border-radius:6px; background:var(--accent); color:#fff; font-weight:600; display:flex; align-items:center; justify-content:center; }
+  .btn.ghost { background:#fff; color:var(--ink); border:1px solid var(--line); } .btn.sm { height:32px; padding:0 14px; display:inline-flex; font-size:13px; }
+  .muted { color:var(--muted); } .small { font-size:12px; } .link { color:var(--accent); font-size:13px; }
+  .pill { display:inline-block; font-size:11px; padding:2px 9px; border-radius:10px; font-weight:500; }
+  .p-ok { background:#e6efe8; color:#3a5a48; } .p-wait { background:#f6ecd5; color:#7a5c14; } .p-bad { background:#f7e3e0; color:#8d2a1f; } .p-lock { background:#efe9df; color:#7c766a; } .p-setup { background:#e3eef2; color:#2f6f89; }
+  .ck { display:flex; gap:10px; padding:11px 0; border-top:1px solid var(--line); align-items:flex-start; } .ck:first-child { border-top:0; }
+  .dot { flex:none; width:22px; height:22px; border-radius:50%; border:2px solid var(--line); display:grid; place-items:center; font-size:12px; color:#fff; margin-top:1px; }
+  .dot.d { background:var(--ok); border-color:var(--ok); } .dot.nx { border-color:var(--accent); }
+  .ring { width:54px; height:54px; border-radius:50%; background:conic-gradient(var(--accent) 0 33%, var(--line) 0); display:grid; place-items:center; flex:none; }
+  .ring span { width:42px; height:42px; background:var(--card); border-radius:50%; display:grid; place-items:center; font:600 13px 'IBM Plex Sans'; }
+  .tab { position:absolute; left:0; right:0; bottom:0; height:54px; border-top:1px solid var(--line); background:#fff; border-radius:0 0 22px 22px; display:grid; grid-template-columns:repeat(5,1fr); font-size:11px; color:var(--muted); text-align:center; padding-top:9px; }
+  .tab .on { color:var(--accent); font-weight:500; }
+  .in { height:42px; border:1px solid var(--line); border-radius:6px; background:#fff; padding:0 12px; display:flex; align-items:center; margin-bottom:9px; }
+  .in.f { border-color:var(--accent); box-shadow:0 0 0 3px rgba(47,111,137,.2); } .in.ph { color:#aaa397; }
+  .sugg { border:1px dashed var(--accent); background:var(--accent-s); border-radius:8px; padding:9px 11px; font-size:12px; margin-bottom:9px; }
+  /* Fleek admin look */
+  .desk { background:var(--a-bg); border:1px solid var(--a-border); border-radius:12px; overflow:hidden; color:var(--a-text); font-family:system-ui,'IBM Plex Sans',sans-serif; }
+  .shell { display:grid; grid-template-columns:200px 1fr; min-height:560px; }
+  .side { background:var(--a-surface); border-right:1px solid var(--a-border); padding:14px 10px; font-size:13px; }
+  .side .lab { font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--a-muted); padding:12px 10px 4px; }
+  .side a { display:flex; justify-content:space-between; padding:7px 10px; border-radius:8px; color:var(--a-text); } .side a.on { background:#eceff4; font-weight:600; }
+  .badge { font-size:9px; font-weight:700; background:var(--a-accent); color:#fff; border-radius:8px; padding:1px 6px; align-self:center; }
+  .main { padding:18px 20px 24px; } .main h4 { margin:0 0 12px; font-size:18px; }
+  .a-card { background:var(--a-surface); border:1px solid var(--a-border); border-radius:10px; padding:14px 16px; }
+  .a-card h5 { margin:0 0 8px; font-size:13px; } .a-muted { color:var(--a-muted); font-size:12px; }
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:14px; }
+  .kpi b { display:block; font-size:24px; } .kpi .a-muted { font-size:11px; }
+  .two { display:grid; grid-template-columns:1.2fr 1fr; gap:14px; }
+  .call { display:grid; grid-template-columns:1fr auto; gap:8px; padding:10px 0; border-top:1px solid var(--a-border); align-items:center; font-size:13px; } .call:first-of-type { border-top:0; }
+  .fbar { display:grid; grid-template-columns:140px 1fr 90px; gap:10px; align-items:center; font-size:12px; padding:4px 0; }
+  .fbar i { display:block; height:16px; border-radius:4px; background:var(--a-accent); opacity:.85; }
+  .fbar .drop { color:var(--danger); }
+  table { width:100%; border-collapse:collapse; font-size:12.5px; } th { text-align:left; font-size:11px; color:var(--a-muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--a-border); }
+  td { padding:8px; border-bottom:1px solid var(--a-border); }
+  .chip { display:inline-block; font-size:11px; padding:2px 8px; border-radius:10px; background:#eceff4; }
+  .spark { letter-spacing:1px; color:var(--a-accent); }
+  .tl { border-left:2px solid var(--a-border); margin-left:6px; padding-left:14px; } .tl div { position:relative; padding:5px 0; font-size:13px; } .tl div:before { content:""; position:absolute; left:-20px; top:11px; width:10px; height:10px; border-radius:50%; background:var(--ok); }
+  .tl div.todo:before { background:#fff; border:2px solid var(--a-border); left:-21px; } .tl div.todo { color:var(--a-muted); }
+  .tabs { display:flex; gap:6px; margin-bottom:12px; } .tabs span { border:1px solid var(--a-border); background:var(--a-surface); border-radius:999px; padding:6px 13px; font-size:12.5px; font-weight:600; } .tabs .on { background:var(--a-accent); color:#fff; border-color:var(--a-accent); }
+  .mark { background:#fff7d6; border:1px solid #ecdca7; border-radius:8px; padding:8px 11px; font-size:12px; margin-top:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Shop activity, and a welcome that gets the first invoice out</h1>
+  <p class="lead">Mockup only, sample data. Plan: <code>docs/PLAN-shop-activity-intelligence.md</code>. Red numbers match the gap table in that plan.
+  Decisions applied: Fleek sees it on the <b>admin Home</b> (the first page after login) and a new top-level <b>Shop activity</b> nav item, not only deep in a shop;
+  usage counts are disclosed in the terms; <b>stuck</b> = no first invoice in 3 days, or silent 7 days; <b>activated</b> = first invoice <b>PDF downloaded or shared</b> (WhatsApp send is a paid upgrade, shown only as a teaser); nudges are <b>email</b> for now; both the page fixes and the capture are built.</p>
+
+  <h2>Part 1. Fleek admin: where the team lands</h2>
+  <p class="lead">Three levels, each one click from the one above: Home (what needs me today), Shop activity (the whole funnel and every shop), a shop's Activity tab (one shop's story).</p>
+  <div class="grid">
+    <div class="frame wide">
+      <h3>1A. Admin Home, first page after login <span>new "Metal ERP shops" band above the existing content</span></h3>
+      <div class="desk"><div class="shell">
+        <div class="side">
+          <a class="on">Home</a>
+          <div class="lab">Metal ERP</div>
+          <a>Shop activity <span class="badge">NEW</span></a><a>Metal ERP shops</a>
+          <div class="lab">Control plane</div><a>WhatsApp connections</a><a>Plan templates</a>
+          <div class="lab">Advisors</div><a>Client management</a><a>Advisor progress</a>
+        </div>
+        <div class="main">
+          <h4>Home</h4>
+          <div class="kpis">
+            <div class="a-card kpi"><span class="a-muted">Signed up, last 7 days</span><b>14</b><span class="a-muted">+4 vs previous week</span></div>
+            <div class="a-card kpi"><span class="a-muted">Activated (first invoice shared)</span><b>6 <small style="font-size:13px;color:var(--a-muted)">43%</small></b><span class="a-muted">median 1 day 4 h to get there</span></div>
+            <div class="a-card kpi"><span class="a-muted">Stuck</span><b style="color:var(--danger)">5</b><span class="a-muted">no first invoice in 3 days</span></div>
+            <div class="a-card kpi"><span class="a-muted">Gone quiet</span><b style="color:var(--warn)">3</b><span class="a-muted">active before, silent 7+ days</span></div>
+          </div>
+          <div class="two">
+            <div class="a-card"><h5>Needs a call today <span class="a-muted">(oldest first)</span></h5>
+              <div class="call"><div><b>Sethia Metal Store</b> <span class="chip">Stuck</span><div class="a-muted">Signed up 4 days ago. Added a customer, no items. Last seen 3 days ago.</div></div><div><span class="chip">Open shop</span></div></div>
+              <div class="call"><div><b>Kumar Steel House</b> <span class="chip">Stuck</span><div class="a-muted">Made a draft 3 days ago and left it. Never finalised.</div></div><div><span class="chip">Open shop</span></div></div>
+              <div class="call"><div><b>Gupta Utensils</b> <span class="chip">Quiet</span><div class="a-muted">12 invoices in week 1, none for 9 days.</div></div><div><span class="chip">Open shop</span></div></div>
+              <div class="a-muted" style="margin-top:8px">All 8 on <u>Shop activity</u> &rarr;</div>
+            </div>
+            <div class="a-card"><h5>Funnel, this week's sign-ups</h5>
+              <div class="fbar"><span>Signed up</span><i style="width:100%"></i><b>14</b></div>
+              <div class="fbar"><span>First customer</span><i style="width:79%"></i><b>11</b></div>
+              <div class="fbar"><span>First item</span><i style="width:64%"></i><b>9</b></div>
+              <div class="fbar"><span>First invoice</span><i style="width:50%"></i><b>7</b></div>
+              <div class="fbar"><span>PDF out</span><i style="width:43%"></i><b>6</b></div>
+              <div class="a-muted" style="margin-top:6px">Biggest drop: customer &rarr; item (&minus;18%)</div>
+            </div>
+          </div>
+          <div class="mark">Existing Home content (orgs, pending advisors) stays below this band. The band shows only when at least one Metal ERP shop exists.</div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="frame wide">
+      <h3>1B. Shop activity <span>top-level nav item: funnel, filters, every shop</span></h3>
+      <div class="desk"><div class="shell">
+        <div class="side"><a>Home</a><div class="lab">Metal ERP</div><a class="on">Shop activity <span class="badge">NEW</span></a><a>Metal ERP shops</a></div>
+        <div class="main">
+          <h4>Shop activity</h4>
+          <div class="tabs"><span class="on">Last 7 days</span><span>30 days</span><span>All time</span><span style="margin-left:auto">Sign-up week: this week &#9662;</span></div>
+          <div class="a-card" style="margin-bottom:14px"><h5>Where new shops drop off <span class="a-muted">median time from previous step</span></h5>
+            <div class="fbar"><span>Signed up</span><i style="width:100%"></i><b>14</b></div>
+            <div class="fbar"><span>Firm details</span><i style="width:86%"></i><b>12 <span class="a-muted">4 min</span></b></div>
+            <div class="fbar"><span>First customer</span><i style="width:79%"></i><b>11 <span class="a-muted">9 min</span></b></div>
+            <div class="fbar"><span>First item</span><i style="width:64%"></i><b>9 <span class="a-muted">1 h</span></b></div>
+            <div class="fbar"><span>First draft</span><i style="width:57%"></i><b>8 <span class="a-muted">6 min</span></b></div>
+            <div class="fbar"><span>First final invoice</span><i style="width:50%"></i><b>7 <span class="a-muted">3 min</span></b></div>
+            <div class="fbar"><span>PDF out (activated)</span><i style="width:43%"></i><b>6 <span class="a-muted">11 min</span></b></div>
+            <div class="fbar"><span>Back on day 7</span><i style="width:21%"></i><b>3</b></div>
+          </div>
+          <div class="a-card"><h5>Every shop</h5>
+            <table>
+              <tr><th>Shop</th><th>Stage reached</th><th>Last seen</th><th>Active days (30d)</th><th>Invoices / week</th><th>Status</th></tr>
+              <tr><td><b>Sethia Metal Store</b><div class="a-muted">Free, signed up 4 d ago</div></td><td><span class="chip">First customer</span></td><td>3 d ago</td><td>2</td><td class="spark">&middot;&middot;&middot;</td><td><span class="pill p-bad">Stuck</span></td></tr>
+              <tr><td><b>Kumar Steel House</b><div class="a-muted">Standard, 12 d ago</div></td><td><span class="chip">First draft</span></td><td>3 d ago</td><td>3</td><td class="spark">&#9602;&middot;&middot;</td><td><span class="pill p-bad">Stuck</span></td></tr>
+              <tr><td><b>Gupta Utensils</b><div class="a-muted">Standard, 31 d ago</div></td><td><span class="chip">PDF out</span></td><td>9 d ago</td><td>11</td><td class="spark">&#9606;&#9604;&#9602;&middot;</td><td><span class="pill p-wait">Quiet</span></td></tr>
+              <tr><td><b>Rao Brass Works</b><div class="a-muted">Standard, 44 d ago</div></td><td><span class="chip">PDF out</span></td><td>today</td><td>26</td><td class="spark">&#9602;&#9604;&#9606;&#9608;</td><td><span class="pill p-ok">Healthy</span></td></tr>
+            </table>
+          </div>
+        </div>
+      </div></div>
+    </div>
+
+    <div class="frame wide">
+      <h3>1C. One shop, Activity tab <span>next to Overview / WhatsApp / Settings</span></h3>
+      <div class="desk"><div class="main" style="padding:18px 20px 24px">
+        <h4>Sethia Metal Store <span class="pill p-bad">Stuck</span></h4>
+        <div class="tabs"><span>Overview</span><span>WhatsApp</span><span class="on">Activity</span><span>Settings</span></div>
+        <div class="two">
+          <div class="a-card"><h5>Journey</h5>
+            <div class="tl">
+              <div>Signed up <span class="a-muted">Mon 12:40</span></div>
+              <div>Confirmed firm details <span class="a-muted">Mon 12:44</span></div>
+              <div>Added first customer <span class="a-muted">Mon 12:53</span></div>
+              <div class="todo">First item <span class="a-muted">not yet. Last seen Tue 09:10 (3 days ago)</span></div>
+              <div class="todo">First invoice, shared, payment</div>
+            </div>
+            <div class="mark"><b>Suggested nudge:</b> "You added a customer but no items yet. Want me to load your common items for you?" <b>Email nudge:</b> <u>send</u> (only if the shop gave an email; otherwise the call list is the route and the WhatsApp number is shown for a call).</div>
+          </div>
+          <div class="a-card"><h5>Last 30 days</h5>
+            <table><tr><th>Signed in</th><td>3 times, 2 days</td></tr><tr><th>Setup page opened</th><td>2</td></tr><tr><th>Invoice editor opened</th><td>0</td></tr><tr><th>Customers / items / invoices</th><td>1 / 0 / 0</td></tr><tr><th>Errors shown</th><td>1 (item name too short)</td></tr></table>
+            <div class="a-muted" style="margin-top:8px">Counts and keys only. No names, amounts or message text leave the shop.</div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+  </div>
+
+  <h2>Part 2. Metal ERP: a welcome that leads to the first invoice</h2>
+  <p class="lead">The goal line is "first invoice sent", not "six steps". Customer and item are created inside the invoice, not before it. Firm address and bank are asked when they are actually needed, just before the invoice is shared.</p>
+  <div class="grid">
+    <div class="frame"><h3>2A. Welcome <span>replaces the one-time page <span class="n">1</span><span class="n">7</span></span></h3>
+      <div class="phone"><div class="card" style="margin-top:40px;text-align:center;padding:24px 18px">
+        <div style="font-size:30px">&#127881;</div>
+        <div style="font:600 21px 'Fraunces',serif;margin:6px 0">Your account is ready</div>
+        <p class="muted" style="margin:0 0 16px">Let's make your first invoice. It takes about two minutes, and you can send it to a customer straight away.</p>
+        <div class="btn">Make my first invoice</div>
+        <p class="small muted" style="margin:12px 0 0"><span class="link">Try it with sample items</span> &middot; <span class="link">Skip to my invoices</span></p>
+      </div>
+      <p class="small muted" style="margin-top:14px">Shown <b>once</b>, right after sign-up. "Seen" is remembered on the server (not a browser tab), so a refresh or a second phone does not show it again, and it is never shown to an older or operator-created user. After that, the progress card on the invoice list (2D) does the pulling back.</p></div></div>
+
+    <div class="frame"><h3>2B. Invoice editor, first time <span>quick-add inside the line <span class="n">3</span><span class="n">5</span></span></h3>
+      <div class="phone">
+        <div style="font:600 18px 'Fraunces',serif;margin-bottom:10px">New invoice</div>
+        <div class="sugg"><b>First invoice:</b> start with who it is for and what you sold. You can add a new customer or item right here.</div>
+        <div class="in f">Customer: <span class="muted">&nbsp;Ravi Sethia (new)</span></div>
+        <div class="sugg" style="border-style:solid;background:#fff">+ Add "Ravi Sethia" as a new customer <span class="link">(phone optional)</span></div>
+        <div class="in ph">Search or add an item&hellip; <span style="margin-left:auto" class="link">Use sample items</span></div>
+        <div class="card" style="padding:10px 12px">Steel plate 10mm &middot; 120 kg &times; 62 <span style="float:right">&#8377; 7,440</span></div>
+        <div class="btn" style="margin-top:14px">Finalise invoice</div>
+        <p class="small muted" style="margin-top:10px">No firm address or bank asked yet.</p>
+      </div></div>
+
+    <div class="frame"><h3>2C. Activation moment: get the PDF out <span>a tracked step <span class="n">4</span>; WhatsApp is a teaser</span></h3>
+      <div class="phone">
+        <div class="card" style="text-align:center;margin-top:20px;padding:20px 16px">
+          <div style="font-size:26px">&#9989;</div>
+          <div style="font:600 18px 'Fraunces',serif;margin:4px 0">Invoice INV-0001 is ready</div>
+          <p class="muted small" style="margin:0 0 12px">&#8377; 7,440 for Ravi Sethia</p>
+          <div class="btn">Download PDF</div>
+          <div class="btn ghost" style="margin-top:8px">Share PDF</div>
+          <div class="btn ghost" style="margin-top:8px;color:#7c766a">Send on WhatsApp <span class="pill p-lock" style="margin-left:6px">Upgrade</span></div>
+          <div class="small muted" style="margin-top:8px">Tapping the last one explains it and offers to ask Fleek for it. It sends nothing.</div>
+        </div>
+        <div class="card" style="margin-top:12px"><b>One more thing before it prints well</b>
+          <div class="ck"><span class="dot nx"></span><div>Add your firm address <span class="link">(30 seconds)</span><div class="small muted">Printed on every invoice.</div></div></div>
+          <div class="ck"><span class="dot nx"></span><div>Add bank or UPI<div class="small muted">So customers know how to pay.</div></div></div>
+        </div>
+      </div></div>
+
+    <div class="frame"><h3>2D. Invoice list while not activated <span>persistent pull-back <span class="n">6</span></span></h3>
+      <div class="phone">
+        <div style="display:flex;gap:12px;align-items:center" class="card"><div class="ring"><span>2/5</span></div><div><b>Finish your first invoice</b><div class="small muted">Next: add an item, then send it.</div></div></div>
+        <div class="card" style="margin-top:12px;text-align:center;padding:26px 14px"><div style="font-size:26px">&#128196;</div><b>No invoices yet</b><div class="small muted" style="margin:4px 0 12px">Your first one takes about two minutes.</div><div class="btn sm">Make my first invoice</div></div>
+        <div class="tab"><span>Invoices</span><span>Customers</span><span class="on">Home</span><span>Items</span><span>More</span></div>
+      </div></div>
+
+    <div class="frame"><h3>2E. Setup page, reordered <span>invoice first, the rest "before you send it" <span class="n">2</span></span></h3>
+      <div class="phone">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:10px"><div class="ring"><span>2/6</span></div><div><div style="font:600 18px 'Fraunces',serif">Setup</div><div class="small muted">Get your first invoice out</div></div></div>
+        <div class="card" style="padding:4px 14px">
+          <div class="ck"><span class="dot d">&#10003;</span><div class="muted" style="text-decoration:line-through">Confirm your firm details</div></div>
+          <div class="ck"><span class="dot nx"></span><div><b>Make your first invoice</b><div class="small muted">Add the customer and items as you go.</div><div class="btn sm" style="margin-top:6px">New invoice</div></div></div>
+          <div class="ck"><span class="dot"></span><div>Download or share the PDF<div class="small muted">Send it to the customer from your phone.</div></div></div>
+          <div class="ck"><span class="dot"></span><div>Record a payment</div></div>
+          <div class="ck"><span class="dot"></span><div>Add your bank or UPI<div class="small muted">Before you send, so it prints on the invoice.</div></div></div>
+        </div>
+        <p class="small muted" style="margin-top:12px">Customer and item are no longer steps: they are done by making the invoice. The six-step count becomes five and the first invoice is step 2.</p>
+      </div></div>
+  </div>
+
+  <h2>Part 3. What gets recorded, and when</h2>
+  <p class="lead">A fixed list of keys, so the funnel above is exact. Each fires where the thing already happens; the browser sends only the four friction beacons.</p>
+  <div class="card" style="max-width:880px"><table>
+    <tr><th>Funnel stage</th><th>Key</th><th>Fired</th></tr>
+    <tr><td>Signed up</td><td>signed_up</td><td>server, on account creation</td></tr>
+    <tr><td>Firm details</td><td>firm_details_saved</td><td>server</td></tr>
+    <tr><td>First customer / item</td><td>party_created / item_created</td><td>server (first per shop is the milestone)</td></tr>
+    <tr><td>First draft / final</td><td>invoice_draft_created / invoice_finalised</td><td>server</td></tr>
+    <tr><td>Got the PDF out (activated)</td><td>invoice_pdf_out</td><td>server, on PDF download or share. (invoice_whatsapp_teaser_tapped is counted too: demand for the upgrade.)</td></tr>
+    <tr><td>Payment</td><td>payment_recorded</td><td>server</td></tr>
+    <tr><td>Friction</td><td>setup_step_clicked, invoice_editor_opened, invoice_editor_abandoned, error_shown</td><td>browser beacon, whitelisted, rate-limited</td></tr>
+    <tr><td>Presence</td><td>signed_in + last seen</td><td>server, last seen written at most every few minutes</td></tr>
+  </table>
+  <p class="small muted">Rolled up daily per shop to Fleek over the existing signed link. Nothing with a name, amount, phone number or message text.</p></div>
+</div>
+</body>
+</html>

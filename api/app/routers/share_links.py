@@ -17,12 +17,12 @@ from app.deps import SessionDep
 from app.models import CatalogShareLink
 from app.routers.catalog import CatalogUser, CatalogWriteUser
 from app.schemas_customer_catalog import CatalogSelection
-from app.services import audit, crm_sync
+from app.services import audit, crm_sync, features
 from app.services import share_links as svc
 from app.services.item_filter import resolve_ids
 from app.services.ratelimit import RateLimiter, limit_dependency
 
-router = APIRouter(prefix="/api/share-links", tags=["share-links"])
+router = APIRouter(prefix="/api/share-links", tags=["share-links"], dependencies=[features.require("orders")])
 public_router = APIRouter(prefix="/api/public", tags=["public"])
 
 # one catalog view is a lot of data: a person browsing needs far fewer than this

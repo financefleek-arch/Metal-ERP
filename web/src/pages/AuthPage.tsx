@@ -230,6 +230,9 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
             I agree to the{" "}
             <a className="text-accent underline" href={TERMS} target="_blank" rel="noreferrer">Terms</a> and have read the{" "}
             <a className="text-accent underline" href={PRIVACY_POLICY} target="_blank" rel="noreferrer">Privacy Policy</a>
+            <span className="meta mt-1 block">
+              We share how you use the app (counts, such as invoices made) with Fleek to help you get started. Never your customers, items or amounts.
+            </span>
           </span>
         </label>
         <Turnstile key={tsKey} siteKey={siteKey} onToken={setToken} />

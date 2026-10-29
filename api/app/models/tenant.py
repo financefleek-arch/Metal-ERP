@@ -173,6 +173,9 @@ class User(PkUuidMixin, TimestampMixin, Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Activity (docs/PLAN-shop-activity-intelligence.md): when the person was last in the app, and whether they saw the welcome.
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    welcome_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     tenant: Mapped[Tenant] = relationship(back_populates="users")
 

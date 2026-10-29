@@ -1,3 +1,5 @@
+import { rupees, usePublicPlans } from "../lib/plans";
+
 const PLAY_URL = "https://play.google.com/store/apps/details?id=in.fleekfinance.metalerp";
 const PRIVACY = "https://fleekfintech.com/privacy-policy/";
 const TERMS = "https://fleekfintech.com/terms/";
@@ -11,6 +13,7 @@ const FEATURES: { title: string; text: string }[] = [
 
 export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSignin: () => void }) {
   const android = /android/i.test(navigator.userAgent);
+  const { data: ladder } = usePublicPlans();
   return (
     <div className="min-h-[100dvh]">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
@@ -39,7 +42,7 @@ export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSi
             )}
           </div>
           <p className="meta mt-3">
-            Works in any browser{android ? " and as an Android app" : ""}. Create your account with your mobile number and email.
+            Works in any browser{android ? " and as an Android app" : ""}. Create your account with your mobile number.
           </p>
         </section>
 
@@ -53,11 +56,23 @@ export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSi
         </section>
 
         <section className="card mt-6 p-5">
-          <h2 className="section-title">What is free</h2>
+          <h2 className="section-title">Start free, grow when you are ready</h2>
           <p className="mt-1 text-sm text-muted">
-            The free plan covers invoices, customers, items and recording payments, for one user. Collections reminders, WhatsApp from
-            your own number, customer catalogs and the Tally connection are available on request from the app&apos;s Setup page.
+            The free plan covers invoices, customers, items and recording payments, for one user, and you can download and share your invoice PDFs
+            for your first 7 days. Monthly plans after that, no GST for now.
           </p>
+          {ladder && (
+            <ul className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+              {ladder.plans
+                .filter((p) => p.price_amount > 0)
+                .map((p) => (
+                  <li key={p.plan} className="rounded-lg border border-line px-3 py-2">
+                    <b>{p.label}</b> · {rupees(p.price_amount)} a month
+                    {p.trial_days > 0 && <span className="meta"> · {p.trial_days} days free</span>}
+                  </li>
+                ))}
+            </ul>
+          )}
         </section>
       </main>
 

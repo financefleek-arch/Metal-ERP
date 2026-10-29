@@ -29,7 +29,16 @@ from app.schemas import (
     UserOut,
 )
 from app.security import create_access_token, hash_password, verify_password
-from app.services import account, auth_throttle, captcha, entitlements, features, firm_provisioning, passwords
+from app.services import (
+    account,
+    activity,
+    auth_throttle,
+    captcha,
+    entitlements,
+    features,
+    firm_provisioning,
+    passwords,
+)
 from app.services.auth_codes import CodeError
 from app.services.ratelimit import client_key
 
@@ -163,6 +172,8 @@ def login(body: LoginRequest, request: Request, session: SessionDep) -> TokenRes
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Account disabled")
     auth_throttle.clear(session, "login_fail", pair)
+    activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="signed_in")
+    activity.touch_seen(user)
     return _token(user)
 
 
@@ -244,10 +255,21 @@ def _licence_out(session: SessionDep, tenant: Tenant | None) -> LicenceOut | Non
         return None
     return LicenceOut(
         status=lic.status,
+        plan_key=lic.plan_key,
         plan_label=lic.plan_label,
         trial_days_left=lic.trial_days_left,
         stale=lic.stale,
     )
+
+
+def _show_welcome(session: SessionDep, user: User, tenant: Tenant | None) -> bool:
+    """The "Your account is ready" page is shown once, to the owner of a firm that signed itself up, until it
+    has been seen (or the firm already has a finalised invoice, e.g. an account made before this existed)."""
+    if tenant is None or tenant.signup_source != "self" or user.role != UserRole.owner:
+        return False
+    if user.welcome_seen_at is not None:
+        return False
+    return not activity.has(session, tenant.id, "invoice_finalised")
 
 
 @router.get("/me", response_model=UserOut)
@@ -274,6 +296,8 @@ def me(user: CurrentUser, session: SessionDep) -> UserOut:
         mobile_verified=user.mobile_verified_at is not None,
         email_verified=user.email_verified_at is not None,
         must_change_password=user.must_change_password,
+        show_welcome=_show_welcome(session, user, tenant),
+        pdf_days_left=features.pdf_days_left(tenant) if free and tenant is not None else None,
         plan_tier="free" if free else "full",
         features=snap,
     )

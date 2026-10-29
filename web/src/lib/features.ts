@@ -16,11 +16,17 @@ export function useIsFree(): boolean {
 
 /** Plain-language names, shared by the lock screen and Setup. */
 export const FEATURE_NAME: Record<FeatureKey, string> = {
+  pdf_out: "Downloading and sharing invoice PDFs",
+  whatsapp: "Sending from your own WhatsApp number",
+  orders: "Customer ordering and order tracking",
+  collections: "Collections and ageing",
+  reminders: "Payment reminders",
+  catalog_parse: "Customer catalog parsing",
+  inward_prices: "Inward price-list import",
   import: "Importing parties and items",
   slip: "Creating an invoice from a photo",
   voice: "Creating an invoice by speaking",
-  collections: "Collections and ageing",
-  reminders: "Payment reminders",
-  whatsapp: "Sending from your own WhatsApp number",
-  tally: "The Tally connection",
+  tally_backup: "Tally backup to the cloud",
+  tally_full: "The full Tally integration",
+  tally: "Tally backup to the cloud",
 };

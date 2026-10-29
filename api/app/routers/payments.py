@@ -30,7 +30,7 @@ from app.schemas_payments import (
     PaymentOut,
     ReversePaymentIn,
 )
-from app.services import features
+from app.services import activity, features
 from app.services.payments import (
     ageing_summary,
     balance_due_for_invoice,
@@ -217,6 +217,7 @@ def create_payment(body: PaymentCreate, user: WriteUser, session: SessionDep) ->
 
     pay.voucher_no = claim_voucher_no(session, user.tenant_id)
     session.flush()
+    activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="payment_recorded")
 
     session.refresh(pay)
     return _out(session, pay)
