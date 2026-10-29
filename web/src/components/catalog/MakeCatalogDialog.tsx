@@ -208,7 +208,8 @@ export function MakeCatalogDialog({
   const jobId = job?.id;
   const jobStatus = job?.status;
   useEffect(() => {
-    if (!jobId || jobStatus === "done" || jobStatus === "error") return;
+    // a price-list job is followed by createPdf itself; this poll is for items catalogs only
+    if (pl || !jobId || jobStatus === "done" || jobStatus === "error") return;
     const h = window.setInterval(async () => {
       try {
         const j = await api<OutputJob>(`/customer-catalogs/jobs/${jobId}`);
