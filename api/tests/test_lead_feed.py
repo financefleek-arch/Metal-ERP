@@ -76,6 +76,24 @@ def test_a_second_attempt_by_the_same_mobile_joins_the_same_lead() -> None:
     assert lead["name"] == "Ravi K"  # the latest attempt wins
 
 
+def _click(request_id: str, kind: str, click_id: str) -> None:
+    with SessionLocal() as s:
+        r = s.get(SignupRequest, request_id)
+        r.ad_click_kind, r.ad_click_id = kind, click_id
+        s.commit()
+
+
+def test_the_first_ad_click_of_a_lead_is_carried_and_a_lead_without_one_says_none() -> None:
+    first = _request("+919876543210", minutes_ago=90, status="cancelled")
+    second = _request("+919876543210", minutes_ago=30)
+    _click(first, "gclid", "FIRST_click-1")
+    _click(second, "gbraid", "SECOND_click-2")
+    _request("+919812345678")
+    leads = {x["key"]: x for x in _build()["leads"]}
+    assert (leads["+919876543210"]["ad_click_kind"], leads["+919876543210"]["ad_click_id"]) == ("gclid", "FIRST_click-1")  # first touch
+    assert leads["+919812345678"]["ad_click_kind"] is None and leads["+919812345678"]["ad_click_id"] is None
+
+
 def test_failed_sign_ins_become_a_lead_without_an_ip_and_junk_is_dropped() -> None:
     _fail("+917667004931", 3)
     _fail("someone@example.com", 2)

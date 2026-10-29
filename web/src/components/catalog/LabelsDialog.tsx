@@ -10,6 +10,7 @@ import {
   type LabelRequest,
   type OutputJob,
 } from "../../lib/catalog";
+import { useDialogKeys } from "../../lib/keyboard";
 
 type Result =
   | { kind: "pdf"; blob: Blob; scanWarning: boolean }
@@ -178,13 +179,7 @@ export function LabelsDialog({
   }, [fileUrl]);
 
   useEffect(() => firstField.current?.focus(), []);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   function patch(p: Partial<LabelOptions>) {
     setOpts((o) => ({ ...o, ...p }));

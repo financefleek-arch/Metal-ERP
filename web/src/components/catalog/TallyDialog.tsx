@@ -9,6 +9,7 @@ import type {
   TallyRun,
   TallySettings,
 } from "../../lib/catalog";
+import { useDialogKeys } from "../../lib/keyboard";
 
 const errMsg = (e: unknown, fallback: string) => (e instanceof ApiError ? e.message : fallback);
 
@@ -36,13 +37,7 @@ export function TallyDialog({
 
   const selReq = useMemo(() => ({ selection }), [selection]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   // --- settings (group root, new-group policy, mapping) ---
   const settings = useQuery({

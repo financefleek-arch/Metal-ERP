@@ -8,13 +8,14 @@ hand-made item still passes through the review queue once.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import Integer, case, func, or_, select
 
-from app.deps import CurrentUser, SessionDep, WriteUser
+from app.deps import CurrentUser, DraftUser, SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import (
     CatalogProduct,
@@ -28,7 +29,7 @@ from app.models import (
     SupplierCatalog,
     SupplierCatalogItem,
 )
-from app.models._mixins import Availability, ItemSource, ItemStatus, ItemType
+from app.models._mixins import AliasSource, Availability, ItemSource, ItemStatus, ItemType
 from app.schemas_item import (
     BulkOutcome,
     ItemBulkDelete,
@@ -47,6 +48,7 @@ from app.schemas_item import (
     NodeFilter,
 )
 from app.services import activity, audit
+from app.services.catalogue.common import write_alias
 from app.services.catalogue.learn_from_recategorize import learn_from_recategorize
 from app.services.item_filter import filter_clauses as _filter_clauses
 from app.services.item_filter import filter_stmt as _filter_stmt
@@ -1003,6 +1005,36 @@ def delete_item(item_id: str, user: WriteUser, session: SessionDep) -> None:
         )
     detach_catalog_links(session, [it.id])  # price lists keep working without the item
     session.delete(it)
+
+
+class _LearnAliasIn(BaseModel):
+    text: str
+
+
+@router.post("/{item_id}/alias", status_code=status.HTTP_204_NO_CONTENT)
+def learn_alias(
+    item_id: str, body: _LearnAliasIn, user: DraftUser, session: SessionDep
+) -> None:
+    """The operator typed `text` and picked this item from the dropdown: remember the
+    wording so the next search for it lands here ("kdai" -> SS Kadai). Skipped when the
+    item's own name already contains every word typed, so nothing redundant is stored."""
+    text = body.text.strip()
+    if not 2 <= len(text) <= 100:
+        return
+    it = _owned(session, user.tenant_id, item_id)
+    syn = load_synonym_map(session, user.tenant_id)
+    words = [w for w in normalize_name(text, syn).split(" ") if w]
+    if not words or all(w in (it.name_normalized or "") for w in words):
+        return
+    write_alias(
+        session,
+        user.tenant_id,
+        alias_text=text,
+        item_id=it.id,
+        source=AliasSource.learned,
+        synonyms=syn,
+        now=datetime.now(timezone.utc),
+    )
 
 
 @router.post("/{item_id}/confirm", response_model=ItemOut)

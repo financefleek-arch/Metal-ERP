@@ -6,6 +6,7 @@ import { useVocab } from "../lib/reference";
 import { uomDisplay } from "../lib/uom";
 import type { GroupDetail, GroupOut, Item, ItemCategoryRow, ItemType } from "../lib/types";
 import { HsnPicker } from "./HsnPicker";
+import { enterAdvance } from "../lib/keyboard";
 
 /**
  * Create-in-place form for a not-yet-saved item. Only the essentials —
@@ -90,6 +91,7 @@ export function NewItemForm({
   return (
     <form
       className="flex flex-col gap-4"
+      onKeyDown={enterAdvance}
       onSubmit={(e) => {
         e.preventDefault();
         setErr(null);

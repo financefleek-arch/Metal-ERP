@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, apiPage, apiUpload } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { ItemFilter, ItemListItem } from "../lib/types";
+import { useDialogKeys } from "../lib/keyboard";
 
 const PAGE = 50;
 const MAX_MB = 15;
@@ -118,13 +119,7 @@ export function PhotoQueueDialog({ filter, onClose }: { filter: ItemFilter; onCl
     return () => window.removeEventListener("paste", onPaste);
   }, [upload]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   async function findByCode() {
     const code = scan.trim();

@@ -3,6 +3,7 @@ import { api, ApiError } from "../lib/api";
 import { downloadFile } from "../lib/download";
 import { normalizePhone } from "../lib/reference";
 import { useDialogKeys } from "../lib/keyboard";
+import { DateField } from "./DateField";
 
 /** Period presets for a party account statement (F3b). "This FY" is the
  *  Indian Apr–Mar year, hard-wired server-side. */
@@ -152,18 +153,8 @@ export function StatementSendDialog({
         </select>
         {period === "custom" && (
           <div className="mt-2 flex gap-2">
-            <input
-              type="date"
-              className="field flex-1"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-            />
-            <input
-              type="date"
-              className="field flex-1"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-            />
+            <DateField className="field flex-1" value={from} onChange={setFrom} />
+            <DateField className="field flex-1" value={to} onChange={setTo} />
           </div>
         )}
 

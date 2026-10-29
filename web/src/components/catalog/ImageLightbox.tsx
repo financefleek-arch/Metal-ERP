@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useDialogKeys } from "../../lib/keyboard";
 
 /** Full-size view of a catalog photo. Click the photo to zoom in and out; Esc or a click outside closes. */
 export function ImageLightbox({
@@ -13,11 +14,7 @@ export function ImageLightbox({
   onClose: () => void;
 }) {
   const [zoom, setZoom] = useState(false);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   return (
     <div

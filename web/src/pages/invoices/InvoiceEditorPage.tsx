@@ -15,6 +15,7 @@ import { notOnPlanFeature, useUpgrade } from "../../lib/upgrade";
 import { focusField, focusId, useDialogKeys } from "../../lib/keyboard";
 import { canDraft, canWrite } from "../../lib/roles";
 import { PaymentDialog } from "../../components/PaymentDialog";
+import { DateField } from "../../components/DateField";
 import { OffersConsent } from "../../components/OffersConsent";
 import { WhatsappLog } from "../../components/WhatsappStatus";
 import { PriceHistoryPanel } from "../../components/PriceHistoryPanel";
@@ -897,6 +898,16 @@ export function InvoiceEditorPage() {
     setDirty(true);
   }
 
+  /** Esc on an empty line: drop it and land on the line above (never the only line) */
+  function discardRow(key: string) {
+    const i = rows.findIndex((r) => r.key === key);
+    if (rows.length < 2 || i < 0) return;
+    removeRow(key);
+    const prev = rows[i - 1];
+    if (prev) focusField(prev.key, "rate");
+    else focusField(rows[i + 1].key, "item");
+  }
+
   /** open the "record scale weight" sheet for the current open segment */
   function startNextSegment() {
     if (!filledRows.length) return;
@@ -964,6 +975,23 @@ export function InvoiceEditorPage() {
         if (!readOnly && dirty && !save.isPending) {
           setErr(null);
           save.mutate();
+        }
+      } else if (e.altKey && !readOnly && (e.key === "Delete" || e.key === "Backspace")) {
+        // Alt+Delete: remove the line the cursor is on
+        const key = (document.activeElement as HTMLElement | null)?.dataset?.ln;
+        if (key) {
+          e.preventDefault();
+          if (rows.length > 1) discardRow(key);
+          else patchRow(key, { description: "", item_id: null, quantity: "", unit_rate: "", discount: "" });
+        }
+      } else if (e.altKey && !readOnly && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        startNextSegment();
+      } else if (e.altKey && !readOnly && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        if (!voiceBusy) {
+          if (recording) stopVoiceLine();
+          else startVoiceLine();
         }
       } else if (e.altKey && e.key.toLowerCase() === "p" && mayFinalize) {
         e.preventDefault();
@@ -1232,13 +1260,11 @@ export function InvoiceEditorPage() {
             </div>
             <div>
               <label className="label">Invoice date</label>
-              <input
-                type="date"
-                className="field"
+              <DateField
                 value={date}
                 disabled={readOnly}
-                onChange={(e) => {
-                  setDate(e.target.value);
+                onChange={(v) => {
+                  setDate(v);
                   setDirty(true);
                 }}
               />
@@ -1310,6 +1336,7 @@ export function InvoiceEditorPage() {
                     onRemove={() => removeRow(r.key)}
                     onAdvance={() => advanceFrom(r.key)}
                     onFinish={finishLines}
+                    onDiscard={() => discardRow(r.key)}
                     isLast={i === rows.length - 1}
                     forceSearchOpen={voiceRowKey === r.key}
                     partyId={partyId}
@@ -2252,17 +2279,27 @@ function PartyPicker({
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={(e) => {
           const list = results.data ?? [];
-          if (e.key === "ArrowDown" && list.length) {
+          // the "add as new" row is the last stop for ↑/↓, so a party that
+          // doesn't exist is reachable (and Enter-able) from the keyboard
+          const canCreate = q.trim().length >= 2;
+          const last = list.length - 1 + (canCreate ? 1 : 0);
+          if (e.key === "ArrowDown" && last >= 0) {
             e.preventDefault();
-            setHi((h) => Math.min(h + 1, list.length - 1));
-          } else if (e.key === "ArrowUp" && list.length) {
+            setHi((h) => Math.min(h + 1, last));
+          } else if (e.key === "ArrowUp" && last >= 0) {
             e.preventDefault();
             setHi((h) => Math.max(h - 1, 0));
-          } else if (e.key === "Enter" && open && list[hi]) {
+          } else if (e.key === "Enter" && open && canCreate) {
             e.preventDefault();
-            handlePick(list[hi]);
+            if (list[hi]) handlePick(list[hi]);
+            else if (!results.isFetching && debQ === q.trim()) setCreating(true);
           } else if (e.key === "Escape") {
-            setOpen(false);
+            // first Esc closes the list, the next clears what was typed
+            if (open && (list.length > 0 || q)) {
+              if (list.length > 0) setOpen(false);
+              else setQ("");
+            } else if (q) setQ("");
+            else setOpen(false);
           }
         }}
       />
@@ -2294,7 +2331,11 @@ function PartyPicker({
           ))}
           {q.trim() && (
             <button
-              className="block w-full px-3 py-2 text-left text-[13px] text-muted hover:bg-accent-soft"
+              tabIndex={-1}
+              data-hi={results.data!.length}
+              className={`block w-full px-3 py-2 text-left text-[13px] text-muted hover:bg-accent-soft ${
+                hi === results.data!.length ? "bg-accent-soft" : ""
+              }`}
               onMouseDown={() => setCreating(true)}
             >
               None of these — add “{q.trim()}” as new
@@ -2306,10 +2347,12 @@ function PartyPicker({
         <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-md border border-line bg-card shadow-lg">
           <div className="px-3 py-2 text-[11px] text-muted">No matching party.</div>
           <button
-            className="block w-full bg-[#f0f6f8] px-3 py-2 text-left text-sm text-accent"
+            tabIndex={-1}
+            className="block w-full bg-accent-soft px-3 py-2 text-left text-sm text-accent"
             onMouseDown={() => setCreating(true)}
           >
             + Create “{q.trim()}” as a new party
+            <span className="ml-2 text-[10px] text-muted">Enter</span>
           </button>
         </div>
       )}
@@ -2435,11 +2478,11 @@ function QuickCreatePartyDialog({
               onChange={(e) => setOpening(e.target.value)}
             />
           </div>
-          <input
-            type="date"
+          <DateField
+            clearable
             className="field flex-1"
             value={openingAsOf}
-            onChange={(e) => setOpeningAsOf(e.target.value)}
+            onChange={setOpeningAsOf}
           />
         </div>
         <p className="mt-1 text-[11px] text-muted">
@@ -2517,6 +2560,22 @@ const METHOD_BADGE: Record<string, { label: string; cls: string }> = {
   fuzzy: { label: "≈ close", cls: "bg-[#f1e7d6] text-warn" },
 };
 
+/** Why a dropdown row came up when its name doesn't plainly contain what was
+ *  typed: the size/grade carried it, or it is a near spelling / saved wording. */
+function matchNote(typed: string, it: ItemListItem): string | null {
+  const words = typed
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w && w !== "x");
+  if (!words.length) return null;
+  const name = it.name.toLowerCase();
+  const missing = words.filter((w) => !name.includes(w));
+  if (!missing.length) return null;
+  const sizeBits = `${it.size_text ?? ""} ${it.grade ?? ""}`.toLowerCase();
+  if (missing.every((w) => sizeBits.includes(w))) return "via size";
+  return "≈ similar / saved wording";
+}
+
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
   useEffect(() => {
@@ -2538,6 +2597,7 @@ function LineRow({
   onRemove,
   onAdvance,
   onFinish,
+  onDiscard,
   isLast,
   forceSearchOpen,
   partyId,
@@ -2561,6 +2621,8 @@ function LineRow({
   onAdvance: () => void;
   /** desktop keyboard: Enter on an empty item → lines are done */
   onFinish: () => void;
+  /** desktop keyboard: Esc on an empty line → drop it, back to the line above */
+  onDiscard: () => void;
   isLast: boolean;
   /** Speech-invoice-capture pilot: keep the item-search dropdown open while
    *  this row is being filled by a live voice transcript, without a real
@@ -2649,6 +2711,12 @@ function LineRow({
       _lastRate: it.last_rate,
       _lastSoldAt: it.last_sold_at ?? null,
     });
+    // remember the wording that led here ("kdai" -> SS Kadai) so the next
+    // search for it lands on this item; the server skips redundant ones
+    const said = typed.trim();
+    if (said && said.toLowerCase() !== it.name.toLowerCase()) {
+      api(`/items/${it.id}/alias`, { method: "POST", body: { text: said } }).catch(() => {});
+    }
     setTyped(it.name);
     setOpen(false);
     setHi(-1);
@@ -2811,7 +2879,14 @@ function LineRow({
             else if (!typed.trim() && !isLast) onAdvance();
             else if (!typed.trim()) onFinish();
           } else if (e.key === "Escape") {
-            setOpen(false);
+            // Esc backs out one level at a time: close the list, then clear
+            // what was typed, then (on an empty extra line) drop the line.
+            const listShown = (open || forceSearchOpen) && !row.item_id && !!typed.trim();
+            if (listShown) setOpen(false);
+            else if (typed.trim() && !row.item_id) {
+              setTyped("");
+              onPatch({ description: "", item_id: null, group_id: null });
+            } else if (!typed.trim()) onDiscard();
           }
         }}
       />
@@ -2823,6 +2898,7 @@ function LineRow({
           {results.map((it, idx) => {
             const badge = it.id === resolvedId && method ? METHOD_BADGE[method] : undefined;
             const size = it.size_text || it.grade;
+            const note = matchNote(typed, it);
             return (
               <button
                 key={it.id}
@@ -2836,6 +2912,7 @@ function LineRow({
                 <span className="min-w-0">
                   {it.name}
                   {size && <span className="ml-1 text-[11px] text-muted">{size}</span>}
+                  {note && <span className="ml-1 text-[11px] italic text-muted">{note}</span>}
                   <span
                     className={`ml-1 rounded px-1 py-0.5 text-[11px] ${
                       it.item_type === "bulk"

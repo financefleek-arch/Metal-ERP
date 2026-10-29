@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import type { CatalogSelection } from "../../lib/catalog";
@@ -11,6 +11,7 @@ import {
   whatsappShare,
   type LinkOptions,
 } from "./shareLinkUtils";
+import { useDialogKeys } from "../../lib/keyboard";
 
 export interface ShareLink {
   id: string;
@@ -54,11 +55,7 @@ export function ShareLinkDialog({
   const [copied, setCopied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   const create = useMutation({
     mutationFn: () =>

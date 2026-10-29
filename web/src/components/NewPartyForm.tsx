@@ -18,6 +18,8 @@ import {
 } from "../lib/reference";
 import type { Party, PartyRole } from "../lib/types";
 import { StateSelect } from "./StateSelect";
+import { DateField } from "./DateField";
+import { enterAdvance } from "../lib/keyboard";
 
 interface Fields {
   legal_name: string;
@@ -148,6 +150,7 @@ export function NewPartyForm({
   return (
     <form
       className="flex flex-col gap-4"
+      onKeyDown={enterAdvance}
       onSubmit={(e) => {
         e.preventDefault();
         setServerError(null);
@@ -280,11 +283,10 @@ export function NewPartyForm({
         </div>
         <div>
           <label className="label">Opening balance as of</label>
-          <input
-            type="date"
-            className="field"
+          <DateField
+            clearable
             value={v.opening_balance_as_of}
-            onChange={(e) => setV({ ...v, opening_balance_as_of: e.target.value })}
+            onChange={(d) => setV({ ...v, opening_balance_as_of: d })}
           />
         </div>
       </div>

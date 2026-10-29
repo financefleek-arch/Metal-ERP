@@ -11,6 +11,7 @@ import {
   type OutputJob,
   type PdfTarget,
 } from "../../lib/catalog";
+import { useDialogKeys } from "../../lib/keyboard";
 
 const LAYOUT_KEY = "customer-catalog-layout";
 const SYNC_LIMIT = 100; // mirrors the server: larger catalogs build in the background
@@ -236,13 +237,7 @@ export function MakeCatalogDialog({
     [fileUrl],
   );
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   function patch(p: Partial<CatalogLayout>) {
     setLayout((o) => {

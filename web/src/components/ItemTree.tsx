@@ -177,6 +177,74 @@ export function ItemTree({
       .filter((c): c is TreeCategory => c !== null);
   }, [tree.data, q]);
 
+  // "/" jumps to the tree search (when not already typing and no dialog is open)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      if ((e.target as HTMLElement | null)?.closest("input, textarea, select")) return;
+      if (document.querySelector(".fixed.inset-0")) return;
+      const el = document.getElementById("list-search") as HTMLInputElement | null;
+      if (el) {
+        e.preventDefault();
+        el.focus();
+        el.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /**
+   * Keyboard for the tree: ↑↓ move through the rows that are showing, → opens a
+   * node (or steps into it), ← closes it (or steps out to its parent), Space
+   * ticks the row's box, Home / End jump to the ends. Enter opens, as a button does.
+   */
+  function onTreeKey(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-tnode]");
+    if (!el) return;
+    const nodes = Array.from(e.currentTarget.querySelectorAll<HTMLElement>("[data-tnode]"));
+    const i = nodes.indexOf(el);
+    const level = Number(el.dataset.level);
+    const expander = el.hasAttribute("aria-expanded")
+      ? el
+      : (el.parentElement?.querySelector<HTMLElement>("button[aria-expanded]") ?? null);
+    const go = (n?: HTMLElement) => {
+      if (!n) return;
+      e.preventDefault();
+      n.focus();
+      n.scrollIntoView({ block: "nearest" });
+    };
+    if (e.key === "ArrowDown") go(nodes[i + 1]);
+    else if (e.key === "ArrowUp") go(nodes[i - 1]);
+    else if (e.key === "Home") go(nodes[0]);
+    else if (e.key === "End") go(nodes[nodes.length - 1]);
+    else if (e.key === "ArrowRight") {
+      if (expander?.getAttribute("aria-expanded") === "false") {
+        e.preventDefault();
+        expander.click();
+      } else if (nodes[i + 1] && Number(nodes[i + 1].dataset.level) > level) go(nodes[i + 1]);
+    } else if (e.key === "ArrowLeft") {
+      if (expander?.getAttribute("aria-expanded") === "true") {
+        e.preventDefault();
+        expander.click();
+      } else {
+        for (let j = i - 1; j >= 0; j--) {
+          if (Number(nodes[j].dataset.level) < level) {
+            go(nodes[j]);
+            break;
+          }
+        }
+      }
+    } else if (e.key === " ") {
+      const box = el.parentElement?.querySelector<HTMLInputElement>("input[type=checkbox]");
+      if (box && !box.disabled) {
+        e.preventDefault();
+        box.click();
+      }
+    }
+  }
+
   if (tree.isLoading) return <div className="px-3 py-6 text-xs text-muted">Loading…</div>;
   if ((tree.data ?? []).length === 0)
     return (
@@ -216,14 +284,24 @@ export function ItemTree({
   const dropCls = (key: string) => (dropKey === key ? " outline outline-2 -outline-offset-2 outline-accent" : "");
 
   return (
-    <div className="text-sm">
+    <div className="text-sm" data-tree onKeyDown={onTreeKey}>
       <div className="flex flex-wrap items-center gap-1.5 border-b border-line bg-ground px-3 py-2">
         <input
+          id="list-search"
           className="field h-7 min-w-0 flex-1 text-xs"
-          placeholder="find a category, group or item…"
+          placeholder="find a category, group or item…  ( / )"
           aria-label="Search the tree"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowDown") {
+              const first = e.currentTarget.closest("[data-tree]")?.querySelector<HTMLElement>("[data-tnode]");
+              if (first) {
+                e.preventDefault();
+                first.focus();
+              }
+            }
+          }}
         />
         <button
           className="chip"
@@ -335,6 +413,8 @@ export function ItemTree({
                 </span>
               )}
               <button
+                data-tnode="cat"
+                data-level={0}
                 className="flex min-w-0 flex-1 items-center gap-1.5 px-3 py-2.5 text-left uppercase md:py-1.5"
                 aria-expanded={flat ? undefined : open}
                 disabled={flat}
@@ -417,6 +497,8 @@ export function ItemTree({
                           </span>
                         )}
                         <button
+                          data-tnode="grp"
+                          data-level={1}
                           className="flex min-w-0 flex-1 items-center py-2.5 text-left md:py-1.5"
                           onClick={() => nav(`/items/g/${g.id}`)}
                         >
@@ -515,6 +597,8 @@ export function ItemTree({
                         </span>
                       )}
                       <button
+                        data-tnode="loose"
+                        data-level={1}
                         className="flex min-w-0 flex-1 items-center gap-1.5 py-2 text-left"
                         aria-expanded={!closedLoose.has(looseKey)}
                         onClick={() => toggle(closedLoose, setClosedLoose, looseKey)}
@@ -648,6 +732,8 @@ function LeafList({
             )}
             <button
               onClick={() => onPick(l.id)}
+              data-tnode="leaf"
+              data-level={2}
               className="flex min-w-0 flex-1 items-center gap-2 py-2.5 pl-2 text-left md:py-1.5"
             >
               {l.thumb_url && (

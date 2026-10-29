@@ -10,6 +10,7 @@ import { ItemPhoto } from "./ItemPhoto";
 import { ItemSourcesBlock } from "./ItemSourcesBlock";
 import { DuplicateItemDialog, MergeItemDialog } from "./ItemMergeDuplicate";
 import { AVAILABILITY } from "../lib/items";
+import { enterAdvance } from "../lib/keyboard";
 
 type Fields = { [k: string]: string };
 
@@ -207,7 +208,7 @@ export function ItemForm({
   }[saveState];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" onKeyDown={enterAdvance}>
       <ItemPhoto item={item} onChanged={onChanged} />
       <ItemSourcesBlock itemId={item.id} />
       <div className="flex items-start justify-between gap-3">

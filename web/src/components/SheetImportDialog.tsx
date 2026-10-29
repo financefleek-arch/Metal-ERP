@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError, apiUpload } from "../lib/api";
+import { useDialogKeys } from "../lib/keyboard";
 
 interface SheetRow {
   row: number;
@@ -27,13 +28,7 @@ export function SheetImportDialog({ onClose }: { onClose: () => void }) {
   const [applied, setApplied] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   async function run(f: File, dry: boolean) {
     setBusy(true);

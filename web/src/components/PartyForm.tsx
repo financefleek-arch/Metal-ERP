@@ -16,6 +16,8 @@ import {
 import { missingLabel } from "../lib/format";
 import type { Party, PartyRole } from "../lib/types";
 import { StateSelect } from "./StateSelect";
+import { DateField } from "./DateField";
+import { enterAdvance } from "../lib/keyboard";
 
 interface Fields {
   legal_name: string;
@@ -211,7 +213,7 @@ export function PartyForm({
   }[saveState];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4" onKeyDown={enterAdvance}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="section-title max-md:hidden">{party.legal_name}</h2>
@@ -384,12 +386,12 @@ export function PartyForm({
             </p>
           </div>
           <div>
-            <input
-              type="date"
+            <DateField
+              clearable
               className="field disabled:bg-ground disabled:text-muted"
               disabled={openingLocked}
               value={v.opening_balance_as_of}
-              onChange={(e) => patch({ opening_balance_as_of: e.target.value })}
+              onChange={(d) => patch({ opening_balance_as_of: d })}
             />
             {!openingLocked && (
               <p className="mt-1 text-[11px] text-muted">

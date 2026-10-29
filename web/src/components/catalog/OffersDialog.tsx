@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "../../lib/api";
 import type { CatalogSelection } from "../../lib/catalog";
+import { useDialogKeys } from "../../lib/keyboard";
 
 interface Preview {
   selected: number;
@@ -55,11 +56,7 @@ export function OffersDialog({
   const [sent, setSent] = useState<Sent | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   const preview = useQuery({
     queryKey: ["offer-preview", JSON.stringify(selection)],

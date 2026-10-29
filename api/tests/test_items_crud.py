@@ -252,6 +252,55 @@ def test_search_exact_and_prefix_outrank_loose(client: TestClient) -> None:
     assert got.index("Glass Steel") < got.index("Steel Glass Large")
 
 
+def test_pick_teaches_the_search(client: TestClient) -> None:
+    """Typing a wording the item's name doesn't contain and picking the item
+    stores it as an alias, so the next search for that wording finds it."""
+    h = _h(_token(client, "it-learn@x.example.com"))
+    it = _mk(client, h, "SS Tiffin Carrier")
+
+    def names(q: str) -> list[str]:
+        return [i["name"] for i in client.get("/api/items", params={"q": q}, headers=h).json()]
+
+    assert names("dabba") == []
+    r = client.post(f"/api/items/{it['id']}/alias", json={"text": "dabba"}, headers=h)
+    assert r.status_code == 204
+    assert names("dabba") == ["SS Tiffin Carrier"]
+    # wording already inside the name is not stored again
+    client.post(f"/api/items/{it['id']}/alias", json={"text": "tiffin"}, headers=h)
+    again = client.post(f"/api/items/{it['id']}/alias", json={"text": "dabba"}, headers=h)
+    assert again.status_code == 204
+
+
+def test_search_devanagari_query(client: TestClient) -> None:
+    """Hindi typed in Devanagari finds the Roman-spelled item (spelling variants
+    are absorbed by the synonym map)."""
+    h = _h(_token(client, "it-hindi@x.example.com"))
+    _mk(client, h, "SS Kadai 10")
+    _mk(client, h, "SS Balti")
+    _mk(client, h, "SS Plate 12")
+
+    def names(q: str) -> list[str]:
+        return [i["name"] for i in client.get("/api/items", params={"q": q}, headers=h).json()]
+
+    assert names("कढ़ाई") == ["SS Kadai 10"]
+    assert names("बाल्टी") == ["SS Balti"]
+    assert names("प्लेट") == ["SS Plate 12"]
+
+
+def test_search_units_and_plurals(client: TestClient) -> None:
+    """'12 inch' finds '12 inches'; the plural 'plates' finds 'plate'."""
+    h = _h(_token(client, "it-units@x.example.com"))
+    _mk(client, h, "SS Pipe 12 inches")
+    _mk(client, h, "SS Plate Round")
+
+    def names(q: str) -> list[str]:
+        return [i["name"] for i in client.get("/api/items", params={"q": q}, headers=h).json()]
+
+    assert names("12 inch") == ["SS Pipe 12 inches"]
+    assert names("12 in") == ["SS Pipe 12 inches"]
+    assert names("plates") == ["SS Plate Round"]
+
+
 def test_search_splits_digit_letter_glue(client: TestClient) -> None:
     """'10kg' finds '10 kg' and 'ss304' finds 'SS 304', and vice versa."""
     h = _h(_token(client, "it-glue@x.example.com"))

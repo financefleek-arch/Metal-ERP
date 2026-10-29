@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import { inr } from "../lib/previewTotal";
 import { useDialogKeys } from "../lib/keyboard";
+import { DateField } from "./DateField";
 import type {
   OpenInvoiceForAllocation,
   PaymentCreate,
@@ -223,12 +224,7 @@ export function PaymentDialog({
           <div className="mb-3 grid grid-cols-2 gap-2.5">
             <div>
               <label className="label">Date</label>
-              <input
-                type="date"
-                className="field"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-              />
+              <DateField value={date} onChange={setDate} />
             </div>
             <div>
               <label className="label flex items-center justify-between">

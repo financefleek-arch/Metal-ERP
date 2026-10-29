@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError, apiUpload } from "../lib/api";
 import { useDebounced } from "../lib/useDebounced";
 import type { ItemListItem } from "../lib/types";
+import { useDialogKeys } from "../lib/keyboard";
 
 interface Staged {
   file_name: string;
@@ -32,11 +33,7 @@ export function PhotoBulkDialog({ onClose }: { onClose: () => void }) {
   const [result, setResult] = useState<string | null>(null);
   const [picking, setPicking] = useState<string | null>(null);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useDialogKeys(onClose);
 
   async function stage(files: File[] | FileList | null) {
     if (!files || files.length === 0) return;

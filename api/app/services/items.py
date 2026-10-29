@@ -9,6 +9,7 @@ from sqlalchemy import Select, String, and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
+from app.domain.translit import devanagari_to_roman
 from app.models import HsnCode, Item, ItemAlias
 
 # word_similarity() scores the query against the best-matching *word* in the
@@ -138,6 +139,34 @@ def _search_tokens(nkey: str) -> list[str]:
     return toks
 
 
+# Spellings of one unit that shops mix freely. A query word finds any of them, so
+# "12 inch" finds "12 inches" / "12 in" with no change to stored names.
+_UNIT_GROUPS = [
+    {"in", "inch", "inches"},
+    {"gm", "gms", "gram", "grams"},
+    {"ltr", "litre", "liter", "litres", "liters"},
+    {"ft", "feet", "foot"},
+    {"cm", "centimeter", "centimetre"},
+    {"kg", "kgs", "kilo", "kilogram"},
+    {"mtr", "meter", "metre", "meters", "metres"},
+    {"nos", "pcs", "pc", "piece", "pieces"},
+    {"dozen", "doz", "dz"},
+]
+
+
+def _word_variants(t: str) -> list[str]:
+    """The query word plus its unit spellings and its singular ("plates" -> "plate")."""
+    out = {t}
+    for g in _UNIT_GROUPS:
+        if t in g:
+            out |= g
+    if len(t) >= 5 and t.endswith("es") and t[:-2] not in out:
+        out.add(t[:-2])
+    if len(t) >= 4 and t.endswith("s") and not t.endswith("ss"):
+        out.add(t[:-1])
+    return sorted(out)
+
+
 def _clean_col(col, is_pg: bool):  # type: ignore[no-untyped-def]
     """Lower-cased column with every non-alphanumeric run turned into a space (Postgres);
     the SQLite test path only lower-cases."""
@@ -171,7 +200,13 @@ def apply_search(
         return stmt
 
     like = f"%{q.lower()}%"
+    # Devanagari typed into the box ("कढ़ाई"): search on its Roman spelling,
+    # which the synonym map and trigram rung then reconcile with the catalogue.
+    raw_q = q
+    q = devanagari_to_roman(q).strip()
     is_pg = session.bind is not None and session.bind.dialect.name == "postgresql"
+    # a 1-2 letter query ("in", "ss") is a whole word, not a substring of "tin"/"stainless"
+    short_word = is_pg and len(q) <= 2 and q.isalpha()
 
     syn = load_synonym_map(session, tenant_id) if tenant_id else {}
     # "1.5" / "1/2" are one measure, not two numbers: lift them out of the
@@ -201,10 +236,18 @@ def apply_search(
         + _clean_col(Item.grade, is_pg)
     )
 
+    def _word_like(col, v):  # type: ignore[no-untyped-def]
+        # 1-2 letter words ("in", "ss", "mm") must stand alone; a digit beside
+        # them is fine ("ss304", "10mm")
+        if is_pg and len(v) <= 2:
+            return col.op("~")(f"(^|[^a-z]){v}([^a-z]|$)")
+        return col.like(f"%{v}%")
+
     def _tok_hit(col, t):  # type: ignore[no-untyped-def]
         if is_pg and t.isdigit():
             return col.op("~")(f"(^|[^0-9]){t}")
-        hit = col.like(f"%{t}%")
+        # the word, its unit spellings ("inch"/"inches"/"in") and its singular
+        hit = or_(*[_word_like(col, v) for v in _word_variants(t)])
         # a mistyped word in a multi-word query ("topia stel") still has to
         # match *something*: allow a near-miss on words long enough to be
         # unambiguous. The AND across tokens still narrows the result.
@@ -246,10 +289,18 @@ def apply_search(
         )
         .exists()
     )
+    raw_cols = [
+        func.lower(Item.name),
+        func.lower(func.coalesce(Item.grade, "")),
+        func.lower(func.coalesce(Item.size_text, "")),
+    ]
     conds = [
-        func.lower(Item.name).like(like),
-        func.lower(func.coalesce(Item.grade, "")).like(like),
-        func.lower(func.coalesce(Item.size_text, "")).like(like),
+        *(
+            [_word_like(c, q.lower()) for c in raw_cols]
+            if short_word
+            else [c.like(like) for c in raw_cols]
+        ),
+        *([c.like(f"%{q.lower()}%") for c in raw_cols] if raw_q != q and not short_word else []),
         func.coalesce(Item.hsn_code, "").like(f"{q}%"),
         # the item's code, so a scanned barcode or a typed code finds it
         func.coalesce(Item.sku, "").like(f"{q}%"),
@@ -280,7 +331,7 @@ def apply_search(
         # Fuzzy catch-all for a *single* mistyped token only. On a multi-token
         # query the AND-substring rung above already handles narrowing, and
         # word_similarity against one word would re-widen it — so skip it.
-        if not multi:
+        if not multi and len(nkey or q) > 2:
             sim_arg = nkey or q.lower()
             wsim = func.word_similarity(sim_arg, Item.name_normalized)
             conds.append(wsim > _WORD_SIMILARITY_FLOOR)
