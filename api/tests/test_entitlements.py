@@ -285,7 +285,7 @@ def test_the_plans_user_limit_stops_the_operator_adding_one_more(client: TestCli
     def add(email: str) -> httpx.Response:
         return client.post(
             f"/api/admin/firms/{firm_id}/users",
-            json={"email": email, "password": "long-enough-1", "role": "accountant"},
+            json={"email": email, "mobile": f"9000000{ord(email[0]):03d}", "password": "long-enough-1", "role": "accountant"},
             headers=admin,
         )
 

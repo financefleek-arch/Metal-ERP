@@ -117,7 +117,7 @@ def _check_not_changed_by_someone_else(
         detail={
             "code": "draft_changed",
             "message": "Someone else changed this draft since you opened it.",
-            "edited_by": (editor.email if editor and editor.id != user.id else None),
+            "edited_by": (editor.label if editor and editor.id != user.id else None),
             "edited_by_you": bool(editor and editor.id == user.id),
             "edited_at": inv.updated_at.isoformat(),
         },
@@ -182,7 +182,7 @@ def _payment_fields(
 
 def _email(session: SessionDep, user_id: str | None) -> str | None:
     u = session.get(User, user_id) if user_id else None
-    return u.email if u else None
+    return u.label if u else None
 
 
 def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:

@@ -181,7 +181,7 @@ export function Shell({ children }: { children: ReactNode }) {
             ? Shortcuts
           </button>
           <NavLink to="/account" className="text-[#b9b3a7] hover:text-ground" title="My account">
-            {me?.email}
+            {me?.label}
           </NavLink>
           <button onClick={logout} className="text-[#b9b3a7] hover:text-ground">
             Sign out
@@ -224,7 +224,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </button>
           <button onClick={logout} className="flex h-[3.25rem] w-full items-center gap-3.5 rounded-lg px-3 text-base hover:bg-ground">
             <span className="w-6 text-center text-muted">↪</span>Sign out
-            <span className="ml-auto truncate text-xs text-muted">{me?.email}</span>
+            <span className="ml-auto truncate text-xs text-muted">{me?.label}</span>
           </button>
         </div>
       )}

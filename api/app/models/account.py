@@ -17,13 +17,13 @@ from app.models._mixins import PkUuidMixin, TimestampMixin
 
 
 class SignupRequest(PkUuidMixin, TimestampMixin, Base):
-    """What the person typed, waiting for both codes. The password is already hashed."""
+    """What the person typed, waiting for the WhatsApp code. The password is already hashed."""
 
     __tablename__ = "signup_request"
 
     firm_name: Mapped[str] = mapped_column(String(200), nullable=False)
     owner_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    email: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(200), index=True)  # optional, never verified
     mobile: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # +91XXXXXXXXXX
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     terms_version: Mapped[str] = mapped_column(String(20), nullable=False)

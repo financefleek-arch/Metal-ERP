@@ -4,7 +4,10 @@ export type AddressType = "bill" | "ship" | "both";
 
 export interface Me {
   id: string;
-  email: string;
+  /** Optional since mobile sign-in. */
+  email: string | null;
+  /** What to call this person on screen: the email if there is one, else the mobile. */
+  label: string;
   role: UserRole;
   tenant_id: string;
   /** Platform operator — the SPA swaps the whole app for the admin console. */
@@ -68,7 +71,8 @@ export type AssignableRole = "owner" | "accountant" | "counter" | "viewer";
 
 export interface AdminUser {
   id: string;
-  email: string;
+  email: string | null;
+  mobile: string | null;
   role: UserRole;
   is_active: boolean;
   is_platform_admin: boolean;

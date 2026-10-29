@@ -20,7 +20,6 @@ type Mode = "landing" | "login" | "signup" | "verify" | "forgot";
 interface Started {
   request_id: string;
   mobile_masked: string;
-  email_masked: string;
 }
 
 const message = (e: unknown) => (e instanceof ApiError ? e.message : "Something went wrong. Try again.");
@@ -61,6 +60,40 @@ function Field({
   );
 }
 
+/** Mobile is the sign-in. An older account (made before mobile sign-in) can still use its email, one tap away. */
+function IdentityField({
+  value,
+  onChange,
+  byEmail,
+  onToggle,
+  disabled,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  byEmail: boolean;
+  onToggle: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="label">{byEmail ? "Email" : "Mobile number"}</label>
+      {byEmail ? (
+        <input className="field" type="email" autoComplete="username" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} required />
+      ) : (
+        <div className="flex gap-2">
+          <span className="field flex w-14 flex-none items-center justify-center text-muted">+91</span>
+          <input className="field" type="tel" inputMode="numeric" autoComplete="username" value={value} onChange={(e) => onChange(e.target.value)} placeholder="98765 43210" disabled={disabled} required />
+        </div>
+      )}
+      {!disabled && (
+        <button type="button" onClick={onToggle} className="meta mt-1 text-accent hover:text-accent-dark">
+          {byEmail ? "Use my mobile number" : "Older account? Use my email instead"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function AuthPage() {
   // a first visit in a browser (an ad click, say) sees what the product is before a form
   const [mode, setMode] = useState<Mode>(() => (shouldShowLanding() ? "landing" : "login"));
@@ -84,7 +117,8 @@ export function AuthPage() {
 
 function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () => void }) {
   const { login } = useAuth();
-  const [email, setEmail] = useState("");
+  const [who, setWho] = useState("");
+  const [byEmail, setByEmail] = useState(false);
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -94,7 +128,7 @@ function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () 
     setErr(null);
     setBusy(true);
     try {
-      await login(email.trim(), password);
+      await login(who.trim(), password);
     } catch (x) {
       setErr(message(x));
     } finally {
@@ -105,9 +139,7 @@ function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () 
   return (
     <Shell title="Metal ERP" sub="Sign in to your firm">
       <form onSubmit={submit} className="card space-y-4 p-6">
-        <Field label="Email">
-          <input className="field" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </Field>
+        <IdentityField value={who} onChange={setWho} byEmail={byEmail} onToggle={() => { setByEmail(!byEmail); setWho(""); }} />
         <div>
           <div className="flex items-baseline justify-between">
             <label className="label">Password</label>
@@ -147,7 +179,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
   const pwProblem = f.password ? passwordProblem(f.password) : null;
   const ready =
     f.firm_name.trim().length >= 2 && f.owner_name.trim().length >= 2 && f.mobile.replace(/\D/g, "").length >= 10 &&
-    f.email.includes("@") && !passwordProblem(f.password) && terms && captchaReady && (!siteKey || !!token);
+    (!f.email.trim() || f.email.includes("@")) && !passwordProblem(f.password) && terms && captchaReady && (!siteKey || !!token);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -157,7 +189,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
       const r = await api<Started>("/auth/signup/start", {
         method: "POST",
         auth: false,
-        body: { ...f, firm_name: f.firm_name.trim(), owner_name: f.owner_name.trim(), email: f.email.trim(), accept_terms: terms, captcha_token: token },
+        body: { ...f, firm_name: f.firm_name.trim(), owner_name: f.owner_name.trim(), email: f.email.trim() || null, accept_terms: terms, captcha_token: token },
       });
       track("signup-codes-sent");
       onStarted(r);
@@ -179,14 +211,14 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
         <Field label="Your name">
           <input className="field" autoComplete="name" value={f.owner_name} onChange={set("owner_name")} maxLength={100} required />
         </Field>
-        <Field label="Mobile (WhatsApp)" hint="We send a code here on WhatsApp.">
+        <Field label="Mobile (WhatsApp)" hint="We send a code here on WhatsApp. You will sign in with this number.">
           <div className="flex gap-2">
             <span className="field flex w-14 flex-none items-center justify-center text-muted">+91</span>
             <input className="field" type="tel" inputMode="numeric" autoComplete="tel-national" value={f.mobile} onChange={set("mobile")} placeholder="98765 43210" required />
           </div>
         </Field>
-        <Field label="Email" hint="We send a second code here.">
-          <input className="field" type="email" autoComplete="email" value={f.email} onChange={set("email")} required />
+        <Field label="Email (optional)" hint="Not needed to sign in. We send no code here.">
+          <input className="field" type="email" autoComplete="email" value={f.email} onChange={set("email")} />
         </Field>
         <Field label="Password" hint={PASSWORD_HINT}>
           <input className="field" type="password" autoComplete="new-password" value={f.password} onChange={set("password")} required />
@@ -203,7 +235,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
         <Turnstile key={tsKey} siteKey={siteKey} onToken={setToken} />
         {err && <p className="err" role="alert">{err}</p>}
         <button type="submit" className="btn-primary w-full" disabled={busy || !ready}>
-          {busy ? "Sending codes…" : "Send codes"}
+          {busy ? "Sending code…" : "Send code"}
         </button>
       </form>
       <p className="mt-5 text-center text-sm text-muted">
@@ -214,20 +246,19 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
   );
 }
 
-// ---------------------------------------------------------------------------------------- the 2 codes
+// ------------------------------------------------------------------------------------------- the code
 
 function VerifyForm({ started, onBack }: { started: Started; onBack: () => void }) {
   const { acceptToken } = useAuth();
   const navigate = useNavigate();
   const [wa, setWa] = useState("");
-  const [em, setEm] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const resend = (channel: "whatsapp" | "email") => async () => {
+  const resend = async () => {
     setErr(null);
     try {
-      await api<void>("/auth/signup/resend", { method: "POST", auth: false, body: { request_id: started.request_id, channel } });
+      await api<void>("/auth/signup/resend", { method: "POST", auth: false, body: { request_id: started.request_id } });
     } catch (x) {
       setErr(message(x));
       throw x;
@@ -242,7 +273,7 @@ function VerifyForm({ started, onBack }: { started: Started; onBack: () => void 
       const r = await api<{ access_token: string }>("/auth/signup/verify", {
         method: "POST",
         auth: false,
-        body: { request_id: started.request_id, whatsapp_code: wa, email_code: em },
+        body: { request_id: started.request_id, code: wa },
       });
       noteSignup();
       track("signup-complete");
@@ -257,18 +288,14 @@ function VerifyForm({ started, onBack }: { started: Started; onBack: () => void 
   }
 
   return (
-    <Shell title="Confirm it is you" sub="Your account is created only after both codes are right." step={2}>
+    <Shell title="Confirm it is you" sub="Your account is created once the WhatsApp code is right." step={2}>
       <form onSubmit={submit} className="card space-y-5 p-6">
         <div className="space-y-1">
           <CodeField label="WhatsApp code" hint={`sent to ${started.mobile_masked}`} value={wa} onChange={setWa} autoFocus />
-          <ResendLink onResend={resend("whatsapp")} />
-        </div>
-        <div className="space-y-1">
-          <CodeField label="Email code" hint={`sent to ${started.email_masked}`} value={em} onChange={setEm} />
-          <ResendLink onResend={resend("email")} />
+          <ResendLink onResend={resend} />
         </div>
         {err && <p className="err" role="alert">{err}</p>}
-        <button type="submit" className="btn-primary w-full" disabled={busy || wa.length !== 6 || em.length !== 6}>
+        <button type="submit" className="btn-primary w-full" disabled={busy || wa.length !== 6}>
           {busy ? "Creating your account…" : "Create my account"}
         </button>
       </form>
@@ -284,7 +311,8 @@ function VerifyForm({ started, onBack }: { started: Started; onBack: () => void 
 function ForgotForm({ onBack }: { onBack: () => void }) {
   const { acceptToken } = useAuth();
   const { siteKey, ready: captchaReady } = useCaptchaSiteKey();
-  const [email, setEmail] = useState("");
+  const [who, setWho] = useState("");
+  const [byEmail, setByEmail] = useState(false);
   const [sent, setSent] = useState(false);
   const [code, setCode] = useState("");
   const [pw, setPw] = useState("");
@@ -293,11 +321,11 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function send(channel: "email" | "whatsapp") {
+  async function send() {
     setErr(null);
     setBusy(true);
     try {
-      await api<void>("/auth/password/forgot", { method: "POST", auth: false, body: { email: email.trim(), channel, captcha_token: token } });
+      await api<void>("/auth/password/forgot", { method: "POST", auth: false, body: { identifier: who.trim(), captcha_token: token } });
       setSent(true);
     } catch (x) {
       setErr(message(x));
@@ -316,7 +344,7 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
       const r = await api<{ access_token: string }>("/auth/password/reset", {
         method: "POST",
         auth: false,
-        body: { email: email.trim(), code, new_password: pw },
+        body: { identifier: who.trim(), code, new_password: pw },
       });
       await acceptToken(r.access_token);
     } catch (x) {
@@ -327,29 +355,22 @@ function ForgotForm({ onBack }: { onBack: () => void }) {
   }
 
   const needToken = !captchaReady || (!!siteKey && !token);
+  const validWho = byEmail ? who.includes("@") : who.replace(/\D/g, "").length >= 10;
   return (
-    <Shell title="Reset your password" sub="We send a code to the email on your account.">
+    <Shell title="Reset your password" sub={byEmail ? "We send a code to the email on your account." : "We send a code on WhatsApp to the number on your account."}>
       <div className="card space-y-4 p-6">
-        <Field label="Email">
-          <input className="field" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} disabled={sent} />
-        </Field>
+        <IdentityField value={who} onChange={setWho} byEmail={byEmail} onToggle={() => { setByEmail(!byEmail); setWho(""); }} disabled={sent} />
         {!sent && (
           <>
             <Turnstile key={tsKey} siteKey={siteKey} onToken={setToken} />
-            <button className="btn-primary w-full" disabled={busy || !email.includes("@") || needToken} onClick={() => void send("email")}>
+            <button className="btn-primary w-full" disabled={busy || !validWho || needToken} onClick={() => void send()}>
               {busy ? "Sending…" : "Send code"}
             </button>
-            <p className="meta">
-              Have a verified mobile?{" "}
-              <button className="text-accent hover:text-accent-dark" disabled={busy || !email.includes("@") || needToken} onClick={() => void send("whatsapp")}>
-                Send it on WhatsApp instead
-              </button>
-            </p>
           </>
         )}
         {sent && (
           <form onSubmit={reset} className="space-y-4">
-            <p className="meta">If that email has an account, a code is on its way.</p>
+            <p className="meta">If that {byEmail ? "email" : "number"} has an account, a code is on its way.</p>
             <CodeField label="Code" value={code} onChange={setCode} autoFocus />
             <Field label="New password" hint={PASSWORD_HINT}>
               <input className="field" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} />

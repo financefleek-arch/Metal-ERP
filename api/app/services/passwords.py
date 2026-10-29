@@ -35,7 +35,9 @@ _COMMON = {
 }
 
 
-def problem(password: str, *, email: str | None = None, firm: str | None = None) -> str | None:
+def problem(
+    password: str, *, email: str | None = None, firm: str | None = None, mobile: str | None = None
+) -> str | None:
     """A sentence saying what is wrong with the password, or None when it is acceptable."""
     if len(password) < 8:
         return "Password must be at least 8 characters"
@@ -48,6 +50,8 @@ def problem(password: str, *, email: str | None = None, firm: str | None = None)
         return "That password is too common. Choose another."
     if email and low == email.split("@")[0].lower():
         return "Password must not be your email name"
+    if mobile and re.sub(r"\D", "", low) == mobile.lstrip("+")[-10:]:
+        return "Password must not be your mobile number"
     if firm and low == firm.strip().lower():
         return "Password must not be your firm name"
     return None

@@ -71,7 +71,7 @@ def request_feature(body: FeatureRequestIn, user: CurrentUser, session: SessionD
         code, _ = fleek_request(
             "POST",
             f"/api/internal/metal-erp/orgs/{tenant.fleek_org_id}/feature-requests",
-            {"feature": body.feature, "title": title, "requested_by": user.email},
+            {"feature": body.feature, "title": title, "requested_by": user.label},
         )
     except FleekUnavailable:
         code = 0

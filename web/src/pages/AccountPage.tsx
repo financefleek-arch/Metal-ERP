@@ -84,7 +84,7 @@ export function ForcedPasswordPage() {
           <ChangePasswordForm submitLabel="Save and continue" />
         </div>
         <p className="mt-5 text-center text-sm text-muted">
-          {me?.email} ·{" "}
+          {me?.label} ·{" "}
           <button onClick={logout} className="text-accent hover:text-accent-dark">Sign out</button>
         </p>
       </div>
@@ -133,16 +133,14 @@ export function AccountPage() {
         <dl className="grid grid-cols-[90px_1fr] gap-y-2 text-sm">
           <dt className="text-muted">Firm</dt>
           <dd>{me?.firm_name ?? "—"}</dd>
-          <dt className="text-muted">Email</dt>
-          <dd>
-            {me?.email}
-            <Verified ok={!!me?.email_verified} />
-          </dd>
           <dt className="text-muted">Mobile</dt>
           <dd>
             {me?.mobile_masked ?? "Not on file"}
             {me?.mobile_masked && <Verified ok={!!me?.mobile_verified} />}
+            {me?.mobile_masked && <span className="meta ml-2">your sign-in</span>}
           </dd>
+          <dt className="text-muted">Email</dt>
+          <dd>{me?.email ?? <span className="text-muted">Not given</span>}</dd>
           <dt className="text-muted">Role</dt>
           <dd className="capitalize">{me?.role}</dd>
         </dl>

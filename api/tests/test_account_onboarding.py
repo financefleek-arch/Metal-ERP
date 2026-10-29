@@ -29,6 +29,7 @@ class FakeFleek:
         self.whatsapp: list[tuple[str, str]] = []
         self.email: list[tuple[str, str, str]] = []
         self.signups: dict[str, str] = {}
+        self.signup_payloads: list[dict[str, Any]] = []
         self.feature_requests: list[dict[str, Any]] = []
         self.down = False
         self.signup_status = 201
@@ -59,7 +60,8 @@ class FakeFleek:
         if path.endswith("/self-signup"):
             if self.signup_status != 201:
                 return self.signup_status, {"error": "email_in_use"}
-            org = self.signups.setdefault(payload["email"], f"org-{len(self.signups) + 1}")
+            self.signup_payloads.append(payload)
+            org = self.signups.setdefault(payload["mobile"], f"org-{len(self.signups) + 1}")
             return 201, {"org_id": org}
         if path.endswith("/feature-requests"):
             self.feature_requests.append(payload)
@@ -91,6 +93,7 @@ SIGNUP = {
     "password": "s3cret-pass",
     "accept_terms": True,
 }
+MOBILE = "+919876543210"
 
 
 def _start(client: TestClient, **over: Any) -> Any:
@@ -102,11 +105,7 @@ def _signup(client: TestClient, fleek: FakeFleek, **over: Any) -> str:
     assert r.status_code == 200, r.text
     v = client.post(
         "/api/auth/signup/verify",
-        json={
-            "request_id": r.json()["request_id"],
-            "whatsapp_code": fleek.last_code("whatsapp"),
-            "email_code": fleek.last_code("email", "signup"),
-        },
+        json={"request_id": r.json()["request_id"], "code": fleek.last_code("whatsapp")},
     )
     assert v.status_code == 201, v.text
     return v.json()["access_token"]
@@ -119,26 +118,23 @@ def _h(token: str) -> dict[str, str]:
 # ---------------------------------------------------------------------------------------- sign-up
 
 
-def test_signup_creates_a_linked_free_firm_only_after_both_codes(
+def test_signup_creates_a_linked_free_firm_only_after_the_whatsapp_code(
     client: TestClient, fleek: FakeFleek
 ) -> None:
     r = _start(client)
     assert r.status_code == 200
     body = r.json()
     assert body["mobile_masked"].startswith("+91 98") and body["mobile_masked"].endswith("10")
-    assert "owner" not in body["email_masked"]
+    assert "email_masked" not in body
     assert fleek.whatsapp[0][0] == "+919876543210"
+    assert fleek.email == []  # one code, to WhatsApp only
     with SessionLocal() as s:  # nothing exists yet: no firm, no user
         assert s.scalar(select(Tenant)) is None
         assert s.scalar(select(User)) is None
 
     v = client.post(
         "/api/auth/signup/verify",
-        json={
-            "request_id": body["request_id"],
-            "whatsapp_code": fleek.last_code("whatsapp"),
-            "email_code": fleek.last_code("email", "signup"),
-        },
+        json={"request_id": body["request_id"], "code": fleek.last_code("whatsapp")},
     )
     assert v.status_code == 201
     with SessionLocal() as s:
@@ -147,31 +143,29 @@ def test_signup_creates_a_linked_free_firm_only_after_both_codes(
         assert tenant is not None and user is not None
         assert tenant.fleek_org_id == "org-1" and tenant.signup_source == "self"
         assert user.mobile == "+919876543210"
-        assert user.mobile_verified_at is not None and user.email_verified_at is not None
+        assert user.mobile_verified_at is not None and user.email_verified_at is None  # the email is never verified
+        assert user.email == "owner@sethia.example.com"
         assert user.terms_accepted_at is not None
 
     me = client.get("/api/auth/me", headers=_h(v.json()["access_token"])).json()
     assert me["plan_tier"] == "free"
-    assert me["mobile_verified"] and me["email_verified"] and me["firm_name"] == "Sethia Metal Store"
+    assert me["mobile_verified"] and not me["email_verified"] and me["firm_name"] == "Sethia Metal Store"
+    assert me["label"] == "owner@sethia.example.com"
     assert me["features"]["slip"] is False and me["features"]["import"] is False
 
 
-def test_wrong_codes_make_no_firm_and_burn_after_five_tries(client: TestClient, fleek: FakeFleek) -> None:
+def test_a_wrong_code_makes_no_firm_and_burns_after_five_tries(client: TestClient, fleek: FakeFleek) -> None:
     rid = _start(client).json()["request_id"]
     for _ in range(5):
         r = client.post(
             "/api/auth/signup/verify",
-            json={"request_id": rid, "whatsapp_code": "000000", "email_code": "000000"},
+            json={"request_id": rid, "code": "000000"},
         )
         assert r.status_code == 400
-    # even the right codes no longer work once the tries are used up
+    # even the right code no longer works once the tries are used up
     r = client.post(
         "/api/auth/signup/verify",
-        json={
-            "request_id": rid,
-            "whatsapp_code": fleek.last_code("whatsapp"),
-            "email_code": fleek.last_code("email", "signup"),
-        },
+        json={"request_id": rid, "code": fleek.last_code("whatsapp")},
     )
     assert r.status_code == 400
     with SessionLocal() as s:
@@ -180,11 +174,7 @@ def test_wrong_codes_make_no_firm_and_burn_after_five_tries(client: TestClient, 
 
 def test_fleek_down_makes_no_firm_and_a_retry_succeeds(client: TestClient, fleek: FakeFleek) -> None:
     rid = _start(client).json()["request_id"]
-    codes = {
-        "request_id": rid,
-        "whatsapp_code": fleek.last_code("whatsapp"),
-        "email_code": fleek.last_code("email", "signup"),
-    }
+    codes = {"request_id": rid, "code": fleek.last_code("whatsapp")}
     fleek.down = True
     assert client.post("/api/auth/signup/verify", json=codes).status_code == 503
     with SessionLocal() as s:
@@ -197,23 +187,36 @@ def test_fleek_down_makes_no_firm_and_a_retry_succeeds(client: TestClient, fleek
 
 def test_a_second_verify_does_not_make_a_second_firm(client: TestClient, fleek: FakeFleek) -> None:
     rid = _start(client).json()["request_id"]
-    codes = {
-        "request_id": rid,
-        "whatsapp_code": fleek.last_code("whatsapp"),
-        "email_code": fleek.last_code("email", "signup"),
-    }
+    codes = {"request_id": rid, "code": fleek.last_code("whatsapp")}
     assert client.post("/api/auth/signup/verify", json=codes).status_code == 201
     assert client.post("/api/auth/signup/verify", json=codes).status_code == 409
     with SessionLocal() as s:
         assert len(s.scalars(select(Tenant)).all()) == 1
 
 
-def test_existing_email_or_mobile_gets_one_generic_answer(client: TestClient, fleek: FakeFleek) -> None:
+def test_an_existing_mobile_is_refused_but_a_shared_email_is_not(client: TestClient, fleek: FakeFleek) -> None:
     _signup(client, fleek)
-    by_email = _start(client, mobile="9123456780")
     by_mobile = _start(client, email="other@sethia.example.com")
-    assert by_email.status_code == by_mobile.status_code == 409
-    assert by_email.json()["detail"] == by_mobile.json()["detail"] == account.CLASH
+    assert by_mobile.status_code == 409 and by_mobile.json()["detail"] == account.CLASH
+    # the email is only contact detail, so a second firm may give the same one (or none)
+    assert _start(client, mobile="9123456780").status_code == 200
+    assert _start(client, mobile="9123456781", email=None).status_code == 200
+
+
+def test_signup_needs_no_email_and_sends_no_email_code(client: TestClient, fleek: FakeFleek) -> None:
+    body = {k: v for k, v in SIGNUP.items() if k != "email"}
+    r = client.post("/api/auth/signup/start", json=body)
+    assert r.status_code == 200, r.text
+    v = client.post(
+        "/api/auth/signup/verify", json={"request_id": r.json()["request_id"], "code": fleek.last_code("whatsapp")}
+    )
+    assert v.status_code == 201, v.text
+    assert fleek.email == [] and fleek.signup_payloads[-1]["email"] == ""  # Fleek is told there is none
+    with SessionLocal() as s:
+        user = s.scalar(select(User))
+        assert user is not None and user.email is None and user.mobile == MOBILE
+    me = client.get("/api/auth/me", headers=_h(v.json()["access_token"])).json()
+    assert me["email"] is None and me["label"] == MOBILE
 
 
 def test_signup_needs_terms_a_real_mobile_and_a_decent_password(client: TestClient, fleek: FakeFleek) -> None:
@@ -222,12 +225,13 @@ def test_signup_needs_terms_a_real_mobile_and_a_decent_password(client: TestClie
     assert _start(client, mobile="5876543210").status_code == 422  # Indian mobiles start 6-9
     assert _start(client, password="abcdefgh").status_code == 422  # no digit or special
     assert _start(client, password="password123").status_code == 422  # too common
+    assert _start(client, password="9876543210").status_code == 422  # their own mobile
     assert fleek.whatsapp == []  # nothing was sent for any of them
 
 
 def test_resend_respects_the_one_minute_gap(client: TestClient, fleek: FakeFleek) -> None:
     rid = _start(client).json()["request_id"]
-    r = client.post("/api/auth/signup/resend", json={"request_id": rid, "channel": "whatsapp"})
+    r = client.post("/api/auth/signup/resend", json={"request_id": rid})
     assert r.status_code == 429
 
 
@@ -267,7 +271,7 @@ def test_captcha_skipped_outside_production_without_a_key(client: TestClient, fl
 
 def test_forgot_password_is_behind_the_captcha_too(client: TestClient, fleek: FakeFleek) -> None:
     fleek.captcha = {"success": False}
-    r = client.post("/api/auth/password/forgot", json={"email": SIGNUP["email"], "captcha_token": "x"})
+    r = client.post("/api/auth/password/forgot", json={"identifier": MOBILE, "captcha_token": "x"})
     assert r.status_code == 400
 
 
@@ -300,23 +304,41 @@ def test_login_locks_after_five_wrong_passwords_then_reset_clears_it(
     client: TestClient, fleek: FakeFleek
 ) -> None:
     _signup(client, fleek)
-    bad = {"email": SIGNUP["email"], "password": "wrong-pass-1"}
+    bad = {"identifier": MOBILE, "password": "wrong-pass-1"}
     for _ in range(5):
         assert client.post("/api/auth/login", json=bad).status_code == 401
     assert client.post("/api/auth/login", json=bad).status_code == 429
-    good = {"email": SIGNUP["email"], "password": SIGNUP["password"]}
+    good = {"identifier": MOBILE, "password": SIGNUP["password"]}
     assert client.post("/api/auth/login", json=good).status_code == 429  # locked, even for the right one
+    # another spelling of the same number is the same person, so the lock holds
+    assert client.post("/api/auth/login", json={**good, "identifier": "98765 43210"}).status_code == 429
 
 
 def test_a_good_login_forgets_earlier_slips(client: TestClient, fleek: FakeFleek) -> None:
     _signup(client, fleek)
     for _ in range(3):
-        client.post("/api/auth/login", json={"email": SIGNUP["email"], "password": "nope-nope-1"})
-    good = {"email": SIGNUP["email"], "password": SIGNUP["password"]}
+        client.post("/api/auth/login", json={"identifier": MOBILE, "password": "nope-nope-1"})
+    good = {"identifier": MOBILE, "password": SIGNUP["password"]}
     assert client.post("/api/auth/login", json=good).status_code == 200
     for _ in range(4):  # the three slips no longer count against the five
-        client.post("/api/auth/login", json={"email": SIGNUP["email"], "password": "nope-nope-1"})
+        client.post("/api/auth/login", json={"identifier": MOBILE, "password": "nope-nope-1"})
     assert client.post("/api/auth/login", json=good).status_code == 200
+
+
+def test_login_takes_the_mobile_in_any_spelling_and_an_older_account_its_email(
+    client: TestClient, fleek: FakeFleek
+) -> None:
+    _signup(client, fleek)
+    pw = SIGNUP["password"]
+    for who in (MOBILE, "9876543210", "98765 43210", "+91 98765-43210", "09876543210"):
+        assert client.post("/api/auth/login", json={"identifier": who, "password": pw}).status_code == 200, who
+    # accounts made before mobile sign-in (and Fleek operators) still sign in with the email
+    assert client.post("/api/auth/login", json={"identifier": SIGNUP["email"], "password": pw}).status_code == 200
+    # a client that has not updated still sends `email`
+    assert client.post("/api/auth/login", json={"email": SIGNUP["email"], "password": pw}).status_code == 200
+    bad = client.post("/api/auth/login", json={"identifier": "9123456780", "password": pw})
+    assert bad.status_code == 401 and bad.json()["detail"] == "Incorrect mobile number or password"
+    assert client.post("/api/auth/login", json={"identifier": "abc", "password": pw}).status_code == 401
 
 
 # ----------------------------------------------------------------------------- sessions, passwords
@@ -334,7 +356,7 @@ def test_change_password_ends_other_sessions_and_keeps_this_one(
     assert r.status_code == 200
     assert client.get("/api/auth/me", headers=_h(old)).status_code == 401
     assert client.get("/api/auth/me", headers=_h(r.json()["access_token"])).status_code == 200
-    login = {"email": SIGNUP["email"], "password": "n3w-secret-pw"}
+    login = {"identifier": MOBILE, "password": "n3w-secret-pw"}
     assert client.post("/api/auth/login", json=login).status_code == 200
 
 
@@ -373,42 +395,77 @@ def test_a_password_set_by_someone_else_must_be_replaced_first(client: TestClien
     assert client.get("/api/parties", headers=_h(r.json()["access_token"])).status_code == 200
 
 
-def test_forgot_password_is_silent_for_unknown_emails_and_resets_for_real_ones(
+def test_forgot_password_is_silent_for_unknown_mobiles_and_resets_for_real_ones(
     client: TestClient, fleek: FakeFleek
 ) -> None:
     old = _signup(client, fleek)
-    n_email = len(fleek.email)
-    r = client.post("/api/auth/password/forgot", json={"email": "nobody@nowhere.example.com"})
-    assert r.status_code == 204 and len(fleek.email) == n_email
+    n = len(fleek.whatsapp)
+    r = client.post("/api/auth/password/forgot", json={"identifier": "9123456780"})
+    assert r.status_code == 204 and len(fleek.whatsapp) == n
+    r = client.post("/api/auth/password/forgot", json={"identifier": "not a number"})
+    assert r.status_code == 204 and len(fleek.whatsapp) == n
 
-    r = client.post("/api/auth/password/forgot", json={"email": SIGNUP["email"]})
-    assert r.status_code == 204 and fleek.email[-1][2] == "reset"
-    code = fleek.last_code("email", "reset")
+    r = client.post("/api/auth/password/forgot", json={"identifier": "98765 43210"})
+    assert r.status_code == 204 and len(fleek.whatsapp) == n + 1 and fleek.whatsapp[-1][0] == MOBILE
+    code = fleek.last_code("whatsapp")
 
     bad = client.post(
         "/api/auth/password/reset",
-        json={"email": SIGNUP["email"], "code": "000000", "new_password": "n3w-secret-pw"},
+        json={"identifier": MOBILE, "code": "000000", "new_password": "n3w-secret-pw"},
     )
     assert bad.status_code == 400
     ok = client.post(
         "/api/auth/password/reset",
-        json={"email": SIGNUP["email"], "code": code, "new_password": "n3w-secret-pw"},
+        json={"identifier": MOBILE, "code": code, "new_password": "n3w-secret-pw"},
     )
     assert ok.status_code == 200
     assert client.get("/api/auth/me", headers=_h(old)).status_code == 401
     # the code is single use
     again = client.post(
         "/api/auth/password/reset",
-        json={"email": SIGNUP["email"], "code": code, "new_password": "an0ther-secret"},
+        json={"identifier": MOBILE, "code": code, "new_password": "an0ther-secret"},
     )
     assert again.status_code == 400
 
 
-def test_reset_by_whatsapp_goes_only_to_a_verified_mobile(client: TestClient, fleek: FakeFleek) -> None:
+def test_an_older_account_with_no_mobile_resets_by_email(client: TestClient, fleek: FakeFleek) -> None:
     _signup(client, fleek)
+    with SessionLocal() as s:  # an account from before mobile sign-in: an email and no mobile
+        u = s.scalar(select(User))
+        assert u is not None
+        u.mobile, u.mobile_verified_at = None, None
+        s.commit()
     n = len(fleek.whatsapp)
-    client.post("/api/auth/password/forgot", json={"email": SIGNUP["email"], "channel": "whatsapp"})
-    assert len(fleek.whatsapp) == n + 1
+    r = client.post("/api/auth/password/forgot", json={"identifier": SIGNUP["email"]})
+    assert r.status_code == 204 and len(fleek.whatsapp) == n and fleek.email[-1][2] == "reset"
+    ok = client.post(
+        "/api/auth/password/reset",
+        json={
+            "identifier": SIGNUP["email"],
+            "code": fleek.last_code("email", "reset"),
+            "new_password": "n3w-secret-pw",
+        },
+    )
+    assert ok.status_code == 200
+
+
+def test_a_mobile_typed_by_an_operator_is_proved_by_the_first_whatsapp_reset(
+    client: TestClient, fleek: FakeFleek
+) -> None:
+    _signup(client, fleek)
+    with SessionLocal() as s:
+        u = s.scalar(select(User))
+        assert u is not None
+        u.mobile_verified_at = None
+        s.commit()
+    client.post("/api/auth/password/forgot", json={"identifier": MOBILE})
+    client.post(
+        "/api/auth/password/reset",
+        json={"identifier": MOBILE, "code": fleek.last_code("whatsapp"), "new_password": "n3w-secret-pw"},
+    )
+    with SessionLocal() as s:
+        u = s.scalar(select(User))
+        assert u is not None and u.mobile_verified_at is not None
 
 
 def test_codes_are_stored_hashed(client: TestClient, fleek: FakeFleek) -> None:

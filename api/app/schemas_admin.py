@@ -46,7 +46,8 @@ class AdminUserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    email: EmailStr
+    email: EmailStr | None = None
+    mobile: str | None = None
     role: UserRole
     is_active: bool
     is_platform_admin: bool
@@ -87,12 +88,14 @@ class FirmPatch(BaseModel):
 
 
 class AdminUserCreate(BaseModel):
-    email: EmailStr = Field(max_length=200)
+    mobile: str = Field(min_length=10, max_length=20)  # the sign-in
+    email: EmailStr | None = Field(default=None, max_length=200)
     password: str = Field(min_length=8, max_length=200)
     role: UserRole = UserRole.accountant
 
 
 class AdminUserPatch(BaseModel):
+    mobile: str | None = Field(default=None, min_length=10, max_length=20)  # gives an older account its sign-in
     role: UserRole | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=200)

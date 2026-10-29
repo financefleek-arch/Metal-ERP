@@ -1124,7 +1124,7 @@ export function InvoiceEditorPage() {
           className="rounded-md border border-[#e8d9bd] bg-[#faf4ec] px-3 py-3 text-sm text-[#6d4f16]"
         >
           <b>
-            {theirs.last_edited_by && theirs.last_edited_by !== me?.email
+            {theirs.last_edited_by && theirs.last_edited_by !== me?.label
               ? theirs.last_edited_by
               : "You, in another window,"}{" "}
             changed this draft at{" "}

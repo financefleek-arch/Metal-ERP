@@ -7,7 +7,8 @@ import type { Me } from "./types";
 interface AuthState {
   me: Me | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** `identifier` is a mobile number; an older account may use its email. */
+  login: (identifier: string, password: string) => Promise<void>;
   /** Take a token an auth call handed back (sign-up, password reset or change) and load the user. */
   acceptToken: (token: string) => Promise<void>;
   /** Re-read /auth/me (after a password change, or when Setup changes). */
@@ -52,11 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (identifier: string, password: string) => {
       const r = await api<{ access_token: string }>("/auth/login", {
         method: "POST",
         auth: false,
-        body: { email, password },
+        body: { identifier, password },
       });
       await acceptToken(r.access_token);
     },

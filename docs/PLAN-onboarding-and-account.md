@@ -209,3 +209,21 @@ Differences from the plan above:
 - **CAPTCHA keys live in Fleek platform secrets** (`TURNSTILE_SECRET_KEY`, `TURNSTILE_SITE_KEY`), not in Metal ERP, Vault or the web build. Metal ERP asks Fleek to verify
   the token (`/captcha/verify`) and serves the public site key at `GET /api/auth/config`. No infra change.
 - Admin-created users and Fleek/operator password sets now set `must_change_password` and end old sessions.
+
+## 9. Mobile sign-in (2026-10-29, owner decision)
+
+Two codes at sign-up was more friction than a shop owner will accept. Decided: **the mobile is the sign-in, one WhatsApp code
+proves it, the email is optional and never verified.** Password sign-in stays (no passwordless).
+
+- **Sign-up:** one WhatsApp code (`signup_request.email` nullable). `verify` takes `code`. `_taken` checks the mobile only.
+- **Sign-in / reset:** `identifier` = mobile in any spelling (`account.find_user`, `identity_key` for the throttles). An email
+  still works for accounts made before this (and Fleek operators); the old `email` key is read as the identifier.
+  Reset code goes to WhatsApp when the user has a mobile, else to the email (older accounts only). A WhatsApp reset proves an
+  operator-typed mobile (`mobile_verified_at`).
+- **Data (0066):** `app_user.email` nullable; partial unique index `uq_user_mobile`. `User.label` = email or mobile (used for
+  "last edited by", `Me.label`).
+- **Operator paths:** `POST /api/admin/firms/{id}/users` needs `mobile`, email optional; `PATCH /users/{id}` takes `mobile`
+  (older accounts get their sign-in there; ends their sessions). Both the Metal ERP operator console and the Fleek console use them.
+- **Fleek:** `self-signup` and `POST /api/admin/orgs/metal-erp` accept no email; the member row's `username` is then
+  `mobile:<10 digits>` (`owner_username`), `email` NULL; 409 `mobile_in_use`. `codes/email` stays for older-account resets.
+- **Not done:** self-service "add / change my mobile or email" on My account (still "ask Fleek"); passwordless login.

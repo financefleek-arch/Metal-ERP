@@ -14,12 +14,14 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     false,
+    text,
     true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -135,10 +137,21 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
 
 class User(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "app_user"
-    __table_args__ = (UniqueConstraint("tenant_id", "email", name="uq_user_tenant_email"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="uq_user_tenant_email"),
+        # the mobile is the sign-in, so it is unique across every firm (a user without one is left out)
+        Index(
+            "uq_user_mobile",
+            "mobile",
+            unique=True,
+            postgresql_where=text("mobile IS NOT NULL"),
+            sqlite_where=text("mobile IS NOT NULL"),
+        ),
+    )
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
-    email: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Optional since mobile sign-in: NULL = none given. Older accounts keep theirs and may still sign in with it.
+    email: Mapped[str | None] = mapped_column(String(200))
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(String(20), default=UserRole.owner, nullable=False)
     totp_secret: Mapped[str | None] = mapped_column(String(64))
@@ -162,3 +175,8 @@ class User(PkUuidMixin, TimestampMixin, Base):
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     tenant: Mapped[Tenant] = relationship(back_populates="users")
+
+    @property
+    def label(self) -> str:
+        """How the person is named on screen and in "last edited by": the email if they gave one, else the mobile."""
+        return self.email or self.mobile or self.id

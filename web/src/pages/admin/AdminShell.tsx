@@ -12,7 +12,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           Metal ERP <span className="text-accent">· Operations</span>
         </span>
         <div className="flex items-center gap-4 text-sm">
-          <span className="text-[#8fa9b2]">{me?.email}</span>
+          <span className="text-[#8fa9b2]">{me?.label}</span>
           <button onClick={logout} className="text-[#8fa9b2] hover:text-[#eef4f6]">
             Sign out
           </button>

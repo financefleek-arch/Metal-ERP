@@ -148,28 +148,28 @@ def test_users_are_added_changed_and_disabled_with_the_plans_limit(client: TestC
         client,
         "POST",
         BASE + "/users",
-        {"email": "a@example.com", "password": "long-enough-1", "role": "owner"},
+        {"email": "a@example.com", "mobile": "9000000040", "password": "long-enough-1", "role": "owner"},
     )
     assert a.status_code == 201, a.text
     b = _req(
         client,
         "POST",
         BASE + "/users",
-        {"email": "b@example.com", "password": "long-enough-1", "role": "accountant"},
+        {"email": "b@example.com", "mobile": "9000000041", "password": "long-enough-1", "role": "accountant"},
     )
     assert b.status_code == 201
     over = _req(
         client,
         "POST",
         BASE + "/users",
-        {"email": "c@example.com", "password": "long-enough-1", "role": "viewer"},
+        {"email": "c@example.com", "mobile": "9000000042", "password": "long-enough-1", "role": "viewer"},
     )
     assert over.status_code == 409 and "allows 2 users" in over.json()["detail"]
     dup = _req(
         client,
         "POST",
         BASE + "/users",
-        {"email": "A@example.com", "password": "long-enough-1", "role": "viewer"},
+        {"email": "A@example.com", "mobile": "9000000043", "password": "long-enough-1", "role": "viewer"},
     )
     assert dup.status_code == 409
 

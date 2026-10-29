@@ -39,12 +39,12 @@ export const adminApi = {
 
   createUser: (
     firmId: string,
-    body: { email: string; password: string; role: AssignableRole },
+    body: { mobile: string; email?: string; password: string; role: AssignableRole },
   ) => api<AdminUser>(`/admin/firms/${firmId}/users`, { method: "POST", body }),
 
   patchUser: (
     userId: string,
-    body: Partial<{ role: AssignableRole; is_active: boolean; password: string }>,
+    body: Partial<{ role: AssignableRole; is_active: boolean; password: string; mobile: string }>,
   ) => api<AdminUser>(`/admin/users/${userId}`, { method: "PATCH", body }),
 
   disableUser: (userId: string) =>

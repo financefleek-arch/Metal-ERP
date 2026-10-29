@@ -41,7 +41,7 @@ from app.schemas_admin import (
     FirmWhatsappUpsert,
 )
 from app.security import hash_password
-from app.services import entitlements, firm_provisioning
+from app.services import account, entitlements, firm_provisioning
 
 router = APIRouter(
     prefix="/api/admin",
@@ -497,11 +497,19 @@ def create_firm_user(
             detail="Role must be owner, accountant, counter, or viewer",
         )
 
-    email = body.email.lower().strip()
-    # Email must be unique across ALL firms so login stays unambiguous —
-    # the same rule /api/auth/register enforces.
-    clash = session.scalar(select(User).where(func.lower(User.email) == email))
-    if clash is not None:
+    try:
+        mobile = account.normalize_mobile(body.mobile)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    email = body.email.lower().strip() if body.email else None
+    # The mobile is the sign-in, so it must be unique across ALL firms; an email given too must be as well
+    # (an older account may still sign in with it).
+    if session.scalar(select(User.id).where(User.mobile == mobile)) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this mobile number already exists",
+        )
+    if email and session.scalar(select(User.id).where(func.lower(User.email) == email)) is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="An account with this email already exists",
@@ -515,6 +523,7 @@ def create_firm_user(
     user = User(
         tenant_id=firm.id,
         email=email,
+        mobile=mobile,  # typed by the operator, so not marked verified until a WhatsApp reset code reaches it
         password_hash=hash_password(body.password),
         role=body.role,
         # the operator chose this password, so the person must replace it at first sign-in
@@ -558,6 +567,21 @@ def update_firm_user(
             status_code=status.HTTP_409_CONFLICT,
             detail="This is the firm's only active owner",
         )
+
+    if data.get("mobile"):
+        try:
+            mobile = account.normalize_mobile(data["mobile"])
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+        if mobile != user.mobile:
+            if session.scalar(select(User.id).where(User.mobile == mobile, User.id != user.id)) is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="An account with this mobile number already exists",
+                )
+            user.mobile = mobile
+            user.mobile_verified_at = None
+            user.token_version += 1  # the sign-in changed: end the old sessions
 
     if new_role is not None:
         user.role = new_role

@@ -192,7 +192,7 @@ def test_created_user_logs_in_and_is_scoped_to_its_firm(client: TestClient) -> N
     r = client.post(
         f"/api/admin/firms/{firm_a['id']}/users",
         headers=_auth(token),
-        json={"email": "ramesh@alpha.example.com", "password": "ramesh-pass-1", "role": "owner"},
+        json={"email": "ramesh@alpha.example.com", "mobile": "9000000010", "password": "ramesh-pass-1", "role": "owner"},
     )
     assert r.status_code == 201, r.text
     assert r.json()["role"] == "owner"
@@ -222,7 +222,7 @@ def test_add_user_duplicate_email_rejected_across_firms(client: TestClient) -> N
     r = client.post(
         f"/api/admin/firms/{firm['id']}/users",
         headers=_auth(token),
-        json={"email": "taken@firm.example.com", "password": "whatever-1", "role": "accountant"},
+        json={"email": "taken@firm.example.com", "mobile": "9000000011", "password": "whatever-1", "role": "accountant"},
     )
     assert r.status_code == 409
 
@@ -235,7 +235,7 @@ def test_add_user_short_password_422(client: TestClient) -> None:
     r = client.post(
         f"/api/admin/firms/{firm['id']}/users",
         headers=_auth(token),
-        json={"email": "x@short.example.com", "password": "short", "role": "viewer"},
+        json={"email": "x@short.example.com", "mobile": "9000000012", "password": "short", "role": "viewer"},
     )
     assert r.status_code == 422
 
@@ -248,7 +248,7 @@ def test_reset_password_invalidates_old_and_accepts_new(client: TestClient) -> N
     user = client.post(
         f"/api/admin/firms/{firm['id']}/users",
         headers=_auth(token),
-        json={"email": "reset@co.example.com", "password": "old-pass-11", "role": "accountant"},
+        json={"email": "reset@co.example.com", "mobile": "9000000013", "password": "old-pass-11", "role": "accountant"},
     ).json()
 
     r = client.patch(
@@ -276,13 +276,14 @@ def test_disable_user_kills_token(client: TestClient) -> None:
     client.post(
         f"/api/admin/firms/{firm['id']}/users",
         headers=_auth(token),
-        json={"email": "owner@disable.example.com", "password": "owner-pass-1", "role": "owner"},
+        json={"email": "owner@disable.example.com", "mobile": "9000000014", "password": "owner-pass-1", "role": "owner"},
     )
     user = client.post(
         f"/api/admin/firms/{firm['id']}/users",
         headers=_auth(token),
         json={
             "email": "clerk@disable.example.com",
+            "mobile": "9000000015",
             "password": "clerk-pass-1",
             "role": "accountant",
         },
@@ -311,7 +312,7 @@ def test_last_active_owner_cannot_be_disabled_or_demoted(client: TestClient) -> 
     owner = client.post(
         f"/api/admin/firms/{firm['id']}/users",
         headers=_auth(token),
-        json={"email": "solo@owner.example.com", "password": "solo-pass-1", "role": "owner"},
+        json={"email": "solo@owner.example.com", "mobile": "9000000016", "password": "solo-pass-1", "role": "owner"},
     ).json()
 
     # demote -> blocked
@@ -339,7 +340,7 @@ def test_last_active_owner_cannot_be_disabled_or_demoted(client: TestClient) -> 
     client.post(
         f"/api/admin/firms/{firm['id']}/users",
         headers=_auth(token),
-        json={"email": "second@owner.example.com", "password": "second-pass-1", "role": "owner"},
+        json={"email": "second@owner.example.com", "mobile": "9000000017", "password": "second-pass-1", "role": "owner"},
     )
     r = client.patch(
         f"/api/admin/users/{owner['id']}",
@@ -385,3 +386,47 @@ def test_make_platform_admin_is_idempotent_and_reuses_ops_tenant(client: TestCli
             select(Tenant).where(Tenant.legal_name == "Fleek Operations")
         ).all()
         assert len(ops) == 1
+
+
+# ---------------------------------------------------------------- mobile sign-in (the mobile is the login)
+
+
+def test_a_user_needs_a_mobile_and_the_email_is_optional(client: TestClient) -> None:
+    token = _admin_token(client)
+    firm = client.post("/api/admin/firms", headers=_auth(token), json={"legal_name": "Phone Co"}).json()
+    path = f"/api/admin/firms/{firm['id']}/users"
+    no_mobile = client.post(path, headers=_auth(token), json={"email": "a@phone.example.com", "password": "long-enough-1"})
+    assert no_mobile.status_code == 422
+    bad = client.post(path, headers=_auth(token), json={"mobile": "12345678901", "password": "long-enough-1"})
+    assert bad.status_code == 422
+
+    r = client.post(path, headers=_auth(token), json={"mobile": "98765 43210", "password": "long-enough-1", "role": "owner"})
+    assert r.status_code == 201, r.text
+    assert r.json()["email"] is None and r.json()["mobile"] == "+919876543210"
+    login = client.post("/api/auth/login", json={"identifier": "9876543210", "password": "long-enough-1"})
+    assert login.status_code == 200, login.text
+    me = client.get("/api/auth/me", headers=_auth(login.json()["access_token"])).json()
+    assert me["email"] is None and me["label"] == "+919876543210"
+    assert me["must_change_password"] is True  # the operator chose the password
+
+    dup = client.post(path, headers=_auth(token), json={"mobile": "+91 98765 43210", "password": "long-enough-2"})
+    assert dup.status_code == 409 and "mobile" in dup.json()["detail"]
+
+
+def test_the_operator_can_give_an_older_account_its_mobile(client: TestClient) -> None:
+    token = _admin_token(client)
+    firm = client.post("/api/admin/firms", headers=_auth(token), json={"legal_name": "Older Co"}).json()
+    path = f"/api/admin/firms/{firm['id']}/users"
+    first = client.post(path, headers=_auth(token), json={"mobile": "9811111111", "password": "long-enough-1", "role": "owner"}).json()
+    old = client.post(path, headers=_auth(token), json={"mobile": "9822222222", "password": "long-enough-1"}).json()
+    session = client.post("/api/auth/login", json={"identifier": "9822222222", "password": "long-enough-1"}).json()
+
+    taken = client.patch(f"/api/admin/users/{old['id']}", headers=_auth(token), json={"mobile": "9811111111"})
+    assert taken.status_code == 409
+    r = client.patch(f"/api/admin/users/{old['id']}", headers=_auth(token), json={"mobile": "9833333333"})
+    assert r.status_code == 200 and r.json()["mobile"] == "+919833333333"
+    assert first["mobile"] == "+919811111111"
+    # the old number no longer signs in, the new one does, and the old session ended
+    assert client.post("/api/auth/login", json={"identifier": "9822222222", "password": "long-enough-1"}).status_code == 401
+    assert client.post("/api/auth/login", json={"identifier": "9833333333", "password": "long-enough-1"}).status_code == 200
+    assert client.get("/api/auth/me", headers=_auth(session["access_token"])).status_code == 401

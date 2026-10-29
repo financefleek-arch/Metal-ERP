@@ -574,7 +574,7 @@ function UsersTable({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line text-left text-[11px] uppercase tracking-[0.05em] text-muted">
-              <th className="py-2 pr-3 font-semibold">Email</th>
+              <th className="py-2 pr-3 font-semibold">Mobile (sign-in)</th>
               <th className="py-2 pr-3 font-semibold">Role</th>
               <th className="py-2 pr-3 font-semibold">Status</th>
               <th className="py-2 text-right font-semibold">Actions</th>
@@ -641,13 +641,17 @@ function UserRow({
   onChanged: () => void;
 }) {
   const [pw, setPw] = useState("");
+  const [editingMobile, setEditingMobile] = useState(false);
+  const [mobile, setMobile] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   const patch = useMutation({
-    mutationFn: (body: Partial<{ is_active: boolean; password: string }>) =>
+    mutationFn: (body: Partial<{ is_active: boolean; password: string; mobile: string }>) =>
       adminApi.patchUser(user.id, body),
     onSuccess: () => {
       setPw("");
+      setMobile("");
+      setEditingMobile(false);
       onChanged();
     },
     onError: (e) => setErr(e instanceof ApiError ? e.message : "Update failed"),
@@ -662,7 +666,14 @@ function UserRow({
   return (
     <>
       <tr className="border-b border-line/60">
-        <td className="py-2 pr-3 font-mono text-xs">{user.email}</td>
+        <td className="py-2 pr-3 text-xs">
+          {user.mobile ? (
+            <span className="font-mono">{user.mobile}</span>
+          ) : (
+            <span className="text-warn">No mobile: signs in with email</span>
+          )}
+          {user.email && <div className="text-muted">{user.email}</div>}
+        </td>
         <td className="py-2 pr-3">
           <span
             className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
@@ -686,6 +697,12 @@ function UserRow({
           )}
         </td>
         <td className="py-2 text-right whitespace-nowrap">
+          <button
+            className="rounded border border-line px-2 py-1 text-xs text-ink hover:bg-ground"
+            onClick={() => setEditingMobile((v) => !v)}
+          >
+            {editingMobile ? "Cancel" : user.mobile ? "Change mobile" : "Set mobile"}
+          </button>{" "}
           <button
             className="rounded border border-line px-2 py-1 text-xs text-ink hover:bg-ground"
             onClick={onResetToggle}
@@ -720,6 +737,38 @@ function UserRow({
           )}
         </td>
       </tr>
+      {editingMobile && (
+        <tr>
+          <td colSpan={4} className="py-2">
+            <div className="flex flex-wrap items-end gap-2 rounded-md bg-ground/60 p-3">
+              <div>
+                <label className="label">Mobile number (WhatsApp)</label>
+                <input
+                  className="field w-56"
+                  type="tel"
+                  autoFocus
+                  value={mobile}
+                  onChange={(e) => setMobile(e.target.value)}
+                  placeholder="98765 43210"
+                />
+              </div>
+              <button
+                className="btn-primary"
+                disabled={mobile.replace(/\D/g, "").length < 10 || patch.isPending}
+                onClick={() => {
+                  setErr(null);
+                  patch.mutate({ mobile: mobile.trim() });
+                }}
+              >
+                {patch.isPending ? "Saving…" : "Save mobile"}
+              </button>
+              <p className="w-full text-xs text-muted">
+                This becomes their sign-in and signs them out of every device. Reset codes go to it on WhatsApp.
+              </p>
+            </div>
+          </td>
+        </tr>
+      )}
       {resetting && (
         <tr>
           <td colSpan={4} className="py-2">
@@ -772,6 +821,7 @@ function AddUserForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AssignableRole>("accountant");
   const [pw, setPw] = useState("");
@@ -780,7 +830,8 @@ function AddUserForm({
   const create = useMutation({
     mutationFn: () =>
       adminApi.createUser(firmId, {
-        email: email.trim(),
+        mobile: mobile.trim(),
+        ...(email.trim() ? { email: email.trim() } : {}),
         password: pw,
         role,
       }),
@@ -793,10 +844,20 @@ function AddUserForm({
       <div className="mb-1 text-sm font-semibold">Add user</div>
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="label">Email</label>
+          <label className="label">Mobile (their sign-in)</label>
           <input
-            className="field w-64"
+            className="field w-48"
+            type="tel"
             autoFocus
+            value={mobile}
+            onChange={(e) => setMobile(e.target.value)}
+            placeholder="98765 43210"
+          />
+        </div>
+        <div>
+          <label className="label">Email (optional)</label>
+          <input
+            className="field w-56"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="name@firm.com"
@@ -828,7 +889,7 @@ function AddUserForm({
         </div>
         <button
           className="btn-primary"
-          disabled={!email.trim() || pw.length < 8 || create.isPending}
+          disabled={mobile.replace(/\D/g, "").length < 10 || pw.length < 8 || create.isPending}
           onClick={() => {
             setErr(null);
             create.mutate();
@@ -842,7 +903,7 @@ function AddUserForm({
       </div>
       {err && <p className="err">{err}</p>}
       <p className="mt-2 text-xs text-muted">
-        You choose the password and pass it to the client. No email is sent.
+        You choose the password and pass it to the client. Nothing is sent: they sign in with this mobile number.
       </p>
     </div>
   );

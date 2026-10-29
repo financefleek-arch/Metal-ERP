@@ -1,7 +1,8 @@
 """Auth routes: sign up (verified), sign in, reset or change a password, read the current user.
 
-Sign-up needs both a mobile and an email code and creates the firm in Fleek first (docs/PLAN-
-onboarding-and- account.md). The public doors are behind a CAPTCHA and database-backed limits.
+Sign-up needs one WhatsApp code to the mobile (the sign-in; the email is optional) and creates the firm
+in Fleek first (docs/PLAN-onboarding-and-account.md). The public doors are behind a CAPTCHA and
+database-backed limits.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 LOCKOUT_WINDOW = 15 * 60
 _NO_SUCH_USER_HASH = hash_password("not-a-real-password")
-LOGIN_BAD = "Incorrect email or password"
+LOGIN_BAD = "Incorrect mobile number or password"
 LOCKED = "Too many sign-in attempts. Try again in 15 minutes, or reset your password."
 
 
@@ -66,7 +67,7 @@ def public_config() -> dict[str, str | None]:
 
 @router.post("/signup/start", response_model=SignupStarted)
 def signup_start(body: SignupStartRequest, request: Request, session: SessionDep) -> SignupStarted:
-    """Step 1: validate, CAPTCHA, then send a WhatsApp code to the mobile and an email code. Makes no firm."""
+    """Step 1: validate, CAPTCHA, then send a WhatsApp code to the mobile. Makes no firm."""
     ip = client_key(request)
     if not body.accept_terms:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Please accept the terms to continue")
@@ -88,27 +89,25 @@ def signup_start(body: SignupStartRequest, request: Request, session: SessionDep
     return SignupStarted(
         request_id=started.request_id,
         mobile_masked=started.mobile_masked,
-        email_masked=started.email_masked,
     )
 
 
 @router.post("/signup/resend", status_code=status.HTTP_204_NO_CONTENT)
 def signup_resend(body: SignupResendRequest, session: SessionDep) -> None:
     try:
-        account.resend_signup_code(session, body.request_id, body.channel)
+        account.resend_signup_code(session, body.request_id)
     except CodeError as exc:
         raise _http(exc) from None
 
 
 @router.post("/signup/verify", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 def signup_verify(body: SignupVerifyRequest, request: Request, session: SessionDep) -> TokenResponse:
-    """Step 2: both codes right -> the Fleek org (Free plan), then the firm and its owner, then a token."""
+    """Step 2: the code right -> the Fleek org (Free plan), then the firm and its owner, then a token."""
     try:
         user, _ = account.verify_signup(
             session,
             request_id=body.request_id,
-            whatsapp_code=body.whatsapp_code,
-            email_code=body.email_code,
+            code=body.code,
             ip=client_key(request),
         )
     except CodeError as exc:
@@ -142,27 +141,23 @@ def register(body: RegisterRequest, session: SessionDep) -> TokenResponse:
 
 @router.post("/login", response_model=TokenResponse)
 def login(body: LoginRequest, request: Request, session: SessionDep) -> TokenResponse:
-    email = body.email.lower().strip()
+    who = account.identity_key(body.identifier)
     ip = client_key(request)
-    pair = f"{email}|{ip}"
+    pair = f"{who}|{ip}"
     # Three limits, so one person cannot lock the owner out by guessing from afar (the pair), yet a guesser
     # cannot try without end from one address (the ip) or hammer one account from many (the email).
     if (
         auth_throttle.blocked(session, "login_fail", pair, limit=5, window_seconds=LOCKOUT_WINDOW)
-        or auth_throttle.blocked(session, "login_email", email, limit=25, window_seconds=LOCKOUT_WINDOW)
+        or auth_throttle.blocked(session, "login_email", who, limit=25, window_seconds=LOCKOUT_WINDOW)
         or auth_throttle.blocked(session, "login_ip", ip, limit=40, window_seconds=LOCKOUT_WINDOW)
     ):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, LOCKED)
 
-    # The schema allows the same email in two tenants; sign-up and the operator paths enforce global
-    # uniqueness, but stay defensive so a stray duplicate cannot turn login into a 500.
-    user = session.scalars(
-        select(User).where(func.lower(User.email) == email).order_by(User.created_at)
-    ).first()
-    # an unknown email costs the same time as a wrong password, so the two cannot be told apart by timing
+    user = account.find_user(session, body.identifier)
+    # an unknown account costs the same time as a wrong password, so the two cannot be told apart by timing
     hashed = user.password_hash if user is not None else _NO_SUCH_USER_HASH
     if not verify_password(body.password, hashed) or user is None:
-        for kind, key in (("login_fail", pair), ("login_email", email), ("login_ip", ip)):
+        for kind, key in (("login_fail", pair), ("login_email", who), ("login_ip", ip)):
             auth_throttle.record(session, kind, key)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, LOGIN_BAD)
     if not user.is_active:
@@ -176,11 +171,11 @@ def login(body: LoginRequest, request: Request, session: SessionDep) -> TokenRes
 
 @router.post("/password/forgot", status_code=status.HTTP_204_NO_CONTENT)
 def password_forgot(body: ForgotPasswordRequest, request: Request, session: SessionDep) -> None:
-    """Send a reset code. The answer is the same whether or not the email has an account."""
+    """Send a reset code. The answer is the same whether or not the mobile has an account."""
     ip = client_key(request)
     captcha.verify(body.captcha_token, ip)
     try:
-        account.start_reset(session, email=body.email, channel=body.channel, ip=ip)
+        account.start_reset(session, identifier=body.identifier, ip=ip)
     except CodeError as exc:  # only the per-address limit reaches here; account-specific refusals stay silent
         raise _http(exc) from None
 
@@ -190,7 +185,7 @@ def password_reset(body: ResetPasswordRequest, request: Request, session: Sessio
     try:
         user = account.finish_reset(
             session,
-            email=body.email,
+            identifier=body.identifier,
             code=body.code,
             new_password=body.new_password,
             ip=client_key(request),
@@ -212,7 +207,7 @@ def change_password(body: ChangePasswordRequest, user: CurrentUser, session: Ses
     if not verify_password(body.current_password, user.password_hash):
         auth_throttle.hit(session, "pw_change", key, limit=5, window_seconds=LOCKOUT_WINDOW)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Your current password is not right")
-    bad = passwords.problem(body.new_password, email=user.email)
+    bad = passwords.problem(body.new_password, email=user.email, mobile=user.mobile)
     if bad:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, bad)
     if verify_password(body.new_password, user.password_hash):
@@ -267,6 +262,7 @@ def me(user: CurrentUser, session: SessionDep) -> UserOut:
     return UserOut(
         id=user.id,
         email=user.email,
+        label=user.label,
         role=user.role,
         tenant_id=user.tenant_id,
         is_platform_admin=user.is_platform_admin,

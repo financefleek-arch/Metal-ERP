@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.models._mixins import (
     AddressType,
@@ -73,14 +73,24 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    """`identifier` is a mobile number. An email still works for accounts made before mobile sign-in (and for
+    Fleek operators); the old `email` key is read as the identifier, so a client not yet updated keeps working."""
+
+    identifier: str = Field(min_length=3, max_length=200)
     password: str
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_email_key(cls, data: object) -> object:
+        if isinstance(data, dict) and "identifier" not in data and "email" in data:
+            return {**data, "identifier": data["email"]}
+        return data
 
 
 class SignupStartRequest(BaseModel):
     firm_name: LegalName
     owner_name: Annotated[str, Field(min_length=2, max_length=100)]
-    email: Annotated[EmailStr, Field(max_length=200)]
+    email: Annotated[EmailStr, Field(max_length=200)] | None = None  # optional, never verified
     mobile: Annotated[str, Field(min_length=10, max_length=20)]
     password: str = Field(min_length=8, max_length=200)
     accept_terms: bool
@@ -90,28 +100,24 @@ class SignupStartRequest(BaseModel):
 class SignupStarted(BaseModel):
     request_id: str
     mobile_masked: str
-    email_masked: str
 
 
 class SignupResendRequest(BaseModel):
     request_id: str
-    channel: Literal["whatsapp", "email"]
 
 
 class SignupVerifyRequest(BaseModel):
     request_id: str
-    whatsapp_code: Annotated[str, Field(min_length=6, max_length=6, pattern=r"^\d{6}$")]
-    email_code: Annotated[str, Field(min_length=6, max_length=6, pattern=r"^\d{6}$")]
+    code: Annotated[str, Field(min_length=6, max_length=6, pattern=r"^\d{6}$")]
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-    channel: Literal["email", "whatsapp"] = "email"
+    identifier: str = Field(min_length=3, max_length=200)  # mobile (or the email of an older account)
     captcha_token: str | None = None
 
 
 class ResetPasswordRequest(BaseModel):
-    email: EmailStr
+    identifier: str = Field(min_length=3, max_length=200)
     code: Annotated[str, Field(min_length=6, max_length=6, pattern=r"^\d{6}$")]
     new_password: str = Field(min_length=8, max_length=200)
 
@@ -140,7 +146,9 @@ class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
-    email: EmailStr
+    email: EmailStr | None = None
+    # what to call this person on screen: the email if there is one, else the mobile
+    label: str = ""
     role: UserRole
     tenant_id: str
     # Platform operator — the SPA swaps the whole app for the admin console.
