@@ -264,9 +264,9 @@ export function MakeCatalogDialog({
 
   /** price-list path: an identical earlier PDF comes back already done; a big one builds in the background */
   async function createPdf(path: string) {
-    const res = await postJson(base, { ...request, title: title.trim() });
-    if (!res.ok) throw await failure(res);
-    let j = (await res.json()) as OutputJob;
+    const started = await postJson(base, { ...request, title: title.trim() });
+    if (!started.ok) throw await failure(started);
+    let j = (await started.json()) as OutputJob;
     setJob(j);
     while (j.status === "queued" || j.status === "running") {
       await new Promise((r) => window.setTimeout(r, 1500));
