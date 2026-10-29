@@ -327,6 +327,9 @@ export type PriceBasis = "pack" | "piece";
 
 export type CatalogSelection = { ids: string[] } | { filter: ItemFilter };
 
+/** Which rows of a supplier price list a customer PDF is made from. */
+export type PdfTarget = { ids: string[] } | { filter: object } | { all_included: true };
+
 export interface CatalogLayout {
   columns: CatalogColumns;
   group_by: GroupBy;

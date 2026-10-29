@@ -204,6 +204,69 @@ def test_search_by_name_grade_size(client: TestClient) -> None:
     ]
 
 
+def test_search_dimensions_without_the_x(client: TestClient) -> None:
+    """'30 26' finds a 30x26 item whether the size is in the name or only in
+    size_text, and a typed 'x' / '*' works the same; the exact-dimension item
+    ranks above one that merely contains both numbers."""
+    h = _h(_token(client, "it-dims@x.example.com"))
+    _mk(client, h, "SS Tray 30x26")
+    _mk(client, h, "SS Tray", size_text="24x20")
+    _mk(client, h, "Tray 26 inch 30 holes")
+
+    def names(q: str) -> list[str]:
+        return [i["name"] for i in client.get("/api/items", params={"q": q}, headers=h).json()]
+
+    for term in ("30 26", "30x26", "30 x 26", "30*26", "26 30"):
+        got = names(term)
+        assert "SS Tray 30x26" in got, f"{term!r} -> {got}"
+    assert names("30 26")[0] == "SS Tray 30x26"  # adjacent numbers rank first
+    # the size lives only in size_text
+    assert names("24 20") == ["SS Tray"]
+
+
+def test_search_decimals_are_one_measure(client: TestClient) -> None:
+    """'1.5' is a single measure: it finds '1.5 mm' (stored as the tokens 1 5)
+    and not an item that merely has a 1 and a 5 somewhere."""
+    h = _h(_token(client, "it-dec@x.example.com"))
+    _mk(client, h, "SS Sheet 1.5 mm")
+    _mk(client, h, "SS Sheet 15 mm 1 pc")
+    _mk(client, h, "Pipe 1/2 inch")
+
+    def names(q: str) -> list[str]:
+        return [i["name"] for i in client.get("/api/items", params={"q": q}, headers=h).json()]
+
+    assert names("1.5") == ["SS Sheet 1.5 mm"]
+    assert names("1.5 mm") == ["SS Sheet 1.5 mm"]
+    assert names("1/2") == ["Pipe 1/2 inch"]
+
+
+def test_search_exact_and_prefix_outrank_loose(client: TestClient) -> None:
+    """The item named exactly what was typed beats a loose match, even when
+    the loose one is the confirmed row."""
+    h = _h(_token(client, "it-tier@x.example.com"))
+    _mk(client, h, "Steel Glass Large")
+    _mk(client, h, "Glass Steel")
+    _mk(client, h, "Glass")
+    got = [i["name"] for i in client.get("/api/items", params={"q": "glass"}, headers=h).json()]
+    assert got[0] == "Glass"
+    assert got.index("Glass Steel") < got.index("Steel Glass Large")
+
+
+def test_search_splits_digit_letter_glue(client: TestClient) -> None:
+    """'10kg' finds '10 kg' and 'ss304' finds 'SS 304', and vice versa."""
+    h = _h(_token(client, "it-glue@x.example.com"))
+    _mk(client, h, "Weight Plate 10 kg")
+    _mk(client, h, "SS 304 Pipe")
+    _mk(client, h, "Spare 5kg Bag")
+
+    def names(q: str) -> list[str]:
+        return [i["name"] for i in client.get("/api/items", params={"q": q}, headers=h).json()]
+
+    assert names("10kg") == ["Weight Plate 10 kg"]
+    assert names("5 kg") == ["Spare 5kg Bag"]
+    assert names("ss304") == ["SS 304 Pipe"]
+
+
 def test_search_is_synonym_aware(client: TestClient) -> None:
     """Typing a synonym / spelling variant finds an item stored under the
     canonical token — register seeds the bartan dictionary, so 'karahi',

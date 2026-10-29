@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
-from sqlalchemy import Select, and_, func, or_, select
+from sqlalchemy import Select, String, and_, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
@@ -119,6 +120,31 @@ def hsn_gst_rate(session: Session, code: str | None) -> Decimal | None:
     return Decimal(str(rate)) if rate is not None else None
 
 
+_TOKEN_RE = re.compile(r"\d+|[a-z]+")
+# a decimal or fraction typed as one measure: 1.5, 0.75, 1/2, 3/4
+_DECIMAL_RE = re.compile(r"\d+(?:[./]\d+)+")
+# shortest word that gets typo tolerance inside a multi-word query
+_FUZZY_MIN_LEN = 4
+
+
+def _search_tokens(nkey: str) -> list[str]:
+    """Query tokens for the AND rung. Splits digit/letter glue ("10kg" -> 10, kg;
+    "ss304" -> ss, 304) so it finds "10 kg" / "SS 304" and the other way round,
+    and drops the "x" in a dimension ("30 x 26" -> 30, 26): the stored side may
+    spell the size without it ("30x26" in size_text becomes "30 26")."""
+    toks = _TOKEN_RE.findall(nkey)
+    if len(toks) > 1:
+        toks = [t for t in toks if t != "x"] or toks
+    return toks
+
+
+def _clean_col(col, is_pg: bool):  # type: ignore[no-untyped-def]
+    """Lower-cased column with every non-alphanumeric run turned into a space (Postgres);
+    the SQLite test path only lower-cases."""
+    c = func.lower(func.coalesce(col, ""))
+    return func.regexp_replace(c, "[^a-z0-9]+", " ", "g") if is_pg else c
+
+
 def apply_search(
     stmt: Select, session: Session, q: str, *, tenant_id: str | None = None
 ) -> Select:
@@ -148,19 +174,66 @@ def apply_search(
     is_pg = session.bind is not None and session.bind.dialect.name == "postgresql"
 
     syn = load_synonym_map(session, tenant_id) if tenant_id else {}
-    nkey = normalize_name(q, syn)
-    ntokens = [t for t in nkey.split(" ") if t] if nkey else []
-    multi = len(ntokens) > 1
+    # "1.5" / "1/2" are one measure, not two numbers: lift them out of the
+    # query and require their digits side by side (stored "1.5 mm" normalizes
+    # to the tokens "1 5 mm"). Without this "1.5" matched any 1 and 5.
+    decimals = [re.findall(r"\d+", m.group(0)) for m in _DECIMAL_RE.finditer(q)]
+    nkey = normalize_name(_DECIMAL_RE.sub(" ", q), syn)
+    ntokens = _search_tokens(nkey)
+    multi = len(ntokens) + len(decimals) > 1 or bool(decimals)
 
     # --- the normalized rung: AND across query tokens so more words NARROW ---
-    # Each normalized token must appear in name_normalized (or an alias). A
-    # single-token query is the common "type a name" case; a two-token query
-    # ("topia steel") should only match items carrying *both*.
-    def _tokens_all_in(col):  # type: ignore[no-untyped-def]
-        return and_(*[col.like(f"%{t}%") for t in ntokens]) if ntokens else None
+    # Each normalized token must appear in the item's searchable text (or an
+    # alias). A single-token query is the common "type a name" case; a
+    # two-token query ("topia steel") should only match items carrying *both*.
+    #
+    # The searchable text is the normalized name PLUS the size and grade
+    # columns (a Tally import often holds "Tray" + size_text "30x26"), with
+    # separators turned to spaces so "30x26", "30 x 26" and "30*26" are all the
+    # tokens 30, 26. On Postgres a numeric token must start at a digit
+    # boundary ("30" finds "30x26" / "ss304" but not "130" or "300 ml").
+    hay = (
+        literal(" ", String)
+        + Item.name_normalized
+        + " "
+        + _clean_col(Item.size_text, is_pg)
+        + " "
+        + _clean_col(Item.grade, is_pg)
+    )
 
-    name_norm_hit = _tokens_all_in(Item.name_normalized)
-    alias_norm_hit = _tokens_all_in(ItemAlias.alias_normalized)
+    def _tok_hit(col, t):  # type: ignore[no-untyped-def]
+        if is_pg and t.isdigit():
+            return col.op("~")(f"(^|[^0-9]){t}")
+        hit = col.like(f"%{t}%")
+        # a mistyped word in a multi-word query ("topia stel") still has to
+        # match *something*: allow a near-miss on words long enough to be
+        # unambiguous. The AND across tokens still narrows the result.
+        if is_pg and multi and len(t) >= _FUZZY_MIN_LEN:
+            return or_(hit, func.word_similarity(t, col) > _WORD_SIMILARITY_FLOOR)
+        return hit
+
+    def _phrase_hit(nums: list[str]):  # type: ignore[no-untyped-def]
+        s = " ".join(nums)
+        if is_pg:
+            return hay.op("~")(f"(^|[^0-9]){s}([^0-9]|$)")
+        return hay.like(f"%{s}%")
+
+    token_hits = [_tok_hit(hay, t) for t in ntokens] + [_phrase_hit(d) for d in decimals]
+    name_norm_hit = and_(*token_hits) if token_hits else None
+    alias_norm_hit = (
+        and_(*[ItemAlias.alias_normalized.like(f"%{t}%") for t in ntokens])
+        if ntokens
+        else None
+    )
+    # Items whose numbers sit together in query order ("30 26" -> "30 x 26")
+    # rank above items that merely contain both numbers somewhere.
+    nums = [t for t in ntokens if t.isdigit()]
+    dims_adjacent = None
+    if len(nums) > 1:
+        dims_adjacent = or_(
+            hay.like("%" + " ".join(nums) + "%"),
+            hay.like("%" + " x ".join(nums) + "%"),
+        )
 
     alias_exists = (
         select(ItemAlias.item_id)
@@ -185,6 +258,23 @@ def apply_search(
     ]
     if name_norm_hit is not None:
         conds.append(name_norm_hit)
+    adjacency = (
+        [case((dims_adjacent, 0), else_=1)] if dims_adjacent is not None else []
+    )
+    # Relevance tier, ahead of "confirmed": the item named exactly what was
+    # typed, then one whose name starts with it, then the rest. Otherwise a
+    # confirmed loose match buried the exact one.
+    tiers = (
+        [
+            case(
+                (Item.name_normalized == nkey, 0),
+                (Item.name_normalized.like(f"{nkey}%"), 1),
+                else_=2,
+            )
+        ]
+        if nkey
+        else []
+    )
 
     if is_pg:
         # Fuzzy catch-all for a *single* mistyped token only. On a multi-token
@@ -197,15 +287,19 @@ def apply_search(
             order_sim = wsim
         else:
             # rank by how well the whole phrase matches the whole name
-            order_sim = func.similarity(nkey, Item.name_normalized)
+            order_sim = func.similarity(nkey or q.lower(), Item.name_normalized)
         stmt = stmt.where(or_(*conds)).order_by(
+            *tiers,
             (Item.status == "confirmed").desc(),
+            *adjacency,
             order_sim.desc(),
             Item.times_billed.desc(),
         )
     else:
         stmt = stmt.where(or_(*conds)).order_by(
+            *tiers,
             (Item.status == "confirmed").desc(),
+            *adjacency,
             Item.times_billed.desc(),
             func.lower(Item.name),
         )

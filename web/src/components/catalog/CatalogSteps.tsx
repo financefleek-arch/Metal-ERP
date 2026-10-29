@@ -21,7 +21,7 @@ type Panel = "prices" | "groups" | null;
  * The review as three steps that stay in view: Prices, Groups, Your items. Each shows where it
  * stands and opens its own panel. The third cell holds the one button that adds products to your
  * items (the selection if there is one, otherwise everything included), and once they are in,
- * the next things to do: update prices if the margin moved, open them, make a customer catalog.
+ * the next things to do: update prices if the margin moved, open them in Items.
  */
 export function CatalogSteps({
   catalog,
@@ -33,7 +33,6 @@ export function CatalogSteps({
   resetting,
   onResetItemMargins,
   onLook,
-  onMakeCatalog,
 }: {
   catalog: CatalogDetail;
   groups: GroupSummary[];
@@ -46,7 +45,6 @@ export function CatalogSteps({
   resetting: boolean;
   onResetItemMargins: () => void;
   onLook: (f: Pick<ItemFilter, "suggested_group" | "no_suggestion">) => void;
-  onMakeCatalog: () => void;
 }) {
   const qc = useQueryClient();
   const nav = useNavigate();
@@ -332,9 +330,6 @@ export function CatalogSteps({
             onClick={() => nav(`/items?catalog=${catalog.id}`)}
           >
             Open in Items
-          </button>
-          <button type="button" className="btn-primary h-8 px-3" onClick={onMakeCatalog}>
-            Make customer catalog
           </button>
         </div>
       )}

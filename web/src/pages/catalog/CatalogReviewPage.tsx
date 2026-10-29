@@ -26,8 +26,7 @@ import {
 import { SupplierPicker } from "../../components/catalog/SupplierPicker";
 import { EditableNumber, EditableText } from "../../components/catalog/Editable";
 import { MakeCatalogDialog } from "../../components/catalog/MakeCatalogDialog";
-import { PriceListPdfDialog, type PdfTarget } from "../../components/catalog/PriceListPdfDialog";
-import type { ItemFilter as ItemsFilter } from "../../lib/types";
+import type { PdfTarget } from "../../lib/catalog";
 import { ImageLightbox } from "../../components/catalog/ImageLightbox";
 import { ReplacePhoto } from "../../components/catalog/ReplacePhoto";
 import { CatalogSteps } from "../../components/catalog/CatalogSteps";
@@ -94,7 +93,6 @@ export function CatalogReviewPage() {
   const [flash, setFlash] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [makeOpen, setMakeOpen] = useState(false);
   const [pdfOpen, setPdfOpen] = useState(false);
   const [zoomRow, setZoomRow] = useState<CatalogItem | null>(null);
   const [pickSupplier, setPickSupplier] = useState(false);
@@ -106,8 +104,6 @@ export function CatalogReviewPage() {
     queryFn: () => api<{ count: number }>("/items/count", { method: "POST", body: { catalog_id: id } }),
   });
   const itemCount = inItems.data?.count ?? 0;
-  // the Items list's own filter (price list = this one), not the price list page's row filter
-  const makeSelection: { filter: ItemsFilter } = { filter: { catalog_id: id } };
 
   // included rows that are not in your items yet
   const notAddedQ = useQuery({
@@ -616,7 +612,6 @@ export function CatalogReviewPage() {
             setView("group");
             setLook(f);
           }}
-          onMakeCatalog={() => setMakeOpen(true)}
         />
       )}
 
@@ -1182,19 +1177,14 @@ export function CatalogReviewPage() {
         />
       )}
       {pdfOpen && cat && (
-        <PriceListPdfDialog
-          catalogId={cat.id}
-          defaultTitle={cat.title}
-          target={selectedCount > 0 ? (target() as PdfTarget) : { all_included: true }}
-          onClose={() => setPdfOpen(false)}
-        />
-      )}
-      {makeOpen && cat && (
         <MakeCatalogDialog
-          selection={makeSelection}
-          count={itemCount}
+          priceList={{
+            catalogId: cat.id,
+            target: selectedCount > 0 ? (target() as PdfTarget) : { all_included: true },
+          }}
+          count={selectedCount > 0 ? selectedCount : (total ?? 0)}
           defaultTitle={cat.title}
-          onClose={() => setMakeOpen(false)}
+          onClose={() => setPdfOpen(false)}
         />
       )}
       <p className="mt-2 text-xs text-muted">

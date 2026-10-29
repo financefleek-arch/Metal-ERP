@@ -2210,6 +2210,10 @@ function PartyPicker({
   const [hi, setHi] = useState(0);
   const [creating, setCreating] = useState(false);
   const debQ = useDebounced(q.trim(), 250);
+  const partyListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    partyListRef.current?.querySelector(`[data-hi="${hi}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [hi]);
   // No role filter: a firm already on file as a *supplier* must surface here
   // so the operator picks it instead of making a customer-role duplicate.
   const results = useQuery({
@@ -2263,11 +2267,15 @@ function PartyPicker({
         }}
       />
       {open && (results.data?.length ?? 0) > 0 && (
-        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-line bg-card shadow-lg">
+        <div
+          ref={partyListRef}
+          className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-line bg-card shadow-lg"
+        >
           {results.data!.map((p, idx) => (
             <button
               key={p.id}
               tabIndex={-1}
+              data-hi={idx}
               className={`block w-full border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft ${
                 idx === hi ? "bg-accent-soft" : ""
               }`}
@@ -2586,6 +2594,14 @@ function LineRow({
 
   useEffect(() => setTyped(row.description), [row.description]);
 
+  // keep the keyboard-highlighted result in view as ↑/↓ walk past the visible rows
+  const itemListRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (hi >= 0) {
+      itemListRef.current?.querySelector(`[data-hi="${hi}"]`)?.scrollIntoView({ block: "nearest" });
+    }
+  }, [hi]);
+
   const debounced = useDebounced(typed.trim(), 200);
   const active = (open || forceSearchOpen) && debounced.length >= 1 && !row.item_id;
 
@@ -2800,7 +2816,10 @@ function LineRow({
         }}
       />
       {(open || forceSearchOpen) && !row.item_id && typed.trim() && (
-        <div className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg">
+        <div
+          ref={itemListRef}
+          className="absolute z-20 mt-1 max-h-60 w-[min(380px,90vw)] overflow-y-auto rounded-md border border-line bg-card shadow-lg"
+        >
           {results.map((it, idx) => {
             const badge = it.id === resolvedId && method ? METHOD_BADGE[method] : undefined;
             const size = it.size_text || it.grade;
@@ -2808,6 +2827,7 @@ function LineRow({
               <button
                 key={it.id}
                 tabIndex={-1}
+                data-hi={idx}
                 className={`flex w-full items-center justify-between gap-2 border-b border-[#f3eee4] px-3 py-2 text-left text-sm hover:bg-accent-soft ${
                   idx === hi ? "bg-accent-soft" : ""
                 }`}

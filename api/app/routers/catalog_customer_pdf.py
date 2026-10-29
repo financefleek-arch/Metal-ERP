@@ -6,7 +6,7 @@ and nothing is left out because of stock: a price list says nothing about stock.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
@@ -22,7 +22,7 @@ from app.routers.catalog import (
 )
 from app.schemas_catalog import OutputJobOut, SelectionIn
 from app.schemas_customer_catalog import CatalogLayout
-from app.services.catalog import output_jobs
+from app.services.catalog import catalog_pdf, item_catalogs, output_jobs
 from app.services.catalog import supplier_pdf as svc
 
 router = APIRouter(prefix="/api/supplier-catalogs", tags=["supplier-catalog-customer-pdf"])
@@ -77,6 +77,32 @@ def check(
         no_price=p.no_price,
         missing_photos=p.missing_photos,
     )
+
+
+@router.post("/{catalog_id}/customer-pdf/preview")
+def preview(
+    catalog_id: str,
+    body: CustomerPdfIn,
+    session: SessionDep,
+    user: CatalogUser,
+    storage: StorageDep,
+) -> Response:
+    """The first product page as a PNG, from the first few products that would be printed."""
+    _get_catalog(session, user.tenant_id, catalog_id)
+    p = svc.plan(_rows(session, user.tenant_id, catalog_id, body))
+    if not p.rows:
+        raise HTTPException(status_code=422, detail="No products to preview.")
+    tenant = session.get(Tenant, user.tenant_id)
+    assert tenant is not None
+    layout = _layout(body)
+    entries = svc.load_entries(session, storage, user.tenant_id, p.rows[:60])
+    png = catalog_pdf.render_preview_png(
+        entries,
+        item_catalogs.layout_options(layout),
+        item_catalogs.brand_for(tenant, "Preview"),
+        item_catalogs.today(),
+    )
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @router.post("/{catalog_id}/customer-pdf", response_model=OutputJobOut)

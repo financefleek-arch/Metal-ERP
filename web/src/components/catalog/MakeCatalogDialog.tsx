@@ -9,6 +9,7 @@ import {
   type CatalogSelection,
   type CustomerCatalog,
   type OutputJob,
+  type PdfTarget,
 } from "../../lib/catalog";
 
 const LAYOUT_KEY = "customer-catalog-layout";
@@ -112,26 +113,35 @@ function MissingRow({
 /**
  * Make a customer catalog from the items chosen on the Items page (or the next version of an
  * existing one). Checks first: what goes in, what is left out and why, which photos are missing.
+ *
+ * With `priceList` it is the same dialog for PDF in, PDF out: the rows come straight from a supplier
+ * price list, nothing is added to Items, no version is kept and stock plays no part.
  */
 export function MakeCatalogDialog({
   selection,
+  priceList,
   count,
   defaultTitle = "",
   seriesId,
   onClose,
 }: {
-  selection: CatalogSelection;
+  selection?: CatalogSelection;
+  priceList?: { catalogId: string; target: PdfTarget };
   count: number;
   defaultTitle?: string;
   seriesId?: string;
   onClose: () => void;
 }) {
+  const pl = priceList ?? null;
+  const noun = pl ? "product" : "item";
+  const base = pl ? `/supplier-catalogs/${pl.catalogId}/customer-pdf` : "/customer-catalogs";
   const qc = useQueryClient();
   const [layout, setLayout] = useState<CatalogLayout>(loadLayout);
   const [title, setTitle] = useState(defaultTitle);
   const [phase, setPhase] = useState<"idle" | "working" | "done">("idle");
   const [job, setJob] = useState<OutputJob | null>(null);
   const [made, setMade] = useState<CustomerCatalog | null>(null);
+  const [pdfPages, setPdfPages] = useState<number | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -140,15 +150,22 @@ export function MakeCatalogDialog({
 
   const grouped = layout.group_by === "group";
   const request = useMemo(
-    () => ({ ...layout, contents: grouped && layout.contents, selection }),
-    [layout, selection, grouped],
+    () => ({
+      ...layout,
+      contents: grouped && layout.contents,
+      // a price list says nothing about stock, so that option never applies to it
+      ...(pl ? { ...pl.target, leave_out_of_stock: false } : { selection }),
+    }),
+    [layout, selection, pl, grouped],
   );
   const requestKey = useDebounced(JSON.stringify(request), 400);
 
   const check = useQuery({
     queryKey: ["customer-catalog-check", requestKey],
     queryFn: () =>
-      api<CatalogCheck>("/customer-catalogs/check", { method: "POST", body: JSON.parse(requestKey) }),
+      api<Partial<CatalogCheck>>(`${base}/check`, { method: "POST", body: JSON.parse(requestKey) }).then(
+        (r) => ({ left_out: 0, missing_photo_items: [], ...r }) as CatalogCheck,
+      ),
   });
   const c = check.data;
 
@@ -158,7 +175,7 @@ export function MakeCatalogDialog({
     let url: string | null = null;
     (async () => {
       try {
-        const res = await postJson("/customer-catalogs/preview", JSON.parse(requestKey));
+        const res = await postJson(`${base}/preview`, JSON.parse(requestKey));
         if (!res.ok) throw await failure(res);
         const blob = await res.blob();
         if (cancelled) return;
@@ -176,7 +193,7 @@ export function MakeCatalogDialog({
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [requestKey]);
+  }, [requestKey, base]);
 
   async function finish(version: CustomerCatalog) {
     const res = await fetch(`/api/customer-catalogs/${version.id}/file`, { headers: authHeaders() });
@@ -240,8 +257,28 @@ export function MakeCatalogDialog({
     setPhase("idle");
     setFileUrl(null);
     setMade(null);
+    setPdfPages(null);
     setJob(null);
     setErr(null);
+  }
+
+  /** price-list path: an identical earlier PDF comes back already done; a big one builds in the background */
+  async function createPdf(path: string) {
+    const res = await postJson(base, { ...request, title: title.trim() });
+    if (!res.ok) throw await failure(res);
+    let j = (await res.json()) as OutputJob;
+    setJob(j);
+    while (j.status === "queued" || j.status === "running") {
+      await new Promise((r) => window.setTimeout(r, 1500));
+      j = await api<OutputJob>(`${path}/outputs/${j.id}`);
+      setJob(j);
+    }
+    if (j.status === "error") throw new ApiError(500, j.error ?? "The PDF could not be built.");
+    const res = await fetch(`/api${path}/outputs/${j.id}/file`, { headers: authHeaders() });
+    if (!res.ok) throw await failure(res);
+    setFileUrl(URL.createObjectURL(await res.blob()));
+    setPdfPages(j.page_count);
+    setPhase("done");
   }
 
   async function create() {
@@ -251,7 +288,8 @@ export function MakeCatalogDialog({
     setMade(null);
     setJob(null);
     try {
-      const res = await postJson("/customer-catalogs", {
+      if (pl) return await createPdf(`/supplier-catalogs/${pl.catalogId}`);
+      const res = await postJson(base, {
         ...request,
         title: title.trim(),
         series_id: seriesId,
@@ -292,11 +330,12 @@ export function MakeCatalogDialog({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="mc-title" className="font-serif text-xl font-semibold">
-              {seriesId ? "New version of customer catalog" : "Make customer catalog"}
+              {pl ? "Customer PDF" : seriesId ? "New version of customer catalog" : "Make customer catalog"}
             </h2>
             <p className="mt-1 text-sm text-muted">
-              A PDF of {count.toLocaleString("en-IN")} chosen item{count === 1 ? "" : "s"} with your prices
+              A PDF of {count.toLocaleString("en-IN")} chosen {noun}{count === 1 ? "" : "s"} with your prices
               and photos. Supplier prices are never shown.
+              {pl && " Nothing is added to your items."}
             </p>
           </div>
           <button type="button" className="btn-ghost h-9 px-3" onClick={onClose}>
@@ -423,6 +462,7 @@ export function MakeCatalogDialog({
               )}
             </fieldset>
 
+            {!pl && (
             <fieldset>
               <legend className="label">Stock</legend>
               <div className="space-y-1.5 text-sm">
@@ -439,6 +479,7 @@ export function MakeCatalogDialog({
                 </label>
               </div>
             </fieldset>
+            )}
           </div>
 
           <div>
@@ -462,18 +503,25 @@ export function MakeCatalogDialog({
             {c ? (
               <>
                 <span className="font-medium tabular-nums">{c.included.toLocaleString("en-IN")}</span> of{" "}
-                <span className="tabular-nums">{c.selected.toLocaleString("en-IN")}</span> items go in
+                <span className="tabular-nums">{c.selected.toLocaleString("en-IN")}</span> {noun}s go in
                 {leftOut.length > 0 && (
                   <span className="text-muted"> · left out: {leftOut.join(", ")}</span>
                 )}
                 {c.included > SYNC_LIMIT && <span className="text-muted"> · built in the background</span>}
+                {pl && c.no_price > 0 && <span className="text-muted"> · {c.no_price} left out (no price)</span>}
               </>
             ) : (
               <span className="text-muted">Checking the items…</span>
             )}
           </p>
 
-          {c && c.missing_photos > 0 && (
+          {pl && c && c.missing_photos > 0 && (
+            <p className="mt-1 text-xs text-muted">
+              {c.missing_photos} {noun}{c.missing_photos === 1 ? " has" : "s have"} no photo and will show a
+              &quot;No photo&quot; placeholder.
+            </p>
+          )}
+          {!pl && c && c.missing_photos > 0 && (
             <div className="mt-2 rounded-md border border-line bg-ground p-3">
               <p className="text-sm font-medium">
                 {c.missing_photos} item{c.missing_photos === 1 ? " has" : "s have"} no photo
@@ -505,21 +553,27 @@ export function MakeCatalogDialog({
           {phase === "working" && (
             <p className="mt-2 text-sm text-muted" role="status">
               {job
-                ? `Building the catalog… ${job.progress.toLocaleString("en-IN")} of ${job.total.toLocaleString("en-IN")} items`
+                ? `Building the catalog… ${job.progress.toLocaleString("en-IN")} of ${job.total.toLocaleString("en-IN")} ${noun}s`
                 : "Making your catalog…"}
             </p>
           )}
 
-          {phase === "done" && made && fileUrl && (
+          {phase === "done" && (made || pl) && fileUrl && (
             <div className="mt-2 rounded-md border border-line bg-ground p-3 text-sm" role="status">
               <p className="font-medium text-ok">
-                Version {made.version} is ready: {made.item_count} items on {made.page_count} pages.
+                {made
+                  ? `Version ${made.version} is ready: ${made.item_count} items on ${made.page_count} pages.`
+                  : `Your PDF is ready${pdfPages ? `: ${pdfPages} pages` : ""}.`}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <a className="btn-primary" href={fileUrl} target="_blank" rel="noopener noreferrer">
                   Open PDF
                 </a>
-                <a className="btn-ghost" href={fileUrl} download={`catalog-v${made.version}.pdf`}>
+                <a className="btn-ghost" href={fileUrl} download={
+                    made
+                      ? `catalog-v${made.version}.pdf`
+                      : `${(title.trim() || "catalog").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}.pdf`
+                  }>
                   Download
                 </a>
               </div>

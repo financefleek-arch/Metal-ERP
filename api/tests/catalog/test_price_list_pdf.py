@@ -137,3 +137,20 @@ def test_another_firms_price_list_is_not_reachable(shop) -> None:
     other = auth(register(client, email="other@example.com"))
     r = client.post(f"{BASE}/{cat['id']}/customer-pdf", headers=other, json={"all_included": True})
     assert r.status_code == 404
+
+
+def test_preview_is_a_png_and_honours_the_selection(shop) -> None:
+    client, h, cat = shop
+    r = client.post(
+        f"{BASE}/{cat['id']}/customer-pdf/preview",
+        headers=h,
+        json={"all_included": True, "price_basis": "piece", "piece_premium_pct": 10},
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/png" and r.content[:4] == b"\x89PNG"
+    nothing = client.post(
+        f"{BASE}/{cat['id']}/customer-pdf/preview",
+        headers=h,
+        json={"ids": ["no-such-row"]},
+    )
+    assert nothing.status_code == 422

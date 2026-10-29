@@ -2,9 +2,9 @@
 import type { Availability, TallyState } from "./types";
 
 export const AVAILABILITY: { value: Availability; label: string; hint: string }[] = [
-  { value: "in_stock", label: "In stock", hint: "You have it. Offered in customer catalogs." },
-  { value: "expected", label: "Expected", hint: "On order or on its way. Optional in catalogs." },
-  { value: "out_of_stock", label: "Out of stock", hint: "Not available now. Kept out of catalogs." },
+  { value: "in_stock", label: "In stock", hint: "You have it." },
+  { value: "expected", label: "Expected", hint: "On order or on its way. Carries an \"On order\" tag in catalogs." },
+  { value: "out_of_stock", label: "Out of stock", hint: "Not available now. A catalog can leave these out if you ask." },
   { value: "discontinued", label: "Discontinued", hint: "Not selling it any more." },
 ];
 
