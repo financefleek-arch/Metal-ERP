@@ -11,6 +11,8 @@ import {
   type OutputJob,
   type PdfTarget,
 } from "../../lib/catalog";
+import type { ShareLink } from "./ShareLinkDialog";
+import { copyText, linkUrl, whatsappShare } from "./shareLinkUtils";
 import { useDialogKeys } from "../../lib/keyboard";
 
 const LAYOUT_KEY = "customer-catalog-layout";
@@ -23,6 +25,7 @@ const DEFAULTS: CatalogLayout = {
   price_basis: "pack",
   piece_premium_pct: 0,
   contents: true,
+  show_prices: true,
   leave_out_of_stock: false,
 };
 
@@ -58,6 +61,75 @@ const postJson = (path: string, body: unknown) =>
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(body),
   });
+
+interface EarlierPdf {
+  id: string;
+  title: string;
+  products: number;
+  page_count: number | null;
+  created_at: string;
+}
+
+/** PDFs already built from this price list (kept a week): download one again without rebuilding. */
+function EarlierPdfs({ catalogId, refresh }: { catalogId: string; refresh: unknown }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const list = useQuery({
+    queryKey: ["price-list-pdfs", catalogId, refresh],
+    queryFn: () => api<EarlierPdf[]>(`/supplier-catalogs/${catalogId}/customer-pdf/recent`),
+  });
+  async function get(p: EarlierPdf) {
+    setBusy(p.id);
+    setErr(null);
+    try {
+      const res = await fetch(`/api/supplier-catalogs/${catalogId}/outputs/${p.id}/file`, {
+        headers: authHeaders(),
+      });
+      if (!res.ok) throw await failure(res);
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(p.title || "catalog").replace(/[^A-Za-z0-9]+/g, "-").toLowerCase()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Could not download that PDF.");
+    } finally {
+      setBusy(null);
+    }
+  }
+  if (!list.data?.length) return null;
+  return (
+    <div className="mt-3 rounded-md border border-line bg-ground p-3">
+      <p className="text-sm font-medium">Earlier PDFs from this list</p>
+      <ul className="mt-1 divide-y divide-line">
+        {list.data.map((p) => (
+          <li key={p.id} className="flex items-center gap-2 py-1.5 text-xs">
+            <span className="min-w-0 flex-1 truncate">
+              {p.title || "Catalog"}
+              <span className="ml-1.5 text-muted">
+                {p.products.toLocaleString("en-IN")} products
+                {p.page_count ? ` · ${p.page_count} pages` : ""} ·{" "}
+                {new Date(p.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+              </span>
+            </span>
+            <button
+              type="button"
+              className="btn-ghost h-8 px-3 text-xs"
+              disabled={busy === p.id}
+              onClick={() => get(p)}
+            >
+              {busy === p.id ? "Downloading…" : "Download"}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {err && <p className="err mt-1">{err}</p>}
+    </div>
+  );
+}
 
 /** One missing-photo row: add the photo on the spot. */
 function MissingRow({
@@ -148,6 +220,12 @@ export function MakeCatalogDialog({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const [block, setBlock] = useState(false);
+  // an order link for customers, made together with the PDF; a price list needs its products
+  // added to Items for that, so it is opt-in there
+  const [wantLink, setWantLink] = useState(!priceList);
+  const [link, setLink] = useState<ShareLink | null>(null);
+  const [linkErr, setLinkErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const grouped = layout.group_by === "group";
   const request = useMemo(
@@ -196,11 +274,38 @@ export function MakeCatalogDialog({
     };
   }, [requestKey, base]);
 
+  /** The order link that goes with the PDF. Its own failure never hides the PDF; made once per dialog. */
+  async function makeLink() {
+    if (!wantLink || !layout.show_prices || link) return;
+    setLinkErr(null);
+    try {
+      const name = title.trim();
+      const res = pl
+        ? await postJson(`${base}/link`, { ...request, title: name })
+        : await postJson("/share-links", {
+            title: name,
+            selection,
+            leave_out_of_stock: layout.leave_out_of_stock,
+            price_basis: layout.price_basis,
+            allow_pieces: layout.price_basis === "piece",
+            piece_premium_pct: layout.piece_premium_pct,
+            show_code: layout.show_code,
+          });
+      if (!res.ok) throw await failure(res);
+      setLink((await res.json()) as ShareLink);
+      qc.invalidateQueries({ queryKey: ["share-links"] });
+      if (pl) qc.invalidateQueries({ queryKey: ["items"] });
+    } catch (e) {
+      setLinkErr(e instanceof ApiError ? e.message : "The PDF is ready, but the order link could not be made.");
+    }
+  }
+
   async function finish(version: CustomerCatalog) {
     const res = await fetch(`/api/customer-catalogs/${version.id}/file`, { headers: authHeaders() });
     if (!res.ok) throw await failure(res);
     setFileUrl(URL.createObjectURL(await res.blob()));
     setMade(version);
+    await makeLink();
     setPhase("done");
     qc.invalidateQueries({ queryKey: ["customer-catalogs"] });
   }
@@ -274,6 +379,7 @@ export function MakeCatalogDialog({
     if (!res.ok) throw await failure(res);
     setFileUrl(URL.createObjectURL(await res.blob()));
     setPdfPages(j.page_count);
+    await makeLink();
     setPhase("done");
   }
 
@@ -380,6 +486,36 @@ export function MakeCatalogDialog({
             </fieldset>
 
             <fieldset>
+              <legend className="label">Prices</legend>
+              <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="mc-prices"
+                    checked={layout.show_prices}
+                    onChange={() => patch({ show_prices: true })}
+                  />
+                  Show prices
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="mc-prices"
+                    checked={!layout.show_prices}
+                    onChange={() => patch({ show_prices: false })}
+                  />
+                  No prices (pictures only)
+                </label>
+              </div>
+              {!layout.show_prices && (
+                <p className="mt-1 text-xs text-muted">
+                  No price is printed, and {noun}s with no selling price are kept in. A catalog without prices
+                  has no order link.
+                </p>
+              )}
+            </fieldset>
+
+            <fieldset>
               <legend className="label">Arrange and show</legend>
               <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
                 <label className="flex items-center gap-1.5">
@@ -417,26 +553,30 @@ export function MakeCatalogDialog({
                   />
                   Item code
                 </label>
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="mc-basis"
-                    checked={layout.price_basis === "pack"}
-                    onChange={() => patch({ price_basis: "pack" })}
-                  />
-                  Price per pack
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <input
-                    type="radio"
-                    name="mc-basis"
-                    checked={layout.price_basis === "piece"}
-                    onChange={() => patch({ price_basis: "piece" })}
-                  />
-                  Price per piece
-                </label>
+                {layout.show_prices && (
+                  <>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="mc-basis"
+                        checked={layout.price_basis === "pack"}
+                        onChange={() => patch({ price_basis: "pack" })}
+                      />
+                      Price per pack
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="radio"
+                        name="mc-basis"
+                        checked={layout.price_basis === "piece"}
+                        onChange={() => patch({ price_basis: "piece" })}
+                      />
+                      Price per piece
+                    </label>
+                  </>
+                )}
               </div>
-              {layout.price_basis === "piece" && (
+              {layout.show_prices && layout.price_basis === "piece" && (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                   <label className="label m-0" htmlFor="mc-prem">
                     Loose-piece premium
@@ -476,6 +616,28 @@ export function MakeCatalogDialog({
               </div>
             </fieldset>
             )}
+            <fieldset>
+              <legend className="label">Order link</legend>
+              <label className={`flex items-start gap-2 text-sm ${layout.show_prices ? "" : "opacity-50"}`}>
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  disabled={!layout.show_prices}
+                  checked={wantLink && layout.show_prices}
+                  onChange={(e) => setWantLink(e.target.checked)}
+                />
+                <span>
+                  Also make a link customers can order from
+                  <span className="block text-xs text-muted">
+                    {layout.show_prices
+                      ? pl
+                        ? "They open it on their phone, see your prices and place an order. This adds these products to your items first."
+                        : "They open it on their phone, see your current prices and place an order."
+                      : "Not available without prices."}
+                  </span>
+                </span>
+              </label>
+            </fieldset>
           </div>
 
           <div>
@@ -546,6 +708,7 @@ export function MakeCatalogDialog({
               {err}
             </p>
           )}
+          {pl && <EarlierPdfs catalogId={pl.catalogId} refresh={phase} />}
           {phase === "working" && (
             <p className="mt-2 text-sm text-muted" role="status">
               {job
@@ -574,6 +737,46 @@ export function MakeCatalogDialog({
                 </a>
               </div>
             </div>
+          )}
+
+          {phase === "done" && link && (
+            <div className="mt-2 rounded-md border border-line bg-ground p-3 text-sm" role="status">
+              <p className="font-medium text-ok">Order link ready. Send it to customers.</p>
+              <div className="mt-2 flex gap-2">
+                <input
+                  readOnly
+                  className="field font-mono text-xs"
+                  value={linkUrl(link)}
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={async () => {
+                    setCopied(await copyText(linkUrl(link)));
+                    window.setTimeout(() => setCopied(false), 1500);
+                  }}
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <a className="btn-ghost" href={whatsappShare(link)} target="_blank" rel="noopener noreferrer">
+                  Send on WhatsApp
+                </a>
+                <a className="btn-ghost" href={link.path} target="_blank" rel="noopener noreferrer">
+                  Preview
+                </a>
+              </div>
+              <p className="mt-2 text-xs text-muted">
+                It shows your prices as they are now. Stop or change it under Items &rsaquo; Catalogs.
+              </p>
+            </div>
+          )}
+          {phase === "done" && linkErr && (
+            <p className="err" role="alert">
+              {linkErr}
+            </p>
           )}
 
           <div className="mt-3 flex justify-end gap-2">

@@ -338,6 +338,8 @@ export interface CatalogLayout {
   /** extra on the per-piece price (loose pieces cost more to hand out); 0 = pack price / pieces */
   piece_premium_pct: number;
   contents: boolean;
+  /** false = a picture catalog: no prices on the pages, and no order link */
+  show_prices: boolean;
   /** leave out items marked Out of stock; everything else chosen is printed */
   leave_out_of_stock: boolean;
 }

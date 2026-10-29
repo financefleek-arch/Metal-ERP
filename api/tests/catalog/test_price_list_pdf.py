@@ -7,10 +7,10 @@ from typing import Any
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.db import SessionLocal
-from app.models import Item
+from app.models import CatalogOutputJob, Item, SupplierCatalogItem
 from app.services.catalog import supplier_pdf
 from tests.catalog.conftest import seed_hsn
 from tests.catalog.pdfs import TestCell, make_pdf
@@ -154,3 +154,94 @@ def test_preview_is_a_png_and_honours_the_selection(shop) -> None:
         json={"ids": ["no-such-row"]},
     )
     assert nothing.status_code == 422
+
+
+def test_a_retry_joins_the_build_already_running(shop) -> None:
+    """Two identical builds at once share the CPU and both run several times slower, so the second
+    request gets the first one's job back."""
+    client, h, cat = shop
+    first = _make(client, h, cat).json()
+    with SessionLocal() as s:
+        job = s.get(CatalogOutputJob, first["id"])
+        job.status, job.result_key = "running", None
+        s.commit()
+    again = _make(client, h, cat).json()
+    assert again["id"] == first["id"] and again["status"] == "running"
+    with SessionLocal() as s:
+        assert s.scalar(select(func.count()).select_from(CatalogOutputJob)) == 1
+
+
+def test_earlier_pdfs_can_be_listed_and_downloaded_again(shop) -> None:
+    client, h, cat = shop
+    job = _make(client, h, cat, title="Autumn range").json()
+    r = client.get(f"{BASE}/{cat['id']}/customer-pdf/recent", headers=h)
+    assert r.status_code == 200, r.text
+    [one] = r.json()
+    assert one["id"] == job["id"] and one["title"] == "Autumn range" and one["products"] == 3
+    assert _text(client, h, cat, one)  # the same file is still downloadable by id
+    from tests.catalog.conftest import auth, register
+
+    other = auth(register(client, email="other2@example.com"))
+    assert client.get(f"{BASE}/{cat['id']}/customer-pdf/recent", headers=other).status_code == 404
+
+
+def _pdf_text(client: TestClient, h: dict[str, str], cat: dict, job: dict) -> str:
+    return _text(client, h, cat, job)
+
+
+def test_a_picture_catalog_has_no_prices_and_keeps_unpriced_products(shop) -> None:
+    client, h, cat = shop
+    priced = _pdf_text(client, h, cat, _make(client, h, cat, title="Priced").json())
+    assert "Rs " in priced
+    # one row loses its selling price: still printed when no price is shown
+    rows = _items(client, h, cat["id"], limit=200)
+    with SessionLocal() as s:
+        s.execute(
+            update(SupplierCatalogItem)
+            .where(SupplierCatalogItem.id == rows[0]["id"])
+            .values(sell_price=0)
+        )
+        s.commit()
+    assert _make(client, h, cat, title="With prices").json()["total"] == 2  # the unpriced one is out
+    plain = _make(client, h, cat, title="Pictures", show_prices=False)
+    assert plain.status_code == 200, plain.text
+    assert plain.json()["total"] == 3
+    text = _pdf_text(client, h, cat, plain.json())
+    assert "Rs " not in text and "per piece" not in text
+    chk = client.post(
+        f"{BASE}/{cat['id']}/customer-pdf/check",
+        headers=h,
+        json={"all_included": True, "show_prices": False},
+    ).json()
+    assert chk["included"] == 3 and chk["no_price"] == 0
+
+
+def test_an_order_link_adds_the_products_to_items_and_covers_exactly_those(shop) -> None:
+    client, h, cat = shop
+    r = client.post(
+        f"{BASE}/{cat['id']}/customer-pdf/link", headers=h, json={"all_included": True, "title": "Autumn"}
+    )
+    assert r.status_code == 201, r.text
+    link = r.json()
+    assert link["title"] == "Autumn" and link["selection_kind"] == "ids" and link["live"]
+    page = client.get(f"/api/public/catalog/{link['token']}")
+    assert page.status_code == 200 and len(page.json()["items"]) == 3
+    with SessionLocal() as s:
+        assert s.scalar(select(func.count()).select_from(Item)) == 3
+    # asking again reuses the items it made, so nothing is duplicated
+    again = client.post(
+        f"{BASE}/{cat['id']}/customer-pdf/link", headers=h, json={"all_included": True}
+    )
+    assert again.status_code == 201
+    with SessionLocal() as s:
+        assert s.scalar(select(func.count()).select_from(Item)) == 3
+
+
+def test_no_order_link_without_prices(shop) -> None:
+    client, h, cat = shop
+    r = client.post(
+        f"{BASE}/{cat['id']}/customer-pdf/link",
+        headers=h,
+        json={"all_included": True, "show_prices": False},
+    )
+    assert r.status_code == 422 and "without prices" in r.json()["detail"]

@@ -71,6 +71,7 @@ def layout_options(layout: CatalogLayout) -> CatalogPdfOptions:
         price_basis=layout.price_basis,
         piece_premium_pct=layout.piece_premium_pct,
         contents=layout.contents,
+        show_prices=layout.show_prices,
     )
 
 
@@ -169,7 +170,7 @@ def plan(session: Session, tenant_id: str, ids: list[str], layout: CatalogLayout
         if layout.leave_out_of_stock and it.availability == Availability.out_of_stock.value:
             p.left_out += 1
             continue
-        if it.default_rate is None or Decimal(str(it.default_rate)) <= 0:
+        if layout.show_prices and (it.default_rate is None or Decimal(str(it.default_rate)) <= 0):
             p.no_price += 1
             continue
         keep.append(it)
@@ -217,7 +218,7 @@ def load_entries(
                 code=(it.sku or it.barcode or ""),
                 name=it.name,
                 group=_heading(it, cats, groups),
-                price=Decimal(str(it.default_rate)),
+                price=Decimal(str(it.default_rate if it.default_rate is not None else 0)),
                 pack_qty=int(it.pack_qty or 1),
                 image=jpegs.get(it.primary_media_id) if it.primary_media_id else None,
                 note=note,

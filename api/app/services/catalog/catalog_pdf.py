@@ -71,6 +71,7 @@ class CatalogPdfOptions:
     price_basis: str = "pack"
     piece_premium_pct: float = 0.0
     contents: bool = True
+    show_prices: bool = True
 
 
 @dataclass(frozen=True)
@@ -265,16 +266,20 @@ def _draw_cell(
         ty += m.name_size * 1.2
 
     base = y + ch - 7
-    if opts.price_basis == "piece" and entry.pack_qty > 1:
-        shown = inr(piece_price(entry.price, entry.pack_qty, opts.piece_premium_pct))
-        sub = f"per piece  (pack of {entry.pack_qty}: {inr(entry.price)})"
-    else:
-        shown = inr(entry.price)
-        sub = f"for {entry.pack_qty} pcs" if entry.pack_qty > 1 else ""
-    put_text(page, x + 5, base, shown, m.price_size, bold=True, align="r", width=cw - 10,
-             color=ACCENT)
-    if sub:
-        put_text(page, x + 5, base - m.price_size - 1, sub, m.small_size, align="r",
+    if opts.show_prices:
+        if opts.price_basis == "piece" and entry.pack_qty > 1:
+            shown = inr(piece_price(entry.price, entry.pack_qty, opts.piece_premium_pct))
+            sub = f"per piece  (pack of {entry.pack_qty}: {inr(entry.price)})"
+        else:
+            shown = inr(entry.price)
+            sub = f"for {entry.pack_qty} pcs" if entry.pack_qty > 1 else ""
+        put_text(page, x + 5, base, shown, m.price_size, bold=True, align="r", width=cw - 10,
+                 color=ACCENT)
+        if sub:
+            put_text(page, x + 5, base - m.price_size - 1, sub, m.small_size, align="r",
+                     width=cw - 10, color=MUTED)
+    elif entry.pack_qty > 1:
+        put_text(page, x + 5, base, f"pack of {entry.pack_qty}", m.small_size, align="r",
                  width=cw - 10, color=MUTED)
     if opts.show_code:
         put_text(page, x + 5, base, entry.code, m.code_size, color=MUTED)
@@ -355,7 +360,9 @@ def render_pdf(
     """(PDF bytes, page count)."""
     doc = build(entries, opts, brand, generated_on, progress)
     pages = len(doc)
-    data = doc.tobytes(garbage=3, deflate=True)
+    # garbage=1 drops unused objects; =3 also compares every stream for duplicates (seconds on a
+    # big catalog) and finds none, since the same photo is embedded once already (`xrefs`)
+    data = doc.tobytes(garbage=1, deflate=True)
     doc.close()
     return data, pages
 

@@ -20,6 +20,7 @@ import io
 import json
 import logging
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from PIL import Image
@@ -37,7 +38,7 @@ from app.models import (
 from app.schemas_customer_catalog import CatalogLayout
 from app.services.catalog import item_catalogs
 from app.services.catalog.catalog_pdf import CatalogEntry, render_pdf
-from app.services.catalog.output_jobs import result_key
+from app.services.catalog.output_jobs import STALE_AFTER, result_key
 from app.services.catalog.storage import CatalogStorage
 from app.services.media import PRINT_EDGE, PRINT_QUALITY
 
@@ -60,10 +61,10 @@ class Plan:
     missing_photos: int = 0
 
 
-def plan(rows: list[SupplierCatalogItem]) -> Plan:
+def plan(rows: list[SupplierCatalogItem], show_prices: bool = True) -> Plan:
     p = Plan(selected=len(rows))
     for r in rows:
-        if r.sell_price is None or Decimal(str(r.sell_price)) <= 0:
+        if show_prices and (r.sell_price is None or Decimal(str(r.sell_price)) <= 0):
             p.no_price += 1
             continue
         p.rows.append(r)
@@ -87,7 +88,7 @@ def _row_facts(r: SupplierCatalogItem, cats: dict[str, str]) -> list[object]:
         r.code,
         r.display_name,
         cats.get(r.category_id or ""),
-        f"{Decimal(str(r.sell_price)):.2f}",
+        f"{Decimal(str(r.sell_price)):.2f}" if r.sell_price is not None else None,
         int(r.pack_qty or 1),
         r.image_sha256 or r.image_key,
     ]
@@ -140,7 +141,7 @@ def load_entries(
                 code=r.code,
                 name=r.display_name,
                 group=cats.get(r.category_id or ""),
-                price=Decimal(str(r.sell_price)),
+                price=Decimal(str(r.sell_price if r.sell_price is not None else 0)),
                 pack_qty=int(r.pack_qty or 1),
                 image=_print_jpeg(raw) if raw else None,
             )
@@ -159,6 +160,28 @@ def find_built(session: Session, catalog_id: str, fp: str) -> CatalogOutputJob |
             CatalogOutputJob.result_key.is_not(None),
         )
         .order_by(CatalogOutputJob.updated_at.desc())
+        .limit(_RECENT)
+    )
+    for job in recent:
+        if (job.params_json or {}).get("fingerprint") == fp:
+            return job
+    return None
+
+
+def find_in_flight(session: Session, catalog_id: str, fp: str) -> CatalogOutputJob | None:
+    """A build of this exact PDF that is queued or running now, so a retry or a second click joins it
+    instead of starting another (they would share the CPU and each take several times longer). A job
+    that has not moved for `STALE_AFTER` is treated as dead and ignored."""
+    cutoff = datetime.now(UTC) - STALE_AFTER
+    recent = session.scalars(
+        select(CatalogOutputJob)
+        .where(
+            CatalogOutputJob.catalog_id == catalog_id,
+            CatalogOutputJob.kind == KIND,
+            CatalogOutputJob.status.in_(("queued", "running")),
+            CatalogOutputJob.updated_at > cutoff,
+        )
+        .order_by(CatalogOutputJob.created_at.desc())
         .limit(_RECENT)
     )
     for job in recent:

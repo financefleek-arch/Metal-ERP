@@ -452,3 +452,17 @@ def test_a_catalog_section_is_the_category_else_the_group() -> None:
     assert svc._heading(_It(None, "g1"), cats, groups) == "HOTEL WARE"
     assert svc._heading(_It(None, None), cats, groups) is None
     assert svc._heading(_It("gone", "g1"), cats, groups) == "HOTEL WARE"
+
+
+def test_a_catalog_without_prices_prints_none_and_keeps_unpriced_items(shop) -> None:
+    client, h, items = shop
+    bare = _item(client, h, "Bare thing", rate=None)
+    sel = _ids(*items, bare)
+    assert _check(client, h, sel).json()["included"] == 3 and _check(client, h, sel).json()["no_price"] == 1
+    c = _check(client, h, sel, show_prices=False).json()
+    assert c["included"] == 4 and c["no_price"] == 0
+    cc = _create(client, h, sel, show_prices=False)
+    assert cc.status_code == 201, cc.text
+    text = _text(_file(client, h, cc.json()["id"]))
+    assert "Rs" not in text and "Bare thing" in text and "Beer Mug" in text
+    assert cc.json()["options"]["show_prices"] is False  # a new version repeats it

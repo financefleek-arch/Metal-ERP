@@ -32,6 +32,9 @@ class CatalogLayout(BaseModel):
     # extra on the per-piece price (loose pieces cost more to hand out); 0 = pack price / pieces
     piece_premium_pct: float = Field(default=0.0, ge=0, le=100)
     contents: bool = True
+    # False = a picture catalog: no price anywhere on the pages, and items with no selling price
+    # are kept in (there is nothing to show for them). Such a catalog cannot take orders.
+    show_prices: bool = True
     # Everything selected is printed. Only when asked, items the shop marked Out of stock are
     # left out (a price list is not an indicator of stock, so this is never done silently).
     leave_out_of_stock: bool = False
