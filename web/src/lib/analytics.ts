@@ -24,6 +24,15 @@ export function takeSignupFlag(): boolean {
   }
 }
 
+/** A named event in Umami (the tracker is the tag in index.html). A no-op when it is blocked or not loaded. */
+export function track(event: string): void {
+  try {
+    (window as unknown as { umami?: { track?: (name: string) => void } }).umami?.track?.(event);
+  } catch {
+    /* analytics never breaks the app */
+  }
+}
+
 /** Tell Google Ads a sign-up happened (a no-op until the tag is installed). */
 export function reportSignup(): void {
   const g = (window as unknown as { gtag?: Gtag }).gtag;

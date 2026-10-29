@@ -15,7 +15,7 @@ export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSi
     <div className="min-h-[100dvh]">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
         <span className="font-serif text-lg font-semibold">Tally Companion</span>
-        <button onClick={onSignin} className="text-sm text-accent hover:text-accent-dark">
+        <button onClick={onSignin} data-umami-event="landing-signin" className="text-sm text-accent hover:text-accent-dark">
           Sign in
         </button>
       </header>
@@ -29,11 +29,11 @@ export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSi
             Make invoices by weight, see who owes you, and share bills on WhatsApp. Free to start, no card needed.
           </p>
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button onClick={onSignup} className="btn-primary !h-12 px-6 text-base md:!h-11">
+            <button onClick={onSignup} data-umami-event="landing-create-account" className="btn-primary !h-12 px-6 text-base md:!h-11">
               Create free account
             </button>
             {android && (
-              <a href={PLAY_URL} className="btn-ghost !h-12 px-5 text-base md:!h-11">
+              <a href={PLAY_URL} data-umami-event="landing-google-play" className="btn-ghost !h-12 px-5 text-base md:!h-11">
                 Get it on Google Play
               </a>
             )}
@@ -63,8 +63,8 @@ export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSi
 
       <footer className="mx-auto max-w-5xl px-4 pb-10 text-xs text-muted">
         <p>
-          <a className="underline" href={PRIVACY}>Privacy policy</a> · <a className="underline" href={TERMS}>Terms</a> ·{" "}
-          <a className="underline" href="/delete-account">Delete your account</a> · contact@fleekfinance.in
+          <a className="underline" href={PRIVACY} data-umami-event="landing-privacy">Privacy policy</a> · <a className="underline" href={TERMS} data-umami-event="landing-terms">Terms</a> ·{" "}
+          <a className="underline" href="/delete-account" data-umami-event="landing-delete-account">Delete your account</a> · contact@fleekfinance.in
         </p>
         <p className="mt-2">
           Tally Companion is built by Fleek Fintech. Tally and TallyPrime are trademarks of Tally Solutions Pvt. Ltd. This app is not

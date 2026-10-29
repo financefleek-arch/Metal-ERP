@@ -9,7 +9,7 @@ import { Turnstile } from "../components/Turnstile";
 import { useCaptchaSiteKey } from "../lib/captcha";
 import { LandingPage } from "./LandingPage";
 import { markLandingSeen, shouldShowLanding } from "../lib/landing";
-import { noteSignup } from "../lib/analytics";
+import { noteSignup, track } from "../lib/analytics";
 
 // The policy of record (Section 12 covers Metal ERP); see pages/public/LegalPages.tsx.
 const PRIVACY_POLICY = "https://fleekfintech.com/privacy-policy/";
@@ -159,6 +159,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
         auth: false,
         body: { ...f, firm_name: f.firm_name.trim(), owner_name: f.owner_name.trim(), email: f.email.trim(), accept_terms: terms, captcha_token: token },
       });
+      track("signup-codes-sent");
       onStarted(r);
     } catch (x) {
       setErr(message(x));
@@ -244,6 +245,7 @@ function VerifyForm({ started, onBack }: { started: Started; onBack: () => void 
         body: { request_id: started.request_id, whatsapp_code: wa, email_code: em },
       });
       noteSignup();
+      track("signup-complete");
       // a brand-new account lands on its own page, which the ad campaign counts as a sign-up
       navigate("/welcome", { replace: true });
       await acceptToken(r.access_token);
