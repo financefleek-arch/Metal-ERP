@@ -53,7 +53,7 @@ export function PlansPage() {
       setConfirmCancel(false);
       setNote(
         r.effective === "now"
-          ? "Cancelled. You are back on the Free plan and nothing was charged."
+          ? "Done. You are on the Free plan. Your invoices and data are safe."
           : `Cancelled. You keep your plan until ${r.ends_on ? day(r.ends_on) : "the end of the period"}, and nothing more will be charged.`,
       );
       await qc.invalidateQueries({ queryKey: PLANS_KEY });
@@ -61,6 +61,26 @@ export function PlansPage() {
     },
     onError: (e) => setNote(message(e)),
   });
+
+  // Back from the payment page (or the tab was left open): ask whether the autopay was approved, so the page does not wait on a webhook.
+  const pending = data?.current.state === "payment_pending" && !!data.can_manage;
+  const check = useMutation({
+    mutationFn: () => api<{ changed: boolean }>("/plans/check", { method: "POST" }),
+    onSuccess: async (r) => {
+      if (r.changed) {
+        await qc.invalidateQueries({ queryKey: PLANS_KEY });
+        await refresh();
+      }
+    },
+  });
+  const checkNow = check.mutate;
+  useEffect(() => {
+    if (!pending) return;
+    checkNow();
+    const onVisible = () => document.visibilityState === "visible" && checkNow();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [pending, checkNow]);
 
   if (isLoading) return <div className="text-sm text-muted">Loading…</div>;
   if (isError || !data) {
@@ -104,6 +124,21 @@ export function PlansPage() {
           <p className="meta mt-1">
             Nothing has been charged. If you keep it, your payment is taken when the trial ends; cancel before then and you pay nothing. Your invoices and data stay either way.
           </p>
+        )}
+        {notice(cur) && (
+          <p className="mt-2 rounded-lg border border-line bg-[#f6ecd5] px-3 py-2 text-sm text-[#5b4410]" role="status">{notice(cur)}</p>
+        )}
+        {cur.can_retry && owner && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {cur.state === "payment_pending" && (
+              <button className="btn-ghost" disabled={check.isPending} onClick={() => check.mutate()}>
+                {check.isPending ? "Checking…" : "I approved it. Check again"}
+              </button>
+            )}
+            <button className="btn-ghost" disabled={cancel.isPending} onClick={() => cancel.mutate()}>
+              {cancel.isPending ? "Working…" : "Stay on Free"}
+            </button>
+          </div>
         )}
         {paidNow && owner && (
           <div className="mt-3">
@@ -173,6 +208,25 @@ export function PlansPage() {
   );
 }
 
+/** What went wrong with the last payment, in plain words (null when nothing did). Nothing here ever says we charged when we did not. */
+function notice(cur: PlansOut["current"]): string | null {
+  const plan = cur.plan_label ?? "your plan";
+  switch (cur.state) {
+    case "payment_pending":
+      return `The payment for ${plan} was not completed, so nothing was charged and you are on Free. Choose a plan below to try again.`;
+    case "past_due":
+      return `Your last payment for ${plan} did not go through. It stays on${cur.grace_until ? ` until ${day(cur.grace_until)}` : " for a few days"} while we retry. Please make sure your UPI or card can pay.`;
+    case "payment_failed":
+      return `The payment for ${plan} failed, so you are back on Free. Your invoices and data are safe. Choose a plan below to start again.`;
+    case "cancelled":
+      return `${plan} was cancelled and its paid time is over, so you are on Free. Your invoices and data are safe.`;
+    case "trial_ended":
+      return `The ${plan} trial ended without a payment, so you are on Free. Your invoices and data are safe.`;
+    default:
+      return null;
+  }
+}
+
 function PlanCard({ p, data, onStart }: { p: Plan; data: PlansOut; onStart: () => void }) {
   const here = data.current.plan_key === p.plan || (p.price_amount === 0 && data.current.free);
   const recommended = p.plan.endsWith("growth");
@@ -234,6 +288,7 @@ function StartSheet({ p, onClose }: { p: Plan; onClose: () => void }) {
               </li>
               <li><b>Cancel in one tap</b> from Plan and billing, any time, no questions. Your invoices and data stay.</li>
               <li>You approve UPI AutoPay (or a card) on a secure page. We never see your card.</li>
+              <li>The trial starts once you approve. If you do not, you stay on Free and nothing changes.</li>
               {p.unlocks.includes("whatsapp") && <li>We set up WhatsApp with you, about 20 minutes. We will message you to find a time.</li>}
             </>
           ) : (

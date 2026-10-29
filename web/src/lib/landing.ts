@@ -10,6 +10,8 @@ export function shouldShowLanding(): boolean {
       document.referrer.startsWith("android-app://") ||
       q.get("source") === "pwa";
     if (installed || q.get("signin") === "1") return false;
+    // An ad click or a link to a section (#invoices, #catalog) is a request to see the page, even on a repeat visit.
+    if (["gclid", "gbraid", "wbraid"].some((k) => q.has(k)) || ["#invoices", "#catalog"].includes(window.location.hash)) return true;
     return localStorage.getItem(SEEN_KEY) !== "1";
   } catch {
     return true;

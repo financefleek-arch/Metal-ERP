@@ -43,6 +43,24 @@ def test_the_licence_carries_the_plans_feature_list() -> None:
     assert licence_from_payload({"status": "active", "plan": {"key": "p"}}).features is None   # an older answer
 
 
+def test_the_licence_says_why_it_is_not_paid_and_an_older_answer_says_nothing() -> None:
+    got = licence_from_payload({"status": "lapsed", "plan": {"key": "metal_erp_growth"}, "state": "payment_pending", "can_retry": True})
+    assert (got.state, got.can_retry, got.grace_until) == ("payment_pending", True, None)
+    past = licence_from_payload({"status": "active", "state": "past_due", "grace_until": "2026-11-10"})
+    assert (past.state, past.grace_until, past.can_retry) == ("past_due", "2026-11-10", False)
+    old = licence_from_payload({"status": "lapsed"})
+    assert (old.state, old.grace_until, old.can_retry) == (None, None, False)
+
+
+def test_a_payment_that_was_not_completed_holds_a_self_signed_up_shop_to_free_but_not_one_fleek_made() -> None:
+    pending = lic("metal_erp_growth", list(GROWTH), status="lapsed")        # Fleek: plan chosen, autopay not approved, nothing charged
+    assert not allowed(tenant(), pending, "whatsapp") and not allowed(tenant(), pending, "orders")
+    assert allowed(tenant(created=LIVE), pending, "pdf_out", now=LIVE + timedelta(days=2))     # still inside its 7 Free days
+    assert allowed(tenant(signup="admin"), pending, "whatsapp")                                  # the lenient rule for a shop Fleek made
+    in_grace = lic("metal_erp_growth", list(GROWTH), status="active")      # a failed renewal inside its grace keeps everything
+    assert allowed(tenant(), in_grace, "whatsapp")
+
+
 def test_free_has_nothing_switched_on_except_pdf_for_seven_days() -> None:
     t, free = tenant(created=LIVE), lic(features.FREE_PLAN, [])
     for key in features.FEATURES:

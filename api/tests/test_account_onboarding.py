@@ -219,6 +219,18 @@ def test_signup_needs_no_email_and_sends_no_email_code(client: TestClient, fleek
     assert me["email"] is None and me["label"] == MOBILE
 
 
+def test_signup_keeps_the_google_ads_click_id_and_refuses_a_junk_one(client: TestClient, fleek: FakeFleek) -> None:
+    ok = _start(client, ad_click_kind="gclid", ad_click_id="Cj0KCQ_abc-123")
+    assert ok.status_code == 200, ok.text
+    with SessionLocal() as s:
+        req = s.scalar(select(SignupRequest))
+        assert req is not None and (req.ad_click_kind, req.ad_click_id) == ("gclid", "Cj0KCQ_abc-123")
+    assert _start(client, ad_click_kind="gclid", ad_click_id="x'; drop table").status_code == 422
+    assert _start(client, ad_click_kind="utm", ad_click_id="abc").status_code == 422
+    plain = _start(client, mobile="9876500001")
+    assert plain.status_code == 200  # no click id is the normal case
+
+
 def test_signup_needs_terms_a_real_mobile_and_a_decent_password(client: TestClient, fleek: FakeFleek) -> None:
     assert _start(client, accept_terms=False).status_code == 422
     assert _start(client, mobile="12345").status_code == 422

@@ -95,6 +95,9 @@ class SignupStartRequest(BaseModel):
     password: str = Field(min_length=8, max_length=200)
     accept_terms: bool
     captcha_token: str | None = None
+    # The Google Ads click behind this visit, if any: kind is gclid | gbraid | wbraid.
+    ad_click_kind: Literal["gclid", "gbraid", "wbraid"] | None = None
+    ad_click_id: Annotated[str, Field(max_length=200, pattern=r"^[A-Za-z0-9_-]+$")] | None = None
 
 
 class SignupStarted(BaseModel):

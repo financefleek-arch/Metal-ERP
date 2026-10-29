@@ -22,6 +22,12 @@ export interface PlansOut {
     plan_label: string | null;
     status: string | null;
     trial_days_left: number | null;
+    /** Why the plan is not paid, beside `status` (null = an older answer or Fleek has not said). */
+    state: "payment_pending" | "past_due" | "payment_failed" | "cancelled" | "trial_ended" | "lapsed" | "trial" | "active" | null;
+    /** past_due only: full access until this date. */
+    grace_until: string | null;
+    /** The shop started this plan itself and holds no paid access: it may start again, or go back to Free. */
+    can_retry: boolean;
     free: boolean;
   };
   /** Free plan only: days of invoice-PDF download left in the first 7 days. */

@@ -1,19 +1,26 @@
+import { useEffect } from "react";
 import { rupees, usePublicPlans } from "../lib/plans";
 
 const PLAY_URL = "https://play.google.com/store/apps/details?id=in.fleekfinance.metalerp";
 const PRIVACY = "https://fleekfintech.com/privacy-policy/";
 const TERMS = "https://fleekfintech.com/terms/";
 
-const FEATURES: { title: string; text: string }[] = [
+// `id` is what an ad sitelink points at (metal.fleekfinance.in/#invoices, /#catalog).
+const FEATURES: { id?: string; title: string; text: string }[] = [
   { title: "Bill by weight", text: "Make invoices on your phone with weighment slips and weight-based rates for metal sold by the kilo." },
   { title: "Know who owes you", text: "See who owes you and for how long, and record every payment against the right bill." },
-  { title: "Send on WhatsApp", text: "Share the invoice PDF with your customer in one tap, and send payment reminders you approve first." },
-  { title: "Customers order by link", text: "Share a catalog link. Customers pick items and order; you turn each order into an invoice." },
+  { id: "invoices", title: "Send on WhatsApp", text: "Share the invoice PDF with your customer in one tap, and send payment reminders you approve first." },
+  { id: "catalog", title: "Customers order by link", text: "Share a catalog link. Customers pick items and order; you turn each order into an invoice." },
 ];
 
 export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSignin: () => void }) {
   const android = /android/i.test(navigator.userAgent);
   const { data: ladder } = usePublicPlans();
+  // The page is drawn after load, so the browser cannot jump to a #section by itself.
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (id) document.getElementById(id)?.scrollIntoView({ block: "center" });
+  }, []);
   return (
     <div className="min-h-[100dvh]">
       <header className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
@@ -48,7 +55,7 @@ export function LandingPage({ onSignup, onSignin }: { onSignup: () => void; onSi
 
         <section className="grid gap-3 sm:grid-cols-2">
           {FEATURES.map((f) => (
-            <div key={f.title} className="card p-5">
+            <div key={f.title} id={f.id} className="card scroll-mt-4 p-5 target:ring-2 target:ring-accent">
               <h2 className="section-title">{f.title}</h2>
               <p className="mt-1 text-sm text-muted">{f.text}</p>
             </div>

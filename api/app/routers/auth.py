@@ -90,6 +90,7 @@ def signup_start(body: SignupStartRequest, request: Request, session: SessionDep
             mobile=body.mobile,
             password=body.password,
             ip=ip,
+            ad_click=(body.ad_click_kind, body.ad_click_id) if body.ad_click_kind and body.ad_click_id else None,
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None

@@ -32,6 +32,9 @@ class SignupRequest(PkUuidMixin, TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     client_ip: Mapped[str | None] = mapped_column(String(64))
+    # Google Ads click this sign-up came from (gclid | gbraid | wbraid), kept so a real sign-up can be sent back to Google.
+    ad_click_kind: Mapped[str | None] = mapped_column(String(8))
+    ad_click_id: Mapped[str | None] = mapped_column(String(200), index=True)
     # Filled when the firm has been made, so a repeated verify answers with the same firm.
     tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenant.id"))
     fleek_org_id: Mapped[str | None] = mapped_column(String(64))

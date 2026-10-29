@@ -127,6 +127,7 @@ def start_signup(
     mobile: str,
     password: str,
     ip: str | None,
+    ad_click: tuple[str, str] | None = None,
 ) -> SignupStarted:
     email = (email or "").lower().strip() or None
     mobile = normalize_mobile(mobile)
@@ -156,6 +157,8 @@ def start_signup(
         status="pending",
         expires_at=now + SIGNUP_TTL,
         client_ip=ip,
+        ad_click_kind=ad_click[0] if ad_click else None,
+        ad_click_id=ad_click[1] if ad_click else None,
     )
     session.add(req)
     session.commit()

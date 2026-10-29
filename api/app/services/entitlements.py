@@ -55,6 +55,10 @@ class Licence:
     # The feature keys the plan switches on (Fleek's list). None = an older answer with no list: everything, as before.
     features: tuple[str, ...] | None = None
     stale: bool = False  # the last good answer, used past its valid_until while Fleek is unreachable
+    # Why the licence is not paid, beside `status` (Fleek: payment_pending | past_due | payment_failed | cancelled | trial_ended | ...). None = an older answer.
+    state: str | None = None
+    grace_until: str | None = None  # past_due only: full access until this date
+    can_retry: bool = False  # the shop started this plan itself and holds no paid access: it may start again or go back to Free
 
     @property
     def lapsed(self) -> bool:
@@ -113,6 +117,9 @@ def licence_from_payload(payload: dict[str, Any], *, stale: bool = False) -> Lic
         campaign_monthly_cap=limits.get("campaign_monthly_cap"),
         features=tuple(payload["features"]) if isinstance(payload.get("features"), list) else None,
         stale=stale,
+        state=payload.get("state") if isinstance(payload.get("state"), str) else None,
+        grace_until=payload.get("grace_until") if isinstance(payload.get("grace_until"), str) else None,
+        can_retry=payload.get("can_retry") is True,
     )
 
 

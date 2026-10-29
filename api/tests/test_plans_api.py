@@ -45,6 +45,9 @@ class PlanFleek(FakeFleek):
             if self.start_status != 200:
                 return self.start_status, {"error": "not_on_free", "message": "only a shop on the Free plan can start a trial"}
             return 200, {"short_url": "https://rzp.io/i/abc", "trial_ends_on": "2026-11-04", "amount": 999, "plan": payload["plan"], "label": "Growth"}  # type: ignore[index]
+        if path.endswith("/check-payment"):
+            self.plan_calls.append((method, path, payload))
+            return 200, {"changed": True}
         if path.endswith("/cancel-plan"):
             self.plan_calls.append((method, path, payload))
             if self.cancel_status != 200:
@@ -137,6 +140,42 @@ def test_starting_or_cancelling_drops_the_cached_licence_so_it_shows_at_once(cli
         from datetime import UTC, datetime
 
         assert row.valid_until < datetime.now(UTC).replace(tzinfo=row.valid_until.tzinfo)       # next read asks Fleek again
+
+
+def test_coming_back_from_the_payment_page_asks_fleek_and_drops_the_cached_licence(client: TestClient, fleek: PlanFleek) -> None:
+    t = _linked_token(client, fleek)
+    with SessionLocal() as s:
+        from datetime import UTC, datetime, timedelta
+
+        from app.models import Tenant
+
+        tenant = s.scalars(select(Tenant)).one()
+        s.add(TenantEntitlement(tenant_id=tenant.id, payload={"status": "lapsed", "state": "payment_pending"}, last_verified_at=datetime.now(UTC),
+                                valid_until=datetime.now(UTC) + timedelta(hours=20)))
+        s.commit()
+    r = client.post("/api/plans/check", headers=_h(t))
+    assert r.status_code == 200 and r.json() == {"changed": True}
+    assert fleek.plan_calls[-1][1].endswith("/check-payment")
+    with SessionLocal() as s:
+        row = s.scalars(select(TenantEntitlement)).one()
+        assert row.valid_until < datetime.now(UTC).replace(tzinfo=row.valid_until.tzinfo)
+
+
+def test_the_plan_page_carries_why_a_licence_is_not_paid(client: TestClient, fleek: PlanFleek) -> None:
+    t = _linked_token(client, fleek)
+    with SessionLocal() as s:
+        from datetime import UTC, datetime, timedelta
+
+        from app.models import Tenant
+
+        tenant = s.scalars(select(Tenant)).one()
+        s.add(TenantEntitlement(
+            tenant_id=tenant.id, last_verified_at=datetime.now(UTC), valid_until=datetime.now(UTC) + timedelta(hours=20),
+            payload={"status": "lapsed", "state": "payment_pending", "can_retry": True, "plan": {"key": "metal_erp_growth", "label": "Growth"},
+                     "valid_until": "2099-01-01T00:00:00+00:00"}))
+        s.commit()
+    cur = client.get("/api/plans", headers=_h(t)).json()["current"]
+    assert (cur["state"], cur["can_retry"], cur["free"]) == ("payment_pending", True, True)
 
 
 def test_cancel_is_one_call_and_its_result_is_passed_on(client: TestClient, fleek: PlanFleek) -> None:

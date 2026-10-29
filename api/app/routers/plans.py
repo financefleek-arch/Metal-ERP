@@ -90,6 +90,9 @@ def get_plans(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
             "plan_label": licence.plan_label if licence else None,
             "status": licence.status if licence else None,
             "trial_days_left": licence.trial_days_left if licence else None,
+            "state": licence.state if licence else None,
+            "grace_until": licence.grace_until if licence else None,
+            "can_retry": licence.can_retry if licence else False,
             "free": free,
         },
         "pdf_days_left": features.pdf_days_left(tenant) if free else None,
@@ -117,10 +120,27 @@ def start_plan(body: StartIn, user: CurrentUser, session: SessionDep) -> dict[st
     return out
 
 
+@router.post("/check")
+def check_payment(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    """The owner is back from the payment page: ask Fleek (which asks Razorpay) whether the autopay was approved, then drop the cached licence so the
+    page shows the result now instead of waiting on a webhook. -> {changed}."""
+    _owner(user)
+    tenant = _tenant(session, user)
+    org_id = _linked(tenant)
+    try:
+        code, out = fleek_request("POST", f"/api/internal/metal-erp/orgs/{org_id}/check-payment", {})
+    except FleekUnavailable:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, UNAVAILABLE) from None
+    if code != 200:
+        raise HTTPException(code if code in (404, 409, 502) else 502, out.get("message") or UNAVAILABLE)
+    entitlements.invalidate(session, tenant)
+    return {"changed": bool(out.get("changed"))}
+
+
 @router.post("/cancel")
 def cancel_plan(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
-    """Cancel in one tap, no questions. A trial with no autopay goes back to Free now; otherwise the plan runs to the end of the trial or paid month
-    and nothing further is charged. -> {effective: "now"|"period_end", ends_on}."""
+    """Cancel in one tap, no questions. A trial with no autopay, or a plan that holds no paid access (payment not completed, failed, ended), goes back
+    to Free now; otherwise the plan runs to the end of the trial or paid month and nothing further is charged. -> {effective: "now"|"period_end", ends_on}."""
     _owner(user)
     tenant = _tenant(session, user)
     org_id = _linked(tenant)

@@ -38,3 +38,34 @@ export function reportSignup(): void {
   const g = (window as unknown as { gtag?: Gtag }).gtag;
   if (typeof g === "function") g("event", "sign_up", { method: "email_and_mobile" });
 }
+
+const AD_CLICK = "metalerp.ad-click";
+const AD_CLICK_KEEP_MS = 7 * 24 * 3600 * 1000;
+const AD_KINDS = ["gclid", "gbraid", "wbraid"] as const;
+
+/** Keep the Google Ads click id from the landing URL for a week, so the sign-up can carry it (a later visit without one leaves it alone). */
+export function rememberAdClick(search: string = window.location.search): void {
+  try {
+    const q = new URLSearchParams(search);
+    for (const kind of AD_KINDS) {
+      const id = q.get(kind);
+      if (id && /^[A-Za-z0-9_-]{1,200}$/.test(id)) {
+        localStorage.setItem(AD_CLICK, JSON.stringify({ kind, id, at: Date.now() }));
+        return;
+      }
+    }
+  } catch {
+    /* blocked storage: the sign-up just carries no click id */
+  }
+}
+
+/** The remembered click id in the shape the sign-up request takes, or nothing. */
+export function adClick(): { ad_click_kind?: string; ad_click_id?: string } {
+  try {
+    const v = JSON.parse(localStorage.getItem(AD_CLICK) ?? "null") as { kind?: string; id?: string; at?: number } | null;
+    if (v?.kind && v.id && typeof v.at === "number" && Date.now() - v.at < AD_CLICK_KEEP_MS) return { ad_click_kind: v.kind, ad_click_id: v.id };
+  } catch {
+    /* fall through */
+  }
+  return {};
+}
