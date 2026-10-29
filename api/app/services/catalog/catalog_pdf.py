@@ -302,6 +302,9 @@ def _frame(page: pymupdf.Page, brand: Brand, number: int, total: int) -> None:
     page.draw_line((MARGIN, 30), (PAGE_W - MARGIN, 30), color=LINE, width=0.6)
     put_text(page, 0, PAGE_H - 16, f"Page {number} of {total}", 8, align="c", width=PAGE_W,
              color=MUTED)
+    # who to call, on every page: a page torn out or forwarded alone still says whose it is
+    contact = "  |  ".join(x for x in (brand.firm_name, brand.phone) if x and x.strip())
+    put_text(page, MARGIN, PAGE_H - 16, latin1(contact)[:70], 8, color=MUTED)
 
 
 def build(

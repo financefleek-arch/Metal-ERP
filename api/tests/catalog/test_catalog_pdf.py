@@ -359,3 +359,14 @@ def test_preview_skips_cover_and_contents() -> None:
     # a one-page flat catalog: preview is page index 1 (the first product page)
     png = render_preview_png(many(3, None), CatalogPdfOptions(group_by="none"), BRAND, TODAY)
     assert png[:4] == b"\x89PNG"
+
+
+def test_every_page_after_the_cover_carries_the_firm_name_and_phone() -> None:
+    doc = doc_of(many(40, None), group_by="none", columns=4)
+    assert len(doc) >= 3
+    for i in range(1, len(doc)):
+        t = text(doc, i)
+        assert "Sample Traders" in t and "+91 98765 43210" in t, f"page {i + 1}"
+    # without a phone the footer still names the firm
+    bare = build(many(5, None), CatalogPdfOptions(group_by="none"), Brand("Sample Traders", "T"), TODAY)
+    assert "Sample Traders" in text(bare, 1)
