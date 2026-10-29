@@ -76,25 +76,28 @@ def test_a_link_shows_only_what_a_customer_may_buy(shop) -> None:
     assert r.status_code == 200, r.text
     v = r.json()
     names = [i["name"] for i in v["items"]]
-    assert names == ["Beer Mug 480 ML", "Juice Glass 190 ML"]  # in stock and priced only
-    assert v["firm_name"] and v["groups"] == ["Drinkware"] and v["title"] == "Steel range"
+    assert "Beer Mug 480 ML" in names and "Juice Glass 190 ML" in names
+    assert "No Price Tray" not in names  # no price: nothing to sell
+    assert v["firm_name"] and v["groups"][0] == "Drinkware" and v["title"] == "Steel range"
     mug = v["items"][0]
     assert mug["price"] == "1256.00" and mug["pack_qty"] == 6 and mug["code"] == "100500"
     assert mug["tag"] is None and mug["photo_url"] is None
 
 
-def test_expected_items_only_when_the_link_allows_it(shop) -> None:
+def test_out_of_stock_items_are_left_out_only_when_the_link_asks_for_it(shop) -> None:
     client, h, items = shop
     plain = _view(client, _make(client, h, items)["token"]).json()
-    assert "Expected Jug" not in [i["name"] for i in plain["items"]]
-    open_ = _view(client, _make(client, h, items, include_expected=True)["token"]).json()
-    jug = next(i for i in open_["items"] if i["name"] == "Expected Jug")
-    assert jug["tag"] == "On order"
+    names = [i["name"] for i in plain["items"]]
+    jug = next(i for i in plain["items"] if i["name"] == "Expected Jug")
+    assert jug["tag"] == "On order" and "Sold Out Bowl" in names
+    lean = _view(client, _make(client, h, items, leave_out_of_stock=True)["token"]).json()
+    assert "Sold Out Bowl" not in [i["name"] for i in lean["items"]]
+    assert "Expected Jug" in [i["name"] for i in lean["items"]]
 
 
 def test_the_public_page_never_leaks_internal_fields(shop) -> None:
     client, h, items = shop
-    v = _view(client, _make(client, h, items, include_expected=True)["token"]).json()
+    v = _view(client, _make(client, h, items)["token"]).json()
     assert set(v) == {
         "title",
         "firm_name",
@@ -126,7 +129,10 @@ def test_a_filter_link_follows_the_catalog_as_it_changes(shop) -> None:
     assert [i["name"] for i in _view(client, token).json()["items"]] == ["Juice Glass 190 ML"]
     client.patch(f"/api/items/{items[1]['id']}", headers=h, json={"default_rate": "250"})
     assert _view(client, token).json()["items"][0]["price"] == "250.00"
+    # stock never hides an item from a link that did not ask for that
     client.patch(f"/api/items/{items[1]['id']}", headers=h, json={"availability": "out_of_stock"})
+    assert len(_view(client, token).json()["items"]) == 1
+    client.patch(f"{URL}/{r.json()['id']}", headers=h, json={"leave_out_of_stock": True})
     assert _view(client, token).json()["items"] == []
 
 

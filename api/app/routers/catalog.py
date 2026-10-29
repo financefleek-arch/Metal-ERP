@@ -1284,10 +1284,11 @@ def get_output_file(
     except Exception as exc:  # noqa: BLE001 - expired / removed object
         raise HTTPException(status_code=404, detail="That file is no longer available.") from exc
     cat = _get_catalog(session, user.tenant_id, catalog_id)
+    prefix = "catalog" if job.kind == "price_list_pdf" else "labels"
     return Response(
         content=data,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="labels-{_file_slug(cat.title)}.pdf"'
+            "Content-Disposition": f'attachment; filename="{prefix}-{_file_slug(cat.title)}.pdf"'
         },
     )

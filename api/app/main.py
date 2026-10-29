@@ -23,6 +23,7 @@ from app.routers import (
     admin,
     auth,
     catalog,
+    catalog_customer_pdf,
     catalog_review,
     catalog_tally,
     control_plane,
@@ -176,6 +177,7 @@ app.include_router(tally_self_serve.router)
 app.include_router(inward.router)
 app.include_router(catalog.router)
 app.include_router(catalog_tally.router)
+app.include_router(catalog_customer_pdf.router)
 app.include_router(catalog_review.router)
 app.include_router(customer_catalogs.router)
 app.include_router(documents.router)

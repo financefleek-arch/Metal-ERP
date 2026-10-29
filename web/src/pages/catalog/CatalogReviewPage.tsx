@@ -26,6 +26,7 @@ import {
 import { SupplierPicker } from "../../components/catalog/SupplierPicker";
 import { EditableNumber, EditableText } from "../../components/catalog/Editable";
 import { MakeCatalogDialog } from "../../components/catalog/MakeCatalogDialog";
+import { PriceListPdfDialog, type PdfTarget } from "../../components/catalog/PriceListPdfDialog";
 import type { ItemFilter as ItemsFilter } from "../../lib/types";
 import { ImageLightbox } from "../../components/catalog/ImageLightbox";
 import { ReplacePhoto } from "../../components/catalog/ReplacePhoto";
@@ -94,6 +95,7 @@ export function CatalogReviewPage() {
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [makeOpen, setMakeOpen] = useState(false);
+  const [pdfOpen, setPdfOpen] = useState(false);
   const [zoomRow, setZoomRow] = useState<CatalogItem | null>(null);
   const [pickSupplier, setPickSupplier] = useState(false);
   const [importNote, setImportNote] = useState<string | null>(null);
@@ -530,7 +532,12 @@ export function CatalogReviewPage() {
             </button>
           </span>
         ) : (
-          <div className="relative" data-pop-root>
+          <div className="relative flex items-center gap-2" data-pop-root>
+            {cat?.status === "ready" && (
+              <button type="button" className="btn-primary h-9 px-3" onClick={() => setPdfOpen(true)}>
+                {selectedCount > 0 ? `Customer PDF (${selectedCount})` : "Customer PDF"}
+              </button>
+            )}
             <button
               type="button"
               className="btn-ghost"
@@ -1172,6 +1179,14 @@ export function CatalogReviewPage() {
           title={zoomRow.display_name}
           caption={`${zoomRow.code} · supplier ref ${zoomRow.supplier_code}`}
           onClose={() => setZoomRow(null)}
+        />
+      )}
+      {pdfOpen && cat && (
+        <PriceListPdfDialog
+          catalogId={cat.id}
+          defaultTitle={cat.title}
+          target={selectedCount > 0 ? (target() as PdfTarget) : { all_included: true }}
+          onClose={() => setPdfOpen(false)}
         />
       )}
       {makeOpen && cat && (

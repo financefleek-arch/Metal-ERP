@@ -104,9 +104,7 @@ def _check_out(p: svc.Plan) -> CatalogCheckOut:
     return CatalogCheckOut(
         selected=p.selected,
         included=len(p.items),
-        left_out_out_of_stock=p.left_out["out_of_stock"],
-        left_out_discontinued=p.left_out["discontinued"],
-        left_out_expected=p.left_out["expected"],
+        left_out=p.left_out,
         no_price=p.no_price,
         missing_photos=len(p.missing),
         missing_photo_items=[

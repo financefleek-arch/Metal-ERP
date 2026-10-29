@@ -182,7 +182,7 @@ def place(
     # only what the link offers right now, at the item's own price
     ids = item_catalogs.resolve_selection(session, link.tenant_id, share_links.selection_of(link))
     plan = item_catalogs.plan(
-        session, link.tenant_id, ids, CatalogLayout(include_expected=link.include_expected)
+        session, link.tenant_id, ids, CatalogLayout(leave_out_of_stock=link.leave_out_of_stock)
     )
     offered: dict[str, Item] = {it.id: it for it in plan.items}
     gone = [i for i in merged if i not in offered]

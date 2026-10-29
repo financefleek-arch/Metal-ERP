@@ -189,8 +189,7 @@ def public_order(status_token: str, session: SessionDep) -> PublicOrder:
 class OrderLineOut(PublicLine):
     id: str
     item_id: str | None
-    # review hints: what is true of the item right now
-    available: bool = True
+    # review hint: what is true of the item right now
     current_rate: str | None = None
 
 
@@ -267,7 +266,6 @@ def _order_out(session: SessionDep, o: CustomerOrder, *, with_lines: bool) -> Or
                 unit=ln.unit,
                 rate=_m(ln.rate),
                 amount=_m(ln.amount),
-                available=it is not None and str(it.availability) == "in_stock",
                 current_rate=_current_rate(link, it, ln.unit),
             )
         )

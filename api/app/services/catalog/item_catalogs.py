@@ -1,9 +1,9 @@
 """Customer catalogs built from items.
 
-A customer catalog offers what the firm has, so it is built from the item list, never straight
-from a supplier price list: the price is the item's selling rate, the photo is the item's photo,
-the pack size is the item's. Only items that are In stock go in (Expected ones on request, with
-an optional "on order" label). Each build is a snapshot; a rebuild repeats the stored selection
+A customer catalog is built from the item list: the price is the item's selling rate, the photo is
+the item's photo, the pack size is the item's. Everything selected goes in (a price list is not an
+indicator of stock); Out of stock ones are left out only when the shop asks. Items marked Expected
+carry an "On order" label. Each build is a snapshot; a rebuild repeats the stored selection
 (a filter is evaluated again) as the next version of the same series.
 
 Nothing here reads a cost price or a supplier code.
@@ -54,9 +54,7 @@ ON_ORDER = "On order"
 class Plan:
     selected: int = 0
     items: list[Item] = field(default_factory=list)  # the ones that will be printed, in order
-    left_out: dict[str, int] = field(
-        default_factory=lambda: {"out_of_stock": 0, "discontinued": 0, "expected": 0}
-    )
+    left_out: int = 0  # Out of stock items skipped because the shop asked for that
     no_price: int = 0
     missing: list[Item] = field(default_factory=list)  # printed items with no photo
 
@@ -163,18 +161,13 @@ def plan(session: Session, tenant_id: str, ids: list[str], layout: CatalogLayout
     items = _load_items(session, tenant_id, ids)
     cats = _category_names(session, tenant_id)
     groups = _group_names(session, tenant_id)
-    allowed = {Availability.in_stock.value}
-    if layout.include_expected:
-        allowed.add(Availability.expected.value)
-
     keep: list[Item] = []
     for item_id in ids:
         it = items.get(item_id)
         if it is None or it.merged_into_id is not None or it.status == "archived":
             continue
-        if it.availability not in allowed:
-            if it.availability in p.left_out:
-                p.left_out[it.availability] += 1
+        if layout.leave_out_of_stock and it.availability == Availability.out_of_stock.value:
+            p.left_out += 1
             continue
         if it.default_rate is None or Decimal(str(it.default_rate)) <= 0:
             p.no_price += 1
@@ -218,11 +211,7 @@ def load_entries(
     jpegs = media_svc.print_jpegs(storage, assets)
     out: list[CatalogEntry] = []
     for it in items:
-        note = (
-            ON_ORDER
-            if layout.label_expected and it.availability == Availability.expected.value
-            else None
-        )
+        note = ON_ORDER if it.availability == Availability.expected.value else None
         out.append(
             CatalogEntry(
                 code=(it.sku or it.barcode or ""),

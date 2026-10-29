@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.domain.normalize import load_synonym_map, normalize_name
 from app.models import CatalogProduct, Item, ItemCategory, SupplierCatalogItem
-from app.models._mixins import Availability, ItemSource, ItemStatus, ItemType
+from app.models._mixins import ItemSource, ItemStatus, ItemType
 
 _NAME_MAX = 300
 
@@ -171,8 +171,6 @@ def promote(
                 size_text=(row.size_text or None),
                 pack_qty=row.pack_qty or None,
                 carton_qty=row.carton_qty or None,
-                # price-list items are not stock until you mark them (in bulk) as in stock
-                availability=Availability.out_of_stock,
                 default_rate=_f(row.sell_price),
                 last_purchase_rate=_f(row.cost_price),
                 barcode=prod.code,

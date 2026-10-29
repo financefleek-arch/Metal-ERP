@@ -25,7 +25,6 @@ from app.schemas_catalog import (
 from app.services import audit
 from app.services import media as media_svc
 from app.services.catalog import promote as promote_svc
-from app.services.catalog import supplier_defaults as defaults_svc
 from app.services.catalog import tally_items as ti
 from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.tally.agent_health import assert_tally_reachable
@@ -89,8 +88,6 @@ def promote(
     _get_catalog(session, user.tenant_id, catalog_id)
     rows = _rows(session, user.tenant_id, catalog_id, body)
     plan = promote_svc.promote(session, user.tenant_id, rows)
-    if body.mark_in_stock:
-        defaults_svc.mark_in_stock(session, rows)
     pairs = media_svc.items_needing_photos(session, user.tenant_id, rows)
     audit.record(
         session,

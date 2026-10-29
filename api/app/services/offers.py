@@ -179,7 +179,7 @@ def _offered_items(
     ids = resolve_ids(session, tenant_id, selection.ids, selection.filter)
     if not ids:
         raise OfferRefused(422, "Pick the items to send first.")
-    return len(ids), item_catalogs.plan(session, tenant_id, ids, CatalogLayout(include_expected=False))
+    return len(ids), item_catalogs.plan(session, tenant_id, ids, CatalogLayout())
 
 
 def plan_offer(session: Session, tenant: Tenant, selection: CatalogSelection) -> OfferPlan:
@@ -270,7 +270,7 @@ def send_offer(
         user_id=user_id,
         title=name,
         selection=selection,
-        include_expected=False,
+        leave_out_of_stock=False,
         expires_at=None,
         allow_pieces=allow_pieces,
     )

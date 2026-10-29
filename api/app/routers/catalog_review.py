@@ -57,7 +57,6 @@ def _defaults_out(row: SupplierCatalogDefault | None) -> SupplierDefaultsOut:
             rounding_step=None,
             group_map={},
             add_automatically=False,
-            mark_in_stock=False,
         )
     return SupplierDefaultsOut(
         bulk_margin_pct=(
@@ -66,7 +65,6 @@ def _defaults_out(row: SupplierCatalogDefault | None) -> SupplierDefaultsOut:
         rounding_step=row.rounding_step,
         group_map=dict(row.group_map or {}),
         add_automatically=row.add_automatically,
-        mark_in_stock=row.mark_in_stock,
     )
 
 
@@ -108,8 +106,6 @@ def put_defaults(
         row.group_map = merged
     if body.add_automatically is not None:
         row.add_automatically = body.add_automatically
-    if body.mark_in_stock is not None:
-        row.mark_in_stock = body.mark_in_stock
     session.flush()
     return _defaults_out(row)
 

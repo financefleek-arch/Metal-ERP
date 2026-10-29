@@ -59,17 +59,16 @@ def test_defaults_start_empty_and_roundtrip(shop) -> None:
         "rounding_step": None,
         "group_map": {},
         "add_automatically": False,
-        "mark_in_stock": False,
     }
     r = _put(client, h, sup, bulk_margin_pct="22.5", rounding_step=5, add_automatically=True)
     assert r.status_code == 200, r.text
     assert r.json()["bulk_margin_pct"] == "22.50" and r.json()["rounding_step"] == 5
     # only the fields sent change; the map merges and a blank name removes an entry
     _put(client, h, sup, group_map={"Beer Mugs": "Drinkware", "Trays": "Serving"})
-    r = _put(client, h, sup, group_map={"trays": ""}, mark_in_stock=True)
+    r = _put(client, h, sup, group_map={"trays": ""})
     d = r.json()
     assert d["group_map"] == {"beer mugs": "Drinkware"}
-    assert d["add_automatically"] is True and d["mark_in_stock"] is True
+    assert d["add_automatically"] is True
     assert d["bulk_margin_pct"] == "22.50"
     assert _put(client, h, sup, rounding_step=7).status_code == 422
     # not a supplier / another firm's party
@@ -111,27 +110,20 @@ def test_group_map_renames_the_suggested_group(shop) -> None:
     assert "Renamed Group" in names and name not in names
 
 
-def test_add_automatically_creates_items_and_marks_them_in_stock(shop) -> None:
+def test_add_automatically_creates_items_and_leaves_stock_alone(shop) -> None:
     client, h, sup = shop
-    _put(client, h, sup, bulk_margin_pct="20", add_automatically=True, mark_in_stock=True)
+    _put(client, h, sup, bulk_margin_pct="20", add_automatically=True)
     cat = _upload(client, h, data=_pdf(), name="a.pdf", supplier_party_id=sup).json()
     rows = _items(client, h, cat["id"], limit=200)
     ids = [r["item_id"] for r in rows]
     assert all(ids)
     items = _items_of(ids)
+    # a price list says nothing about stock: items just get the default, and nothing reads it
     assert {i.availability for i in items} == {"in_stock"}
     # the item's selling rate is the catalog's selling price (margin applied first)
     by_id = {r["item_id"]: r for r in rows}
     for it in items:
         assert float(it.default_rate) == pytest.approx(float(by_id[it.id]["sell_price"]))
-
-
-def test_add_automatically_without_mark_in_stock_starts_out_of_stock(shop) -> None:
-    client, h, sup = shop
-    _put(client, h, sup, add_automatically=True)
-    cat = _upload(client, h, data=_pdf(), name="a.pdf", supplier_party_id=sup).json()
-    ids = [r["item_id"] for r in _items(client, h, cat["id"], limit=200)]
-    assert {i.availability for i in _items_of(ids)} == {"out_of_stock"}
 
 
 def test_update_item_prices_is_explicit_and_counts(shop) -> None:
@@ -174,15 +166,6 @@ def test_undo_removes_only_untouched_new_items(shop) -> None:
     assert u.json() == {"removed": 2, "kept": 1}
     rows = {r["id"]: r for r in _items(client, h, cat["id"], limit=200)}
     assert sum(1 for r in rows.values() if r["item_id"]) == 1
-
-
-def test_mark_in_stock_flag_on_promote(shop) -> None:
-    client, h, sup = shop
-    cat = _upload(client, h, data=_pdf(), name="a.pdf", supplier_party_id=sup).json()
-    r = client.post(
-        f"{BASE}/{cat['id']}/promote", headers=h, json={"all_included": True, "mark_in_stock": True}
-    )
-    assert {i.availability for i in _items_of(r.json()["created_item_ids"])} == {"in_stock"}
 
 
 def test_not_added_filter(shop) -> None:

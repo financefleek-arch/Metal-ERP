@@ -168,7 +168,7 @@ export function OffersDialog({
               </div>
               {p.offered < p.selected && (
                 <p className="mt-1 text-xs text-muted">
-                  {p.selected - p.offered} are not shown to customers (no price, or not in stock).
+                  {p.selected - p.offered} are not shown to customers (no price).
                 </p>
               )}
               {p.without_photo > 0 && (

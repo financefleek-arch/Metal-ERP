@@ -16,7 +16,6 @@ export interface OrderLine {
   unit: "pack" | "piece";
   rate: string;
   amount: string;
-  available: boolean;
   current_rate: string | null;
 }
 export interface Order {

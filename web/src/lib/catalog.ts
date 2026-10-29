@@ -335,8 +335,8 @@ export interface CatalogLayout {
   /** extra on the per-piece price (loose pieces cost more to hand out); 0 = pack price / pieces */
   piece_premium_pct: number;
   contents: boolean;
-  include_expected: boolean;
-  label_expected: boolean;
+  /** leave out items marked Out of stock; everything else chosen is printed */
+  leave_out_of_stock: boolean;
 }
 
 export interface CatalogRequest extends CatalogLayout {
@@ -346,9 +346,7 @@ export interface CatalogRequest extends CatalogLayout {
 export interface CatalogCheck {
   selected: number;
   included: number;
-  left_out_out_of_stock: number;
-  left_out_discontinued: number;
-  left_out_expected: number;
+  left_out: number;
   no_price: number;
   missing_photos: number;
   missing_photo_items: { item_id: string; name: string; code: string | null }[];

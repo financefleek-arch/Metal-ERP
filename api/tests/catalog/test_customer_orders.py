@@ -101,12 +101,24 @@ def test_a_double_tap_makes_one_order(shop) -> None:
 
 def test_only_what_the_link_offers_can_be_ordered(shop) -> None:
     client, h, items, token = shop
-    r = _order(token, client, [(items[0]["id"], 1), (items[2]["id"], 1)])  # out of stock
+    # an Out of stock item is orderable: a price list is not an indicator of stock
+    assert _order(token, client, [(items[2]["id"], 1)]).status_code == 201
+    # unless the link was made to leave those out
+    lean = client.post(
+        LINKS,
+        headers=h,
+        json={
+            "title": "Lean",
+            "selection": {"ids": [i["id"] for i in items]},
+            "leave_out_of_stock": True,
+        },
+    ).json()["token"]
+    r = _order(lean, client, [(items[0]["id"], 1), (items[2]["id"], 1)], phone="9333333333")
     assert r.status_code == 409, r.text
     d = r.json()["detail"]
     assert d["unavailable"][0]["name"] == "Sold Out Bowl"
     with SessionLocal() as s:
-        assert s.scalar(select(CustomerOrder.id)) is None  # nothing was saved
+        assert len(list(s.scalars(select(CustomerOrder.id)))) == 1  # the refused one was not saved
     # an item that was never in the link
     outsider = _item(client, h, "Not In The Link", "50")
     assert _order(token, client, [(outsider["id"], 1)]).status_code == 409
@@ -367,9 +379,8 @@ def test_review_hints_show_what_changed_since_the_order(shop) -> None:
     )
     lines = {ln["name"]: ln for ln in client.get(f"/api/orders/{oid}", headers=h).json()["lines"]}
     mug = lines["Beer Mug 480 ML"]
-    assert mug["available"] is True and mug["current_rate"] == "1256.00"
+    assert mug["current_rate"] == "1256.00" and "available" not in mug
     juice = lines["Juice Glass 190 ML"]
-    assert juice["available"] is False
     assert juice["current_rate"] == "250.00" and juice["rate"] == "190.00"
 
 

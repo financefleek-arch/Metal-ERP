@@ -17,7 +17,7 @@ export interface ShareLink {
   title: string;
   token: string;
   path: string;
-  include_expected: boolean;
+  leave_out_of_stock: boolean;
   columns: 1 | 2 | 3;
   show_code: boolean;
   show_pack_info: boolean;
@@ -47,7 +47,7 @@ export function ShareLinkDialog({
 }) {
   const qc = useQueryClient();
   const [title, setTitle] = useState("");
-  const [expected, setExpected] = useState(false);
+  const [leaveOut, setLeaveOut] = useState(false);
   const [days, setDays] = useState<"" | "7" | "30" | "90">("");
   const [opts, setOpts] = useState<LinkOptions>(DEFAULT_LINK_OPTIONS);
   const [made, setMade] = useState<ShareLink | null>(null);
@@ -67,7 +67,7 @@ export function ShareLinkDialog({
         body: {
           title: title.trim(),
           selection,
-          include_expected: expected,
+          leave_out_of_stock: leaveOut,
           ...opts,
           expires_at: days ? new Date(Date.now() + Number(days) * 86_400_000).toISOString() : null,
         },
@@ -95,7 +95,7 @@ export function ShareLinkDialog({
             </h2>
             <p className="mt-1 text-sm text-muted">
               {count.toLocaleString("en-IN")} chosen item{count === 1 ? "" : "s"}. Anyone with the link can look at
-              them, with your current prices. Only items in stock with a price are shown.
+              them, with your current prices. Every chosen item with a price is shown.
             </p>
           </div>
           <button type="button" className="btn-ghost h-9 px-3" onClick={onClose}>
@@ -119,10 +119,10 @@ export function ShareLinkDialog({
               />
             </div>
             <label className="mt-3 flex items-start gap-2 text-sm">
-              <input type="checkbox" className="mt-1" checked={expected} onChange={(e) => setExpected(e.target.checked)} />
+              <input type="checkbox" className="mt-1" checked={leaveOut} onChange={(e) => setLeaveOut(e.target.checked)} />
               <span>
-                Also show items that are on order
-                <span className="block text-xs text-muted">They appear tagged &ldquo;On order&rdquo;.</span>
+                Leave out items marked Out of stock
+                <span className="block text-xs text-muted">Otherwise they are shown (items marked Expected carry an &ldquo;On order&rdquo; tag).</span>
               </span>
             </label>
             <div className="mt-3">

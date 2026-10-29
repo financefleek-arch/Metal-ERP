@@ -292,8 +292,7 @@ class SelectionIn(BaseModel):
 
 
 class PromoteIn(SelectionIn):
-    # the new items count as In stock straight away (otherwise they start Out of stock)
-    mark_in_stock: bool = False
+    """Adding to items says nothing about stock, so there is nothing more to choose."""
 
 
 class PromoteOut(BaseModel):
@@ -318,7 +317,6 @@ class SupplierDefaultsIn(BaseModel):
     # supplier-suggested group (as the rules name it) -> our group name; blank name removes it
     group_map: dict[str, str] | None = None
     add_automatically: bool | None = None
-    mark_in_stock: bool | None = None
 
 
 class SupplierDefaultsOut(BaseModel):
@@ -326,7 +324,6 @@ class SupplierDefaultsOut(BaseModel):
     rounding_step: int | None
     group_map: dict[str, str]
     add_automatically: bool
-    mark_in_stock: bool
 
 
 class PricesPreviewOut(BaseModel):

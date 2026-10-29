@@ -116,6 +116,7 @@ def shop(catalog_client: CatalogEnv) -> tuple[TestClient, dict[str, str], list[d
 
 
 def test_check_counts_what_goes_in_and_what_is_left_out(shop) -> None:
+    """Availability never hides anything unless the shop asks for Out of stock ones to go."""
     client, h, items = shop
     away = _item(client, h, "Sold out thing", availability="out_of_stock")
     dead = _item(client, h, "Old thing", availability="discontinued")
@@ -125,18 +126,14 @@ def test_check_counts_what_goes_in_and_what_is_left_out(shop) -> None:
     sel = _ids(*items, away, dead, soon, free, plain)
 
     c = _check(client, h, sel).json()
-    assert c["selected"] == 8 and c["included"] == 4  # 3 + the one without a photo
-    assert (c["left_out_out_of_stock"], c["left_out_discontinued"], c["left_out_expected"]) == (
-        1,
-        1,
-        1,
-    )
+    # 3 + out of stock + discontinued + expected + the one without a photo; only "no price" is out
+    assert c["selected"] == 8 and c["included"] == 7 and c["left_out"] == 0
     assert c["no_price"] == 1
-    assert c["missing_photos"] == 1
-    assert c["missing_photo_items"][0]["item_id"] == plain["id"]
+    assert c["missing_photos"] == 4  # everything but the first three has no photo
+    assert plain["id"] in [m["item_id"] for m in c["missing_photo_items"]]
 
-    wide = _check(client, h, sel, include_expected=True).json()
-    assert wide["included"] == 5 and wide["left_out_expected"] == 0
+    asked = _check(client, h, sel, leave_out_of_stock=True).json()
+    assert asked["included"] == 6 and asked["left_out"] == 1
 
 
 def test_check_by_filter(shop) -> None:
@@ -189,23 +186,23 @@ def test_cost_price_never_reaches_the_catalog(shop) -> None:
     assert "987" not in _text(_file(client, h, cc["id"]))
 
 
-def test_only_in_stock_items_go_in_and_expected_ones_can_be_added_with_a_label(shop) -> None:
+def test_every_selected_item_goes_in_and_expected_ones_carry_a_label(shop) -> None:
     client, h, items = shop
     soon = _item(client, h, "Coming Teapot", "400", availability="expected")
     _photo(client, h, soon["id"], (5, 5, 5))
     sel = _ids(*items, soon)
 
-    plain = _create(client, h, sel).json()
-    assert plain["item_count"] == 3 and "Coming Teapot" not in _text(_file(client, h, plain["id"]))
+    away = _item(client, h, "Sold Out Tray", "90", availability="out_of_stock")
+    sel = _ids(*items, soon, away)
 
-    added = _create(client, h, sel, title="With expected", include_expected=True).json()
-    text = _text(_file(client, h, added["id"]))
-    assert added["item_count"] == 4 and "Coming Teapot" in text and "On order" not in text
+    made = _create(client, h, sel).json()
+    text = _text(_file(client, h, made["id"]))
+    assert made["item_count"] == 5 and "Coming Teapot" in text and "Sold Out Tray" in text
+    assert "On order" in text
 
-    tagged = _create(
-        client, h, sel, title="Tagged", include_expected=True, label_expected=True
-    ).json()
-    assert "On order" in _text(_file(client, h, tagged["id"]))
+    lean = _create(client, h, sel, title="Lean", leave_out_of_stock=True).json()
+    text = _text(_file(client, h, lean["id"]))
+    assert lean["item_count"] == 4 and "Sold Out Tray" not in text and "Coming Teapot" in text
 
 
 def test_missing_photos_get_a_placeholder_or_block_the_build(shop) -> None:
@@ -222,7 +219,7 @@ def test_missing_photos_get_a_placeholder_or_block_the_build(shop) -> None:
 
 def test_nothing_to_include_and_too_many_items(shop, monkeypatch: pytest.MonkeyPatch) -> None:
     client, h, items = shop
-    gone = _item(client, h, "Gone", availability="out_of_stock")
+    gone = _item(client, h, "Gone", rate=None)
     r = _create(client, h, _ids(gone))
     assert r.status_code == 422 and "Nothing to include" in r.json()["detail"]
     monkeypatch.setattr(svc, "MAX_ITEMS", 2)
@@ -247,7 +244,7 @@ def test_preview_is_a_png_and_needs_items(shop) -> None:
     client, h, items = shop
     r = client.post(f"{URL}/preview", headers=h, json={"selection": _ids(*items)})
     assert r.status_code == 200 and r.content[:8] == b"\x89PNG\r\n\x1a\n"
-    gone = _item(client, h, "Gone", availability="out_of_stock")
+    gone = _item(client, h, "Gone", rate=None)
     assert (
         client.post(f"{URL}/preview", headers=h, json={"selection": _ids(gone)}).status_code == 422
     )

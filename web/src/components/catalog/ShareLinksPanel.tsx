@@ -40,7 +40,7 @@ export function ShareLinksPanel() {
     <section className="mt-8" aria-label="Catalog links">
       <h2 className="font-serif text-lg font-semibold">Links for customers</h2>
       <p className="mt-1 text-sm text-muted">
-        Public links to a catalog. Customers see current prices and what is in stock. Make one from the Items page:
+        Public links to a catalog. Customers see your current prices. Make one from the Items page:
         select items, then Share catalog link.
       </p>
       {err && (

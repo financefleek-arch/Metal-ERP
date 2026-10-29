@@ -32,9 +32,9 @@ class CatalogLayout(BaseModel):
     # extra on the per-piece price (loose pieces cost more to hand out); 0 = pack price / pieces
     piece_premium_pct: float = Field(default=0.0, ge=0, le=100)
     contents: bool = True
-    # In stock items are always in. Expected ones only when asked, and the label is optional.
-    include_expected: bool = False
-    label_expected: bool = False
+    # Everything selected is printed. Only when asked, items the shop marked Out of stock are
+    # left out (a price list is not an indicator of stock, so this is never done silently).
+    leave_out_of_stock: bool = False
 
 
 class CatalogRequest(CatalogLayout):
@@ -50,10 +50,8 @@ class MissingPhoto(BaseModel):
 class CatalogCheckOut(BaseModel):
     selected: int
     included: int
-    # items left out because of their availability
-    left_out_out_of_stock: int
-    left_out_discontinued: int
-    left_out_expected: int
+    # items left out because the shop asked to leave out Out of stock ones
+    left_out: int
     # in the selection and available, but without a selling price: left out
     no_price: int
     missing_photos: int

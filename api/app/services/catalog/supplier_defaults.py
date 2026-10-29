@@ -1,7 +1,7 @@
 """Per-supplier defaults, so a repeat import needs no decisions.
 
 A supplier's usual margin and rounding, how its group names map to ours, whether items are added
-to the item list automatically after an import, and whether they then count as In stock. Applied
+to the item list automatically after an import. Applied
 once, when a catalog is imported from that supplier; the catalog's own margin can still be changed
 afterwards.
 """
@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import SupplierCatalog, SupplierCatalogDefault
-from app.models._mixins import Availability
 from app.services.catalog import promote as promote_svc
 from app.services.catalog.reprice import reprice
 
@@ -64,34 +63,11 @@ def apply_to_catalog(
 def add_automatically(
     session: Session, catalog: SupplierCatalog, defaults: SupplierCatalogDefault | None
 ) -> promote_svc.PromotePlan | None:
-    """Promote every included row to an item (and mark new ones In stock when the supplier is set
-    up that way). Returns the plan, or None when the supplier does not add automatically."""
+    """Promote every included row to an item. Returns the plan, or None when the supplier does not
+    add automatically."""
     if defaults is None or not defaults.add_automatically:
         return None
     rows = [r for r in catalog.items if r.included]
     if not rows:
         return None
-    plan = promote_svc.promote(session, catalog.tenant_id, rows)
-    if defaults.mark_in_stock:
-        mark_in_stock(session, rows)
-    return plan
-
-
-def mark_in_stock(session: Session, rows: list) -> int:
-    """Set the rows' items In stock (never a Discontinued one)."""
-    n = 0
-    seen: set[str] = set()
-    from app.models import Item
-
-    for r in rows:
-        if not r.item_id or r.item_id in seen:
-            continue
-        seen.add(r.item_id)
-        it = session.get(Item, r.item_id)
-        if it is not None and it.availability not in (
-            Availability.discontinued,
-            Availability.in_stock,
-        ):
-            it.availability = Availability.in_stock
-            n += 1
-    return n
+    return promote_svc.promote(session, catalog.tenant_id, rows)

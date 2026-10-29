@@ -33,7 +33,7 @@ public_limit = Depends(limit_dependency(_public_limiter))
 class ShareLinkCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     selection: CatalogSelection
-    include_expected: bool = False
+    leave_out_of_stock: bool = False
     expires_at: datetime | None = None
     allow_pieces: bool = False
     # extra on the per-piece price; 0 = pack price divided by the pieces in it
@@ -47,7 +47,7 @@ class ShareLinkCreate(BaseModel):
 
 class ShareLinkPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
-    include_expected: bool | None = None
+    leave_out_of_stock: bool | None = None
     allow_pieces: bool | None = None
     piece_premium_pct: float | None = Field(default=None, ge=0, le=100)
     price_basis: Literal["pack", "piece"] | None = None
@@ -64,7 +64,7 @@ class ShareLinkOut(BaseModel):
     title: str
     token: str
     path: str  # the part of the URL after the site address
-    include_expected: bool
+    leave_out_of_stock: bool
     allow_pieces: bool
     piece_premium_pct: float
     price_basis: str
@@ -86,7 +86,7 @@ def _out(link: CatalogShareLink) -> ShareLinkOut:
         title=link.title,
         token=link.token,
         path=f"/c/{link.token}",
-        include_expected=link.include_expected,
+        leave_out_of_stock=link.leave_out_of_stock,
         allow_pieces=link.allow_pieces,
         piece_premium_pct=float(link.piece_premium_pct or 0),
         price_basis=link.price_basis,
@@ -127,7 +127,7 @@ def create_link(body: ShareLinkCreate, session: SessionDep, user: CatalogWriteUs
         user_id=user.id,
         title=body.title,
         selection=body.selection,
-        include_expected=body.include_expected,
+        leave_out_of_stock=body.leave_out_of_stock,
         expires_at=body.expires_at,
         allow_pieces=body.allow_pieces,
         piece_premium_pct=body.piece_premium_pct,
@@ -167,8 +167,8 @@ def patch_link(
     patch = body.model_fields_set
     if "title" in patch and body.title:
         link.title = body.title.strip()
-    if "include_expected" in patch and body.include_expected is not None:
-        link.include_expected = body.include_expected
+    if "leave_out_of_stock" in patch and body.leave_out_of_stock is not None:
+        link.leave_out_of_stock = body.leave_out_of_stock
     if "allow_pieces" in patch and body.allow_pieces is not None:
         link.allow_pieces = body.allow_pieces
     if "piece_premium_pct" in patch and body.piece_premium_pct is not None:

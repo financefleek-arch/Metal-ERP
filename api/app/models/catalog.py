@@ -174,7 +174,7 @@ class SupplierCatalogDefault(PkUuidMixin, TimestampMixin, Base):
     group_map: Mapped[dict] = mapped_column(_JSON, default=dict, nullable=False)
     # promote every included row to an item right after an import
     add_automatically: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    # ... and mark those items In stock (otherwise they start Out of stock)
+    # no longer read (a price list says nothing about stock); dropped in a later cleanup
     mark_in_stock: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 

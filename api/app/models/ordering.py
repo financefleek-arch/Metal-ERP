@@ -44,8 +44,12 @@ class CatalogShareLink(PkUuidMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     # {"ids": [...]} or {"filter": {...}}; a filter is re-evaluated on every view
     selection_json: Mapped[dict] = mapped_column(_JSON, nullable=False)
-    # also show items marked Expected, tagged "on order"
+    # no longer read (migration 0065 replaced it); dropped in a later cleanup
     include_expected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # leave out items the shop marked Out of stock; everything else selected is shown
+    leave_out_of_stock: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     # Loose pieces: off unless the shop allows them for this link. The premium is extra on the
     # divided price (0 = pack price / pieces). `price_basis` is which price the page shows large.
     # how the page lays out its items: per row on a phone, and which small lines each card shows

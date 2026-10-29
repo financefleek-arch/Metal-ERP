@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import CatalogProduct, InwardBill, InwardBillLine, Item, SupplierCatalogItem
@@ -45,11 +46,20 @@ def _list(client: TestClient, h: dict[str, str], **params: Any) -> list[dict]:
     return r.json()  # type: ignore[no-any-return]
 
 
-def _env(catalog_client: CatalogEnv, codes=("11", "12", "13")) -> tuple[Any, dict, str, str]:
+def _env(
+    catalog_client: CatalogEnv, codes=("11", "12", "13"), out_of_stock: bool = False
+) -> tuple[Any, dict, str, str]:
+    """A price list added to items. `out_of_stock` then marks them so by hand (a price list does
+    not), for the tests of the availability filter and bulk action."""
     client, h, _ = catalog_client
     sup = _party(client, h, "Yujing Glass Traders")
     cat = _upload(client, h, data=_cells(*codes), name="a.pdf", supplier_party_id=sup).json()
     _promote(client, h, cat["id"])
+    if out_of_stock:
+        with SessionLocal() as s:
+            for it in s.scalars(select(Item)):
+                it.availability = "out_of_stock"
+            s.commit()
     return client, h, sup, cat["id"]
 
 
@@ -77,11 +87,13 @@ def test_hand_added_items_are_in_stock_and_can_be_changed(catalog_client: Catalo
     assert zero.status_code == 422
 
 
-def test_price_list_items_start_out_of_stock_with_pack_size(catalog_client: CatalogEnv) -> None:
+def test_price_list_items_say_nothing_about_stock_and_keep_the_pack_size(
+    catalog_client: CatalogEnv,
+) -> None:
     client, h, _, _ = _env(catalog_client)
     items = _list(client, h)
     assert len(items) == 3
-    assert {i["availability"] for i in items} == {"out_of_stock"}
+    assert {i["availability"] for i in items} == {"in_stock"}  # the default; nothing reads it
     assert {i["pack_qty"] for i in items} == {6}
     assert {i["carton_qty"] for i in items} == {12}
 
@@ -101,7 +113,7 @@ def test_linking_to_an_existing_item_keeps_its_availability(catalog_client: Cata
 
 
 def test_filters_availability_photo_tally_supplier_and_catalog(catalog_client: CatalogEnv) -> None:
-    client, h, sup, cid = _env(catalog_client)
+    client, h, sup, cid = _env(catalog_client, out_of_stock=True)
     other = client.post("/api/items", headers=h, json={"name": "Hand made"}).json()
     ids = {i["name"]: i["id"] for i in _list(client, h)}
     assert len(ids) == 4
@@ -127,7 +139,7 @@ def test_filters_availability_photo_tally_supplier_and_catalog(catalog_client: C
 
 
 def test_count_matches_the_filter(catalog_client: CatalogEnv) -> None:
-    client, h, sup, _ = _env(catalog_client)
+    client, h, sup, _ = _env(catalog_client, out_of_stock=True)
     c = client.post("/api/items/count", headers=h, json={"supplier_id": sup})
     assert c.json() == {"count": 3}
     none = client.post("/api/items/count", headers=h, json={"availability": ["in_stock"]})
@@ -135,7 +147,7 @@ def test_count_matches_the_filter(catalog_client: CatalogEnv) -> None:
 
 
 def test_bulk_mark_in_stock_by_filter_with_a_preview(catalog_client: CatalogEnv) -> None:
-    client, h, sup, _ = _env(catalog_client)
+    client, h, sup, _ = _env(catalog_client, out_of_stock=True)
     body = {
         "filter": {"supplier_id": sup, "availability": ["out_of_stock"]},
         "fields": {"availability": "in_stock"},

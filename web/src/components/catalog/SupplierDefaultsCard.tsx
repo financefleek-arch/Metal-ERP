@@ -8,7 +8,6 @@ export interface SupplierDefaults {
   rounding_step: number | null;
   group_map: Record<string, string>;
   add_automatically: boolean;
-  mark_in_stock: boolean;
 }
 
 /** What this supplier usually gets, applied to each new catalog you upload from them. */
@@ -113,19 +112,6 @@ export function SupplierDefaultsCard({ partyId }: { partyId: string }) {
           <span>
             Add the items to my item list automatically after an upload
             <span className="block text-xs text-muted">Otherwise you review first, then add.</span>
-          </span>
-        </label>
-        <label className={`flex items-start gap-2 ${d.add_automatically ? "" : "opacity-50"}`}>
-          <input
-            type="checkbox"
-            className="mt-1"
-            disabled={!d.add_automatically}
-            checked={d.mark_in_stock}
-            onChange={(e) => save.mutate({ mark_in_stock: e.target.checked })}
-          />
-          <span>
-            Mark them In stock
-            <span className="block text-xs text-muted">Otherwise they start Out of stock.</span>
           </span>
         </label>
       </div>

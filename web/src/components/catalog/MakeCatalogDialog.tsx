@@ -21,8 +21,7 @@ const DEFAULTS: CatalogLayout = {
   price_basis: "pack",
   piece_premium_pct: 0,
   contents: true,
-  include_expected: false,
-  label_expected: false,
+  leave_out_of_stock: false,
 };
 
 function loadLayout(): CatalogLayout {
@@ -272,9 +271,7 @@ export function MakeCatalogDialog({
     !!title.trim() && included > 0 && phase !== "working" && !(block && (c?.missing_photos ?? 0) > 0);
   const leftOut = c
     ? [
-        c.left_out_out_of_stock && `${c.left_out_out_of_stock} out of stock`,
-        c.left_out_expected && `${c.left_out_expected} expected`,
-        c.left_out_discontinued && `${c.left_out_discontinued} discontinued`,
+        c.left_out && `${c.left_out} out of stock`,
         c.no_price && `${c.no_price} with no selling price`,
       ].filter(Boolean)
     : [];
@@ -429,30 +426,16 @@ export function MakeCatalogDialog({
             <fieldset>
               <legend className="label">Stock</legend>
               <div className="space-y-1.5 text-sm">
-                <p className="text-xs text-muted">Items in stock are always included.</p>
+                <p className="text-xs text-muted">
+                  Every chosen item with a price is included. Items marked Expected carry an &quot;On order&quot; tag.
+                </p>
                 <label className="flex items-center gap-1.5">
                   <input
                     type="checkbox"
-                    checked={layout.include_expected}
-                    onChange={(e) =>
-                      patch({
-                        include_expected: e.target.checked,
-                        label_expected: e.target.checked && layout.label_expected,
-                      })
-                    }
+                    checked={layout.leave_out_of_stock}
+                    onChange={(e) => patch({ leave_out_of_stock: e.target.checked })}
                   />
-                  Include items that are on order (expected)
-                </label>
-                <label
-                  className={`flex items-center gap-1.5 pl-5 ${layout.include_expected ? "" : "opacity-50"}`}
-                >
-                  <input
-                    type="checkbox"
-                    disabled={!layout.include_expected}
-                    checked={layout.include_expected && layout.label_expected}
-                    onChange={(e) => patch({ label_expected: e.target.checked })}
-                  />
-                  Mark them &quot;On order&quot; on the photo
+                  Leave out items marked Out of stock
                 </label>
               </div>
             </fieldset>

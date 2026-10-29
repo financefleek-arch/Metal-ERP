@@ -70,7 +70,7 @@ def create(
     user_id: str | None,
     title: str,
     selection: CatalogSelection,
-    include_expected: bool,
+    leave_out_of_stock: bool,
     expires_at: datetime | None,
     allow_pieces: bool = False,
     piece_premium_pct: float = 0.0,
@@ -85,7 +85,7 @@ def create(
         token=new_token(),
         title=title.strip(),
         selection_json=selection.model_dump(mode="json", exclude_none=True),
-        include_expected=include_expected,
+        leave_out_of_stock=leave_out_of_stock,
         expires_at=expires_at,
         allow_pieces=allow_pieces,
         piece_premium_pct=Decimal(str(piece_premium_pct)),
@@ -132,7 +132,7 @@ def public_view(session: Session, link: CatalogShareLink) -> dict[str, object]:
     """Everything the customer page needs, and nothing it must not have."""
     tenant = session.get(Tenant, link.tenant_id)
     assert tenant is not None
-    layout = CatalogLayout(include_expected=link.include_expected)
+    layout = CatalogLayout(leave_out_of_stock=link.leave_out_of_stock)
     ids = item_catalogs.resolve_selection(session, link.tenant_id, selection_of(link))
     plan = item_catalogs.plan(session, link.tenant_id, ids, layout)
     cats = {
