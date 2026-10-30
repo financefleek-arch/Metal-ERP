@@ -24,6 +24,13 @@
   .btn-primary {
     @apply btn bg-accent text-white hover:bg-accent-dark;
   }
+  /* the one "start / upgrade" colour: sign-up, plan trials, locked-feature buttons. Everyday actions stay btn-primary. */
+  .btn-brass {
+    @apply btn bg-brass text-white hover:bg-brass-dark;
+  }
+  .btn-wa {
+    @apply btn bg-wa text-white hover:opacity-90;
+  }
   .btn-ghost {
     @apply btn border border-line bg-card text-ink hover:bg-ground;
   }

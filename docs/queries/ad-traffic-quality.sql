@@ -9,7 +9,7 @@ create temp view m as
   where e.website_id = '37810516-965e-4d75-ac59-a4d68093a551' and e.created_at > now() - interval '24 hours';
 create temp view ss as
   select session_id, min(browser) browser, min(created_at) t0, max(created_at) t1,
-         count(*) filter (where event_name in ('landing-create-account', 'landing-signin', 'landing-google-play')) taps,
+         count(*) filter (where (event_name like 'landing-create-account%' or event_name in ('landing-signin', 'landing-google-play'))) taps,
          count(*) filter (where event_name = 'signup-codes-sent') codes,
          count(*) filter (where event_name = 'signup-complete') done,
          coalesce(min(referrer_domain), '(none)') ref, bool_or(gclid is not null) has_gclid

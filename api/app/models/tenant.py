@@ -173,6 +173,8 @@ class User(PkUuidMixin, TimestampMixin, Base):
         Boolean, default=False, server_default=false(), nullable=False
     )
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # False for a short sign-up that has not yet chosen its password (it holds an unusable one meanwhile).
+    password_set: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     # Activity (docs/PLAN-shop-activity-intelligence.md): when the person was last in the app, and whether they saw the welcome.
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     welcome_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

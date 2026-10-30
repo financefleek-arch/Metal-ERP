@@ -8,6 +8,7 @@ import { inr } from "../../lib/previewTotal";
 import { NAV_ACTIVE, useListNav } from "../../lib/useListNav";
 import { WhatsappBadge } from "../../components/WhatsappStatus";
 import { SetupCard } from "../SetupPage";
+import { SetPasswordCard } from "../../components/SetPasswordCard";
 import { useFeature } from "../../lib/features";
 import { TallySyncBadge } from "../../components/TallySyncStatus";
 import type { InvoiceListItem, InvoicePaymentStatus, InvoiceStatus } from "../../lib/types";
@@ -147,6 +148,7 @@ export function InvoiceListPage() {
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-3">
+      <SetPasswordCard />
       <SetupCard />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="font-serif text-lg font-semibold">Sales invoices</h1>

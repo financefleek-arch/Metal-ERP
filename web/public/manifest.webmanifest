@@ -1,6 +1,6 @@
 {
-  "name": "Metal ERP",
-  "short_name": "Metal ERP",
+  "name": "Tally Companion",
+  "short_name": "Tally Companion",
   "description": "Billing, collections and ordering for metal and bartan shops.",
   "id": "/",
   "start_url": "/?source=pwa",

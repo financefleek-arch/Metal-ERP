@@ -233,13 +233,13 @@ function PlanCard({ p, data, onStart }: { p: Plan; data: PlansOut; onStart: () =
   const canStart = data.can_manage && data.current.free && p.price_amount > 0;
   const label = p.trial_days > 0 ? `Try free for ${p.trial_days} days` : `Choose ${p.label}`;
   return (
-    <div className={`card flex flex-col gap-2 p-4 ${here ? "border-accent" : recommended ? "border-ok" : ""}`}>
+    <div className={`card flex flex-col gap-2 p-4 ${here ? "border-accent" : recommended ? "border-2 border-brass-light bg-gradient-to-b from-brass-soft/40 to-card" : ""}`}>
       <div className="flex items-center gap-2">
         <span className="font-semibold">{p.label}</span>
         {here && <span className="rounded-full bg-accent-soft px-2 text-[11px] font-semibold text-accent">Your plan</span>}
-        {recommended && !here && <span className="rounded-full bg-[#e6efe8] px-2 text-[11px] font-semibold text-[#3a5a48]">Most shops</span>}
+        {recommended && !here && <span className="rounded-full bg-brass-light px-2 text-[11px] font-semibold text-white">Most shops</span>}
       </div>
-      <div className="font-serif text-2xl font-semibold">
+      <div className={`font-serif text-2xl font-semibold ${p.price_amount > 0 ? "text-brass" : ""}`}>
         {p.price_amount === 0 ? "₹0" : rupees(p.price_amount)}
         {p.price_amount > 0 && <span className="meta ml-1 font-sans font-normal">/ month</span>}
       </div>
@@ -251,7 +251,7 @@ function PlanCard({ p, data, onStart }: { p: Plan; data: PlansOut; onStart: () =
         {p.price_amount === 0 && <li>✓ PDF download for your first 7 days</li>}
       </ul>
       {canStart && (
-        <button className="btn-primary mt-auto" onClick={onStart}>
+        <button className="btn-brass mt-auto" onClick={onStart}>
           {label}
         </button>
       )}
@@ -300,7 +300,7 @@ function StartSheet({ p, onClose }: { p: Plan; onClose: () => void }) {
           )}
         </ul>
         {err && <p className="err mb-2" role="alert">{err}</p>}
-        <button className="btn-primary w-full" disabled={start.isPending} onClick={() => start.mutate()}>
+        <button className="btn-brass w-full" disabled={start.isPending} onClick={() => start.mutate()}>
           {start.isPending ? "Opening the payment page…" : trial ? `Start my ${p.trial_days} days` : "Continue to payment"}
         </button>
         <button className="btn-ghost mt-2 w-full" onClick={onClose}>Not now</button>

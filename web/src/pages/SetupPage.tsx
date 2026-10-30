@@ -112,7 +112,7 @@ function FeatureCard({ f, canRequest }: { f: SetupFeature; canRequest: boolean }
         {f.status === "locked" && f.plan_locked && (
           <Link
             to={unlockPlan ? `/plans?plan=${unlockPlan.plan}` : "/plans"}
-            className="btn-primary !h-9 !px-3 md:!h-8"
+            className="btn-brass !h-9 !px-3 md:!h-8"
             onClick={() => beacon("locked_feature_tapped", { feature: f.key })}
           >
             {unlockPlan

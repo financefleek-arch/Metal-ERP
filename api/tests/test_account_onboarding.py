@@ -593,3 +593,79 @@ def test_setup_can_be_closed_and_reopened(client: TestClient, fleek: FakeFleek) 
     assert client.get("/api/onboarding", headers=_h(t)).json()["dismissed"] is True
     client.put("/api/onboarding/dismissed", headers=_h(t), json={"dismissed": False})
     assert client.get("/api/onboarding", headers=_h(t)).json()["dismissed"] is False
+
+
+# ------------------------------------------------------------------------------- short sign-up
+
+
+SHORT = {"firm_name": "Sethia Metal Store", "mobile": "98765 43210", "accept_terms": True}
+
+
+def _short_account(client: TestClient, fleek: FakeFleek) -> str:
+    r = client.post("/api/auth/signup/start", json=SHORT)
+    assert r.status_code == 200, r.text
+    v = client.post(
+        "/api/auth/signup/verify", json={"request_id": r.json()["request_id"], "code": fleek.last_code("whatsapp")}
+    )
+    assert v.status_code == 201, v.text
+    return v.json()["access_token"]
+
+
+def test_a_short_signup_needs_only_a_firm_and_a_mobile_and_has_no_password_yet(
+    client: TestClient, fleek: FakeFleek
+) -> None:
+    token = _short_account(client, fleek)
+    assert fleek.signup_payloads[-1]["owner_name"] == "Sethia Metal Store"  # the firm stands in for the name
+    me = client.get("/api/auth/me", headers=_h(token)).json()
+    assert me["password_set"] is False and me["firm_name"] == "Sethia Metal Store"
+    # nobody knows the placeholder password, so a password sign-in cannot succeed
+    assert client.post("/api/auth/login", json={"identifier": MOBILE, "password": ""}).status_code in (401, 422)
+
+
+def test_set_password_once_then_sign_in_with_it(client: TestClient, fleek: FakeFleek) -> None:
+    token = _short_account(client, fleek)
+    weak = client.post("/api/auth/set-password", json={"new_password": "short"}, headers=_h(token))
+    assert weak.status_code == 422
+    r = client.post(
+        "/api/auth/set-password",
+        json={"new_password": "s3cret-pass", "email": "Owner@Sethia.example.com"},
+        headers=_h(token),
+    )
+    assert r.status_code == 200, r.text
+    fresh = r.json()["access_token"]
+    me = client.get("/api/auth/me", headers=_h(fresh)).json()
+    assert me["password_set"] is True and me["email"] == "owner@sethia.example.com"
+    assert client.get("/api/auth/me", headers=_h(token)).status_code == 401  # the old token ended
+    assert client.post("/api/auth/login", json={"identifier": MOBILE, "password": "s3cret-pass"}).status_code == 200
+    again = client.post("/api/auth/set-password", json={"new_password": "an0ther-pass"}, headers=_h(fresh))
+    assert again.status_code == 409
+
+
+def test_a_full_signup_is_unchanged_and_already_has_its_password(client: TestClient, fleek: FakeFleek) -> None:
+    token = _signup(client, fleek)
+    assert client.get("/api/auth/me", headers=_h(token)).json()["password_set"] is True
+    assert client.post("/api/auth/set-password", json={"new_password": "an0ther-pass"}, headers=_h(token)).status_code == 409
+
+
+def test_a_whatsapp_reset_counts_as_choosing_a_password(client: TestClient, fleek: FakeFleek) -> None:
+    _short_account(client, fleek)
+    assert client.post("/api/auth/password/forgot", json={"identifier": MOBILE}).status_code in (200, 202, 204)
+    r = client.post(
+        "/api/auth/password/reset",
+        json={"identifier": MOBILE, "code": fleek.last_code("whatsapp"), "new_password": "n3w-secret-pw"},
+    )
+    assert r.status_code == 200, r.text
+    assert client.get("/api/auth/me", headers=_h(r.json()["access_token"])).json()["password_set"] is True
+
+
+def test_call_back_request_is_kept_for_the_follow_up_feed(client: TestClient, fleek: FakeFleek) -> None:
+    from app.services import lead_feed
+
+    rid = client.post("/api/auth/signup/start", json=SHORT).json()["request_id"]
+    assert client.post("/api/auth/signup/callback", json={"request_id": rid}).status_code == 204
+    with SessionLocal() as s:
+        req = s.scalar(select(SignupRequest))
+        assert req is not None and req.callback_requested_at is not None
+        lead = lead_feed.build(s)["leads"][0]
+        assert lead["signups"][0]["callback_at"] is not None
+    assert client.post("/api/auth/signup/callback", json={"request_id": "no-such"}).status_code == 410

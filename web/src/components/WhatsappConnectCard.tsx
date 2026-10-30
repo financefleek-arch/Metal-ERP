@@ -399,7 +399,7 @@ export function WhatsappConnectCard() {
                   <span className="text-[11px] font-semibold text-ok">Keeps your chats</span>
                   <strong className="block text-sm">The number I already use on the WhatsApp Business app</strong>
                   <span className="block text-xs text-muted">
-                    Keep chatting on your phone as you do now. Messages from Metal ERP go out from the same number.
+                    Keep chatting on your phone as you do now. Messages from Tally Companion go out from the same number.
                   </span>
                 </button>
                 <button
@@ -410,9 +410,9 @@ export function WhatsappConnectCard() {
                     setDialog("pin");
                   }}
                 >
-                  <strong className="block text-sm">A new number, just for Metal ERP</strong>
+                  <strong className="block text-sm">A new number, just for Tally Companion</strong>
                   <span className="block text-xs text-muted">
-                    The number is used only through Metal ERP. It can't be on WhatsApp or the Business app at the same
+                    The number is used only through Tally Companion. It can't be on WhatsApp or the Business app at the same
                     time, and you'll set a 6-digit PIN.
                   </span>
                 </button>

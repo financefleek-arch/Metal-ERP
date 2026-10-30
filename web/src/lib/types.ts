@@ -30,6 +30,8 @@ export interface Me {
   } | null;
   /** Fleek set this password: the person must replace it before anything else opens. */
   must_change_password: boolean;
+  /** False for a short sign-up that has not chosen a password yet. */
+  password_set: boolean;
   /** True once, for a self-signed-up owner who has not yet seen the welcome page. */
   show_welcome: boolean;
   /** Free plan only: days of invoice-PDF download left in the first 7 days (0 = ended). Null on any other plan. */

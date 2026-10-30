@@ -89,10 +89,10 @@ class LoginRequest(BaseModel):
 
 class SignupStartRequest(BaseModel):
     firm_name: LegalName
-    owner_name: Annotated[str, Field(min_length=2, max_length=100)]
+    owner_name: Annotated[str, Field(min_length=2, max_length=100)] | None = None  # optional: the firm name stands in
     email: Annotated[EmailStr, Field(max_length=200)] | None = None  # optional, never verified
     mobile: Annotated[str, Field(min_length=10, max_length=20)]
-    password: str = Field(min_length=8, max_length=200)
+    password: str | None = Field(default=None, min_length=8, max_length=200)  # optional: chosen after the first sign-in
     accept_terms: bool
     captcha_token: str | None = None
     # The Google Ads click behind this visit, if any: kind is gclid | gbraid | wbraid.
@@ -128,6 +128,11 @@ class ResetPasswordRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(max_length=200)
     new_password: str = Field(min_length=8, max_length=200)
+
+
+class SetPasswordRequest(BaseModel):
+    new_password: str = Field(min_length=8, max_length=200)
+    email: Annotated[EmailStr, Field(max_length=200)] | None = None  # optional contact detail, never verified
 
 
 class TokenResponse(BaseModel):
@@ -168,6 +173,8 @@ class UserOut(BaseModel):
     mobile_verified: bool = False
     email_verified: bool = False
     must_change_password: bool = False
+    # False for a short sign-up that has not chosen its password yet (the app asks, once, after sign-in)
+    password_set: bool = True
     # Free plan only: whole days of invoice-PDF download left in the first 7 days (0 = ended). None on any other plan.
     pdf_days_left: int | None = None
     # True once, for a self-signed-up owner who has not yet seen the welcome page

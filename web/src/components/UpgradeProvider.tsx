@@ -45,7 +45,7 @@ function Sheet({ feature, onClose }: { feature: FeatureKey; onClose: () => void 
             "It is part of a paid plan."
           )}
         </p>
-        <Link to={plan ? `/plans?plan=${plan.plan}` : "/plans"} className="btn-primary w-full" onClick={onClose}>
+        <Link to={plan ? `/plans?plan=${plan.plan}` : "/plans"} className="btn-brass w-full" onClick={onClose}>
           {trial ? `Try free for ${plan!.trial_days} days` : "See plans"}
         </Link>
         <button className="btn-ghost mt-2 w-full" onClick={onClose}>

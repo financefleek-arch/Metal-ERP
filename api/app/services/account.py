@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -122,18 +123,19 @@ def start_signup(
     session: Session,
     *,
     firm_name: str,
-    owner_name: str,
-    email: str | None,
+    owner_name: str | None = None,
+    email: str | None = None,
     mobile: str,
-    password: str,
+    password: str | None = None,
     ip: str | None,
     ad_click: tuple[str, str] | None = None,
 ) -> SignupStarted:
     email = (email or "").lower().strip() or None
     mobile = normalize_mobile(mobile)
-    bad = passwords.problem(password, email=email, firm=firm_name, mobile=mobile)
-    if bad:
-        raise CodeError(bad, status=422)
+    if password:  # a short sign-up has none yet: it is chosen after the first sign-in
+        bad = passwords.problem(password, email=email, firm=firm_name, mobile=mobile)
+        if bad:
+            raise CodeError(bad, status=422)
     if not auth_throttle.hit(session, "signup_ip", ip or "unknown", limit=10, window_seconds=3600):
         raise CodeError("Too many sign-up attempts. Try again later.", status=429)
     if _taken(session, mobile):
@@ -148,10 +150,10 @@ def start_signup(
     )
     req = SignupRequest(
         firm_name=firm_name.strip(),
-        owner_name=owner_name.strip(),
+        owner_name=(owner_name or "").strip() or firm_name.strip()[:100],
         email=email,
         mobile=mobile,
-        password_hash=hash_password(password),
+        password_hash=hash_password(password) if password else None,
         terms_version=TERMS_VERSION,
         terms_accepted_at=now,
         status="pending",
@@ -164,6 +166,14 @@ def start_signup(
     session.commit()
     send_signup_code(session, req)
     return SignupStarted(req.id, mask_mobile(mobile))
+
+
+def request_callback(session: Session, request_id: str) -> None:
+    """The "ask us to call me" tap on the code screen. Fleek's Follow-ups queue shows it from the next lead feed."""
+    req = _open_request(session, request_id)
+    if req.callback_requested_at is None:
+        req.callback_requested_at = datetime.now(UTC)
+        session.flush()
 
 
 def _open_request(session: Session, request_id: str) -> SignupRequest:
@@ -235,7 +245,9 @@ def verify_signup(
     user = User(
         tenant_id=tenant.id,
         email=req.email,
-        password_hash=req.password_hash,
+        # a short sign-up holds a password nobody knows until its owner chooses one (reset by WhatsApp code works meanwhile)
+        password_hash=req.password_hash or hash_password(secrets.token_urlsafe(32)),
+        password_set=req.password_hash is not None,
         role=UserRole.owner,
         mobile=req.mobile,
         mobile_verified_at=now,
@@ -303,6 +315,7 @@ def finish_reset(session: Session, *, identifier: str, code: str, new_password: 
     user.password_hash = hash_password(new_password)
     user.token_version += 1
     user.must_change_password = False
+    user.password_set = True
     if row.channel == "email":
         user.email_verified_at = user.email_verified_at or datetime.now(UTC)
     else:  # the code reached that WhatsApp number, so an operator-typed mobile is now proved

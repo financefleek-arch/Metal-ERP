@@ -21,6 +21,7 @@ from app.schemas import (
     LoginRequest,
     RegisterRequest,
     ResetPasswordRequest,
+    SetPasswordRequest,
     SignupResendRequest,
     SignupStarted,
     SignupStartRequest,
@@ -106,6 +107,17 @@ def signup_start(body: SignupStartRequest, request: Request, session: SessionDep
 def signup_resend(body: SignupResendRequest, session: SessionDep) -> None:
     try:
         account.resend_signup_code(session, body.request_id)
+    except CodeError as exc:
+        raise _http(exc) from None
+
+
+@router.post("/signup/callback", status_code=status.HTTP_204_NO_CONTENT)
+def signup_callback(body: SignupResendRequest, request: Request, session: SessionDep) -> None:
+    """"Ask us to call me", from a code that did not arrive. No phone or SMS here: it lands in Fleek's Follow-ups."""
+    if not auth_throttle.hit(session, "signup_callback", client_key(request), limit=5, window_seconds=3600):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Too many requests. Try again later.")
+    try:
+        account.request_callback(session, body.request_id)
     except CodeError as exc:
         raise _http(exc) from None
 
@@ -233,6 +245,24 @@ def change_password(body: ChangePasswordRequest, user: CurrentUser, session: Ses
     return _token(user)
 
 
+@router.post("/set-password", response_model=TokenResponse)
+def set_password(body: SetPasswordRequest, user: CurrentUser, session: SessionDep) -> TokenResponse:
+    """The first password of a short sign-up, chosen once the owner is in. No current password to give; a second call is refused."""
+    if user.password_set:
+        raise HTTPException(status.HTTP_409_CONFLICT, "You already have a password. Use Change password instead.")
+    email = (str(body.email).lower().strip() if body.email else None) or user.email
+    bad = passwords.problem(body.new_password, email=email, mobile=user.mobile)
+    if bad:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, bad)
+    user.password_hash = hash_password(body.new_password)
+    user.password_set = True
+    if body.email and not user.email:
+        user.email = email
+    user.token_version += 1
+    session.flush()
+    return _token(user)
+
+
 @router.post("/sign-out-others", response_model=TokenResponse)
 def sign_out_others(user: CurrentUser, session: SessionDep) -> TokenResponse:
     """End every other session of this user (a lost phone). This device stays signed in."""
@@ -297,6 +327,7 @@ def me(user: CurrentUser, session: SessionDep) -> UserOut:
         mobile_verified=user.mobile_verified_at is not None,
         email_verified=user.email_verified_at is not None,
         must_change_password=user.must_change_password,
+        password_set=user.password_set,
         show_welcome=_show_welcome(session, user, tenant),
         pdf_days_left=features.pdf_days_left(tenant) if free and tenant is not None else None,
         plan_tier="free" if free else "full",

@@ -141,7 +141,7 @@ export function Shell({ children }: { children: ReactNode }) {
     <div className="flex min-h-[100dvh] flex-col">
       <header className="flex h-14 items-center justify-between bg-ink px-4 text-ground max-md:h-10 max-md:bg-ground max-md:text-muted md:px-6">
         <div className="flex items-center gap-7">
-          <span className="font-serif text-lg font-semibold max-md:font-sans max-md:text-xs max-md:font-medium">Metal ERP</span>
+          <span className="font-serif text-lg font-semibold max-md:font-sans max-md:text-xs max-md:font-medium">Tally Companion</span>
           {/* desktop inline nav */}
           <nav className="hidden gap-5 text-sm md:flex">
             {nav.map((n) => (

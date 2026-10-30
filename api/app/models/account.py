@@ -25,7 +25,7 @@ class SignupRequest(PkUuidMixin, TimestampMixin, Base):
     owner_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str | None] = mapped_column(String(200), index=True)  # optional, never verified
     mobile: Mapped[str] = mapped_column(String(20), nullable=False, index=True)  # +91XXXXXXXXXX
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(String(255))  # None: the password is chosen after the first sign-in
     terms_version: Mapped[str] = mapped_column(String(20), nullable=False)
     terms_accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     # pending | done | cancelled
@@ -38,6 +38,8 @@ class SignupRequest(PkUuidMixin, TimestampMixin, Base):
     # Filled when the firm has been made, so a repeated verify answers with the same firm.
     tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenant.id"))
     fleek_org_id: Mapped[str | None] = mapped_column(String(64))
+    # "Ask us to call me" on the code screen; Fleek's Follow-ups queue shows it.
+    callback_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class OtpChallenge(PkUuidMixin, Base):

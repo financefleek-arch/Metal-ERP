@@ -101,6 +101,7 @@ def build(session: Session, now: datetime | None = None) -> dict[str, Any]:
                 "at": _iso(r.created_at),
                 "status": r.status,
                 "expires_at": _iso(r.expires_at),
+                "callback_at": _iso(r.callback_requested_at),
                 "codes": [
                     {
                         "channel": c.channel,

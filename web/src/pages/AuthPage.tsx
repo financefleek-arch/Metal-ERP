@@ -22,6 +22,12 @@ interface Started {
   mobile_masked: string;
 }
 
+/** What the sign-up form holds, kept here so "Edit" on the code screen does not empty it. */
+interface Draft {
+  firm_name: string;
+  mobile: string;
+}
+
 const message = (e: unknown) => (e instanceof ApiError ? e.message : "Something went wrong. Try again.");
 
 function Shell({ title, sub, step, children }: { title: string; sub?: string; step?: 1 | 2; children: ReactNode }) {
@@ -98,6 +104,7 @@ export function AuthPage() {
   // a first visit in a browser (an ad click, say) sees what the product is before a form
   const [mode, setMode] = useState<Mode>(() => (shouldShowLanding() ? "landing" : "login"));
   const [started, setStarted] = useState<Started | null>(null);
+  const [draft, setDraft] = useState<Draft>({ firm_name: "", mobile: "" });
   const go = (m: Mode) => {
     if (m !== "landing") markLandingSeen();
     setMode(m);
@@ -106,16 +113,24 @@ export function AuthPage() {
   if (mode === "landing") return <LandingPage onSignup={() => go("signup")} onSignin={() => go("login")} />;
 
   if (mode === "signup")
-    return <SignupForm onStarted={(s) => { setStarted(s); go("verify"); }} onBack={() => go("login")} />;
+    return <SignupForm draft={draft} onDraft={setDraft} onStarted={(s) => { setStarted(s); go("verify"); }} onBack={() => go("login")} />;
   if (mode === "verify" && started)
-    return <VerifyForm started={started} onBack={() => go("signup")} />;
+    return <VerifyForm started={started} shown={draft.mobile} onBack={() => go("signup")} />;
   if (mode === "forgot") return <ForgotForm onBack={() => go("login")} />;
-  return <LoginForm onSignup={() => go("signup")} onForgot={() => go("forgot")} />;
+  return (
+    <LoginForm
+      onSignup={(mobile) => {
+        if (mobile) setDraft((d) => ({ ...d, mobile }));
+        go("signup");
+      }}
+      onForgot={() => go("forgot")}
+    />
+  );
 }
 
 // ------------------------------------------------------------------------------------------ sign in
 
-function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () => void }) {
+function LoginForm({ onSignup, onForgot }: { onSignup: (mobile?: string) => void; onForgot: () => void }) {
   const { login } = useAuth();
   const [who, setWho] = useState("");
   const [byEmail, setByEmail] = useState(false);
@@ -137,7 +152,7 @@ function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () 
   }
 
   return (
-    <Shell title="Metal ERP" sub="Sign in to your firm">
+    <Shell title="Tally Companion" sub="Sign in to your firm">
       <form onSubmit={submit} className="card space-y-4 p-6">
         <IdentityField value={who} onChange={setWho} byEmail={byEmail} onToggle={() => { setByEmail(!byEmail); setWho(""); }} />
         <div>
@@ -150,13 +165,22 @@ function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () 
           <input className="field" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
         {err && <p className="err" role="alert">{err}</p>}
+        {err && !byEmail && (
+          // The same answer for every number (it never says whether one is registered), with the way forward beside it.
+          <div className="rounded-lg border border-[#ecdca7] bg-brass-soft px-3 py-2.5 text-sm">
+            <b>New here?</b> It takes 2 minutes to create your free account.
+            <button type="button" onClick={() => onSignup(who)} data-umami-event="login-error-create-account" className="btn-brass mt-2 w-full">
+              Create my free account
+            </button>
+          </div>
+        )}
         <button type="submit" className="btn-primary w-full" disabled={busy}>
           {busy ? "Please wait…" : "Sign in"}
         </button>
       </form>
       <p className="mt-5 text-center text-sm text-muted">
-        New to Metal ERP?{" "}
-        <button onClick={onSignup} className="text-accent hover:text-accent-dark">
+        New to Tally Companion?{" "}
+        <button onClick={() => onSignup(who)} className="text-accent hover:text-accent-dark">
           Create a free account
         </button>
       </p>
@@ -166,20 +190,28 @@ function LoginForm({ onSignup, onForgot }: { onSignup: () => void; onForgot: () 
 
 // ------------------------------------------------------------------------------------------ sign up
 
-function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; onBack: () => void }) {
-  const [f, setF] = useState({ firm_name: "", owner_name: "", mobile: "", email: "", password: "" });
+function SignupForm({
+  draft,
+  onDraft,
+  onStarted,
+  onBack,
+}: {
+  draft: Draft;
+  onDraft: (d: Draft) => void;
+  onStarted: (s: Started) => void;
+  onBack: () => void;
+}) {
+  const f = draft;
   const [terms, setTerms] = useState(false);
   const { siteKey, ready: captchaReady } = useCaptchaSiteKey();
   const [token, setToken] = useState<string | null>(null);
   const [tsKey, setTsKey] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
+  const set = (k: keyof Draft) => (e: { target: { value: string } }) => onDraft({ ...f, [k]: e.target.value });
 
-  const pwProblem = f.password ? passwordProblem(f.password) : null;
-  const ready =
-    f.firm_name.trim().length >= 2 && f.owner_name.trim().length >= 2 && f.mobile.replace(/\D/g, "").length >= 10 &&
-    (!f.email.trim() || f.email.includes("@")) && !passwordProblem(f.password) && terms && captchaReady && (!siteKey || !!token);
+  // Only what proves it is you. The password and an email come once you are in.
+  const ready = f.firm_name.trim().length >= 2 && f.mobile.replace(/\D/g, "").length >= 10 && terms && captchaReady && (!siteKey || !!token);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -189,7 +221,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
       const r = await api<Started>("/auth/signup/start", {
         method: "POST",
         auth: false,
-        body: { ...f, firm_name: f.firm_name.trim(), owner_name: f.owner_name.trim(), email: f.email.trim() || null, accept_terms: terms, captcha_token: token, ...adClick() },
+        body: { firm_name: f.firm_name.trim(), mobile: f.mobile, accept_terms: terms, captcha_token: token, ...adClick() },
       });
       track("signup-codes-sent");
       onStarted(r);
@@ -203,26 +235,16 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
   }
 
   return (
-    <Shell title="Create your free account" sub="Invoices, customers, items and payments. Free, no card." step={1}>
+    <Shell title="Create your free account" sub="Free, no card. Takes 2 minutes." step={1}>
       <form onSubmit={submit} className="card space-y-4 p-6">
         <Field label="Firm name">
           <input className="field" autoFocus value={f.firm_name} onChange={set("firm_name")} maxLength={200} required />
-        </Field>
-        <Field label="Your name">
-          <input className="field" autoComplete="name" value={f.owner_name} onChange={set("owner_name")} maxLength={100} required />
         </Field>
         <Field label="Mobile (WhatsApp)" hint="We send a code here on WhatsApp. You will sign in with this number.">
           <div className="flex gap-2">
             <span className="field flex w-14 flex-none items-center justify-center text-muted">+91</span>
             <input className="field" type="tel" inputMode="numeric" autoComplete="tel-national" value={f.mobile} onChange={set("mobile")} placeholder="98765 43210" required />
           </div>
-        </Field>
-        <Field label="Email (optional)" hint="Not needed to sign in. We send no code here.">
-          <input className="field" type="email" autoComplete="email" value={f.email} onChange={set("email")} />
-        </Field>
-        <Field label="Password" hint={PASSWORD_HINT}>
-          <input className="field" type="password" autoComplete="new-password" value={f.password} onChange={set("password")} required />
-          {pwProblem && <p className="err">{pwProblem}</p>}
         </Field>
         <label className="flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-1 h-4 w-4" checked={terms} onChange={(e) => setTerms(e.target.checked)} />
@@ -237,7 +259,7 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
         </label>
         <Turnstile key={tsKey} siteKey={siteKey} onToken={setToken} />
         {err && <p className="err" role="alert">{err}</p>}
-        <button type="submit" className="btn-primary w-full" disabled={busy || !ready}>
+        <button type="submit" className="btn-brass w-full" disabled={busy || !ready}>
           {busy ? "Sending code…" : "Send code"}
         </button>
       </form>
@@ -251,10 +273,23 @@ function SignupForm({ onStarted, onBack }: { onStarted: (s: Started) => void; on
 
 // ------------------------------------------------------------------------------------------- the code
 
-function VerifyForm({ started, onBack }: { started: Started; onBack: () => void }) {
+function VerifyForm({ started, shown, onBack }: { started: Started; shown: string; onBack: () => void }) {
   const { acceptToken } = useAuth();
   const navigate = useNavigate();
   const [wa, setWa] = useState("");
+  const [asked, setAsked] = useState(false);
+  const [askErr, setAskErr] = useState<string | null>(null);
+
+  async function askForCall() {
+    setAskErr(null);
+    try {
+      await api<void>("/auth/signup/callback", { method: "POST", auth: false, body: { request_id: started.request_id } });
+      track("signup-callback-asked");
+      setAsked(true);
+    } catch (x) {
+      setAskErr(message(x));
+    }
+  }
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -291,20 +326,40 @@ function VerifyForm({ started, onBack }: { started: Started; onBack: () => void 
   }
 
   return (
-    <Shell title="Confirm it is you" sub="Your account is created once the WhatsApp code is right." step={2}>
+    <Shell title="Check your WhatsApp" sub="Your account is created once the code is right." step={2}>
+      <div className="card mb-3 flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+        <span>
+          <span className="meta block">Code sent to</span>
+          <b>+91 {shown.replace(/\D/g, "").slice(-10) || started.mobile_masked}</b>
+        </span>
+        <button type="button" onClick={onBack} className="text-accent hover:text-accent-dark">Wrong number? Edit</button>
+      </div>
       <form onSubmit={submit} className="card space-y-5 p-6">
         <div className="space-y-1">
-          <CodeField label="WhatsApp code" hint={`sent to ${started.mobile_masked}`} value={wa} onChange={setWa} autoFocus />
+          <CodeField label="WhatsApp code" value={wa} onChange={setWa} autoFocus />
           <ResendLink onResend={resend} />
         </div>
         {err && <p className="err" role="alert">{err}</p>}
-        <button type="submit" className="btn-primary w-full" disabled={busy || wa.length !== 6}>
+        <button type="submit" className="btn-brass w-full" disabled={busy || wa.length !== 6}>
           {busy ? "Creating your account…" : "Create my account"}
         </button>
       </form>
-      <p className="mt-5 text-center text-sm">
-        <button onClick={onBack} className="text-accent hover:text-accent-dark">← Change my details</button>
-      </p>
+      <div className="mt-4 rounded-xl border border-[#ecdca7] bg-brass-soft px-4 py-3 text-sm">
+        <b>No code yet?</b>
+        <ul className="mb-2 mt-1 list-disc pl-5">
+          <li>WhatsApp must be installed on this number</li>
+          <li>Open WhatsApp and look for a message from Fleek</li>
+          <li>Check the number above</li>
+        </ul>
+        {asked ? (
+          <p role="status"><b>Thank you.</b> We will call you on this number.</p>
+        ) : (
+          <button type="button" onClick={() => void askForCall()} className="text-accent underline hover:text-accent-dark">
+            Still nothing? Ask us to call you
+          </button>
+        )}
+        {askErr && <p className="err" role="alert">{askErr}</p>}
+      </div>
     </Shell>
   );
 }
