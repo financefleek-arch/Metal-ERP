@@ -85,11 +85,13 @@ export function BillSetupFlow({ heading }: { heading?: React.ReactNode }) {
 
   const upiShapeBad = clean(upi) !== "" && !UPI_RE.test(clean(upi));
   const place = [clean(city), clean(address)].filter(Boolean)[0];
-  const chips: { step: Step; text: string }[] = [
-    done.name ? { step: "name" as const, text: clean(name) } : null,
-    done.place ? { step: "place" as const, text: done.place === "saved" && place ? place : "No address yet" } : null,
-    done.pay ? { step: "pay" as const, text: done.pay === "saved" && clean(upi) ? clean(upi) : "No UPI yet" } : null,
-  ].filter((c): c is { step: Step; text: string } => c !== null && c.step !== step);
+  type Chip = { step: Step; text: string };
+  const answered: (Chip | null)[] = [
+    done.name ? { step: "name", text: clean(name) } : null,
+    done.place ? { step: "place", text: done.place === "saved" && place ? place : "No address yet" } : null,
+    done.pay ? { step: "pay", text: done.pay === "saved" && clean(upi) ? clean(upi) : "No UPI yet" } : null,
+  ];
+  const chips = answered.filter((c): c is Chip => c !== null && c.step !== step);
 
   const days = me?.pdf_days_left ?? null;
   const canImport = me?.features?.import !== false;
