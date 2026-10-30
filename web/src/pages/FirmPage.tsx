@@ -6,6 +6,8 @@ import type { Tenant } from "../lib/types";
 import { TallyConnectCard } from "../components/TallyConnectCard";
 import { TallyBackupsCard } from "../components/TallyBackupsCard";
 import { WhatsappConnectCard } from "../components/WhatsappConnectCard";
+import { LockedConnection } from "../components/LockedConnection";
+import type { FeatureKey } from "../lib/types";
 import { useAuth } from "../lib/auth";
 import { useFeature } from "../lib/features";
 import { canWrite } from "../lib/roles";
@@ -214,7 +216,7 @@ export function FirmPage() {
   const owner = me?.role === "owner";
   const showReminders = remindersOn && canWrite(me?.role);
   const showCatalog = Boolean(me?.ext_supplier_catalog);
-  const showConnections = tallyOn || (whatsappOn && owner);
+  const showConnections = tallyOn || owner; // an owner always sees what is on offer, even what the plan leaves out
   const autoAllowed = data?.reminder_auto_allowed !== false;
 
   const onSubmit = handleSubmit(
@@ -285,7 +287,7 @@ export function FirmPage() {
         ]
       : []),
     ...(showConnections
-      ? [{ key: "connections" as const, title: "Connections", line: [tallyOn && "Tally", whatsappOn && owner && "WhatsApp"].filter(Boolean).join(" and "), todo: false }]
+      ? [{ key: "connections" as const, title: "Connections", line: [(tallyOn || owner) && "Tally", owner && "WhatsApp"].filter(Boolean).join(" and "), todo: false }]
       : []),
   ];
 
@@ -428,13 +430,20 @@ export function FirmPage() {
           <div className={sheet ? "flex-1 overflow-y-auto px-4 pt-4" : ""}>
           {tab === "connections" && (
             <>
-              {tallyOn && (
+              {tallyOn ? (
                 <>
                   <TallyConnectCard />
                   <TallyBackupsCard />
                 </>
+              ) : (
+                owner && <LockedConnection feature={"tally" as FeatureKey} title="Tally" text="Back up your Tally data to the cloud and bring your customers and items in." />
               )}
-              {whatsappOn && owner && <WhatsappConnectCard />}
+              {owner &&
+                (whatsappOn ? (
+                  <WhatsappConnectCard />
+                ) : (
+                  <LockedConnection feature="whatsapp" title="WhatsApp Business" text="Send bills and payment reminders to your customers from your own WhatsApp number." />
+                ))}
             </>
           )}
 

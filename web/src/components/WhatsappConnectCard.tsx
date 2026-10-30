@@ -244,7 +244,14 @@ export function WhatsappConnectCard() {
     await load();
   };
 
-  if (loading && !st && !unavailable) return null;
+  if (loading && !st && !unavailable) {
+    return (
+      <div className="card mb-5 p-4 sm:p-5">
+        <h3 className="text-sm font-semibold">WhatsApp Business</h3>
+        <p className="mt-2 text-xs text-muted">Checking your WhatsApp connection…</p>
+      </div>
+    );
+  }
 
   if (unavailable) {
     return (
@@ -257,7 +264,17 @@ export function WhatsappConnectCard() {
       </div>
     );
   }
-  if (!st) return null;
+  if (!st) {
+    return (
+      <div className="card mb-5 p-4 sm:p-5">
+        <h3 className="text-sm font-semibold">WhatsApp Business</h3>
+        <p className="mt-2 text-xs text-muted">We could not read your WhatsApp connection just now.</p>
+        <button type="button" className="btn mt-3" onClick={() => void load()}>
+          Try again
+        </button>
+      </div>
+    );
+  }
 
   const connected = st.connected && !st.needs_reconnect;
   const canConnect = !st.connected || st.needs_reconnect;
