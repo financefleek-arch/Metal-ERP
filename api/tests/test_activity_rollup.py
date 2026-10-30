@@ -1,4 +1,4 @@
-"""The daily roll-up a shop sends Fleek: events become counts and first times, established shops are not mistaken for stuck ones."""
+"""The roll-up a shop sends Fleek (hourly): events become counts and first times, established shops are not mistaken for stuck ones."""
 
 from __future__ import annotations
 
@@ -80,3 +80,67 @@ def test_send_all_posts_one_signed_rollup_per_linked_shop_and_survives_a_failure
 
     monkeypatch.setattr("app.services.activity_rollup.fleek_request", refuse)
     assert activity_rollup.send_all() == 0           # a refused roll-up is logged, not raised
+
+
+def test_an_unchanged_shop_is_skipped_each_hour_but_sent_again_after_a_day(client: TestClient, fleek: FakeFleek, monkeypatch: pytest.MonkeyPatch) -> None:
+    import time as _time
+
+    _signup(client, fleek)
+    activity_rollup._last_sent.clear()
+    seen: list[Any] = []
+    monkeypatch.setattr("app.services.activity_rollup.fleek_request", lambda *a, **k: (seen.append(a), (204, {}))[1])
+    assert activity_rollup.send_all() == 1
+    assert activity_rollup.send_all() == 0  # the next hour: nothing new, nothing sent
+    assert len(seen) == 1
+    client.post("/api/parties", headers=_h(_login_token(client)), json={"legal_name": "Anil Traders", "role": "customer"})
+    assert activity_rollup.send_all() == 1  # a new party changes the numbers, so it goes at once
+    real = _time.time
+    monkeypatch.setattr("app.services.activity_rollup.time.time", lambda: real() + 24 * 3600)
+    assert activity_rollup.send_all() == 1  # a day on, even unchanged, it is refreshed
+
+
+def _login_token(client: TestClient) -> str:
+    r = client.post("/api/auth/login", json={"identifier": onboarding.MOBILE, "password": onboarding.SIGNUP["password"]})
+    assert r.status_code == 200, r.text
+    return r.json()["access_token"]
+
+
+def test_a_milestone_queues_a_send_that_goes_out_after_the_delay_and_only_once(client: TestClient, fleek: FakeFleek, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.services import activity
+
+    activity._pending.clear()
+    activity_rollup._last_sent.clear()
+    t = _signup(client, fleek)  # "signed_up" is a milestone: the shop is queued
+    tenant_id = _tenant().id
+    assert tenant_id in activity._pending
+    seen: list[Any] = []
+    monkeypatch.setattr("app.services.activity_rollup.fleek_request", lambda *a, **k: (seen.append(a), (204, {}))[1])
+    assert activity_rollup.send_due() == 0  # not due yet: the delay lets the request commit and a burst go out together
+    real = _time_now()
+    monkeypatch.setattr("app.services.activity.time.time", lambda: real + activity.NUDGE_DELAY + 1)
+    assert activity_rollup.send_due() == 1 and len(seen) == 1
+    assert activity_rollup.send_due() == 0  # taken off the queue
+
+    client.post("/api/parties", headers=_h(t), json={"legal_name": "Anil Traders", "role": "customer"})
+    assert tenant_id in activity._pending  # a first customer queues it again
+    monkeypatch.setattr("app.services.activity.time.time", lambda: real + 2 * activity.NUDGE_DELAY + 2)
+    assert activity_rollup.send_due() == 0  # sent under five minutes ago, so it waits...
+    assert tenant_id in activity._pending  # ...and stays queued
+    monkeypatch.setattr("app.services.activity_rollup.time.time", lambda: real + activity_rollup.NUDGE_MIN_GAP + 10)
+    monkeypatch.setattr("app.services.activity.time.time", lambda: real + activity_rollup.NUDGE_MIN_GAP + 200)
+    assert activity_rollup.send_due() == 1  # the gap has passed, the new numbers go
+
+
+def test_browser_beacons_and_sign_ins_do_not_queue_a_send(client: TestClient, fleek: FakeFleek) -> None:
+    from app.services import activity
+
+    t = _signup(client, fleek)
+    activity._pending.clear()
+    client.post("/api/onboarding/activity", headers=_h(t), json={"key": "setup_viewed"})
+    assert activity._pending == {}
+
+
+def _time_now() -> float:
+    import time as _t
+
+    return _t.time()

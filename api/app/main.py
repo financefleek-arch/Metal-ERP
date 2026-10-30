@@ -121,26 +121,42 @@ async def _reminder_loop() -> None:
         await asyncio.sleep(REMINDER_CHECK_EVERY_SECONDS)
 
 
-ACTIVITY_ROLLUP_HOUR_IST = 2  # quiet hours: one roll-up per shop a day to Fleek, which is idempotent
+ACTIVITY_EVERY_SECONDS = 60 * 60  # hourly while the product is young: we want to see what shops do soon after they do it
+
+
+ACTIVITY_NUDGE_EVERY_SECONDS = 30
+
+
+async def _activity_nudge_loop() -> None:
+    """Every 30 seconds, send the shops that just reached a milestone (a first customer, a first invoice, a plan change...) to Fleek.
+    Cheap when nothing is waiting. The hourly run below is the backstop for anything this process lost (a restart, a second worker)."""
+    from app.services import activity_rollup
+
+    await asyncio.sleep(200)
+    while True:
+        try:
+            sent = await asyncio.to_thread(activity_rollup.send_due)
+            if sent:
+                log.info("activity milestone sends: %d", sent)
+        except Exception:  # noqa: BLE001 - never let the scheduler die
+            log.exception("activity nudge run failed")
+        await asyncio.sleep(ACTIVITY_NUDGE_EVERY_SECONDS)
 
 
 async def _activity_loop() -> None:
-    """Hourly check; once a day, in the small hours India time, send each linked shop's activity roll-up to Fleek (full state each time, so a
-    repeat or a missed day does no harm)."""
+    """Every hour, send Fleek the activity roll-up of each linked shop whose numbers changed (and of every shop at least daily; see
+    activity_rollup.send_all). Full state each time, so a repeat or a missed run does no harm."""
     from app.services import activity_rollup
 
     await asyncio.sleep(180)
-    last_day = None
     while True:
         try:
-            now = datetime.now(_IST)
-            if now.hour >= ACTIVITY_ROLLUP_HOUR_IST and last_day != now.date():
-                last_day = now.date()
-                sent = await asyncio.to_thread(activity_rollup.send_all)
+            sent = await asyncio.to_thread(activity_rollup.send_all)
+            if sent:
                 log.info("activity roll-ups sent: %d", sent)
         except Exception:  # noqa: BLE001 - never let the scheduler die
             log.exception("activity roll-up run failed")
-        await asyncio.sleep(60 * 60)
+        await asyncio.sleep(ACTIVITY_EVERY_SECONDS)
 
 
 LEAD_FEED_EVERY_SECONDS = 10 * 60
@@ -171,6 +187,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             asyncio.create_task(_sweep_loop()),
             asyncio.create_task(_reminder_loop()),
             asyncio.create_task(_activity_loop()),
+            asyncio.create_task(_activity_nudge_loop()),
             asyncio.create_task(_lead_feed_loop()),
         ]
     )

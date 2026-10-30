@@ -6,6 +6,8 @@ Evidence: **Code** = confirmed by reading the code. **Expect** = how Tally is ex
 
 Status: Open / Decided / Building / Done / Parked.
 
+Work items for every gap and decision are in [BACKLOG-tally-companion.md](BACKLOG-tally-companion.md); its traceability tables must stay complete.
+
 ## Target shape (decided in discussion, 2026-10-30)
 
 ```

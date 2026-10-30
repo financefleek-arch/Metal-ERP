@@ -10,7 +10,10 @@ look stuck on Fleek's call list.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -36,6 +39,9 @@ log = logging.getLogger(__name__)
 
 VERSION = 1
 WEEKS = 8
+NUDGE_MIN_GAP = 5 * 60  # a busy shop is sent at most this often by the quick path (the hourly run still covers it)
+RESEND_UNCHANGED_AFTER = 23 * 60 * 60  # a shop that did nothing new is still sent about daily, so Fleek's day-count windows stay fresh
+_last_sent: dict[str, tuple[str, float]] = {}  # tenant id -> (digest of the body without as_of, when it was sent)
 # milestone key -> where an established shop's first time comes from, when no event was ever recorded for it
 _BACKFILL = {
     "party_created": (Party, None),
@@ -124,8 +130,56 @@ def build(session: Session, tenant: Tenant, now: datetime | None = None, started
     }
 
 
+def _digest(body: dict[str, Any]) -> str:
+    stable = {k: v for k, v in body.items() if k != "as_of"}
+    return hashlib.sha256(json.dumps(stable, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def _send_one(session: Session, tenant: Tenant, started: datetime | None, *, force: bool = False) -> str:
+    """Build and send one shop's roll-up. -> "sent", "skipped" (nothing new since the last send) or "refused" (Fleek said no).
+    FleekUnavailable is left to the caller, which stops the run."""
+    body = build(session, tenant, started=started)
+    digest = _digest(body)
+    before = _last_sent.get(tenant.id)
+    if not force and before and before[0] == digest and time.time() - before[1] < RESEND_UNCHANGED_AFTER:
+        return "skipped"
+    code, _ = fleek_request("POST", f"/api/internal/metal-erp/orgs/{tenant.fleek_org_id}/activity", body)
+    if code in (200, 204):
+        _last_sent[tenant.id] = (digest, time.time())
+        return "sent"
+    log.warning("activity roll-up for %s refused with %s", tenant.id, code)
+    return "refused"
+
+
+def send_due() -> int:
+    """The quick path (every 30 seconds): the shops that just did something (activity.request_send) go to Fleek now. -> how many were sent."""
+    due = activity.take_due()
+    if not due:
+        return 0
+    from app.db import SessionLocal
+
+    sent = 0
+    with SessionLocal() as session:
+        started = tracking_started(session)
+        for tenant in session.scalars(select(Tenant).where(Tenant.id.in_(due), Tenant.fleek_org_id.is_not(None))).all():
+            try:
+                last = _last_sent.get(tenant.id)
+                if last and time.time() - last[1] < NUDGE_MIN_GAP:
+                    activity.request_send(tenant.id)  # sent a moment ago: look again shortly
+                    continue
+                if _send_one(session, tenant, started) == "sent":
+                    sent += 1
+            except FleekUnavailable:
+                log.warning("Fleek is not reachable; the hourly run will catch up")
+                break
+            except Exception:  # noqa: BLE001 - one shop's trouble must not stop the others
+                log.exception("activity nudge failed for tenant %s", tenant.id)
+    return sent
+
+
 def send_all() -> int:
-    """The scheduler's job: one roll-up per shop that is linked to Fleek. Own session. A shop's failure never stops the others. -> how many were sent."""
+    """The scheduler's job (hourly): one roll-up per linked shop whose numbers changed since the last send, and every shop at least daily.
+    Own session. A shop's failure never stops the others. -> how many were sent."""
     from app.db import SessionLocal
 
     sent = 0
@@ -134,14 +188,10 @@ def send_all() -> int:
         tenants = session.scalars(select(Tenant).where(Tenant.fleek_org_id.is_not(None))).all()
         for tenant in tenants:
             try:
-                body = build(session, tenant, started=started)
-                code, _ = fleek_request("POST", f"/api/internal/metal-erp/orgs/{tenant.fleek_org_id}/activity", body)
-                if code in (200, 204):
+                if _send_one(session, tenant, started) == "sent":
                     sent += 1
-                else:
-                    log.warning("activity roll-up for %s refused with %s", tenant.id, code)
             except FleekUnavailable:
-                log.warning("Fleek is not reachable; the rest of today's roll-ups wait for tomorrow")
+                log.warning("Fleek is not reachable; the rest wait for the next hourly run")
                 break
             except Exception:  # noqa: BLE001 - one shop's trouble must not stop the others
                 log.exception("activity roll-up failed for tenant %s", tenant.id)

@@ -8,6 +8,8 @@ phone number or free text. Recording never breaks the request it rides on.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -49,7 +51,30 @@ BEACON_KEYS: frozenset[str] = frozenset(
 )
 KEYS: frozenset[str] = SERVER_KEYS | BEACON_KEYS
 
+# Events after which Fleek should hear about the shop soon, not at the next hourly run: every funnel step and every plan or WhatsApp change.
+NUDGE_KEYS: frozenset[str] = frozenset(MILESTONES + ("whatsapp_connected", "plan_trial_started", "plan_cancelled", "feature_requested"))
+NUDGE_DELAY = 60.0  # seconds to wait, so the request has committed and a burst of actions goes out as one message
+
 SEEN_EVERY = timedelta(minutes=5)
+_pending: dict[str, float] = {}  # tenant id -> the time its roll-up is due (this process only; the hourly run covers anything lost)
+_pending_lock = threading.Lock()
+
+
+def request_send(tenant_id: str, now: float | None = None) -> None:
+    """Ask for this shop's roll-up to go to Fleek soon. The first ask sets the time; later asks inside the window add nothing."""
+    with _pending_lock:
+        _pending.setdefault(tenant_id, (now if now is not None else time.time()) + NUDGE_DELAY)
+
+
+def take_due(now: float | None = None) -> list[str]:
+    """The shops whose roll-up is due now, removed from the queue."""
+    now = now if now is not None else time.time()
+    with _pending_lock:
+        due = [t for t, at in _pending.items() if at <= now]
+        for t in due:
+            del _pending[t]
+    return due
+
 _MAX_PROPS = 4
 _MAX_TEXT = 40
 
@@ -72,6 +97,8 @@ def record(session: Session, *, tenant_id: str, user_id: str | None, key: str, p
         log.warning("unknown activity key %r ignored", key)
         return
     session.add(ActivityEvent(tenant_id=tenant_id, user_id=user_id, key=key, props=sanitize(props)))
+    if key in NUDGE_KEYS:
+        request_send(tenant_id)
 
 
 def _aware(dt: datetime) -> datetime:

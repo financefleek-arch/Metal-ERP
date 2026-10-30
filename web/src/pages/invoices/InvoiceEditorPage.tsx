@@ -14,6 +14,7 @@ import { useFeature } from "../../lib/features";
 import { notOnPlanFeature, useUpgrade } from "../../lib/upgrade";
 import { focusField, focusId, useDialogKeys } from "../../lib/keyboard";
 import { canDraft, canWrite } from "../../lib/roles";
+import { FirstInvoiceGuide } from "../../components/FirstInvoiceGuide";
 import { PaymentDialog } from "../../components/PaymentDialog";
 import { DateField } from "../../components/DateField";
 import { OffersConsent } from "../../components/OffersConsent";
@@ -1216,6 +1217,8 @@ export function InvoiceEditorPage() {
           autoPushHint="Ready to send to Tally as a sales voucher."
         />
       )}
+
+      {isNew && <FirstInvoiceGuide />}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_320px]">
         {/* left: header fields + lines */}
