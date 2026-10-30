@@ -72,4 +72,10 @@ public sealed class AgentContext(
         TallyReachable = reachable;
         TallyReason = reason;
     }
+
+    /// <summary>The companies TallyPrime had open on the last probe, for the next checkin. Null when it
+    /// could not be read (Tally unreachable), which the backend takes to mean "no news".</summary>
+    public IReadOnlyList<Tally.OpenCompany>? OpenCompanies { get; private set; }
+
+    public void SetOpenCompanies(IReadOnlyList<Tally.OpenCompany>? companies) => OpenCompanies = companies;
 }

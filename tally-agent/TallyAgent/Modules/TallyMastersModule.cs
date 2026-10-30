@@ -126,6 +126,26 @@ public sealed class TallyMastersModule(
             var jobId = GetString(item.Payload, "job_id")!;
             var action = GetString(item.Payload, "action");
             JobOutcome outcome;
+
+            // S0.3: before anything touches Tally, is the company this job names the one that is open?
+            if (action is "pull_masters" or "pull_vouchers" or "push_sales" or "push_purchase" or "push_items")
+            {
+                var stopped = await GuardCompanyAsync(
+                    ctx, log, jobId,
+                    GetString(item.Payload, "company_name"), GetString(item.Payload, "company_guid"), ct);
+                if (stopped is { } s)
+                {
+                    if (s == JobOutcome.Retry)
+                    {
+                        log.LogInformation("Tally job {Job} is waiting for its company to be opened", jobId);
+                        continue;
+                    }
+                    _held.Remove(jobId);
+                    anyError = true;
+                    continue;
+                }
+            }
+
             switch (action)
             {
                 case "pull_masters":
@@ -177,12 +197,54 @@ public sealed class TallyMastersModule(
         {
             var (reachable, reason) = await gateway.ProbeAsync(_opts!.GatewayUrl, ct);
             ctx.SetTallyReachable(reachable, reason);
+            // Which companies are open: the checkin carries it so the backend can offer "pick the open
+            // company" and notice a rename. Null when Tally cannot be read, which means "no news".
+            ctx.SetOpenCompanies(reachable ? await gateway.ListCompaniesAsync(_opts.GatewayUrl, ct) : null);
         }
         catch (Exception ex)
         {
             // Never let the health probe itself take down the module round.
             log.LogDebug(ex, "Tally reachability probe threw unexpectedly");
             ctx.SetTallyReachable(false, "unknown");
+            ctx.SetOpenCompanies(null);
+        }
+    }
+
+    /// <summary>
+    /// Compare the company a job names with what the gateway has open, before sending anything. Returns
+    /// null to go ahead, <see cref="JobOutcome.Retry"/> when the company is not open yet (kept and retried
+    /// within <see cref="RetryWindow"/>), or <see cref="JobOutcome.Failed"/> after reporting a plain-text
+    /// stop (wrong company, renamed) that nothing was sent for.
+    /// </summary>
+    private async Task<JobOutcome?> GuardCompanyAsync(
+        AgentContext ctx, ILogger log, string jobId, string? name, string? guid, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(guid)) return null;
+
+        var open = await gateway.ListCompaniesAsync(_opts!.GatewayUrl, ct);
+        var decision = CompanyCheck.Decide(name, guid, open);
+        switch (decision.Verdict)
+        {
+            case CompanyVerdict.Proceed:
+                return null;
+            case CompanyVerdict.NotOpen:
+                log.LogInformation("{Message} Job {Job} will retry.", decision.Message, jobId);
+                ctx.ReportModuleStatus(Name, CompanyCheck.NotOpenStatus);
+                await PingAsync(ctx, log, jobId, CompanyCheck.NotOpenStatus, ct);
+                return JobOutcome.Retry;
+            default:
+                log.LogWarning("Job {Job} stopped: {Message}", jobId, decision.Message);
+                ctx.ReportModuleStatus(Name, "error");
+                try
+                {
+                    await ctx.Backend.PostJobResultAsync(
+                        jobId, "error", null, decision.Message, ct, errorCode: decision.ErrorCode);
+                }
+                catch (Exception ex)
+                {
+                    log.LogError(ex, "could not report the company stop for job {Job}", jobId);
+                }
+                return JobOutcome.Failed;
         }
     }
 

@@ -42,6 +42,11 @@ from app.models import (
     TallyLink,
     TallySyncJob,
 )
+from app.services.tally.company_identity import (
+    WAITING_FOR_COMPANY,
+    company_payload,
+    not_open_message,
+)
 from app.services.tally.units import line_unit
 
 # job.status values that mean "the agent still owes us a result"
@@ -55,7 +60,7 @@ _STUCK_AFTER = timedelta(minutes=10)
 # A masters pull can legitimately run for a long while (big export + upload), so without a
 # "not ready" ping from the agent it gets a much longer ceiling before it is given up on.
 _PULL_CEILING = timedelta(minutes=30)
-_NOT_READY = ("no_company_loaded", "tally_unavailable")
+_NOT_READY = ("no_company_loaded", "tally_unavailable", WAITING_FOR_COMPANY)
 
 
 def _expire_stuck_job(session: Session, job: TallySyncJob) -> bool:
@@ -75,10 +80,16 @@ def _expire_stuck_job(session: Session, job: TallySyncJob) -> bool:
     if age < _STUCK_AFTER:
         return False
     not_ready = job.last_agent_status in _NOT_READY
-    is_pull = job.kind in ("pull_masters", "pull_vouchers")
+    is_pull = job.kind in ("pull_masters", "pull_vouchers", "check_voucher", "verify_company")
+    if job.kind in ("push_sales", "push_purchase") and job.status == "sent" and not not_ready:
+        # The agent took the voucher and never reported back: Tally may have saved it (S0.6). Not when
+        # it kept saying "not ready": it was holding the voucher, never sending it.
+        job.outcome_unknown = True
     if is_pull and not not_ready and age < _PULL_CEILING:
         return False
-    if not_ready:
+    if job.last_agent_status == WAITING_FOR_COMPANY:
+        job.error = not_open_message(session, job)
+    elif not_ready:
         job.error = "Tally stayed unavailable — retried, then cancelled."
     elif is_pull:
         job.error = (
@@ -178,7 +189,7 @@ def enqueue_pull_masters(
         payload={
             "job_id": job.id,
             "action": "pull_masters",
-            "company_name": company.company_name,
+            **company_payload(company),
         },
         status="queued",
     )
@@ -295,7 +306,9 @@ def _assert_no_push_in_flight(
         )
 
 
-def enqueue_push_sales(session: Session, company: TallyCompany, invoice: Invoice) -> TallySyncJob:
+def enqueue_push_sales(
+    session: Session, company: TallyCompany, invoice: Invoice, *, checked: bool = False
+) -> TallySyncJob:
     """Create the job + paired outbox item — including the built voucher
     XML, stashed directly in `AgentOutboxItem.payload["voucher_xml"]`
     (matches F1a's own pattern of putting job parameters in the outbox
@@ -337,6 +350,14 @@ def enqueue_push_sales(session: Session, company: TallyCompany, invoice: Invoice
         if prior is not None:
             return prior
 
+    if not checked:
+        # S0.6: an earlier push may have landed without us hearing; ask Tally before posting again.
+        from app.services.tally.voucher_check import pending_check
+
+        held = pending_check(session, company, invoice)
+        if held is not None:
+            return held
+
     party = session.get(Party, invoice.party_id) if invoice.party_id else None
     if party is None:
         # push_blockers() should have caught this already (party_not_linked
@@ -367,7 +388,7 @@ def enqueue_push_sales(session: Session, company: TallyCompany, invoice: Invoice
         payload={
             "job_id": job.id,
             "action": "push_sales",
-            "company_name": company.company_name,
+            **company_payload(company),
             # decoded to text for the JSON payload column — the agent
             # re-encodes as UTF-8 bytes before POSTing (see Finding 3: the
             # live HTTP path needs UTF-8, not the purchase side's UTF-16).
@@ -442,7 +463,7 @@ def bill_checksum(bill: InwardBill) -> str:
 
 
 def enqueue_push_purchase(
-    session: Session, company: TallyCompany, bill: InwardBill
+    session: Session, company: TallyCompany, bill: InwardBill, *, checked: bool = False
 ) -> TallySyncJob:
     """Create the job + paired outbox item for a Purchase-voucher push —
     mirrors `enqueue_push_sales` in shape (XML built at enqueue time and
@@ -490,6 +511,14 @@ def enqueue_push_purchase(
         )
         if prior is not None:
             return prior
+
+    if not checked:
+        # S0.6: an earlier push may have landed without us hearing; ask Tally before posting again.
+        from app.services.tally.voucher_check import pending_check
+
+        held = pending_check(session, company, bill)
+        if held is not None:
+            return held
 
     party = session.get(Party, bill.matched_party_id) if bill.matched_party_id else None
     pending = pending_master_creates(session, bill)
@@ -572,7 +601,7 @@ def enqueue_push_purchase(
         payload={
             "job_id": job.id,
             "action": "push_purchase",
-            "company_name": company.company_name,
+            **company_payload(company),
             "voucher_xml": voucher_xml.decode("utf-8"),
         },
         status="queued",

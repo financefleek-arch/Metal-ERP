@@ -82,6 +82,97 @@ def test_a_simple_shop_is_done_with_an_address_and_a_gst_shop_also_needs_a_state
     assert onboarding.firm_details_done(_tenant(tid)) is True
 
 
+def test_the_preview_is_the_real_bill_with_unsaved_details(client: TestClient, fleek: FakeFleek) -> None:
+    t = _signup(client, fleek)
+    r = client.post(
+        "/api/tenant/bill-preview",
+        headers=_h(t),
+        json={
+            "trade_name": "Shree Ram Metals",
+            "upi_id": "shreeram@okicici",
+            "document_label": "Cash Memo",
+            "gstin": "not valid yet",  # half-typed values still preview
+        },
+    )
+    assert r.status_code == 200, r.text
+    html = r.json()["html"]
+    assert "Shree Ram Metals" in html
+    assert "UPI:</span> shreeram@okicici" in html
+    assert "Cash Memo" in html
+    for part in ("Description of Goods", "Grand Total", "Previous outstanding", "Total amount due", "Amount Chargeable"):
+        assert part in html
+    assert "GSTIN:" not in html  # simple mode prints no GSTIN
+
+    gst = client.post(
+        "/api/tenant/bill-preview", headers=_h(t), json={"gst_enabled": True, "gstin": GSTIN}
+    ).json()["html"]
+    assert f"GSTIN: {GSTIN}" in gst
+    assert f"PAN: {GSTIN[2:12]}" in gst
+    # nothing was saved by previewing
+    assert client.get("/api/tenant", headers=_h(t)).json()["upi_id"] is None
+
+
+def test_the_payment_qr_carries_the_amount_and_keeps_a_signed_link_untouched() -> None:
+    from decimal import Decimal
+
+    from app.services import upi_qr
+
+    made = upi_qr.payload_for(
+        upi_id="shop@okicici", payload=None, shop_name="Shree Ram", amount=Decimal("12968"), bill_no="0042"
+    )
+    assert made is not None and made.startswith("upi://pay?pa=shop@okicici&pn=Shree%20Ram&am=12968.00&cu=INR")
+    own = "upi://pay?pa=ram@ybl&pn=Ram&mc=5411&am=1.00"
+    redone = upi_qr.payload_for(upi_id=None, payload=own, shop_name="x", amount=Decimal("500"), bill_no="7")
+    assert redone is not None and "am=500.00" in redone and "am=1.00" not in redone and "mc=5411" in redone
+    signed = "upi://pay?pa=ram@ybl&sign=abc123"
+    assert upi_qr.payload_for(upi_id=None, payload=signed, shop_name="x", amount=Decimal("5"), bill_no="7") == signed
+    assert upi_qr.payload_for(upi_id=None, payload=None, shop_name="x", amount=None, bill_no=None) is None
+    assert upi_qr.valid_payload("https://example.com/pay") is False
+    assert upi_qr.valid_payload("upi://pay?pn=NoPayee") is False
+
+
+def test_an_uploaded_qr_names_the_upi_id_and_the_bill_prints_it(client: TestClient, fleek: FakeFleek) -> None:
+    t = _signup(client, fleek)
+    assert client.patch("/api/tenant", headers=_h(t), json={"upi_qr_payload": "https://evil.example"}).status_code == 422
+    r = client.patch("/api/tenant", headers=_h(t), json={"upi_qr_payload": "upi://pay?pa=ram@ybl&pn=Ram"})
+    assert r.status_code == 200, r.text
+    assert r.json()["upi_id"] == "ram@ybl"  # read from the QR when none was typed
+    html = client.post("/api/tenant/bill-preview", headers=_h(t), json={}).json()["html"]
+    assert "data:image/svg+xml" in html and "Scan to pay" in html
+
+
+def test_ifsc_lookup_fills_bank_and_branch_and_degrades_to_the_bank_prefix(
+    client: TestClient, fleek: FakeFleek, monkeypatch
+) -> None:
+    from app.services import ifsc
+
+    ifsc._lookup_found.cache_clear()
+
+    class Resp:
+        status_code = 200
+
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict:
+            return {"BANK": "State Bank of India", "BRANCH": "VIJAY NAGAR", "CITY": "INDORE", "UPI": True, "IMPS": True}
+
+    monkeypatch.setattr(ifsc.httpx, "get", lambda *a, **k: Resp())
+    t = _signup(client, fleek)
+    got = client.get("/api/reference/ifsc/sbin0001234", headers=_h(t)).json()
+    assert got["found"] and got["checked"] and got["bank"] == "State Bank of India" and got["branch"] == "Vijay Nagar"
+    assert client.get("/api/reference/ifsc/NOTANIFSC", headers=_h(t)).status_code == 422
+
+    ifsc._lookup_found.cache_clear()
+
+    def down(*a, **k):
+        raise OSError("no network")
+
+    monkeypatch.setattr(ifsc.httpx, "get", down)
+    off = client.get("/api/reference/ifsc/HDFC0000001", headers=_h(t)).json()
+    assert off["checked"] is False and off["bank"] == "HDFC Bank"
+    ifsc._lookup_found.cache_clear()
+
+
 def test_the_bill_prints_upi_without_a_bank_account_and_the_account_holder(
     client: TestClient, fleek: FakeFleek
 ) -> None:

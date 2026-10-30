@@ -32,6 +32,23 @@ public sealed class CheckinRequest
 
     [JsonPropertyName("update_error")]
     public string? UpdateError { get; set; }
+
+    // The companies open in TallyPrime this round. Null = not looked (Tally unreachable); an empty list
+    // = Tally answered with nothing open.
+    [JsonPropertyName("tally_companies")]
+    public List<OpenCompanyDto>? TallyCompanies { get; set; }
+}
+
+public sealed class OpenCompanyDto
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("guid")]
+    public string Guid { get; set; } = "";
+
+    [JsonPropertyName("books_from")]
+    public string? BooksFrom { get; set; }
 }
 
 public sealed class CheckinResponse
@@ -136,11 +153,16 @@ public sealed class JobResultRequest
 
     [JsonPropertyName("error")]
     public string? Error { get; set; }
+
+    // Set when the agent stopped the job because of the company, before sending anything to Tally:
+    // "wrong_company" | "company_renamed" | "company_ambiguous".
+    [JsonPropertyName("error_code")]
+    public string? ErrorCode { get; set; }
 }
 
 public sealed class JobStatusPingRequest
 {
-    // "no_company_loaded" | "tally_unavailable"
+    // "no_company_loaded" | "tally_unavailable" | "company_not_open"
     [JsonPropertyName("agent_status")]
     public string AgentStatus { get; set; } = "";
 }

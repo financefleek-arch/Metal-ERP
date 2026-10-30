@@ -30,6 +30,13 @@
       display: inline-block; font-size: 8.5pt; }
     .cgi { text-align: center; margin-top: 10pt; font-size: 8pt; color: #333; }
   </style>
+  {% if preview %}
+  <style>
+    /* On screen there is no printer margin: draw the A4 sheet the way it prints. */
+    html { background: #fff; }
+    body { width: 210mm; padding: 12mm 12mm 14mm 12mm; }
+  </style>
+  {% endif %}
 </head>
 <body>
   <div class="title">{{ doc_label }}</div>
@@ -183,8 +190,18 @@
     {% if tenant.bank_branch %} · {{ tenant.bank_branch }}{% endif %}
   </div>
   {% endif %}
-  {% if tenant.upi_id %}
-  <div class="foot"><span class="b">UPI:</span> {{ tenant.upi_id }}</div>
+  {% if tenant.upi_id or upi_qr_src %}
+  <table class="noborder upi" style="margin-top: 8pt;">
+    <tr>
+      <td style="width: 62pt; vertical-align: middle;">
+        {% if upi_qr_src %}<img src="{{ upi_qr_src }}" alt="Scan to pay" style="width: 56pt; height: 56pt;">{% endif %}
+      </td>
+      <td style="vertical-align: middle; font-size: 8pt;">
+        {% if upi_qr_src %}<div class="b">Scan to pay</div>{% endif %}
+        {% if tenant.upi_id %}<div><span class="b">UPI:</span> {{ tenant.upi_id }}</div>{% endif %}
+      </td>
+    </tr>
+  </table>
   {% endif %}
 
   {% if invoice.declaration_snapshot %}

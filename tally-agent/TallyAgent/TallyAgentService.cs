@@ -112,7 +112,8 @@ public sealed class TallyAgentService(
                     AgentVersion.Current,
                     AgentVersion.OsDescription,
                     failure?.Version,
-                    failure?.Error);
+                    failure?.Error,
+                    ctx.OpenCompanies);
                 // Hand this round's outbox to modules for the next round.
                 ctx.SetPendingOutbox(resp?.Outbox ?? new List<Backend.OutboxItem>());
                 lastCheckin = now;

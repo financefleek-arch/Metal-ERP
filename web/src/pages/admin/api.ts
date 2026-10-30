@@ -11,6 +11,7 @@ import type {
   FirmWhatsappTestResult,
   FirmWhatsappUpsert,
   LedgerMapPatch,
+  OpenTallyCompany,
   TallyCompany,
   TallyCompanyUpsert,
   TallySyncJob,
@@ -104,6 +105,20 @@ export const adminApi = {
     api<TallyCompany>(`/admin/firms/${firmId}/tally/company`, {
       method: "POST",
       body,
+    }),
+
+  verifyTallyCompany: (firmId: string) =>
+    api<TallySyncJob>(`/admin/firms/${firmId}/tally/company/verify`, {
+      method: "POST",
+    }),
+
+  listOpenTallyCompanies: (firmId: string) =>
+    api<OpenTallyCompany[]>(`/admin/firms/${firmId}/tally/company/open`),
+
+  relinkTallyCompany: (firmId: string, guid: string) =>
+    api<TallyCompany>(`/admin/firms/${firmId}/tally/company/relink`, {
+      method: "POST",
+      body: { guid },
     }),
 
   putTallyLedgerMap: (firmId: string, body: LedgerMapPatch) =>

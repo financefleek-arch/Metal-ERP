@@ -23,6 +23,7 @@ from lxml import etree
 from sqlalchemy.orm import Session
 
 from app.models import Invoice, InwardBill, TallySyncJob
+from app.services.tally.company_identity import HARD_STOPS
 from app.services.tally.jobs import (
     bill_checksum,
     complete_job_error,
@@ -70,6 +71,7 @@ def process_push_result(
     ok: bool,
     tally_response: str | None,
     agent_error: str | None,
+    error_code: str | None = None,
 ) -> None:
     """Advance `job` to `ok` or `error`. Idempotent: a second call on a
     terminal job is a no-op.
@@ -86,10 +88,17 @@ def process_push_result(
         return
 
     if not ok:
+        # The agent failed without a word from Tally (a timeout after sending, say): the voucher may
+        # be there. A Tally error (below) is definite; this is not (S0.6).
+        # An agent stop for the company happened before anything was sent (S0.3): nothing to check.
+        if job.kind in ("push_sales", "push_purchase") and error_code not in HARD_STOPS:
+            job.outcome_unknown = True
         complete_job_error(session, job, error=agent_error or "agent reported a failure")
         return
 
     if not tally_response:
+        if job.kind in ("push_sales", "push_purchase"):
+            job.outcome_unknown = True
         complete_job_error(session, job, error="agent result missing tally_response")
         return
 

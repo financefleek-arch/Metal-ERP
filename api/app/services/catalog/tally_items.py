@@ -46,6 +46,7 @@ from app.models import (
     TallySyncJob,
 )
 from app.services.tally.agent_health import agent_online, assert_tally_reachable
+from app.services.tally.company_identity import WAITING_FOR_COMPANY, company_payload
 from app.services.tally.jobs import complete_job_error
 from tools.tally_import.parser import parse_stock_items
 
@@ -68,7 +69,7 @@ _NON_TERMINAL = ("queued", "sent", "running")
 # stayed closed / had no company open). The agent retries a "not ready" batch for ~8 minutes, so
 # this must stay comfortably above that. Same window as the other Tally job kinds (jobs.py).
 STALLED_AFTER = timedelta(minutes=10)
-_NOT_READY = ("no_company_loaded", "tally_unavailable")
+_NOT_READY = ("no_company_loaded", "tally_unavailable", WAITING_FOR_COMPANY)
 
 
 # --------------------------------------------------------------------------- data
@@ -411,6 +412,11 @@ def _as_utc(dt: datetime) -> datetime:
 def _stalled_message(job: TallySyncJob, company_name: str | None) -> str:
     """Why a batch was given up on, in words the shop can act on."""
     name = f" {company_name}" if company_name else ""
+    if job.last_agent_status == WAITING_FOR_COMPANY:
+        return (
+            f"The Tally company{name} is not open in TallyPrime, so this was cancelled. Open it "
+            "(or correct the company name here), then send again."
+        )
     if job.last_agent_status == "no_company_loaded":
         return (
             f"Tally has no company open, so this was cancelled. Open{name} in TallyPrime, "
@@ -638,7 +644,7 @@ def _enqueue_batch(
         payload={
             "job_id": job.id,
             "action": KIND,
-            "company_name": company.company_name,
+            **company_payload(company),
             "voucher_xml": xml.decode("utf-8"),
         },
         status="queued",
@@ -806,6 +812,12 @@ def _in_flight_message(run: RunStatus) -> str:
             f" (batch {batch} of {run.batches}, "
             f"{run.synced} of {run.total_items} items sent)"
         )
+    if run.waiting == WAITING_FOR_COMPANY:
+        return (
+            f"A push to Tally is already running{where} but the linked company is not open in "
+            "TallyPrime. Open it and it carries on; if it stays closed it is cancelled "
+            "automatically after 10 minutes."
+        )
     if run.waiting == "no_company_loaded":
         return (
             f"A push to Tally is already running{where} but Tally has no company open. Open your "
@@ -924,7 +936,7 @@ def enqueue_stock_check(
         payload={
             "job_id": job.id,
             "action": "pull_masters",
-            "company_name": company.company_name,
+            **company_payload(company),
         },
         status="queued",
     )
@@ -962,7 +974,11 @@ def apply_stock_check(session: Session, company: TallyCompany, raw: bytes) -> di
 
     # S0.5: keep each linked item's unit as Tally holds it, so a voucher line is only ever sent in
     # that unit (Tally blanks the quantity of a line in any other).
-    unit_by_guid = {i.guid: i.base_units.strip() for i in stock.items if i.guid and (i.base_units or "").strip()}
+    unit_by_guid = {
+        i.guid: i.base_units.strip()
+        for i in stock.items
+        if i.guid and (i.base_units or "").strip()
+    }
     if unit_by_guid:
         for item in session.scalars(
             select(Item).where(Item.tenant_id == company.tenant_id, Item.tally_guid.is_not(None))

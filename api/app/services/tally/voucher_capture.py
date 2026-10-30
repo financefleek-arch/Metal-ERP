@@ -27,6 +27,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import AgentOutboxItem, TallyCompany, TallySyncJob
+from app.services.tally.company_identity import company_payload
 from app.services.tally.jobs import _NON_TERMINAL, _expire_stuck_job, complete_job_error
 
 log = logging.getLogger("tally.voucher_capture")
@@ -158,6 +159,7 @@ def enqueue_voucher_capture(
         payload={
             "job_id": job.id,
             "action": KIND,
+            **company_payload(company),
             "label": label,
             "export_xml": request_xml,
         },

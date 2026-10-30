@@ -21,12 +21,15 @@ from app.deps import SessionDep, require_platform_admin
 from app.models import BackupShop, Invoice, TallyCompany, TallySyncJob, Tenant
 from app.schemas_tally import (
     LedgerMapIn,
+    OpenCompanyOut,
+    RelinkIn,
     TallyCompanyIn,
     TallyCompanyOut,
     TallyPushBlockersOut,
     TallySyncJobOut,
 )
 from app.services.tally.agent_health import assert_tally_reachable
+from app.services.tally.company_verify import enqueue_verify_company, relink_company
 from app.services.tally.jobs import (
     assert_no_pull_in_flight,
     assert_no_push_in_flight,
@@ -97,10 +100,48 @@ def upsert_company(
         )
         session.add(company)
     else:
+        if body.company_name.strip() != company.company_name.strip():
+            # Pointed at a (possibly different) company on purpose: what we knew about the old
+            # one no longer applies. "Verify company" learns it again.
+            company.company_guid = None
+            company.books_from = None
+            company.verify_state = None
+            company.verify_note = None
+            company.verified_at = None
         company.company_name = body.company_name
         company.shop_id = shop.id if shop else None
     session.flush()
     return company
+
+
+@router.post(
+    "/company/verify",
+    response_model=TallySyncJobOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def verify_company(firm_id: str, session: SessionDep) -> TallySyncJob:
+    """Ask the agent's Tally which companies it has open, and compare with the one we linked."""
+    _firm(session, firm_id)
+    company = _load_company(session, firm_id)
+    assert_tally_reachable(session, company)
+    return enqueue_verify_company(session, company)
+
+
+@router.get("/company/open", response_model=list[OpenCompanyOut])
+def open_companies(firm_id: str, session: SessionDep) -> list[dict]:
+    """What the agent last saw open in TallyPrime, for the "pick the company" list."""
+    _firm(session, firm_id)
+    shop = session.scalar(select(BackupShop).where(BackupShop.tenant_id == firm_id))
+    return list(shop.tally_companies or []) if shop else []
+
+
+@router.post("/company/relink", response_model=TallyCompanyOut)
+def relink(firm_id: str, body: RelinkIn, session: SessionDep) -> TallyCompany:
+    """Take the name and GUID of one open company: fixes a rename, or links the right company."""
+    _firm(session, firm_id)
+    company = _load_company(session, firm_id)
+    shop = session.get(BackupShop, company.shop_id) if company.shop_id else None
+    return relink_company(session, company, shop, body.guid)
 
 
 @router.put("/company/ledger-map", response_model=TallyCompanyOut)

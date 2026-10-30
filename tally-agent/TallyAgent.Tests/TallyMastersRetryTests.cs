@@ -29,7 +29,7 @@ public class TallyMastersRetryTests
             HttpRequestMessage request, CancellationToken ct)
         {
             var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct);
-            if (body.Contains("List of Companies"))
+            if (body.Contains("List of Companies") || body.Contains("MECompanies"))
             {
                 // the standing reachability probe: just say "no" like a closed Tally would
                 throw new HttpRequestException("connection refused");

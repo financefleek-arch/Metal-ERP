@@ -423,6 +423,13 @@ function TallySection({
           <CompanyBlock firmId={firmId} company={linked} onSaved={refresh} />
           {linked && (
             <>
+              <VerifyBlock
+                firmId={firmId}
+                company={linked}
+                onDone={refresh}
+                tallyStatus={tallyStatus}
+                agentOnline={agentOnline}
+              />
               <PullBlock
                 firmId={firmId}
                 company={linked}
@@ -482,6 +489,163 @@ function CompanyBlock({
         step. Tally must be running with a company open on the shop PC when a
         pull runs. Leave the name blank to use whichever company is open.
       </p>
+      {err && <p className="err">{err}</p>}
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------------
+// verify block — which company is this really (name vs Tally's own id)
+// -------------------------------------------------------------------------
+
+function VerifyBlock({
+  firmId,
+  company,
+  onDone,
+  tallyStatus,
+  agentOnline,
+}: {
+  firmId: string;
+  company: TallyCompany;
+  onDone: () => void;
+  tallyStatus: FirmTallyShop["tally_status"];
+  agentOnline: boolean;
+}) {
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [startErr, setStartErr] = useState<string | null>(null);
+
+  const job = useQuery({
+    queryKey: ["admin-firm-tally-job", firmId, jobId],
+    queryFn: () => adminApi.getTallySyncJob(firmId, jobId as string),
+    enabled: !!jobId,
+    refetchInterval: (q) => {
+      const s = q.state.data?.status;
+      return s === "ok" || s === "error" ? false : 4000;
+    },
+  });
+
+  useEffect(() => {
+    const s = job.data?.status;
+    if (s === "ok" || s === "error") onDone();
+  }, [job.data?.status, onDone]);
+
+  const start = useMutation({
+    mutationFn: () => adminApi.verifyTallyCompany(firmId),
+    onSuccess: (j) => {
+      setStartErr(null);
+      setJobId(j.id);
+    },
+    onError: (e) =>
+      setStartErr(e instanceof ApiError ? e.message : "Could not start the check"),
+  });
+
+  const active = job.data;
+  const inFlight =
+    !!active && (active.status === "queued" || active.status === "sent");
+  const blockedReason = !inFlight
+    ? reachabilityBlockReason(agentOnline, tallyStatus)
+    : null;
+  const bad = company.verify_state && company.verify_state !== "verified";
+
+  return (
+    <div className="mt-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          className="btn-ghost"
+          disabled={start.isPending || inFlight || !!blockedReason}
+          onClick={() => start.mutate()}
+        >
+          {start.isPending || inFlight ? "Checking…" : "Verify company"}
+        </button>
+        {company.verify_state === "verified" && (
+          <span className="text-xs text-ok">
+            Verified {company.verified_at ? timeAgo(company.verified_at) : ""}
+            {company.books_from ? ` · books from ${company.books_from}` : ""}
+          </span>
+        )}
+        {!company.verify_state && (
+          <span className="text-xs text-muted">
+            Not checked yet — confirms the open company is the one linked.
+          </span>
+        )}
+      </div>
+      {bad && company.verify_note && (
+        <p className="mt-2 max-w-prose text-xs text-warn">{company.verify_note}</p>
+      )}
+      {company.company_guid && (
+        <p className="mt-1 text-[11px] text-muted">
+          Tally id {company.company_guid}
+        </p>
+      )}
+      <OpenCompanies firmId={firmId} company={company} onRelinked={onDone} />
+      {blockedReason && !inFlight && (
+        <p className="mt-2 text-xs text-warn">{blockedReason}</p>
+      )}
+      {startErr && <p className="err">{startErr}</p>}
+      {active?.status === "error" && active.error && (
+        <p className="err">{active.error}</p>
+      )}
+    </div>
+  );
+}
+
+/** The companies the agent last saw open, with a button to link one (fixes a rename or a wrong link). */
+function OpenCompanies({
+  firmId,
+  company,
+  onRelinked,
+}: {
+  firmId: string;
+  company: TallyCompany;
+  onRelinked: () => void;
+}) {
+  const [err, setErr] = useState<string | null>(null);
+  const open = useQuery({
+    queryKey: ["admin-firm-tally-open", firmId, company.verified_at, company.verify_state],
+    queryFn: () => adminApi.listOpenTallyCompanies(firmId),
+  });
+  const relink = useMutation({
+    mutationFn: (guid: string) => adminApi.relinkTallyCompany(firmId, guid),
+    onSuccess: () => {
+      setErr(null);
+      onRelinked();
+    },
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not relink"),
+  });
+
+  const list = open.data ?? [];
+  const attention =
+    !!company.verify_state && company.verify_state !== "verified";
+  if (list.length === 0 || (!attention && list.length < 2)) return null;
+
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+        Open in Tally now
+      </p>
+      <ul className="mt-1 space-y-1">
+        {list.map((c) => {
+          const linked = c.guid === company.company_guid;
+          return (
+            <li key={c.guid} className="flex flex-wrap items-center gap-2 text-xs">
+              <span className={linked ? "font-semibold text-ink" : "text-ink"}>
+                {c.name}
+              </span>
+              {linked ? (
+                <span className="text-ok">linked</span>
+              ) : (
+                <button
+                  className="btn-ghost"
+                  disabled={relink.isPending}
+                  onClick={() => relink.mutate(c.guid)}
+                >
+                  Use this company
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
       {err && <p className="err">{err}</p>}
     </div>
   );
@@ -616,7 +780,12 @@ function PullBlock({
       )}
       {startErr && <p className="err">{startErr}</p>}
       {active && (
-        <PullSteps job={active} firmId={firmId} onRetry={() => setJobId(null)} />
+        <PullSteps
+          job={active}
+          firmId={firmId}
+          company={company}
+          onRetry={() => setJobId(null)}
+        />
       )}
     </div>
   );
@@ -625,10 +794,12 @@ function PullBlock({
 function PullSteps({
   job,
   firmId,
+  company,
   onRetry,
 }: {
   job: TallySyncJob;
   firmId: string;
+  company: TallyCompany;
   onRetry: () => void;
 }) {
   const qc = useQueryClient();
@@ -637,7 +808,8 @@ function PullSteps({
   const waiting =
     job.status === "sent" &&
     (job.last_agent_status === "no_company_loaded" ||
-      job.last_agent_status === "tally_unavailable");
+      job.last_agent_status === "tally_unavailable" ||
+      job.last_agent_status === "company_not_open");
 
   const retry = useMutation({
     mutationFn: () => adminApi.retryTallySyncJob(firmId, job.id),
@@ -688,7 +860,9 @@ function PullSteps({
 
       {waiting && (
         <p className="mt-2 text-xs text-warn">
-          Waiting on Tally — it's closed or no company is open on the shop PC.
+          {job.last_agent_status === "company_not_open"
+            ? `Waiting for "${company.company_name}" to be opened in Tally.`
+            : "Waiting on Tally — it's closed or no company is open on the shop PC."}{" "}
           Retrying each check-in; gives up after about 10 minutes.
         </p>
       )}

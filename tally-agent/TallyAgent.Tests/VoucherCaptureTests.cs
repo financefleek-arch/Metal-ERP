@@ -30,7 +30,7 @@ public class VoucherCaptureTests
             HttpRequestMessage request, CancellationToken ct)
         {
             var body = request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct);
-            if (body.Contains("List of Companies"))
+            if (body.Contains("List of Companies") || body.Contains("MECompanies"))
                 throw new HttpRequestException("connection refused"); // the standing probe
             Posts++;
             var next = Script.Count > 0 ? Script.Dequeue() : () => throw new HttpRequestException("refused");

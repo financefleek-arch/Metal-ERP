@@ -4,15 +4,40 @@ and the metal-trade vocabularies (UOM / category / shape / metal / finish).
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query
+from dataclasses import asdict
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 
 from app.deps import CurrentUser, SessionDep
+from app.services import ifsc as ifsc_service
 from app.domain.units import all_uoms, primary_uoms
 from app.models import HsnCode
 from app.reference import STATE_CODES
 
 router = APIRouter(prefix="/api/reference", tags=["reference"])
+
+
+class IfscOut(BaseModel):
+    ifsc: str
+    found: bool
+    checked: bool
+    bank: str | None = None
+    branch: str | None = None
+    city: str | None = None
+    upi: bool | None = None
+    imps: bool | None = None
+
+
+@router.get("/ifsc/{code}", response_model=IfscOut)
+def ifsc_lookup(code: str, user: CurrentUser) -> IfscOut:
+    """Bank and branch for an IFSC, so the Firm page fills them in. `checked` is false when the public
+    directory could not be reached (then only the bank, from the code's first four letters)."""
+    hit = ifsc_service.lookup(code)
+    if hit is None:
+        raise HTTPException(status_code=422, detail="IFSC is 4 letters, a zero, then 6 letters or digits")
+    return IfscOut(**asdict(hit))
 
 # Small fixed vocabularies — code lists, not DB tables. The item form uses
 # these for its pickers; free text is still allowed on save.

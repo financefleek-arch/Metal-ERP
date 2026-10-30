@@ -74,6 +74,18 @@ def _sub(parent: etree._Element, tag: str, text: str | None = None) -> etree._El
     return el
 
 
+def sales_reference(invoice: Invoice) -> str:
+    """Our invoice number as it sits in the voucher's Reference field (S0.6).
+
+    Tally numbers the voucher itself and discards ours (verified live), and a UDF cannot be read back,
+    but the standard Reference field can. So this is both what the accountant sees as our number and
+    what a retry looks up to find out whether a push already landed. Unique per firm: it carries the
+    financial year, and the series when it is not the default one.
+    """
+    series = "" if invoice.series in (None, "", "Sales") else f"{invoice.series}/"
+    return f"ME/{series}{invoice.fy}/{invoice.number if invoice.number is not None else invoice.id}"
+
+
 def real_lines(invoice: Invoice) -> list[InvoiceLine]:
     """Same filter `finalize_invoice` uses — a blank-description row is a
     UI placeholder, never a real line."""
@@ -132,6 +144,7 @@ def build_sales_voucher_envelope(
     _sub(vch, "EFFECTIVEDATE", _yyyymmdd(invoice.date))
     _sub(vch, "VOUCHERTYPENAME", "Sales")
     _sub(vch, "VOUCHERNUMBER", str(invoice.number) if invoice.number is not None else "")
+    _sub(vch, "REFERENCE", sales_reference(invoice))
     _sub(vch, "PARTYLEDGERNAME", party.legal_name)
     _sub(vch, "PERSISTEDVIEW", "Invoice Voucher View")
 

@@ -467,7 +467,7 @@ export interface TallyRun {
   error: string | null;
   updated_at: string | null;
   /** while running: Tally is not ready and the batch is being retried */
-  waiting?: "tally_unavailable" | "no_company_loaded" | null;
+  waiting?: "tally_unavailable" | "no_company_loaded" | "company_not_open" | null;
   /** What the current batch is doing. */
   phase?: "waiting_agent" | "sending" | "waiting_tally" | null;
   started_at?: string | null;

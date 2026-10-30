@@ -27,7 +27,7 @@ Account (Fleek org)      owner, plan, WhatsApp, people, agent installs
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
 |---|---|---|---|---|---|---|
 | A1 | Sales and purchase push XML named no `SVCURRENTCOMPANY`; vouchers land in whichever company the gateway has, and the agent never checks | Critical | Live (2026-10-30) | Done in S0.2: company tag on every push. Live: Tally accepts the tag and refuses a company that process has not loaded (`Could not set 'SVCurrentCompany' to 'X'`, nothing posted). Still to do: agent verifies the company GUID (S0.3) and turns the cryptic refusal into plain text. Two companies inside ONE Tally process not reproduced (needs both loaded in one window) | P0 | Building |
-| A2 | Company is a name string; rename or FY split breaks links silently; no company GUID or period stored | High | Code | Store company GUID and books-from; relink step remaps GUIDs; history of earlier companies | P0/P1 | Open |
+| A2 | Company is a name string; rename or FY split breaks links silently; no company GUID or period stored | High | Code | Store company GUID and books-from; relink step remaps GUIDs; history of earlier companies | P0/P1 | Building: S0.4 built (uncommitted), GUID + books-from stored by "Verify company", rename/different warned; relink remap and history still open |
 | A3 | A person cannot belong to two firms (`app_user.tenant_id` single FK, mobile unique); no switcher | High | Code | `membership(user, tenant, role)`; active firm in token; switcher | P3 | Open |
 | A4 | One agent per tenant; shops run several PCs and installs | Med | Code | Account-level agent registry; agent reports the companies it sees; owner maps them | P3 | Open |
 | A5 | The agent has one `GatewayUrl` (default `127.0.0.1:9000`). Companies open in separate Tally processes, each on its own port, are unreachable; the backend never says which port a company is on | High | Live (2026-10-30: Fleek on 9000, Fleek Test on 9001, one company each) | Gateway address per company (port or URL) stored on the company link, discovered by the agent scanning for gateways; agent routes each job by company | P1 | Open |
@@ -69,7 +69,7 @@ Account (Fleek org)      owner, plan, WhatsApp, people, agent installs
 ### F. Operations
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
 |---|---|---|---|---|---|---|
-| F1 | **Live: posting the same voucher twice (same reference, same number) creates two vouchers.** Tally does not reject duplicates. Also, the `METALERP_REF` UDF cannot be read back (absent from `*.*` and from a named fetch), so it is no use for detecting a retry | High | Live | Write our reference into the standard `REFERENCE` field (purchase probes show it reads back) and query by it before any re-push | P0 | Open |
+| F1 | **Live: posting the same voucher twice (same reference, same number) creates two vouchers.** Tally does not reject duplicates. Also, the `METALERP_REF` UDF cannot be read back (absent from `*.*` and from a named fetch), so it is no use for detecting a retry | High | Live | Built in S0.6 (uncommitted): our reference goes in the standard `REFERENCE` field (live: accepted, found by a filtered export); a push with an unknown outcome is flagged and its retry checks Tally first, completing the earlier push if found. Open: Postgres migration 0071, an end-to-end run through a real agent | P0 | Building |
 
 ### G. New, from the hierarchy discussion
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |

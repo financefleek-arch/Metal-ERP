@@ -55,6 +55,8 @@ class Tenant(PkUuidMixin, TimestampMixin, Base):
     bank_ifsc: Mapped[str | None] = mapped_column(String(20))
     bank_branch: Mapped[str | None] = mapped_column(String(200))
     upi_id: Mapped[str | None] = mapped_column(String(100))
+    # The `upi://pay?...` text read from the shop's own payment QR (the picture is never stored).
+    upi_qr_payload: Mapped[str | None] = mapped_column(String(500))
 
     # Printed footer text.
     declaration_text: Mapped[str | None] = mapped_column(Text)

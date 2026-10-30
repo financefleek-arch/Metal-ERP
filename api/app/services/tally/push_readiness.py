@@ -96,6 +96,14 @@ def _company_name_blocker() -> PushBlocker:
     )
 
 
+def _wrong_company_blockers(company) -> list[PushBlocker]:
+    """S0.3: the agent last saw a different company (or a renamed one) where ours should be. A push
+    would be refused or, worse, go to the wrong books, so it waits until the owner relinks."""
+    if company.verify_state in ("different", "renamed") and company.verify_note:
+        return [PushBlocker(f"company_{company.verify_state}", company.verify_note)]
+    return []
+
+
 def _unit_blockers(found: list[tuple[Item, str | None]]) -> list[PushBlocker]:
     """S0.5: a line must go to Tally in the item's own unit, or Tally posts it with a blank quantity
     and rate and says nothing. `found` is (linked item, the unit the line is in)."""
@@ -161,6 +169,7 @@ def push_blockers(session: Session, invoice: Invoice) -> list[PushBlocker]:
 
     if not (company.company_name or "").strip():
         blockers.append(_company_name_blocker())
+    blockers.extend(_wrong_company_blockers(company))
 
     if not (company.ledger_map or {}).get("sales_ledger"):
         blockers.append(
@@ -244,6 +253,7 @@ def purchase_push_blockers(session: Session, bill: InwardBill) -> list[PushBlock
 
     if not (company.company_name or "").strip():
         blockers.append(_company_name_blocker())
+    blockers.extend(_wrong_company_blockers(company))
 
     ledger_map = company.ledger_map or {}
     missing_ledgers = [

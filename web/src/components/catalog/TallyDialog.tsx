@@ -446,9 +446,11 @@ function RunPanel({ run, onDone }: { run: TallyRun | undefined; onDone: () => vo
           )}
           {run.waiting && (
             <p className="mt-1 text-sm text-warn">
-              {run.waiting === "no_company_loaded"
-                ? "TallyPrime is open but has no company loaded. Open your company and the send carries on by itself."
-                : "TallyPrime is not reachable. Open TallyPrime with your company and the send carries on by itself."}{" "}
+              {run.waiting === "company_not_open"
+                ? "Your Tally company is not open in TallyPrime. Open it and the send carries on by itself."
+                : run.waiting === "no_company_loaded"
+                  ? "TallyPrime is open but has no company loaded. Open your company and the send carries on by itself."
+                  : "TallyPrime is not reachable. Open TallyPrime with your company and the send carries on by itself."}{" "}
               If it stays unavailable the send is cancelled after 10 minutes and you can send again.
             </p>
           )}

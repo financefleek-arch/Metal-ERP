@@ -77,6 +77,24 @@ public sealed class TallyGatewayClient(HttpClient http, ILogger<TallyGatewayClie
         }
     }
 
+    /// <summary>The companies this gateway has open (name, GUID, books-from), or null when the gateway
+    /// does not answer or answers with something that is not a company list. One cheap read-only call.</summary>
+    public async Task<IReadOnlyList<OpenCompany>?> ListCompaniesAsync(string baseUrl, CancellationToken ct)
+    {
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+            var body = await ExportAsync(baseUrl, OpenCompanies.Request, cts.Token);
+            return OpenCompanies.Parse(body);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            log.LogDebug(ex, "Could not list the open companies at {BaseUrl}", baseUrl);
+            return null;
+        }
+    }
+
     public async Task<string> ExportAsync(string baseUrl, string requestXml, CancellationToken ct)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, baseUrl)

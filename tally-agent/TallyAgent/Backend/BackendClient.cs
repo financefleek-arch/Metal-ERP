@@ -34,7 +34,8 @@ public sealed class BackendClient
         string? agentVersion = null,
         string? osVersion = null,
         string? updateFailedVersion = null,
-        string? updateError = null)
+        string? updateError = null,
+        IReadOnlyList<Tally.OpenCompany>? tallyCompanies = null)
     {
         try
         {
@@ -50,6 +51,9 @@ public sealed class BackendClient
                     OsVersion = osVersion,
                     UpdateFailedVersion = updateFailedVersion,
                     UpdateError = updateError,
+                    TallyCompanies = tallyCompanies?
+                        .Select(c => new OpenCompanyDto { Name = c.Name, Guid = c.Guid, BooksFrom = c.BooksFrom })
+                        .ToList(),
                 },
                 ct);
 
@@ -115,7 +119,8 @@ public sealed class BackendClient
         string? r2Key,
         string? error,
         CancellationToken ct,
-        string? tallyResponse = null)
+        string? tallyResponse = null,
+        string? errorCode = null)
     {
         var resp = await _http.PostAsJsonAsync(
             $"api/tally-agent/jobs/{jobId}/result",
@@ -125,6 +130,7 @@ public sealed class BackendClient
                 R2Key = r2Key,
                 TallyResponse = tallyResponse,
                 Error = error,
+                ErrorCode = errorCode,
             },
             ct);
         resp.EnsureSuccessStatusCode();

@@ -36,10 +36,16 @@ from app.schemas_tally_agent import (
 )
 from app.services.tally.agent_release import update_offer_for
 from app.services.tally.backup_retention import prune_confirmed_backups
+from app.services.tally.company_verify import (
+    OpenCompany,
+    apply_open_companies,
+    process_verify_result,
+)
 from app.services.tally.jobs import mark_job_sent, record_agent_status
 from app.services.tally.pull import process_pull_result
 from app.services.tally.push import process_push_result
 from app.services.tally.voucher_capture import process_capture_result
+from app.services.tally.voucher_check import process_check_result
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +70,12 @@ def checkin(body: ShopCheckinIn, shop: ShopAuth, session: SessionDep) -> ShopChe
         )
         if body.tally_reachable:
             shop.last_tally_ok_at = now
+    if body.tally_companies is not None:
+        apply_open_companies(
+            session,
+            shop,
+            [OpenCompany(c.name, c.guid, c.books_from) for c in body.tally_companies],
+        )
     if body.agent_version:
         if body.agent_version != shop.agent_version:
             # Moved to a new build (update landed, or first report): any old
@@ -141,6 +153,23 @@ def job_result(
             job,
             ok=(body.status == "ok"),
             tally_response=body.tally_response,
+            agent_error=body.error,
+            error_code=body.error_code,
+        )
+    elif job.kind == "check_voucher":
+        process_check_result(
+            session,
+            job,
+            ok=(body.status == "ok"),
+            r2_key=body.r2_key,
+            agent_error=body.error,
+        )
+    elif job.kind == "verify_company":
+        process_verify_result(
+            session,
+            job,
+            ok=(body.status == "ok"),
+            r2_key=body.r2_key,
             agent_error=body.error,
         )
     elif job.kind == "pull_vouchers":

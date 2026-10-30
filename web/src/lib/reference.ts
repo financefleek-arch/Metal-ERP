@@ -15,6 +15,33 @@ export function useStates() {
   });
 }
 
+export interface IfscInfo {
+  ifsc: string;
+  /** false = the directory has no such code */
+  found: boolean;
+  /** false = the directory could not be reached, so `found` says nothing */
+  checked: boolean;
+  bank: string | null;
+  branch: string | null;
+  city: string | null;
+  upi: boolean | null;
+  imps: boolean | null;
+}
+
+export const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
+
+/** Bank and branch for an IFSC, looked up as soon as the 11 characters are typed. */
+export function useIfsc(code: string) {
+  const c = code.trim().toUpperCase();
+  return useQuery({
+    queryKey: ["reference", "ifsc", c],
+    queryFn: () => api<IfscInfo>(`/reference/ifsc/${c}`, { auth: true }),
+    enabled: IFSC_RE.test(c),
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 /** A fixed vocabulary list. `uoms` is the wide list (secondary / purchase
  *  unit); `uoms_primary` is the strict billing set — nos / kg / doz / gross —
  *  used for an item's primary unit and every invoice-line unit picker. */

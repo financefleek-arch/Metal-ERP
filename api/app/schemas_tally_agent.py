@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -18,6 +18,14 @@ class OutboxItemOut(BaseModel):
 TALLY_REASONS = ("connected", "refused", "no_company", "unknown")
 
 
+class OpenCompanyIn(BaseModel):
+    """A company the agent saw open in TallyPrime (read from the gateway's Company collection)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    guid: str = Field(min_length=1, max_length=64)
+    books_from: date | None = None
+
+
 class ShopCheckinIn(BaseModel):
     # Per-module status this poll, e.g. {"backup": "ok", "whatsapp_delivery": "tally_not_open"}.
     module_status: dict[str, str] = Field(default_factory=dict)
@@ -26,6 +34,9 @@ class ShopCheckinIn(BaseModel):
     # TallyPrime's HTTP gateway on this poll? None = agent didn't probe.
     tally_reachable: bool | None = None
     tally_reason: str | None = Field(default=None, pattern="^(connected|refused|no_company|unknown)$")
+    # S0.3: the companies open in Tally on this poll. None = the agent did not look (older agent, or
+    # Tally unreachable); an empty list means Tally answered with nothing open.
+    tally_companies: list[OpenCompanyIn] | None = Field(default=None, max_length=50)
     # Auto-update (0037). Older agents omit all three.
     agent_version: str | None = Field(default=None, pattern=r"^\d+\.\d+\.\d+$", max_length=40)
     os_version: str | None = Field(default=None, max_length=120)

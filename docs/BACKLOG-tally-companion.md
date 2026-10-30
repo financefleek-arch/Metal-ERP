@@ -76,26 +76,39 @@ Goal: a voucher can never land in the wrong Tally company, a retry can never cre
 - Touches: `services/invoices/tally_xml.py`, `services/inward/tally_xml.py`, `services/tally/jobs.py`, `push_readiness.py`.
 - Size: S.
 
-### S0.3 Agent checks the open company before posting
+### S0.3 Agent checks the open company before posting (BUILT 2026-10-30, uncommitted; needs an agent release)
 **As** a shop owner, **I want** the agent to refuse a push when the wrong company is open, **so that** a mistake is caught before it posts.
-- Closes: A1, A2 (part). Depends: S0.1, S0.4.
-- Acceptance:
-  - Before any import, the agent reads the company the gateway will use and compares it to the expected company (GUID when known, name otherwise).
-  - Tally's own refusal (`Could not set 'SVCurrentCompany' to 'X'`) is shown as plain text: which company we asked for, and that it is not open in the Tally this agent reaches.
-  - On mismatch the job ends with a clear status (`wrong_company`) and plain text: which company was expected and which is open. It does not retry as "Tally not ready".
-  - The same check guards pull and capture, so a masters pull cannot stage another company's ledgers.
-  - Agent unit tests cover match, mismatch, and no company loaded. New agent release needed (version, sign, canary-pin one shop, promote), per the delivery-hardening flow.
-- Touches: `tally-agent/TallyAgent/Modules/TallyMastersModule.cs`, `Tally/TallyGatewayClient.cs`, `routers/tally_agent.py`, `schemas_tally_agent.py`.
-- Size: L (includes agent release).
+- Closes: A1, A2 (rest). Depends: S0.1, S0.4. Design and decisions: `docs/DESIGN-agent-company-routing.md`. Scope: ONE gateway (several gateways = S1.10, deferred).
+- Built, backend:
+  - Every job payload carries `company_guid` beside `company_name` (masters pull, sales, purchase, items, capture, check). Older agents ignore it and keep working by name.
+  - New wait status `company_not_open` (kept and retried, then cancelled with "X is not open in TallyPrime. Open now: A, B."). New result `error_code` (`wrong_company`, `company_renamed`, `company_ambiguous`): nothing was sent, so these do NOT leave an unknown outcome (S0.6). A job that only ever waited is no longer flagged unknown either.
+  - Checkin carries the companies open in Tally (`tally_companies`, migration 0073 on `backup_shop`). From it each linked company's GUID is learned by itself (exactly one open company with our name), and a rename or a same-named other company is noticed with no one pressing Verify. An empty list changes no verdict. A repeated identical checkin writes nothing.
+  - Push is blocked (sales and purchase) while the verdict is `different` or `renamed`, with the reason as the message.
+  - Admin: `GET /company/open` (what the agent last saw open) and `POST /company/relink {guid}` (take that company's name and GUID: fixes a rename, or links the right company). Panel shows an "Open in Tally now" list with "Use this company" when the verdict needs attention; waiting text names the company.
+- Built, agent (C#): `Tally/OpenCompanies.cs` (the verified Company-collection request + parser), `Tally/CompanyCheck.cs` (pure decision), `TallyGatewayClient.ListCompaniesAsync`, a guard in `TallyMastersModule` in front of pull/capture/push, the open-company list on every checkin, `error_code` on job results. A job that names no company, or a list that cannot be read, behaves exactly as before.
+- Tests: backend 14 new (payload, wait, expiry text, hard stops, checkin learn/rename/different/empty/no-rewrite, blocker, relink, relink refused); Tally-related backend set 314 passed, 0 failed. Agent 15 new (parser, decision table, module against a fake gateway: right company, renamed, wrong company, wait then proceed, no company named, checkin list); whole agent suite 60 passed. Web eslint and tsc clean.
+- Not covered: several gateways and port discovery (S1.10); a masters pull of a non-default company on another Tally window; an owner-facing relink (the panel is the operator console); catalog item push does not yet use the new push blocker.
+- Still to do: agent release (version tag, sign, canary-pin one shop, promote) per the delivery-hardening flow; migrations 0072 and 0073 on Postgres; one run through a real agent against the two dev companies (the agent's parser was tested on XML copied from the live answer, not against the live gateway itself).
+- Touches: `services/tally/company_identity.py`, `company_verify.py`, `jobs.py`, `push.py`, `push_readiness.py`, `voucher_capture.py`, `voucher_check.py`, `services/catalog/tally_items.py`, `routers/tally.py`, `routers/tally_agent.py`, `schemas_tally.py`, `schemas_tally_agent.py`, `models/tally_agent.py`, migration 0073, `tally-agent/TallyAgent/*`, web panel.
+- Size: L.
 
-### S0.4 Store the company's GUID and books-from date
+### S0.4 Store the company's GUID and books-from date (BUILT 2026-10-30, uncommitted)
 **As** the system, **I want** to know each Tally company's GUID, **so that** a rename or relink does not silently break links.
-- Closes: A2 (part).
-- Acceptance:
-  - `tally_company` gains `company_guid` and `books_from` (nullable). Filled from the first successful pull or a "verify company" action.
-  - The Tally page shows the stored name and GUID, and warns when the open company's name changed but the GUID matches (a rename), or the GUID differs (a different company).
-  - Migration is additive; existing rows stay null until verified.
-- Touches: `models/tally_connector.py`, new migration, `routers/tally.py`, `schemas_tally.py`, web Tally page.
+- Closes: A2 (part). Depends: none.
+- Live finding: the `Company` collection answers with name, GUID, books-from and starting-from dates, needs no company selected, and lists only what that Tally process has open (dev: "Fleek" on 9000, "Fleek Test" on 9001, one each).
+- Built:
+  - `tally_company` gains `company_guid`, `books_from`, `verify_state`, `verify_note`, `verified_at` (migration 0072, additive, all null until verified).
+  - `services/tally/company_verify.py`: "Verify company" queues a read-only export through the agent's existing read-only export action, so no agent release. The answer is judged against what we stored:
+    - `verified`: the open company matches; the first time, its GUID and books-from are stored.
+    - `renamed`: our stored GUID is open under another name. We do not rename the link behind the user's back; the note says pushes will be refused until the name here matches.
+    - `different`: a company with our name is open but its GUID is not the stored one.
+    - `not_open`: nothing matching is open; the note lists what is open. Nothing stored is overwritten.
+  - `POST /api/admin/firms/{id}/tally/company/verify`; the company out-schema carries the new fields. Changing the company name on purpose clears the stored GUID and state, so a deliberate relink is not flagged against the old company.
+  - Web (admin Tally panel): a "Verify company" button, "Verified ... books from ..." line, the Tally id, and the warning text for the three bad states.
+  - Tests: 16 new (request, parser, the four verdicts, the flow, agent failure). Tally-related backend set 278 passed, 1 skipped, 0 failed; web eslint and tsc clean.
+- Not covered, deliberately: a first masters pull does not fill the GUID by itself (the masters export does not carry the company's GUID); a pull or push is not yet blocked on `different` (S0.3 makes the agent refuse); the check only sees the one Tally process the agent's gateway reaches (S1.10 covers a second process on another port).
+- Still to check: migration 0072 on Postgres; the whole flow through a real agent (tests call the result callback directly).
+- Touches: `models/tally_connector.py`, migration 0072, `services/tally/company_verify.py`, `services/tally/jobs.py`, `routers/tally.py`, `routers/tally_agent.py`, `schemas_tally.py`, `web/src/pages/admin/TallyPanel.tsx`, `api.ts`, `lib/types.ts`.
 - Size: M.
 
 ### S0.5 A line goes to Tally in the item's own unit (BUILT 2026-10-30, uncommitted)
@@ -114,15 +127,19 @@ Goal: a voucher can never land in the wrong Tally company, a retry can never cre
 - Touches: `models/item.py`, `alembic/versions/0070_item_tally_unit.py`, `services/tally/units.py`, `services/tally/push_readiness.py`, `services/tally/jobs.py`, both `tally_xml.py`, `routers/items_import.py`, `services/catalog/tally_items.py`.
 - Size: M.
 
-### S0.6 Safe retry: no duplicate vouchers
+### S0.6 Safe retry: no duplicate vouchers (BUILT 2026-10-30, uncommitted)
 **As** a shop owner, **I want** a retry after a timeout never to create a second voucher, **so that** my books are not doubled.
-- Closes: F1. Depends: S0.1.
-- Acceptance:
-  - The sales voucher carries our reference in the standard `REFERENCE` field (the UDF cannot be read back). Before re-enqueueing a push for an invoice or bill whose earlier job expired or errored with "may already be saved", the system asks Tally (through the agent, read-only) whether a voucher with that reference exists.
-  - If it exists: the job is marked ok and the link is written; no second voucher.
-  - If the check cannot run (agent offline), the shop is told to look in Tally, as today.
-  - Test with a fake gateway that already holds the voucher.
-- Touches: `services/tally/jobs.py`, `voucher_capture.py` style read request, agent, `routers/tally.py` retry.
+- Closes: F1 (code). Depends: S0.1.
+- Built:
+  - Sales vouchers now carry our reference in the standard `REFERENCE` field: `ME/<fy>/<number>` (series added when not the default). Purchase vouchers already carried the supplier bill number there. Live-checked: Tally accepts it, a filtered export finds the voucher by it, and an absent reference returns nothing.
+  - `tally_sync_job.outcome_unknown` (migration 0071) is set when a push ends without Tally answering: the agent had taken the voucher and never reported (expiry while `sent`), or the agent reported a failure. A job still `queued` at expiry is withdrawn, so it is not flagged. A Tally error (`LINEERROR`) is a definite failure, not flagged.
+  - `services/tally/voucher_check.py`: a retry of a flagged document first queues a `check_voucher` job. It rides the agent's existing read-only `pull_vouchers` action, so no agent release is needed. Found: the earlier push is completed as ok and linked (real Tally GUID), nothing is posted. Not found: the flag is cleared and the retry is queued automatically (after the usual readiness check). The check failing (agent down, Tally refused the company) leaves the retry held and the flag set, with a plain message.
+  - A second click while a check runs returns the same check job.
+  - Web: the push panel says "checking Tally first" when the returned job is a check.
+  - Tests: 15 new (reference, request, parser, the whole retry flow incl. found, not found, check failed, agent-failure flag, queued-not-flagged). Tally-related backend set 129 results, 1 skipped, 0 failed; web eslint and tsc clean. Full backend suite not run.
+- Not covered, deliberately: a purchase with no bill number cannot be looked up, so its retry goes ahead as before; a voucher that someone edited in Tally to change its reference or date will not be found (the reconcile story S4.3 owns drift); duplicates already created cannot be undone from here.
+- Still to check: migration 0071 on Postgres; the whole flow through a real agent (the agent action is unchanged, but the end-to-end path is only tested with the result callback called directly).
+- Touches: `services/tally/voucher_check.py`, `services/tally/jobs.py`, `services/tally/push.py`, `services/invoices/tally_xml.py`, `routers/tally_agent.py`, `models/tally_connector.py`, migration 0071, `web/src/components/TallySyncStatus.tsx`.
 - Size: L.
 
 ---
@@ -459,5 +476,10 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 | 2026-10-30 | Backlog opened: 7 epics, 48 stories (S4.2 counted once though it splits into five), all Open. |
 | 2026-10-30 | S0.1 Building. Two separate Tally processes: port 9000 serves "Fleek" (GUID 167b31a2-6486-4396-8ee8-7fe38496052d, 18 vouchers, 2339 stock items, ZZTEST ledgers from earlier runs); port 9001 serves "Fleek Test" (GUID 67baeb49-5454-418e-aad2-4ae28441e6d1, empty: Cash and P&L only, no items, no units, 0 vouchers). Each gateway lists only its own company. The agent reads one `GatewayUrl`, so it can reach only one: new gap A5, new story S1.10. No vouchers posted yet. |
 | 2026-10-30 | S0.1 DONE: 7 live posts into the dev companies (4 vouchers landed in Fleek, master ids 19 to 22; the 3 refused or failed posts changed nothing). Findings in the S0.1 section. B3 raised to Critical, E2 lowered to Med, F1 and C3 confirmed, C1 simplified. |
+| 2026-10-30 | S0.3 BUILT (see its section): backend + agent + panel; decisions taken: retry while not open, stop on renamed/different, block push on both. Agent release still to do. |
+| 2026-10-30 | Live: both companies loaded in one Tally window on 9000; Company collection lists both with GUIDs; a push by company name reaches the right books (id 28 posted to Fleek; Fleek Test refused a ledger it lacks). S0.3 can ship against ONE gateway; S1.10 (several gateways) is deferred until shops need it. Design updated. |
+| 2026-10-30 | S0.3 and S1.10 merged into one agent release; DRAFT design in `docs/DESIGN-agent-company-routing.md` awaiting review (4 decisions). Proposes dropping the per-company gateway address: the agent routes by company identity. |
+| 2026-10-30 | S0.4 BUILT (see its section). Live: Company collection returns name, GUID, books-from per open company. |
+| 2026-10-30 | S0.6 BUILT (see its section). Live: sales `REFERENCE` accepted and found by a filtered export. Dev Fleek now also holds voucher id 27 (reference ME/2026-27/9301). |
 | 2026-10-30 | S0.5 BUILT (see its section). Live unit test: `nos`/`NOS` fine; `pcs` vs a Nos item and `kg` post blank, voucher ids 23 to 26 in dev Fleek. Design moved from a unit map to a per-item Tally unit. |
 | 2026-10-30 | S0.2 code done, unit and integration tests pass (60 tests across push, inward xml, connector, self-serve). Not yet confirmed live that Tally accepts `SVCURRENTCOMPANY` in a voucher Import. Adds a push blocker `company_name_missing`. Uncommitted. |

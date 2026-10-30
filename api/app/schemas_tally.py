@@ -6,7 +6,7 @@ masters-in pull.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -53,8 +53,23 @@ class TallyCompanyOut(BaseModel):
     ledger_map: dict[str, str]
     known_ledgers: list[KnownLedger] | None
     last_masters_pull_at: datetime | None
+    company_guid: str | None = None
+    books_from: date | None = None
+    verify_state: str | None = None
+    verify_note: str | None = None
+    verified_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class OpenCompanyOut(BaseModel):
+    name: str
+    guid: str
+    books_from: date | None = None
+
+
+class RelinkIn(BaseModel):
+    guid: str = Field(min_length=1, max_length=64)
 
 
 class LedgerMapIn(BaseModel):
@@ -107,6 +122,11 @@ class JobResultIn(BaseModel):
     r2_key: str | None = Field(default=None, max_length=500)
     tally_response: str | None = Field(default=None, max_length=16_000)
     error: str | None = Field(default=None, max_length=2000)
+    # Set when the agent stopped the job because of the company, before sending anything to Tally
+    # (S0.3). Nothing was posted, so unlike another agent failure it leaves no unknown outcome.
+    error_code: str | None = Field(
+        default=None, pattern="^(wrong_company|company_renamed|company_ambiguous)$"
+    )
     # optional: the newest export file's mtime, so the UI can warn "stale"
     file_mtime: datetime | None = None
 
@@ -114,7 +134,9 @@ class JobResultIn(BaseModel):
 class JobStatusPingIn(BaseModel):
     """Agent -> backend: a 'not ready' reason instead of a real result."""
 
-    agent_status: str = Field(pattern="^(no_company_loaded|tally_unavailable)$")
+    agent_status: str = Field(
+        pattern="^(no_company_loaded|tally_unavailable|company_not_open)$"
+    )
 
 
 class PushBlockerOut(BaseModel):

@@ -22,15 +22,18 @@ F1a keys upserts on the existing columns first, then backfills `tally_link`.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
+    Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -91,6 +94,16 @@ class TallyCompany(PkUuidMixin, TimestampMixin, Base):
     last_masters_pull_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+
+    # --- which company this really is (S0.4) ---
+    # Tally's own id for the company, and the date its books start. Filled by "Verify company";
+    # null until then. The name is a text we typed, the GUID is what survives a rename.
+    company_guid: Mapped[str | None] = mapped_column(String(64))
+    books_from: Mapped[date | None] = mapped_column(Date)
+    # 'verified' | 'renamed' | 'different' | 'not_open', with a plain-text note for the UI.
+    verify_state: Mapped[str | None] = mapped_column(String(16))
+    verify_note: Mapped[str | None] = mapped_column(String(400))
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # --- supplier-catalog item push (S5) ---
     # Tally stock group our new groups are created under (None = Primary).
@@ -196,6 +209,13 @@ class TallySyncJob(PkUuidMixin, Base):
     last_agent_status: Mapped[str | None] = mapped_column(String(32))
     last_agent_status_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
+    )
+
+    # True when a push ended without Tally ever answering (the agent never reported, or failed after it
+    # had sent the voucher): the voucher may or may not be in Tally. A retry then asks Tally first
+    # (services/tally/voucher_check.py) instead of posting again. Cleared once that check has run.
+    outcome_unknown: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
     )
 
     # {ledgers, items, groups, matched, created, filled, opening_filled, skipped}

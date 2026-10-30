@@ -38,6 +38,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 from app.models._mixins import PkUuidMixin, TimestampMixin
+from app.models.tally_connector import _JSON
 
 
 class BackupShop(PkUuidMixin, TimestampMixin, Base):
@@ -81,6 +82,12 @@ class BackupShop(PkUuidMixin, TimestampMixin, Base):
     # NULL = never reported. `last_tally_ok_at` = last 'connected' checkin.
     last_tally_ok_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_tally_status: Mapped[str | None] = mapped_column(String(40))
+
+    # The companies the agent saw open at its last checkin: [{name, guid, books_from}] (S0.3). Lets the
+    # panel offer "pick the open company" and keeps each linked company's verify state current.
+    # NULL = an agent that does not report them yet.
+    tally_companies: Mapped[list | None] = mapped_column(_JSON)
+    tally_companies_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Agent versioning / auto-update (0037). `agent_version` is what the agent
     # reported at its last checkin; `target_agent_version` is an ops pin (NULL =

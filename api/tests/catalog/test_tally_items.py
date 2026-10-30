@@ -530,6 +530,7 @@ def test_check_tally_reads_groups_items_and_links_pushed_items(
     )
     with SessionLocal() as s:
         assert s.get(Item, mug["item_id"]).tally_guid == "guid-777"  # usable on invoices now
+        assert s.get(Item, mug["item_id"]).tally_unit == "Nos"  # and in the unit Tally holds (S0.5)
     settings = env.get("/tally/settings").json()
     assert settings["check_is_fresh"] is True and "Beer Mugs" in settings["known_groups"]
     latest = env.client.get("/api/supplier-catalogs/tally/check", headers=env.h).json()

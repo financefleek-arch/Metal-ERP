@@ -111,7 +111,13 @@ export function TallyPushPanel({
         )}
       </div>
 
-      {push.isSuccess && (
+      {push.isSuccess && push.data?.kind === "check_voucher" && (
+        <p className="mt-2 text-xs text-[#9a7b2f]">
+          The last send did not report back, so we are checking Tally first in case it already
+          went through. Nothing is posted again unless it is missing, and then it is sent for you.
+        </p>
+      )}
+      {push.isSuccess && push.data?.kind !== "check_voucher" && (
         <p className="mt-2 text-xs text-[#25a566]">
           Queued — the shop's agent will send this on its next check-in.
           {infoNotes.length > 0 && (

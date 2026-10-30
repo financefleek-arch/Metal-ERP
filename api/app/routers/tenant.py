@@ -11,8 +11,9 @@ from fastapi import APIRouter, HTTPException, status
 
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Tenant
-from app.schemas import TenantOut, TenantUpdate
-from app.services import activity, onboarding
+from app.schemas import BillPreviewOut, BillPreviewRequest, TenantOut, TenantUpdate
+from app.services import activity, onboarding, upi_qr
+from app.services.invoices.pdf import render_bill_preview_html
 
 router = APIRouter(prefix="/api/tenant", tags=["tenant"])
 
@@ -25,6 +26,13 @@ def _load(session: SessionDep, tenant_id: str) -> Tenant:
 @router.get("", response_model=TenantOut)
 def get_tenant(user: CurrentUser, session: SessionDep) -> Tenant:
     return _load(session, user.tenant_id)
+
+
+@router.post("/bill-preview", response_model=BillPreviewOut)
+def bill_preview(body: BillPreviewRequest, user: CurrentUser, session: SessionDep) -> BillPreviewOut:
+    """The bill as it would print, from the details on screen, for the Firm page's preview."""
+    edits = {k: v for k, v in body.model_dump(exclude_unset=True).items() if k != "document_label" or v}
+    return BillPreviewOut(html=render_bill_preview_html(_load(session, user.tenant_id), edits))
 
 
 @router.patch("", response_model=TenantOut)
@@ -60,6 +68,8 @@ def update_tenant(
         if value is None and field in not_nullable:
             continue  # an explicit null means "leave it", not "erase it"
         setattr(tenant, field, value)
+    if tenant.upi_qr_payload and not tenant.upi_id:
+        tenant.upi_id = upi_qr.payee_of(tenant.upi_qr_payload)  # the QR already says who is paid
     if tenant.gst_enabled and not tenant.gstin:
         tenant.gst_enabled = False  # clearing the GSTIN ends GST mode
     if not had_details and onboarding.firm_details_done(tenant):

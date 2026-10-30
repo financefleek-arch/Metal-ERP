@@ -244,8 +244,20 @@ export interface TallyCompany {
   ledger_map: Record<string, string>;
   known_ledgers: KnownLedger[] | null;
   last_masters_pull_at: string | null;
+  company_guid: string | null;
+  books_from: string | null;
+  verify_state: "verified" | "renamed" | "different" | "not_open" | null;
+  verify_note: string | null;
+  verified_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** A company the agent saw open in TallyPrime at its last check-in. */
+export interface OpenTallyCompany {
+  name: string;
+  guid: string;
+  books_from: string | null;
 }
 
 export interface TallyCompanyUpsert {
@@ -288,7 +300,11 @@ export interface TallySyncJob {
   created_at: string;
   completed_at: string | null;
   // present on the detail endpoint; drives the "Waiting on Tally" step
-  last_agent_status?: "no_company_loaded" | "tally_unavailable" | null;
+  last_agent_status?:
+    | "no_company_loaded"
+    | "tally_unavailable"
+    | "company_not_open"
+    | null;
   last_agent_status_at?: string | null;
 }
 
@@ -337,6 +353,8 @@ export interface Tenant {
   bank_ifsc: string | null;
   bank_branch: string | null;
   upi_id: string | null;
+  /** the `upi://pay?...` text read from the shop's own payment QR */
+  upi_qr_payload: string | null;
   declaration_text: string | null;
   terms_text: string | null;
   jurisdiction_text: string | null;

@@ -31,6 +31,7 @@ from app.reference import (
     validate_pincode,
     validate_state_code,
 )
+from app.services import upi_qr
 
 # Reusable validated string aliases. Each accepts None / "" (-> None) and
 # raises a 422 with a helpful message on a malformed value.
@@ -206,6 +207,7 @@ class TenantUpdate(BaseModel):
     bank_ifsc: str | None = Field(default=None, max_length=20)
     bank_branch: str | None = Field(default=None, max_length=200)
     upi_id: str | None = Field(default=None, max_length=100)
+    upi_qr_payload: str | None = Field(default=None, max_length=500)
     declaration_text: str | None = Field(default=None, max_length=2000)
     terms_text: str | None = Field(default=None, max_length=2000)
     jurisdiction_text: str | None = Field(default=None, max_length=500)
@@ -225,6 +227,16 @@ class TenantUpdate(BaseModel):
     # days past due at which a reminder is proposed, e.g. "7,15,30" (1-5 numbers, 1-365 each)
     reminder_days: Annotated[str | None, Field(max_length=40)] = None
 
+    @field_validator("upi_qr_payload")
+    @classmethod
+    def _upi_qr_payload(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        v = v.strip()
+        if not upi_qr.valid_payload(v):
+            raise ValueError("That is not a UPI payment QR")
+        return v
+
     @field_validator("reminder_days")
     @classmethod
     def _reminder_days(cls, v: str | None) -> str | None:
@@ -235,6 +247,34 @@ class TenantUpdate(BaseModel):
         if not parts or len(parts) > 5 or not good:
             raise ValueError("Enter up to 5 day counts between 1 and 365, like 7,15,30")
         return ",".join(str(n) for n in sorted({int(p) for p in parts}))
+
+
+class BillPreviewRequest(BaseModel):
+    """The firm details as typed so far. Deliberately unvalidated: half-typed values must still preview."""
+
+    legal_name: str | None = Field(default=None, max_length=LEGAL_NAME_MAX)
+    trade_name: str | None = Field(default=None, max_length=LEGAL_NAME_MAX)
+    address: str | None = Field(default=None, max_length=500)
+    city: str | None = Field(default=None, max_length=100)
+    pincode: str | None = Field(default=None, max_length=10)
+    phone: str | None = Field(default=None, max_length=30)
+    gst_enabled: bool | None = None
+    gstin: str | None = Field(default=None, max_length=20)
+    bank_holder: str | None = Field(default=None, max_length=200)
+    bank_name: str | None = Field(default=None, max_length=200)
+    bank_ac_no: str | None = Field(default=None, max_length=50)
+    bank_ifsc: str | None = Field(default=None, max_length=20)
+    bank_branch: str | None = Field(default=None, max_length=200)
+    upi_id: str | None = Field(default=None, max_length=100)
+    upi_qr_payload: str | None = Field(default=None, max_length=500)
+    declaration_text: str | None = Field(default=None, max_length=2000)
+    terms_text: str | None = Field(default=None, max_length=2000)
+    jurisdiction_text: str | None = Field(default=None, max_length=500)
+    document_label: str | None = Field(default=None, max_length=50)
+
+
+class BillPreviewOut(BaseModel):
+    html: str
 
 
 class TenantOut(BaseModel):
@@ -256,6 +296,7 @@ class TenantOut(BaseModel):
     bank_ifsc: str | None
     bank_branch: str | None
     upi_id: str | None
+    upi_qr_payload: str | None = None
     declaration_text: str | None
     terms_text: str | None
     jurisdiction_text: str | None
