@@ -35,6 +35,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON as _JSONType
@@ -59,13 +60,42 @@ class TallyCompany(PkUuidMixin, TimestampMixin, Base):
 
     __tablename__ = "tally_company"
     __table_args__ = (
-        UniqueConstraint("tenant_id", name="uq_tally_company_tenant"),
+        # A firm has many Tally companies (S1.1) but exactly one default.
+        Index(
+            "uq_tally_company_default",
+            "tenant_id",
+            unique=True,
+            postgresql_where=text("is_default"),
+            sqlite_where=text("is_default"),
+        ),
     )
 
     tenant_id: Mapped[str] = mapped_column(
         ForeignKey("tenant.id"), nullable=False, index=True
     )
     company_name: Mapped[str] = mapped_column(String(200), nullable=False)
+
+    # What this company is for: gst | estimate | branch | fy | other.
+    kind: Mapped[str] = mapped_column(
+        String(12), default="other", server_default="other", nullable=False
+    )
+    # The company a document uses unless it picks another. One per firm (partial unique index).
+    is_default: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    # Our own sales numbering for this company, and what its document is called (D-7).
+    series_prefix: Mapped[str | None] = mapped_column(String(20))
+    document_label: Mapped[str | None] = mapped_column(String(40))
+    # Counted in the combined reminder / statement message (D-6).
+    include_in_reminders: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
+    # Roles that may see this company; null = everyone, the owner always sees it (D-4, S1.7).
+    visible_roles: Mapped[list | None] = mapped_column(_JSON)
+    # active | disabled
+    status: Mapped[str] = mapped_column(
+        String(12), default="active", server_default="active", nullable=False
+    )
     base_currency: Mapped[str] = mapped_column(String(3), default="INR", nullable=False)
 
     # 'file' (F1a — agent reads an export folder) | 'gateway' (F1c — agent

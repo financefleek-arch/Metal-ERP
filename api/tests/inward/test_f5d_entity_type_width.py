@@ -51,6 +51,7 @@ def test_approve_with_tally_company_and_matched_items(
             TallyCompany(
                 tenant_id=tid,
                 company_name="Fleek",
+                is_default=True,
                 shop_id=shop.id,
                 transport="file",
                 ledger_map={

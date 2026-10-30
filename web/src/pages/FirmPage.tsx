@@ -1,49 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { useForm } from "react-hook-form";
+import { FormProvider, useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type { Tenant } from "../lib/types";
 import { TallyConnectCard } from "../components/TallyConnectCard";
 import { TallyBackupsCard } from "../components/TallyBackupsCard";
-import { CatalogSettingsCard } from "../components/CatalogSettingsCard";
-import { OrderSettingsCard } from "../components/OrderSettingsCard";
-import { ReminderSettingsCard } from "../components/ReminderSettingsCard";
 import { WhatsappConnectCard } from "../components/WhatsappConnectCard";
-import { PhotoUsageLine } from "../components/PhotoUsageLine";
 import { useAuth } from "../lib/auth";
 import { useFeature } from "../lib/features";
 import { canWrite } from "../lib/roles";
 import { gstinError, IFSC_RE, phoneError, pincodeError, useIfsc, useStates } from "../lib/reference";
-import { readUpiQr, upiHandleUnknown } from "../lib/upiQr";
+import { UPI_RE, upiHandleUnknown } from "../lib/upiQr";
+import { UpiQrPicker } from "../components/UpiQrPicker";
 import { useIsDesktop } from "../lib/useIsDesktop";
 import { BillPreviewFrame, BillPreviewModal } from "../components/BillPreviewFrame";
-
-/** Every box on the page. `shop_name` is the one-name field simple-bill shops see. */
-interface FormShape {
-  shop_name: string;
-  legal_name: string;
-  trade_name: string;
-  phone: string;
-  pincode: string;
-  city: string;
-  address: string;
-  gstin: string;
-  upi_id: string;
-  upi_qr_payload: string;
-  bank_holder: string;
-  bank_ac_no: string;
-  /** typed again, only asked when the number changed; never sent */
-  bank_ac_confirm: string;
-  bank_ifsc: string;
-  bank_name: string;
-  bank_branch: string;
-  document_label: string;
-  declaration_text: string;
-  terms_text: string;
-  jurisdiction_text: string;
-}
-
-type Tab = "business" | "pay" | "wording" | "connections";
+import { Hint, Pill } from "./firm/bits";
+import { clean, orNull, type FormShape, type Tab } from "./firm/formShape";
+import { RemindersPanel } from "./firm/RemindersPanel";
+import { CatalogPanel } from "./firm/CatalogPanel";
 
 const TAB_OF_FIELD: Partial<Record<keyof FormShape, Tab>> = {
   shop_name: "business",
@@ -60,6 +34,11 @@ const TAB_OF_FIELD: Partial<Record<keyof FormShape, Tab>> = {
   bank_ac_confirm: "pay",
   bank_ifsc: "pay",
   bank_name: "pay",
+  reminder_days: "reminders",
+  default_credit_days: "reminders",
+  order_min_value: "catalog",
+  order_alert_phone: "catalog",
+  catalog_code_prefix: "catalog",
 };
 
 const LABELS = ["Invoice", "Bill", "Cash Memo", "Estimate"];
@@ -68,13 +47,9 @@ const DECLARATIONS = [
   "Weight as per our scale is final.",
   "We declare the details above are true and correct.",
 ];
-const UPI_RE = /^[\w.-]{2,}@[A-Za-z]{2,}$/;
 
 /** The versioned policy page on the corporate site; Section 12 covers Metal ERP. */
 const PRIVACY_POLICY_URL = "https://fleekfintech.com/privacy-policy/";
-
-const clean = (s: string | undefined) => (s ?? "").trim();
-const orNull = (s: string | undefined) => clean(s) || null;
 
 function seedOf(t: Tenant): FormShape {
   return {
@@ -98,6 +73,15 @@ function seedOf(t: Tenant): FormShape {
     declaration_text: t.declaration_text ?? "",
     terms_text: t.terms_text ?? "",
     jurisdiction_text: t.jurisdiction_text ?? "",
+    reminder_enabled: t.reminder_enabled,
+    reminder_auto_send: t.reminder_auto_send,
+    reminder_days: t.reminder_days,
+    default_credit_days: String(t.default_credit_days ?? 0),
+    order_min_value: t.order_min_value ? String(Number(t.order_min_value)) : "",
+    order_terms_line: t.order_terms_line ?? "",
+    order_alert_phone: t.order_alert_phone ?? "",
+    catalog_code_prefix: t.catalog_code_prefix ?? "",
+    catalog_group_create_policy: t.catalog_group_create_policy,
   };
 }
 
@@ -133,21 +117,27 @@ function profileBody(f: Partial<FormShape>, gst: boolean, tenant: Tenant | undef
   return body;
 }
 
-function Hint({ children, tone }: { children: React.ReactNode; tone?: "ok" | "bad" }) {
-  const cls = tone === "bad" ? "text-danger" : tone === "ok" ? "text-ok" : "text-muted";
-  return <p className={`mt-1 text-xs ${cls}`}>{children}</p>;
-}
-
-function Pill({ children, tone }: { children: React.ReactNode; tone?: "need" | "gst" | "auto" }) {
-  const cls =
-    tone === "need"
-      ? "border-accent bg-accent-soft text-accent-deep"
-      : tone === "gst"
-        ? "border-brass bg-brass-soft text-brass-dark"
-        : tone === "auto"
-          ? "border-dashed border-line text-muted"
-          : "border-line";
-  return <span className={`rounded-full border px-2.5 py-0.5 text-xs ${cls}`}>{children}</span>;
+/** The settings that are not on the bill. Only the panels this person can see are sent, so a role that cannot
+ *  open Reminders never overwrites them. */
+function settingsBody(
+  f: Partial<FormShape>,
+  show: { reminders: boolean; catalog: boolean; autoAllowed: boolean },
+): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (show.reminders) {
+    body.reminder_enabled = Boolean(f.reminder_enabled);
+    body.reminder_auto_send = Boolean(f.reminder_enabled && f.reminder_auto_send && show.autoAllowed);
+    body.reminder_days = clean(f.reminder_days).replace(/\s/g, "");
+    body.default_credit_days = Number(clean(f.default_credit_days) || 0);
+  }
+  if (show.catalog) {
+    body.order_min_value = clean(f.order_min_value) === "" ? null : Number(clean(f.order_min_value)).toFixed(2);
+    body.order_terms_line = orNull(f.order_terms_line);
+    body.order_alert_phone = orNull(f.order_alert_phone);
+    body.catalog_code_prefix = orNull(f.catalog_code_prefix);
+    body.catalog_group_create_policy = f.catalog_group_create_policy ?? "auto";
+  }
+  return body;
 }
 
 export function FirmPage() {
@@ -162,6 +152,7 @@ export function FirmPage() {
     queryFn: () => api<Tenant>("/tenant"),
   });
 
+  const methods = useForm<FormShape>();
   const {
     register,
     handleSubmit,
@@ -169,7 +160,7 @@ export function FirmPage() {
     watch,
     setValue,
     formState: { errors },
-  } = useForm<FormShape>();
+  } = methods;
   const v = watch();
 
   const [gst, setGst] = useState(false);
@@ -206,37 +197,12 @@ export function FirmPage() {
     if (looked.found) setValue("bank_branch", looked.branch ?? "");
   }, [looked, data?.bank_ifsc, setValue]);
 
-  // Reading the shop's own payment QR: the UPI ID comes out of it, so there is nothing to type.
-  const qrInput = useRef<HTMLInputElement>(null);
-  const [qrBusy, setQrBusy] = useState(false);
-  const [qrMsg, setQrMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  async function onQrFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setQrBusy(true);
-    setQrMsg(null);
-    try {
-      const got = await readUpiQr(file);
-      if (!got) {
-        setQrMsg({ ok: false, text: "We could not find a UPI QR in that picture. Try a clearer photo, or a screenshot of the QR from your payment app." });
-      } else {
-        setValue("upi_qr_payload", got.payload, { shouldDirty: true });
-        setValue("upi_id", got.upiId, { shouldDirty: true });
-        setQrMsg({ ok: true, text: `Read your UPI ID: ${got.upiId}` });
-      }
-    } catch {
-      setQrMsg({ ok: false, text: "That file could not be opened as a picture." });
-    } finally {
-      setQrBusy(false);
-    }
-  }
-
   const mut = useMutation({
     mutationFn: (body: Record<string, unknown>) => api<Tenant>("/tenant", { method: "PATCH", body }),
     onSuccess: (t) => {
       qc.setQueryData(["tenant"], t);
       qc.invalidateQueries({ queryKey: ["setup"] });
+      qc.invalidateQueries({ queryKey: ["collections-ageing"] }); // credit days move what counts as overdue
       setSaved(true);
       setServerError(null);
       if (!isDesktop) setPicked(null); // back to the list, which shows what was saved
@@ -245,8 +211,14 @@ export function FirmPage() {
     onError: (e) => setServerError(e instanceof ApiError ? e.message : "Save failed"),
   });
 
+  const owner = me?.role === "owner";
+  const showReminders = remindersOn && canWrite(me?.role);
+  const showCatalog = Boolean(me?.ext_supplier_catalog);
+  const showConnections = tallyOn || (whatsappOn && owner);
+  const autoAllowed = data?.reminder_auto_allowed !== false;
+
   const onSubmit = handleSubmit(
-    (f) => mut.mutate(profileBody(f, gst, data)),
+    (f) => mut.mutate({ ...profileBody(f, gst, data), ...settingsBody(f, { reminders: showReminders, catalog: showCatalog, autoAllowed }) }),
     (bad) => {
       const first = (Object.keys(bad) as (keyof FormShape)[]).find((k) => TAB_OF_FIELD[k]);
       if (first) setPicked(TAB_OF_FIELD[first]!);
@@ -255,19 +227,16 @@ export function FirmPage() {
 
   if (isLoading) return <p className="text-sm text-muted">Loading…</p>;
 
-  const owner = me?.role === "owner";
-  const showConnections =
-    tallyOn ||
-    (whatsappOn && owner) ||
-    (remindersOn && canWrite(me?.role)) ||
-    Boolean(me?.ext_supplier_catalog);
   const tabs: { key: Tab; label: string }[] = [
     { key: "business", label: "Business" },
     { key: "pay", label: "Get paid" },
     { key: "wording", label: "Bill wording" },
+    ...(showReminders ? [{ key: "reminders" as const, label: "Payment reminders" }] : []),
+    ...(showCatalog ? [{ key: "catalog" as const, label: "Catalog and orders" }] : []),
     ...(showConnections ? [{ key: "connections" as const, label: "Connections" }] : []),
   ];
   const editing = tab !== "connections";
+  const aboutBill = tab === "business" || tab === "pay" || tab === "wording";
   const previewBody = profileBody(v, gst, data);
 
   const nameNow = gst ? clean(v.trade_name) || clean(v.legal_name) : clean(v.shop_name);
@@ -290,8 +259,33 @@ export function FirmPage() {
       line: `Title: ${clean(v.document_label) || "Invoice"}${clean(v.declaration_text) ? " · declaration set" : ""}${clean(v.terms_text) ? " · terms set" : ""}`,
       todo: false,
     },
+    ...(showReminders
+      ? [
+          {
+            key: "reminders" as const,
+            title: "Payment reminders",
+            line: v.reminder_enabled
+              ? `On · remind after ${clean(v.reminder_days).replace(/\s/g, "").split(",").join(", ")} days${v.reminder_auto_send && autoAllowed ? " · sent for you" : ""}`
+              : "Off. Turn on to chase overdue bills",
+            todo: false,
+          },
+        ]
+      : []),
+    ...(showCatalog
+      ? [
+          {
+            key: "catalog" as const,
+            title: "Catalog and orders",
+            line: [
+              clean(v.order_min_value) ? `Minimum order ₹${clean(v.order_min_value)}` : "No minimum order",
+              clean(v.order_alert_phone) ? "order alerts on" : "no order alerts",
+            ].join(" · "),
+            todo: false,
+          },
+        ]
+      : []),
     ...(showConnections
-      ? [{ key: "connections" as const, title: "Connections", line: "Tally, WhatsApp, reminders and catalog", todo: false }]
+      ? [{ key: "connections" as const, title: "Connections", line: [tallyOn && "Tally", whatsappOn && owner && "WhatsApp"].filter(Boolean).join(" and "), todo: false }]
       : []),
   ];
 
@@ -312,7 +306,7 @@ export function FirmPage() {
         {saved && <span className="text-xs text-ok">Saved ✓</span>}
       </div>
 
-      <section className="card mb-4 p-4 sm:p-5" aria-labelledby="bill-mode">
+      <section className={`card mb-4 p-4 sm:p-5${!isDesktop || aboutBill ? "" : " hidden"}`} aria-labelledby="bill-mode">
         <h2 id="bill-mode" className="font-serif text-lg font-semibold">
           How do you bill your customers?
         </h2>
@@ -398,7 +392,7 @@ export function FirmPage() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className={`grid gap-5 ${aboutBill ? "lg:grid-cols-[minmax(0,1fr)_400px]" : "lg:max-w-3xl"}`}>
         <div className="min-w-0">
           <div className="mb-4 hidden gap-1 overflow-x-auto border-b border-line md:flex" role="tablist" aria-label="Firm settings">
             {tabs.map((t) => (
@@ -441,17 +435,10 @@ export function FirmPage() {
                 </>
               )}
               {whatsappOn && owner && <WhatsappConnectCard />}
-              {remindersOn && canWrite(me?.role) && <ReminderSettingsCard tenant={data} />}
-              {me?.ext_supplier_catalog && (
-                <>
-                  <CatalogSettingsCard tenant={data} />
-                  <OrderSettingsCard tenant={data} />
-                  <PhotoUsageLine />
-                </>
-              )}
             </>
           )}
 
+          <FormProvider {...methods}>
           <form onSubmit={onSubmit} hidden={!editing}>
             {/* BUSINESS */}
             <div hidden={tab !== "business"} className="space-y-4">
@@ -562,38 +549,14 @@ export function FirmPage() {
                   Customers scan a QR on your bill and the amount is already filled in.
                 </p>
                 <input type="hidden" {...register("upi_qr_payload")} />
-                <input ref={qrInput} type="file" accept="image/*" className="hidden" onChange={onQrFile} aria-label="Upload your payment QR" />
-                {clean(v.upi_qr_payload) ? (
-                  <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ok/40 bg-accent-soft px-3 py-2.5">
-                    <span className="min-w-0 flex-1 text-sm">
-                      <b className="text-ok">✓ Your QR is added.</b> Bills print it with the bill amount filled in.
-                    </span>
-                    <button type="button" className="btn" onClick={() => qrInput.current?.click()} disabled={qrBusy}>
-                      Replace
-                    </button>
-                    <button type="button" className="btn" onClick={() => setValue("upi_qr_payload", "", { shouldDirty: true })}>
-                      Remove
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => qrInput.current?.click()}
-                    disabled={qrBusy}
-                    className="flex w-full items-center gap-3 rounded-lg border-[1.5px] border-dashed border-accent bg-accent-soft px-4 py-3.5 text-left"
-                  >
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-semibold text-accent-deep">{qrBusy ? "Reading your QR…" : "Upload your payment QR"}</span>
-                      <span className="block text-sm text-muted">
-                        A screenshot or photo of the QR from PhonePe, Google Pay, Paytm or your bank app. We read your UPI ID from it.
-                      </span>
-                    </span>
-                    <span className="text-xl text-accent" aria-hidden>
-                      +
-                    </span>
-                  </button>
-                )}
-                {qrMsg && <p className={`mt-2 text-sm ${qrMsg.ok ? "text-ok" : "text-danger"}`}>{qrMsg.text}</p>}
+                <UpiQrPicker
+                  has={Boolean(clean(v.upi_qr_payload))}
+                  onRead={(got) => {
+                    setValue("upi_qr_payload", got.payload, { shouldDirty: true });
+                    setValue("upi_id", got.upiId, { shouldDirty: true, shouldValidate: true });
+                  }}
+                  onRemove={() => setValue("upi_qr_payload", "", { shouldDirty: true })}
+                />
 
                 <label className="label mt-4" htmlFor="f-upi">
                   {clean(v.upi_qr_payload) ? "UPI ID" : "Or type your UPI ID"}
@@ -765,6 +728,17 @@ export function FirmPage() {
               </section>
             </div>
 
+            {showReminders && (
+              <div hidden={tab !== "reminders"}>
+                <RemindersPanel autoAllowed={autoAllowed} />
+              </div>
+            )}
+            {showCatalog && (
+              <div hidden={tab !== "catalog"}>
+                <CatalogPanel />
+              </div>
+            )}
+
             {serverError && <p className="err mt-3">{serverError}</p>}
             <div className="sticky bottom-0 -mx-1 mt-4 flex items-center justify-end gap-3 bg-ground/95 px-1 py-3">
               {saved && <span className="text-sm text-ok">Saved ✓</span>}
@@ -773,6 +747,7 @@ export function FirmPage() {
               </button>
             </div>
           </form>
+          </FormProvider>
           </div>
           </div>
 
@@ -797,7 +772,7 @@ export function FirmPage() {
           </div>
         </div>
 
-        <aside className="hidden min-w-0 md:block lg:sticky lg:top-4 lg:self-start" aria-label="Bill preview">
+        <aside className={`${aboutBill ? "hidden md:block" : "hidden"} min-w-0 lg:sticky lg:top-4 lg:self-start`} aria-label="Bill preview">
           <div className="mb-2 flex items-baseline justify-between gap-2">
             <h2 className="font-serif text-base font-semibold">Your bill, as it prints</h2>
             <button type="button" className="text-sm text-accent underline underline-offset-2" onClick={() => setPreviewOpen(true)}>

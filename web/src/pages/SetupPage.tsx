@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../lib/api";
@@ -28,96 +28,111 @@ export function ProgressRing({ done, total, size = 54 }: { done: number; total: 
 }
 
 const STEP_BUTTON: Record<string, string> = {
-  firm: "Open firm details",
+  firm: "Set up my bill",
   invoice: "Make my first invoice",
   pdf: "Open my invoices",
   payment: "Record a payment",
   bank: "Add bank or UPI",
 };
 
-function Step({ s, first }: { s: SetupStep; first: boolean }) {
+/** The first steps as a short list. Only the next one asks for a tap, so the page has one obvious thing to do. */
+function Steps({ steps }: { steps: SetupStep[] }) {
+  const next = steps.find((s) => !s.done);
   return (
-    <li className={`flex gap-3 py-3 ${first ? "" : "border-t border-line"}`}>
-      <span
-        aria-hidden
-        className={`mt-0.5 grid h-[22px] w-[22px] flex-none place-items-center rounded-full border-2 text-xs text-white ${
-          s.done ? "border-ok bg-ok" : "border-line"
-        }`}
-      >
-        {s.done ? "✓" : ""}
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className={s.done ? "text-muted line-through decoration-line" : "font-medium"}>{s.title}</div>
-        <div className="meta">{s.hint}</div>
-        {!s.done && (
-          <Link
-            to={s.route}
-            className="btn-primary mt-2 !h-9 !px-3 md:!h-8"
-            onClick={() => beacon("setup_step_clicked", { step: s.key })}
-          >
-            {STEP_BUTTON[s.key] ?? "Open"}
-          </Link>
-        )}
-      </div>
-    </li>
+    <ul className="divide-y divide-line">
+      {steps.map((s) => {
+        const isNext = s === next;
+        return (
+          <li key={s.key} className={`flex items-start gap-3 py-3 ${isNext ? "-mx-3 rounded-lg bg-accent-soft px-3" : ""}`}>
+            <span
+              aria-hidden
+              className={`mt-0.5 grid h-[22px] w-[22px] flex-none place-items-center rounded-full border-2 text-xs text-white ${
+                s.done ? "border-ok bg-ok" : isNext ? "border-accent" : "border-line"
+              }`}
+            >
+              {s.done ? "✓" : ""}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className={s.done ? "text-muted line-through decoration-line" : "font-medium"}>{s.title}</div>
+              {!s.done && <div className="meta">{s.hint}</div>}
+            </div>
+            {!s.done && (
+              <Link
+                to={s.route}
+                className={isNext ? "btn-primary !h-9 flex-none !px-3 md:!h-8" : "flex-none self-center text-sm text-accent underline underline-offset-2"}
+                onClick={() => beacon("setup_step_clicked", { step: s.key })}
+              >
+                {isNext ? (STEP_BUTTON[s.key] ?? "Open") : "Open"}
+              </Link>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
-const PILL: Record<FeatureStatus, { text: string; cls: string }> = {
-  active: { text: "Active", cls: "bg-[#e6efe8] text-[#3a5a48]" },
-  setup: { text: "Set up now", cls: "bg-[#e3eef2] text-accent" },
+const PILL: Record<FeatureStatus, { text: string; cls: string } | null> = {
+  active: { text: "On", cls: "bg-[#e6efe8] text-[#3a5a48]" },
+  setup: { text: "Ready to set up", cls: "bg-[#e3eef2] text-accent" },
   requested: { text: "Requested", cls: "bg-[#f6ecd5] text-[#7a5c14]" },
-  locked: { text: "Not on your plan", cls: "bg-[#efe9df] text-muted" },
+  locked: null, // a locked card says which plan holds it, below, instead of wearing a label
 };
 
+/** One optional feature. It tells you what it does, what to have ready, and the one thing to do next. The free trial
+ *  is offered once, above the row, never repeated on each card. */
 function FeatureCard({ f, canRequest }: { f: SetupFeature; canRequest: boolean }) {
   const qc = useQueryClient();
   const { data: plans } = usePlans(f.plan_locked);
-  // the cheapest paid plan that switches on everything this card needs, so the card can show a price instead of "ask Fleek"
+  // the cheapest paid plan that switches on everything this card needs
   const unlockPlan = f.plan_locked
     ? (plans?.plans ?? [])
         .filter((p) => p.price_amount > 0 && f.needs.every((k) => p.unlocks.includes(k === "tally" ? "tally_backup" : k)))
         .sort((a, b) => a.price_amount - b.price_amount)[0]
     : undefined;
-  const [open, setOpen] = useState(false);
   const ask = useMutation({
     mutationFn: () => api<{ requested_at: string }>("/onboarding/requests", { method: "POST", body: { feature: f.key } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: SETUP_KEY }),
   });
   const pill = PILL[f.status];
-  const locked = f.status === "locked" || f.status === "requested";
   return (
-    <div className={`rounded-xl border border-line p-4 ${locked ? "bg-[#fbfaf7]" : "bg-card"}`}>
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="font-semibold">{f.title}</h3>
-        <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${pill.cls}`}>
-          {f.status === "requested" && f.requested_at ? `Requested ${new Date(f.requested_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}` : pill.text}
-        </span>
+    <article className="flex h-full flex-col rounded-xl border border-line bg-card p-4">
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="font-serif text-[17px] font-semibold leading-snug">{f.title}</h3>
+        {pill && (
+          <span className={`flex-none rounded-full px-2 py-0.5 text-[11px] font-medium ${pill.cls}`}>
+            {f.status === "requested" && f.requested_at
+              ? `Asked ${new Date(f.requested_at).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`
+              : pill.text}
+          </span>
+        )}
       </div>
       <p className="mt-1.5 text-sm text-muted">{f.summary}</p>
-      <button className="mt-2 text-xs text-accent hover:text-accent-dark" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        {open ? "Hide guide" : "What you need to know"}
-      </button>
-      {open && (
-        <div className="mt-2 space-y-2 text-sm">
-          <p><span className="micro">Good for</span><br />{f.who}</p>
-          <div>
-            <span className="micro">Have ready</span>
-            <ul className="mt-1 list-disc pl-5 text-muted">{f.ready.map((r) => <li key={r}>{r}</li>)}</ul>
-          </div>
-          <p className="meta">About {f.minutes} minutes.</p>
+      <dl className="mt-3 space-y-2 text-sm">
+        <div>
+          <dt className="micro">Good for</dt>
+          <dd>{f.who}</dd>
         </div>
-      )}
-      <div className="mt-3">
+        <div>
+          <dt className="micro">Have ready</dt>
+          <dd>
+            <ul className="list-disc pl-5 text-muted">
+              {f.ready.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+          </dd>
+        </div>
+      </dl>
+      <div className="mt-auto pt-4">
+        <p className="meta mb-2">About {f.minutes} minutes.</p>
         {f.status === "locked" && f.plan_locked && (
           <Link
             to={unlockPlan ? `/plans?plan=${unlockPlan.plan}` : "/plans"}
-            className="btn-brass !h-9 !px-3 md:!h-8"
+            className="text-sm text-accent underline underline-offset-2"
             onClick={() => beacon("locked_feature_tapped", { feature: f.key })}
           >
-            {unlockPlan
-              ? `${unlockPlan.trial_days ? `Try free for ${unlockPlan.trial_days} days` : "Choose"} · ${rupees(unlockPlan.price_amount)} a month`
-              : "See plans"}
+            {unlockPlan ? `Part of ${unlockPlan.label}, ${rupees(unlockPlan.price_amount)} a month` : "See plans"}
           </Link>
         )}
         {f.status === "locked" && !f.plan_locked && canRequest && (
@@ -133,8 +148,62 @@ function FeatureCard({ f, canRequest }: { f: SetupFeature; canRequest: boolean }
           </Link>
         )}
         {ask.isError && (
-          <p className="err" role="alert">{ask.error instanceof ApiError ? ask.error.message : "Could not ask Fleek. Try again."}</p>
+          <p className="err" role="alert">
+            {ask.error instanceof ApiError ? ask.error.message : "Could not ask Fleek. Try again."}
+          </p>
         )}
+      </div>
+    </article>
+  );
+}
+
+/** A row of cards you swipe on a phone and step through with arrows on a computer. */
+function Carousel({ label, children }: { label: string; children: React.ReactNode[] }) {
+  const track = useRef<HTMLDivElement>(null);
+  const [idx, setIdx] = useState(0);
+  const count = children.length;
+
+  const onScroll = () => {
+    const el = track.current;
+    const card = el?.firstElementChild as HTMLElement | null;
+    if (!el || !card) return;
+    setIdx(Math.max(0, Math.min(count - 1, Math.round(el.scrollLeft / (card.offsetWidth + 12)))));
+  };
+  const go = (i: number) => {
+    const card = track.current?.children[Math.max(0, Math.min(count - 1, i))] as HTMLElement | undefined;
+    card?.scrollIntoView({ behavior: "smooth", inline: "start", block: "nearest" });
+  };
+
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h2 className="section-title">{label}</h2>
+        <div className="hidden gap-1.5 md:flex">
+          <button type="button" className="btn-ghost !h-8 !w-8 !px-0" aria-label="Previous" disabled={idx === 0} onClick={() => go(idx - 1)}>
+            ‹
+          </button>
+          <button type="button" className="btn-ghost !h-8 !w-8 !px-0" aria-label="Next" disabled={idx >= count - 1} onClick={() => go(idx + 1)}>
+            ›
+          </button>
+        </div>
+      </div>
+      <div
+        ref={track}
+        onScroll={onScroll}
+        className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth px-4 pb-3 [scrollbar-width:none] sm:mx-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+        role="list"
+        aria-label={label}
+      >
+        {children.map((c, i) => (
+          <div key={i} role="listitem" className="w-[84%] flex-none snap-start sm:w-[320px]">
+            {c}
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex justify-center gap-1.5" aria-hidden>
+        {children.map((_, i) => (
+          <span key={i} className={`h-1.5 rounded-full transition-all ${i === idx ? "w-5 bg-accent" : "w-1.5 bg-line"}`} />
+        ))}
       </div>
     </div>
   );
@@ -145,6 +214,8 @@ export function SetupPage() {
   const qc = useQueryClient();
   const { data, isLoading, isError } = useSetup();
   const owner = me?.role === "owner";
+  const anyPlanLocked = !!data?.features.some((f) => f.status === "locked" && f.plan_locked);
+  const { data: plans } = usePlans(anyPlanLocked);
   useEffect(() => {
     beacon("setup_viewed");
   }, []);
@@ -157,6 +228,10 @@ export function SetupPage() {
   if (isError || !data) return <div className="text-sm text-danger">Could not load Setup. Try again.</div>;
 
   const allDone = data.done === data.total;
+  const paid = (plans?.plans ?? []).filter((p) => p.price_amount > 0);
+  const trialDays = paid.reduce((m, p) => Math.max(m, p.trial_days), 0);
+  const from = paid.length ? Math.min(...paid.map((p) => p.price_amount)) : null;
+
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
@@ -176,22 +251,36 @@ export function SetupPage() {
           )
         }
       />
-      <div className="grid gap-6 lg:grid-cols-[5fr_7fr]">
-        <section className="card h-fit p-5">
-          <div className="mb-2 flex items-center gap-3">
-            <ProgressRing done={data.done} total={data.total} />
+
+      <section className="card mb-6 max-w-2xl p-5">
+        <div className="mb-2 flex items-center gap-3">
+          <ProgressRing done={data.done} total={data.total} />
+          <div>
             <h2 className="section-title">Your first steps</h2>
+            <p className="meta">Each one ticks itself when it is done.</p>
           </div>
-          <ul>{data.steps.map((s, i) => <Step key={s.key} s={s} first={i === 0} />)}</ul>
-          <p className="meta mt-2">Steps tick themselves when the data exists.</p>
-        </section>
-        <section>
-          <h2 className="section-title mb-3">Add more when you are ready</h2>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-            {data.features.map((f) => <FeatureCard key={f.key} f={f} canRequest={owner} />)}
+        </div>
+        <Steps steps={data.steps} />
+      </section>
+
+      <section aria-label="More features">
+        {anyPlanLocked && trialDays > 0 && from !== null && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brass/40 bg-brass-soft px-4 py-3">
+            <div className="min-w-0">
+              <div className="font-semibold text-brass-dark">Try the paid features free for {trialDays} days</div>
+              <div className="text-sm text-muted">Plans start at {rupees(from)} a month. Look through the features below first.</div>
+            </div>
+            <Link to="/plans" className="btn-brass !h-9 !px-3 md:!h-8" onClick={() => beacon("locked_feature_tapped", { feature: "banner" })}>
+              See plans
+            </Link>
           </div>
-        </section>
-      </div>
+        )}
+        <Carousel label="Add more when you are ready">
+          {data.features.map((f) => (
+            <FeatureCard key={f.key} f={f} canRequest={owner} />
+          ))}
+        </Carousel>
+      </section>
     </div>
   );
 }

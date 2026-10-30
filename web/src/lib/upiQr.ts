@@ -7,6 +7,9 @@ export interface UpiQr {
   upiId: string;
 }
 
+/** The shape of a UPI ID, `name@bank`. */
+export const UPI_RE = /^[\w.-]{2,}@[A-Za-z]{2,}$/;
+
 const MAX_SIDE = 1100;
 
 /** Read a UPI payment QR out of a photo or screenshot. A phone shot often has a lot around the code, so try the

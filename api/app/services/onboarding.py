@@ -47,7 +47,7 @@ def steps(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
             "Confirm your firm details",
             "Your address prints on every invoice.",
             firm_details_done(tenant),
-            "/firm",
+            "/start",  # the bill-setup conversation; the full form stays under Firm
         ),
         (
             "invoice",

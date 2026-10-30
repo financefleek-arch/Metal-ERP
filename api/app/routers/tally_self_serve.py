@@ -30,9 +30,10 @@ from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
 from app.services import features
 from app.services.tally.agent_health import agent_online, assert_tally_reachable
 from app.services.tally.backup_retention import effective_retention_count
+from app.services.tally.companies import get_default_company
 from app.services.tally.installer import installer_filename
 from app.services.tally.jobs import assert_no_push_in_flight, enqueue_push_sales
-from app.services.tally.push_readiness import get_tally_company, push_blockers
+from app.services.tally.push_readiness import push_blockers
 
 router = APIRouter(
     prefix="/api/tally", tags=["tally-self-serve"], dependencies=[features.require("tally")]
@@ -211,7 +212,7 @@ def push_own_invoice(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="; ".join(b.message for b in blockers),
         )
-    company = get_tally_company(session, user.tenant_id)
+    company = get_default_company(session, user.tenant_id)
     assert company is not None  # push_blockers() already confirmed this
     assert_no_push_in_flight(session, user.tenant_id, invoice_id)
     assert_tally_reachable(session, company)

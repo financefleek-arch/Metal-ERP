@@ -29,6 +29,7 @@ from app.schemas_tally import (
     TallySyncJobOut,
 )
 from app.services.tally.agent_health import assert_tally_reachable
+from app.services.tally.companies import add_company, get_default_company
 from app.services.tally.company_verify import enqueue_verify_company, relink_company
 from app.services.tally.jobs import (
     assert_no_pull_in_flight,
@@ -36,7 +37,7 @@ from app.services.tally.jobs import (
     enqueue_pull_masters,
     enqueue_push_sales,
 )
-from app.services.tally.push_readiness import get_tally_company, push_blockers
+from app.services.tally.push_readiness import push_blockers
 
 router = APIRouter(
     prefix="/api/admin/firms/{firm_id}/tally",
@@ -53,9 +54,8 @@ def _firm(session: SessionDep, firm_id: str) -> Tenant:
 
 
 def _load_company(session: SessionDep, firm_id: str) -> TallyCompany:
-    company = session.scalar(
-        select(TallyCompany).where(TallyCompany.tenant_id == firm_id)
-    )
+    # Until the company list screen (S1.4) this page manages the firm's default company.
+    company = get_default_company(session, firm_id)
     if company is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -88,17 +88,11 @@ def upsert_company(
         select(BackupShop).where(BackupShop.tenant_id == firm_id)
     )
 
-    company = session.scalar(
-        select(TallyCompany).where(TallyCompany.tenant_id == firm_id)
-    )
+    company = get_default_company(session, firm_id)
     if company is None:
-        company = TallyCompany(
-            tenant_id=firm_id,
-            company_name=body.company_name,
-            shop_id=shop.id if shop else None,
-            ledger_map={},
+        company = add_company(
+            session, firm_id, body.company_name, shop_id=shop.id if shop else None
         )
-        session.add(company)
     else:
         if body.company_name.strip() != company.company_name.strip():
             # Pointed at a (possibly different) company on purpose: what we knew about the old
@@ -219,7 +213,7 @@ def push_invoice(firm_id: str, invoice_id: str, session: SessionDep) -> TallySyn
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="; ".join(b.message for b in blockers),
         )
-    company = get_tally_company(session, firm_id)
+    company = get_default_company(session, firm_id)
     assert company is not None  # push_blockers() already confirmed this
     assert_no_push_in_flight(session, firm_id, invoice_id)
     assert_tally_reachable(session, company)

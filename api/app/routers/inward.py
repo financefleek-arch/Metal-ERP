@@ -45,9 +45,9 @@ from app.services import features
 from app.services.inward.approve import ApproveError, approve_bill, approve_gate
 from app.services.inward.run_extraction import run_extraction
 from app.services.tally.agent_health import assert_tally_reachable
+from app.services.tally.companies import get_default_company
 from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
 from app.services.tally.push_readiness import (
-    get_tally_company,
     is_pushable,
     purchase_push_blockers,
 )
@@ -563,7 +563,7 @@ def push_bill_to_tally(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="; ".join(b.message for b in blockers),
         )
-    company = get_tally_company(session, user.tenant_id)
+    company = get_default_company(session, user.tenant_id)
     assert company is not None  # purchase_push_blockers() already confirmed this
     assert_no_purchase_push_in_flight(session, user.tenant_id, bill_id)
     assert_tally_reachable(session, company)

@@ -46,6 +46,7 @@ from app.models import (
     TallySyncJob,
 )
 from app.services.tally.agent_health import agent_online, assert_tally_reachable
+from app.services.tally.companies import get_default_company
 from app.services.tally.company_identity import WAITING_FOR_COMPANY, company_payload
 from app.services.tally.jobs import complete_job_error
 from tools.tally_import.parser import parse_stock_items
@@ -125,10 +126,6 @@ class Preflight:
 
 
 # --------------------------------------------------------------------------- settings
-
-
-def get_company(session: Session, tenant_id: str) -> TallyCompany | None:
-    return session.scalar(select(TallyCompany).where(TallyCompany.tenant_id == tenant_id))
 
 
 def _norm(name: str) -> str:
@@ -259,7 +256,7 @@ def preflight(
     """Everything that could go wrong, found before anything is sent."""
     pf = Preflight(total=len(rows))
     loaded = load_rows(session, rows)
-    company = get_company(session, tenant_id)
+    company = get_default_company(session, tenant_id)
 
     # --- company + agent
     if company is None or company.shop_id is None:

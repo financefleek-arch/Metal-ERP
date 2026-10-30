@@ -148,7 +148,7 @@ Goal: a voucher can never land in the wrong Tally company, a retry can never cre
 
 Goal: a firm has several live Tally companies, each with its own links, ledger map, staging and visibility, and nothing changes for a firm with one company.
 
-### S1.1 Company registry: many per firm
+### S1.1 Company registry: many per firm (FOUNDATION BUILT 2026-10-30, uncommitted)
 **As** an owner, **I want** to add more than one Tally company to my firm, **so that** GST and Estimate books both work.
 - Closes: G2. Decisions: D-6 (field), D-7 (field).
 - Acceptance:
@@ -157,6 +157,8 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - Migration marks each existing company `is_default`, kind `gst` if the firm has GST on else `other`, `include_in_reminders` true, `visible_roles` null (everyone). Existing shops behave as before.
   - `get_tally_company(tenant)` is replaced by `get_default_company` and `get_company(id)`; all 15 call sites in 6 files are moved, none left on the old single lookup.
 - Touches: `models/tally_connector.py`, migration, `services/tally/push_readiness.py`, `routers/tally.py`, `routers/tally_self_serve.py`, `routers/inward.py`, `services/inward/approve.py`, `services/catalog/tally_items.py`.
+- Built: model drops `uq_tally_company_tenant`, gains `kind`, `is_default`, `series_prefix`, `document_label`, `include_in_reminders`, `visible_roles`, `status`; partial unique index `uq_tally_company_default` (migration 0075; existing companies become the default, kind `gst` where the firm has GST on). New `services/tally/companies.py` (`get_default_company`, `get_company` scoped to the firm, `list_companies`, `add_company`, `set_default`). The 10 product call sites of the two old lookups now use the default. The admin Tally page still manages only the default company; there is no way to add a second yet (S1.4). Tests: 9 new. Full backend run: 1443 passed, 32 failed because two test files built the company row by hand without `is_default`; fixed, and those files plus the new tests re-ran at 54 passed. The full suite was not re-run after that fix.
+- Still to do for S1.1: `tools/backfill_masters_xml.py`, `tools/tally_capture.py` and about 15 test lookups still use `TallyCompany.tenant_id ==` (fine with one company; move them before a firm gets a second); migration 0075 on Postgres; `include_in_reminders`, `visible_roles`, `series_prefix` and `document_label` are stored but read by nothing yet (S1.7, EP2, EP3).
 - Size: L.
 
 ### S1.2 `tally_link` per company
@@ -476,6 +478,7 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 | 2026-10-30 | Backlog opened: 7 epics, 48 stories (S4.2 counted once though it splits into five), all Open. |
 | 2026-10-30 | S0.1 Building. Two separate Tally processes: port 9000 serves "Fleek" (GUID 167b31a2-6486-4396-8ee8-7fe38496052d, 18 vouchers, 2339 stock items, ZZTEST ledgers from earlier runs); port 9001 serves "Fleek Test" (GUID 67baeb49-5454-418e-aad2-4ae28441e6d1, empty: Cash and P&L only, no items, no units, 0 vouchers). Each gateway lists only its own company. The agent reads one `GatewayUrl`, so it can reach only one: new gap A5, new story S1.10. No vouchers posted yet. |
 | 2026-10-30 | S0.1 DONE: 7 live posts into the dev companies (4 vouchers landed in Fleek, master ids 19 to 22; the 3 refused or failed posts changed nothing). Findings in the S0.1 section. B3 raised to Critical, E2 lowered to Med, F1 and C3 confirmed, C1 simplified. |
+| 2026-10-30 | S1.1 foundation BUILT (see its section). |
 | 2026-10-30 | S0.3 BUILT (see its section): backend + agent + panel; decisions taken: retry while not open, stop on renamed/different, block push on both. Agent release still to do. |
 | 2026-10-30 | Live: both companies loaded in one Tally window on 9000; Company collection lists both with GUIDs; a push by company name reaches the right books (id 28 posted to Fleek; Fleek Test refused a ledger it lacks). S0.3 can ship against ONE gateway; S1.10 (several gateways) is deferred until shops need it. Design updated. |
 | 2026-10-30 | S0.3 and S1.10 merged into one agent release; DRAFT design in `docs/DESIGN-agent-company-routing.md` awaiting review (4 decisions). Proposes dropping the per-company gateway address: the agent routes by company identity. |

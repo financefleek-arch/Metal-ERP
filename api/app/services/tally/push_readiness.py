@@ -36,11 +36,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import Invoice, InwardBill, Item, Party, TallyCompany
+from app.models import Invoice, InwardBill, Item, Party
 from app.models._mixins import InwardStatus
+from app.services.tally.companies import get_default_company
 from app.services.tally.units import DIFFERS, UNKNOWN, line_unit
 
 _MAX_LISTED_ITEMS = 3
@@ -142,14 +142,10 @@ def _listed(names: list[str]) -> str:
     return ", ".join(shown) + (f" +{extra} more" if extra > 0 else "")
 
 
-def get_tally_company(session: Session, tenant_id: str) -> TallyCompany | None:
-    return session.scalar(select(TallyCompany).where(TallyCompany.tenant_id == tenant_id))
-
-
 def push_blockers(session: Session, invoice: Invoice) -> list[PushBlocker]:
     blockers: list[PushBlocker] = []
 
-    company = get_tally_company(session, invoice.tenant_id)
+    company = get_default_company(session, invoice.tenant_id)
     if company is None:
         blockers.append(
             PushBlocker(
@@ -236,7 +232,7 @@ def purchase_push_blockers(session: Session, bill: InwardBill) -> list[PushBlock
         blockers.append(PushBlocker("not_approved", "This bill has not been approved yet."))
         return blockers
 
-    company = get_tally_company(session, bill.tenant_id)
+    company = get_default_company(session, bill.tenant_id)
     if company is None:
         blockers.append(
             PushBlocker("no_tally_company", "This firm has no Tally company linked yet.")

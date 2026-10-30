@@ -25,6 +25,7 @@ from app.services import audit, features
 from app.services.catalog import item_labels
 from app.services.catalog import tally_items as ti
 from app.services.item_filter import resolve_ids
+from app.services.tally.companies import get_default_company
 
 router = APIRouter(
     prefix="/api/item-tally", tags=["item-tally"], dependencies=[features.require("tally_full")]
@@ -125,7 +126,7 @@ def push(body: TallyPushIn, session: SessionDep, user: CatalogWriteUser) -> Tall
         )
     if not todo:
         raise HTTPException(status_code=422, detail="There is nothing to send.")
-    company = ti.get_company(session, user.tenant_id)
+    company = get_default_company(session, user.tenant_id)
     assert company is not None  # preflight confirmed it
     tenant = session.get(Tenant, user.tenant_id)
     assert tenant is not None

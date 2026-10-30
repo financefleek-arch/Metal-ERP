@@ -81,7 +81,9 @@ def _setup_tally(tenant_id: str, *, online: bool = True) -> str:
         s.add(shop)
         s.flush()
         s.add(
-            TallyCompany(tenant_id=tenant_id, company_name="Fleek", shop_id=shop.id, ledger_map={})
+            TallyCompany(
+                tenant_id=tenant_id, company_name="Fleek", shop_id=shop.id, ledger_map={}, is_default=True
+            )
         )
         s.commit()
         return shop.id

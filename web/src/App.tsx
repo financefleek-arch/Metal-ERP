@@ -12,6 +12,7 @@ import { SetupPage } from "./pages/SetupPage";
 import { PlansPage } from "./pages/PlansPage";
 import { UpgradeProvider } from "./components/UpgradeProvider";
 import { WelcomePage } from "./pages/WelcomePage";
+import { StartPage } from "./pages/StartPage";
 import { FeatureRoute } from "./components/FeatureRoute";
 import { PartiesPage } from "./pages/PartiesPage";
 import { ItemsPage } from "./pages/ItemsPage";
@@ -95,6 +96,7 @@ export function App() {
         <Route path="/account" element={<AccountPage />} />
         <Route path="/setup" element={<SetupPage />} />
         <Route path="/welcome" element={<WelcomePage />} />
+        <Route path="/start" element={<StartPage />} />
         <Route path="/invoices" element={<InvoiceListPage />} />
         <Route path="/invoices/new" element={<InvoiceEditorPage />} />
         <Route path="/invoices/:id" element={<InvoiceEditorPage />} />

@@ -28,6 +28,7 @@ from app.services.catalog import promote as promote_svc
 from app.services.catalog import tally_items as ti
 from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.tally.agent_health import assert_tally_reachable
+from app.services.tally.companies import get_default_company
 
 router = APIRouter(prefix="/api/supplier-catalogs", tags=["supplier-catalog-tally"])
 
@@ -140,14 +141,14 @@ def _settings_out(company: TallyCompany | None) -> TallySettingsOut:
 
 @router.get("/tally/settings", response_model=TallySettingsOut)
 def get_tally_settings(session: SessionDep, user: CatalogUser) -> TallySettingsOut:
-    return _settings_out(ti.get_company(session, user.tenant_id))
+    return _settings_out(get_default_company(session, user.tenant_id))
 
 
 @router.put("/tally/settings", response_model=TallySettingsOut)
 def put_tally_settings(
     body: TallySettingsIn, session: SessionDep, user: CatalogWriteUser
 ) -> TallySettingsOut:
-    company = ti.get_company(session, user.tenant_id)
+    company = get_default_company(session, user.tenant_id)
     if company is None:
         raise HTTPException(status_code=404, detail="Tally is not connected for this firm yet.")
     patch = body.model_fields_set
@@ -193,7 +194,7 @@ def _check_out(job: TallySyncJob) -> TallyCheckOut:
 @router.post("/tally/check", response_model=TallyCheckOut, status_code=status.HTTP_201_CREATED)
 def start_tally_check(session: SessionDep, user: CatalogWriteUser) -> TallyCheckOut:
     """Read Tally's stock groups and item names through the agent."""
-    company = ti.get_company(session, user.tenant_id)
+    company = get_default_company(session, user.tenant_id)
     if company is None:
         raise HTTPException(status_code=404, detail="Tally is not connected for this firm yet.")
     assert_tally_reachable(session, company)

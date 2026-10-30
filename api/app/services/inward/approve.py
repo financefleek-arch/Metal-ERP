@@ -338,16 +338,16 @@ def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
     bill_id = bill.id
     try:
         from app.services.tally.agent_health import assert_tally_reachable
+        from app.services.tally.companies import get_default_company
         from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
         from app.services.tally.push_readiness import (
-            get_tally_company,
             is_pushable,
             purchase_push_blockers,
         )
 
         if not is_pushable(purchase_push_blockers(session, bill)):
             return
-        company = get_tally_company(session, bill.tenant_id)
+        company = get_default_company(session, bill.tenant_id)
         if company is None:
             return
         assert_no_purchase_push_in_flight(session, bill.tenant_id, bill_id)
