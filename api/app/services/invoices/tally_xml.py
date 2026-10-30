@@ -34,6 +34,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from lxml import etree
 
 from app.models import Invoice, InvoiceLine, Party
+from app.services.tally.units import line_unit
 
 _CENT = Decimal("0.01")
 
@@ -94,6 +95,7 @@ def _weighment_narration(invoice: Invoice) -> str | None:
 
 def build_sales_voucher_envelope(
     invoice: Invoice, party: Party, ledger_map: dict[str, str],
+    *, company_name: str | None = None,
 ) -> etree._Element:
     """Build the `<ENVELOPE>` for a Sales voucher. Raises
     `LedgerMapIncomplete` if `ledger_map['sales_ledger']` is missing, and
@@ -119,6 +121,9 @@ def build_sales_voucher_envelope(
     importdata = _sub(body, "IMPORTDATA")
     reqdesc = _sub(importdata, "REQUESTDESC")
     _sub(reqdesc, "REPORTNAME", "Vouchers")
+    if company_name:
+        # S0.2: name the target company, so the voucher cannot land in whichever one is open.
+        _sub(_sub(reqdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", company_name)
     reqdata = _sub(importdata, "REQUESTDATA")
 
     msg = _sub(reqdata, "TALLYMESSAGE")
@@ -151,7 +156,9 @@ def build_sales_voucher_envelope(
         is_last = idx == len(lines) - 1
         amount = _d(line.line_total) + (round_off if is_last else _d(0))
         item_name = line.item.name if line.item else (line.description or "Item")
-        uom = line.uom or "Nos"
+        # Tally's own spelling of the item's unit (S0.5); readiness blocks a unit that cannot match.
+        unit = line_unit(line.item, line.uom)[0] if line.item else None
+        uom = unit or line.uom or "Nos"
 
         inv = _sub(vch, "ALLINVENTORYENTRIES.LIST")
         _sub(inv, "STOCKITEMNAME", item_name)
@@ -185,7 +192,7 @@ def serialize(env: etree._Element, encoding: str = "UTF-8") -> bytes:
 
 def build_sales_voucher_xml_bytes(
     invoice: Invoice, party: Party, ledger_map: dict[str, str],
-    *, encoding: str = "UTF-8",
+    *, encoding: str = "UTF-8", company_name: str | None = None,
 ) -> bytes:
     """Default encoding is UTF-8, NOT UTF-16 — deliberately different from
     the purchase-side `inward/tally_xml.py` (which defaults UTF-16 because
@@ -195,5 +202,5 @@ def build_sales_voucher_xml_bytes(
     body gets "Unknown Request, cannot be processed" on that path, while
     byte-identical UTF-8 content is accepted and creates the voucher.
     """
-    env = build_sales_voucher_envelope(invoice, party, ledger_map)
+    env = build_sales_voucher_envelope(invoice, party, ledger_map, company_name=company_name)
     return serialize(env, encoding)

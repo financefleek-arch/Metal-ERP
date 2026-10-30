@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Invoice, InwardBill, Item, Party, TallyCompany
 from app.models._mixins import InwardStatus
+from app.services.tally.units import DIFFERS, UNKNOWN, line_unit
 
 _MAX_LISTED_ITEMS = 3
 
@@ -87,6 +88,52 @@ def _real_lines(invoice: Invoice) -> list:
     return [ln for ln in invoice.lines if (ln.description or "").strip()]
 
 
+def _company_name_blocker() -> PushBlocker:
+    # S0.2: the voucher names its company, so an empty name would send it to whichever is open.
+    return PushBlocker(
+        "company_name_missing",
+        "The Tally company has no name set, so we cannot tell Tally where to post this.",
+    )
+
+
+def _unit_blockers(found: list[tuple[Item, str | None]]) -> list[PushBlocker]:
+    """S0.5: a line must go to Tally in the item's own unit, or Tally posts it with a blank quantity
+    and rate and says nothing. `found` is (linked item, the unit the line is in)."""
+    unknown: list[str] = []
+    differs: list[str] = []
+    for item, uom in found:
+        unit, problem = line_unit(item, uom)
+        if problem == UNKNOWN:
+            unknown.append(item.name)
+        elif problem == DIFFERS:
+            line_in = uom or item.uom or "nos"
+            differs.append(f"{item.name} (Tally has it in {unit}, this line is in {line_in})")
+    out: list[PushBlocker] = []
+    if unknown:
+        out.append(
+            PushBlocker(
+                "unit_unknown",
+                f"We haven't seen Tally's unit for: {_listed(unknown)}. Pull masters from Tally "
+                "to refresh, so a quantity is not lost on the voucher.",
+            )
+        )
+    if differs:
+        out.append(
+            PushBlocker(
+                "unit_mismatch",
+                f"These lines are in a different unit from Tally's: {_listed(differs)}. Tally would "
+                "drop the quantity, so change the unit on the line.",
+            )
+        )
+    return out
+
+
+def _listed(names: list[str]) -> str:
+    shown = names[:_MAX_LISTED_ITEMS]
+    extra = len(names) - len(shown)
+    return ", ".join(shown) + (f" +{extra} more" if extra > 0 else "")
+
+
 def get_tally_company(session: Session, tenant_id: str) -> TallyCompany | None:
     return session.scalar(select(TallyCompany).where(TallyCompany.tenant_id == tenant_id))
 
@@ -111,6 +158,9 @@ def push_blockers(session: Session, invoice: Invoice) -> list[PushBlocker]:
                 "This firm's Tally company has no companion agent linked yet.",
             )
         )
+
+    if not (company.company_name or "").strip():
+        blockers.append(_company_name_blocker())
 
     if not (company.ledger_map or {}).get("sales_ledger"):
         blockers.append(
@@ -143,10 +193,13 @@ def push_blockers(session: Session, invoice: Invoice) -> list[PushBlocker]:
     # reflects the identity map's current state, so use that instead of
     # trusting `ln.item` directly.
     unlinked_item_names: list[str] = []
+    linked_lines: list[tuple[Item, str | None]] = []
     for ln in lines:
         item = session.get(Item, ln.item_id) if ln.item_id else None
         if item is None or not item.tally_guid:
             unlinked_item_names.append(item.name if item else ln.description)
+        else:
+            linked_lines.append((item, ln.uom))
     if unlinked_item_names:
         shown = unlinked_item_names[:_MAX_LISTED_ITEMS]
         extra = len(unlinked_item_names) - len(shown)
@@ -157,6 +210,7 @@ def push_blockers(session: Session, invoice: Invoice) -> list[PushBlocker]:
                 f"These items aren't linked to Tally yet: {names}.",
             )
         )
+    blockers.extend(_unit_blockers(linked_lines))
 
     return blockers
 
@@ -187,6 +241,9 @@ def purchase_push_blockers(session: Session, bill: InwardBill) -> list[PushBlock
                 "This firm's Tally company has no companion agent linked yet.",
             )
         )
+
+    if not (company.company_name or "").strip():
+        blockers.append(_company_name_blocker())
 
     ledger_map = company.ledger_map or {}
     missing_ledgers = [
@@ -230,6 +287,14 @@ def purchase_push_blockers(session: Session, bill: InwardBill) -> list[PushBlock
     # from (shouldn't happen post-approve — approve_gate requires a
     # resolved supplier either way). An unlinked-but-nameable supplier is
     # informational only (F5-e auto-create), not blocking.
+    linked_bill_lines: list[tuple[Item, str | None]] = []
+    for ln in lines:
+        if ln.matched_item_id is not None:
+            item = session.get(Item, ln.matched_item_id)
+            if item is not None and item.tally_guid:
+                linked_bill_lines.append((item, ln.uom))
+    blockers.extend(_unit_blockers(linked_bill_lines))
+
     pending = pending_master_creates(session, bill)
     if bill.matched_party_id is None and pending.supplier_name is None:
         blockers.append(

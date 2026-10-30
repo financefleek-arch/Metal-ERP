@@ -470,6 +470,9 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 it.gst_rate = float(row.gst_rate)
             if not it.tally_guid:
                 it.tally_guid = row.tally_guid
+            if (row.base_units or "").strip():
+                # Tally owns the unit name: refresh it on every pull (S0.5).
+                it.tally_unit = row.base_units.strip()[:40]
             row.committed_as = it.id
             updated += 1
         else:
@@ -527,6 +530,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 source=ItemSource.import_,
                 status=item_status,
                 tally_guid=row.tally_guid,
+                tally_unit=(row.base_units or "").strip()[:40] or None,
             )
             # id set explicitly above (column default only fires at flush),
             # so committed_as and the dedup map can use it before add_all.

@@ -26,26 +26,27 @@ Account (Fleek org)      owner, plan, WhatsApp, people, agent installs
 ### A. Company and shop identity
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
 |---|---|---|---|---|---|---|
-| A1 | Sales and purchase push XML names no `SVCURRENTCOMPANY`; vouchers land in whichever company is open, and the agent never checks | Critical | Code | Company on every push; agent verifies the open company GUID before posting; block on mismatch | P0 | Open |
+| A1 | Sales and purchase push XML named no `SVCURRENTCOMPANY`; vouchers land in whichever company the gateway has, and the agent never checks | Critical | Live (2026-10-30) | Done in S0.2: company tag on every push. Live: Tally accepts the tag and refuses a company that process has not loaded (`Could not set 'SVCurrentCompany' to 'X'`, nothing posted). Still to do: agent verifies the company GUID (S0.3) and turns the cryptic refusal into plain text. Two companies inside ONE Tally process not reproduced (needs both loaded in one window) | P0 | Building |
 | A2 | Company is a name string; rename or FY split breaks links silently; no company GUID or period stored | High | Code | Store company GUID and books-from; relink step remaps GUIDs; history of earlier companies | P0/P1 | Open |
 | A3 | A person cannot belong to two firms (`app_user.tenant_id` single FK, mobile unique); no switcher | High | Code | `membership(user, tenant, role)`; active firm in token; switcher | P3 | Open |
 | A4 | One agent per tenant; shops run several PCs and installs | Med | Code | Account-level agent registry; agent reports the companies it sees; owner maps them | P3 | Open |
+| A5 | The agent has one `GatewayUrl` (default `127.0.0.1:9000`). Companies open in separate Tally processes, each on its own port, are unreachable; the backend never says which port a company is on | High | Live (2026-10-30: Fleek on 9000, Fleek Test on 9001, one company each) | Gateway address per company (port or URL) stored on the company link, discovered by the agent scanning for gateways; agent routes each job by company | P1 | Open |
 
 ### B. Master mapping
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
 |---|---|---|---|---|---|---|
 | B1 | Push matches by name; GUID stored but unused; `tally_guid` not unique; `tally_link` unique per (tenant, entity) so one GUID per entity | High | Code | `tally_link` unique per (company, entity); GUID is the key once linked, name for first link only; visible "name differs" state; retire legacy `tally_guid` columns | P1 | Open |
 | B2 | Item identity has four sources: normalized name, firm code, supplier code, Tally name; catalog push can duplicate existing stock items | High | Code | Check-Tally-first before create; per-company stock item link with its own Tally name | P2/P6 | Open |
-| B3 | Units not mapped; voucher push sends `uom or "Nos"` and does not create the unit | High | Code | Unit map per company; create or map unit at push; readiness blocker when unmapped | P0 | Open |
+| B3 | Units not mapped; voucher push sends `uom or "Nos"` and does not create the unit. **Live: an unknown unit does not error. Tally posts the voucher with the quantity and rate blank and the amount kept, so stock is not reduced and nothing warns** | Critical | Live | Per-item Tally unit (`item.tally_unit`), sent in Tally's own spelling; readiness blocks an unknown or different unit. Live rule: a line in any unit other than the item's own posts blank, even if that unit exists (`pcs` on a Nos item, `kg`); `nos`/`NOS` match. Built in S0.5 (uncommitted); open: Postgres migration check, live agent push | P0 | Building |
 | B4 | Party role and group collapsed: one `role`, two group names; same ledger can be customer and supplier | Med | Code | Roles as a set; group scoping per company | P2 | Open |
 | B5 | `inward.TallyLedgerConfig` and `tally_company.ledger_map` overlap | Med | Code | One ledger map per company; migrate and delete the other | P1 | Open |
 
 ### C. Vouchers and sync
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
 |---|---|---|---|---|---|---|
-| C1 | One-way, create-only (`ACTION=Create`); edits or deletes in Tally invisible; voucher key falls back to `pushed:<no>` | High | Code | Capture real voucher key; reconcile job comparing our `METALERP_REF` to Tally | P4 | Open |
+| C1 | One-way, create-only (`ACTION=Create`); edits or deletes in Tally invisible; voucher key falls back to `pushed:<no>` | High | Live | Key found: the Import response gives `LASTVCHID` = the voucher's master id, and the voucher GUID is the company GUID + "-" + 8-digit hex of that id (id 19 gives `...-00000013`). The code already reads `LASTVCHID` third in its list. Still to do: store it, then reconcile by comparing our reference to Tally (see F1 for how to read it back) | P4 | Open |
 | C2 | No receipts or payments pushed, no credit notes, and receipts keyed in Tally never reach ageing (voucher import is at raw capture only) | High | Code | Voucher import whole (`PLAN-tally-voucher-import-and-party-prices.md`); receipt push; credit note flow | P4 | Open |
-| C3 | Voucher number is `invoice.number`; collides if Tally auto-numbers or the accountant also keys sales | Med | Expect | Decide numbering owner per company; store Tally's number back | P2/P4 | Open |
+| C3 | **Live: Tally discards our `VOUCHERNUMBER` on an auto-numbered Sales type.** We sent 9101 to 9105 and got 8 to 11. Our invoice number and Tally's voucher number therefore differ today (the bill-wise reference still carries ours) | High | Live | D-7 (decided): own series per origin, which needs a voucher type with manual numbering created in Tally; until then store Tally's number back | P2/P4 | Open |
 | C4 | GST hardcoded off (`v1-nongst`); a GST company cannot be served | High | Code | Real GST on the GST company: tax lines, HSN, place of supply, GST ledgers | P5 | Open |
 | C5 | One staging batch and one "pull in flight" per tenant | Med | Code | Per company | P1 | Open |
 
@@ -61,14 +62,14 @@ Account (Fleek org)      owner, plan, WhatsApp, people, agent installs
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
 |---|---|---|---|---|---|---|
 | E1 | Barcode stops at the label: one internal code, no EAN/supplier aliases, no pack or carton code, `group_code` dormant, no scan path in billing or receiving | Med | Code | Accepted as scope by D-10 (internal code only). Revisit trigger: a pilot shop asks for scan-at-counter or EAN packs; then aliases with a unit multiplier, scan-in at billing first | P6 | Parked |
-| E2 | Stock dormant; sales against items with no stock in Tally can drive negative stock and fail with an unexplained error | High | Expect | Read Tally closing stock per company; explain the error | P6 | Open |
+| E2 | Stock dormant. **Live: negative stock is allowed by default**; three sales of 2 took a ZZTEST item to -6 Nos with no error. No failure by default, but the shop gets no warning either | Med | Live | Read Tally closing stock per company; warn only (D-9) | P6 | Open |
 | E3 | Customer catalog "in stock" is unrelated to Tally stock | Med | Code | Decide after E2 | P6 | Open |
 | E4 | Item code counter is per firm; the same product gets different barcodes across sister firms | Med | Code | Counter at account level (new codes only; printed codes stay valid) | P3 | Open |
 
 ### F. Operations
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
 |---|---|---|---|---|---|---|
-| F1 | Retry after timeout can create a duplicate voucher; `METALERP_REF` is sent but never queried before retry | High | Expect | Query Tally for the ref before re-pushing | P0 | Open |
+| F1 | **Live: posting the same voucher twice (same reference, same number) creates two vouchers.** Tally does not reject duplicates. Also, the `METALERP_REF` UDF cannot be read back (absent from `*.*` and from a named fetch), so it is no use for detecting a retry | High | Live | Write our reference into the standard `REFERENCE` field (purchase probes show it reads back) and query by it before any re-push | P0 | Open |
 
 ### G. New, from the hierarchy discussion
 | ID | Gap | Sev | Evidence | Proposed resolution | Phase | Status |
@@ -85,7 +86,7 @@ Account (Fleek org)      owner, plan, WhatsApp, people, agent installs
 | Phase | Theme | Gaps |
 |---|---|---|
 | P0 | Safety, small and urgent | A1, A2 (GUID store and check), B3, F1 |
-| P1 | Company model | G2, G3, A2 (relink, history), B1, B5, C5 |
+| P1 | Company model | G2, G3, A2 (relink, history), A5, B1, B5, C5 |
 | P2 | Routing and documents | G4, G5, D1, D2, B2 (check-first), B4, C3 |
 | P3 | Account and people | G1, A3, A4, E4, G6 |
 | P4 | Voucher truth | C1, C2, C3 (store back) |
@@ -112,8 +113,10 @@ P0 should land before P1 because two companies open at once makes A1 worse, not 
 
 ## Not verified yet
 
-- A1 is read from code only. Needs a live test with two companies open.
-- C3, E2, F1 are expected Tally behaviour, not reproduced.
+- Two companies loaded inside ONE Tally process (the original A1 case). Our test had one company per process, on ports 9000 and 9001.
+- That Tally stores our `METALERP_REF` UDF at all (it is not exposed to a collection fetch).
+- Whether a voucher type set to manual numbering keeps our number.
+- A negative-stock company setting that blocks, since the dev companies allow it.
 - The Fleek side (org to user membership) comes from `PLAN-fleek-control-plane.md`, not from fleek-backend code.
 
 ## Change log

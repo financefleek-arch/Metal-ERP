@@ -173,6 +173,7 @@ def _link_bill_masters(bill_id: str) -> None:
             item = s.get(Item, line.matched_item_id)
             assert item is not None
             item.tally_guid = f"item-guid-{line.sl_no}"
+            item.tally_unit = line.uom or "Nos"  # as a masters pull records it (S0.5)
         s.commit()
 
 

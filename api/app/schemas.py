@@ -210,6 +210,9 @@ class TenantUpdate(BaseModel):
     terms_text: str | None = Field(default=None, max_length=2000)
     jurisdiction_text: str | None = Field(default=None, max_length=500)
     document_label: str | None = Field(default=None, max_length=50)
+    # "GST invoices" mode. The GSTIN also fixes the state and PAN (the route fills them in).
+    gst_enabled: bool | None = None
+    gstin: Gstin = None
     catalog_code_prefix: CatalogPrefix = None
     catalog_group_create_policy: Literal["auto", "suggest_only"] | None = None
     order_min_value: Annotated[Decimal | None, Field(ge=0, le=Decimal("99999999"), decimal_places=2)] = None

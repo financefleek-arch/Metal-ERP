@@ -42,7 +42,7 @@ Order: EP0 first. EP1 next. EP2 needs EP1. EP3 can start in parallel with EP2 on
 
 Goal: a voucher can never land in the wrong Tally company, a retry can never create a duplicate, and a unit mismatch is caught before the push, not after.
 
-### S0.1 Spike: live two-company check (L-shaped, do first)
+### S0.1 Spike: live two-company check (DONE 2026-10-30, findings below)
 **As** the team, **we want** to reproduce the expected Tally behaviours on a dev Tally with two companies open, **so that** the later stories are built on facts.
 - Closes/informs: A1, C3, E2, F1, B3, C1.
 - Acceptance:
@@ -56,6 +56,14 @@ Goal: a voucher can never land in the wrong Tally company, a retry can never cre
   - Findings written into the register's "Not verified yet" section, replacing guesses.
 - Note: the dev Tally is the unlicensed eval, so voucher dates must be the 1st or 2nd of a month.
 - Size: M.
+- **Findings** (script: scratchpad `spike_s01.py`; companies "Fleek" on port 9000 and "Fleek Test" on port 9001):
+  - Tag accepted; naming a company the process has not loaded is refused with `Could not set 'SVCurrentCompany' to 'X'` and nothing is posted (S0.3 must show this in plain words).
+  - Duplicate post creates a second voucher (F1). Our `METALERP_REF` UDF cannot be read back; use `REFERENCE`.
+  - Unknown unit posts silently with blank quantity and rate (B3, now Critical).
+  - Our `VOUCHERNUMBER` is discarded on an auto-numbered Sales type (C3).
+  - Negative stock is allowed (E2 is a warning, not a failure).
+  - `LASTVCHID` = master id; voucher GUID = company GUID + "-" + 8-digit hex of it (C1).
+  - Not reproduced: two companies in one process; a manual-numbering type; a blocking negative-stock setting.
 
 ### S0.2 Every voucher push names its company
 **As** a shop owner, **I want** each voucher posted into the company it was meant for, **so that** it never lands in another set of books.
@@ -73,6 +81,7 @@ Goal: a voucher can never land in the wrong Tally company, a retry can never cre
 - Closes: A1, A2 (part). Depends: S0.1, S0.4.
 - Acceptance:
   - Before any import, the agent reads the company the gateway will use and compares it to the expected company (GUID when known, name otherwise).
+  - Tally's own refusal (`Could not set 'SVCurrentCompany' to 'X'`) is shown as plain text: which company we asked for, and that it is not open in the Tally this agent reaches.
   - On mismatch the job ends with a clear status (`wrong_company`) and plain text: which company was expected and which is open. It does not retry as "Tally not ready".
   - The same check guards pull and capture, so a masters pull cannot stage another company's ledgers.
   - Agent unit tests cover match, mismatch, and no company loaded. New agent release needed (version, sign, canary-pin one shop, promote), per the delivery-hardening flow.
@@ -89,23 +98,27 @@ Goal: a voucher can never land in the wrong Tally company, a retry can never cre
 - Touches: `models/tally_connector.py`, new migration, `routers/tally.py`, `schemas_tally.py`, web Tally page.
 - Size: M.
 
-### S0.5 Unit mapping and a unit blocker
-**As** a shop owner, **I want** our unit names to map to my Tally's unit names, **so that** a voucher is not rejected for a unit I never meant to change.
-- Closes: B3. Depends: S0.1.
-- Acceptance:
-  - Each company has a unit map (ours to Tally's, for example `nos` to `Pcs`), editable, with a sensible default.
-  - Known units are read from the masters pull and offered as choices.
-  - The push readiness check blocks an invoice or bill that uses a unit with no Tally equivalent and says which.
-  - Option to create a missing unit at push time (same path the catalog push uses), off by default.
-  - The `nos` stored, `pcs` display-only rule is respected.
-- Touches: `models/tally_connector.py`, `services/tally/push_readiness.py`, both voucher serializers, `tally_items.py`, web.
+### S0.5 A line goes to Tally in the item's own unit (BUILT 2026-10-30, uncommitted)
+**As** a shop owner, **I want** a voucher line to go out in the unit Tally holds for that item, **so that** no quantity is silently lost.
+- Closes: B3 (code). Depends: S0.1.
+- **Design changed after the live test.** First draft was a per-company unit map plus a known-units list. The test showed the real rule is per item: `nos`/`NOS` match `Nos`, but `pcs` against a `Nos` item and `kg` both post with blank quantity and rate, even when a `Pcs` unit exists. Our unit table folds `Pcs` into `nos`, so we cannot tell them apart from our own data. So no unit map: each item records Tally's own unit name.
+- Built:
+  - `item.tally_unit` (migration 0070, backfilled from the staged masters row the item was committed from); filled on masters-pull commit (refreshed every pull, Tally owns it) and on Check Tally (all linked items, by Tally id).
+  - `services/tally/units.py::line_unit(item, line_uom)` returns Tally's own spelling and a problem (`unknown` or `differs`). Same canonical unit gives Tally's spelling (`Pcs` stays `Pcs`).
+  - Sales and purchase serializers send that spelling for linked items; the purchase push passes it per line.
+  - Readiness blocks with `unit_unknown` (never seen: pull masters) and `unit_mismatch` (line in another unit: change the line), for sales and purchase, naming the items.
+  - Tests: 6 helper, 3 integration (unknown holds the push, mismatch blocks, `Pcs` goes out as `Pcs`), 1 import records the unit; existing fixtures updated to record a unit as a real pull does. 105 results in the Tally-related set, 104 passed, 1 skipped, 0 failed. Full backend suite not run.
+- Consequence to know: a linked item with no recorded unit is held until the next masters pull or Check Tally (the migration backfills what it can).
+- Not done, deliberately: creating a missing unit at push time (new purchase items still create theirs as before); converting between units (Tally needs alternate-unit setup, so a unit change is a block, not a guess); web wording for the two new blockers (the existing blocker list shows the message text).
+- Still to check: migration 0070 on Postgres (plain SQL, not run there); a live push of a `Pcs`-based item through the agent.
+- Touches: `models/item.py`, `alembic/versions/0070_item_tally_unit.py`, `services/tally/units.py`, `services/tally/push_readiness.py`, `services/tally/jobs.py`, both `tally_xml.py`, `routers/items_import.py`, `services/catalog/tally_items.py`.
 - Size: M.
 
 ### S0.6 Safe retry: no duplicate vouchers
 **As** a shop owner, **I want** a retry after a timeout never to create a second voucher, **so that** my books are not doubled.
 - Closes: F1. Depends: S0.1.
 - Acceptance:
-  - Before re-enqueueing a push for an invoice or bill whose earlier job expired or errored with "may already be saved", the system asks Tally (through the agent, read-only) whether a voucher with that `METALERP_REF` exists.
+  - The sales voucher carries our reference in the standard `REFERENCE` field (the UDF cannot be read back). Before re-enqueueing a push for an invoice or bill whose earlier job expired or errored with "may already be saved", the system asks Tally (through the agent, read-only) whether a voucher with that reference exists.
   - If it exists: the job is marked ok and the link is written; no second voucher.
   - If the check cannot run (agent offline), the shop is told to look in Tally, as today.
   - Test with a fake gateway that already holds the voucher.
@@ -198,6 +211,16 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - Test with two companies sharing most ledgers.
 - Size: L.
 
+### S1.10 Gateway address per company
+**As** an owner whose companies are open in separate Tally windows, **I want** the agent to reach each one, **so that** pushes and pulls go to the right process.
+- Closes: A5. Found live 2026-10-30: Fleek on port 9000, Fleek Test on port 9001, one company each; the agent reads one `GatewayUrl`.
+- Acceptance:
+  - Each company link has a gateway address (default: the agent's own). The agent reports which gateways it can reach and which company each serves (name and GUID, read from the gateway), so the owner maps them instead of typing ports.
+  - Every job carries the company, and the agent sends it to the gateway that serves that company; if none serves it, the job ends with a plain "company not open" message.
+  - The S0.3 company check runs against the chosen gateway.
+  - Test with two fake gateways on two ports.
+- Size: L. Depends: S0.3, S1.1. New agent release.
+
 ### S1.9 Masters ownership on re-pull
 **As** an owner, **I want** a Tally pull never to overwrite my phone, consent, prices or credit days, **so that** what I maintain here stays mine.
 - Closes: D-8 (masters rule).
@@ -233,6 +256,7 @@ Goal: every document knows which company it belongs to, with the right number, t
 - Closes: G5, C3. Decision: D-7.
 - Acceptance:
   - Number sequence, prefix and document label move from the tenant to the company. Existing firms get their current sequence copied to the default company so numbers continue unbroken.
+  - Live finding: on an auto-numbered Sales type Tally replaces our number, so our series needs a voucher type with manual numbering (created through the import path). Until it exists, store Tally's number back.
   - Our sales use our own series (own voucher type or prefix) in that company; the voucher type is created in Tally through the import path if missing.
   - Onboarding check confirms the target voucher type accepts manual numbers and tells the shop what to switch if not.
   - Imported Tally vouchers never touch our sequence.
@@ -319,7 +343,7 @@ Goal: one login, many firms, one plan, one WhatsApp, a shared item code counter,
 Goal: receipts, credit notes and imported history flow both ways under the originator-owns rule.
 
 ### S4.1 Real voucher key
-- Closes: C1. Depends: S0.1. Acceptance: store a real Tally key for each pushed voucher; `pushed:<number>` fallback removed or flagged unreliable.
+- Closes: C1. Depends: S0.1. Acceptance: store the key from `LASTVCHID` (the voucher master id) and derive the voucher GUID as company GUID + "-" + 8-digit hex of it; `pushed:<number>` fallback removed or flagged unreliable; also store Tally's own voucher number, which differs from ours (C3).
 - Size: M.
 
 ### S4.2 Voucher import into native rows
@@ -387,6 +411,7 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 
 | Gap | Stories | | Gap | Stories |
 |---|---|---|---|---|
+| A5 | S1.10 | | | |
 | A1 | S0.1, S0.2, S0.3 | | C5 | S1.6 |
 | A2 | S0.3, S0.4, S1.8 | | D1 | S2.6, S2.7, S3.9 |
 | A3 | S3.2 | | D2 | S2.8 |
@@ -432,3 +457,7 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 | Date | Change |
 |---|---|
 | 2026-10-30 | Backlog opened: 7 epics, 48 stories (S4.2 counted once though it splits into five), all Open. |
+| 2026-10-30 | S0.1 Building. Two separate Tally processes: port 9000 serves "Fleek" (GUID 167b31a2-6486-4396-8ee8-7fe38496052d, 18 vouchers, 2339 stock items, ZZTEST ledgers from earlier runs); port 9001 serves "Fleek Test" (GUID 67baeb49-5454-418e-aad2-4ae28441e6d1, empty: Cash and P&L only, no items, no units, 0 vouchers). Each gateway lists only its own company. The agent reads one `GatewayUrl`, so it can reach only one: new gap A5, new story S1.10. No vouchers posted yet. |
+| 2026-10-30 | S0.1 DONE: 7 live posts into the dev companies (4 vouchers landed in Fleek, master ids 19 to 22; the 3 refused or failed posts changed nothing). Findings in the S0.1 section. B3 raised to Critical, E2 lowered to Med, F1 and C3 confirmed, C1 simplified. |
+| 2026-10-30 | S0.5 BUILT (see its section). Live unit test: `nos`/`NOS` fine; `pcs` vs a Nos item and `kg` post blank, voucher ids 23 to 26 in dev Fleek. Design moved from a unit map to a per-item Tally unit. |
+| 2026-10-30 | S0.2 code done, unit and integration tests pass (60 tests across push, inward xml, connector, self-serve). Not yet confirmed live that Tally accepts `SVCURRENTCOMPANY` in a voucher Import. Adds a push blocker `company_name_missing`. Uncommitted. |

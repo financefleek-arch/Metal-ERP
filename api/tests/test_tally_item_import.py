@@ -410,3 +410,16 @@ def test_a_rate_per_another_unit_is_left_out_not_misread() -> None:
     item = parse_stock_items(xml).items[0]
     assert item.mrp is None  # per PCS, but the item is a SET
     assert item.standard_rate == 500.0  # per SET: matches
+
+
+def test_commit_records_the_unit_tally_holds(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
+    """S0.5: Tally's own unit name is kept on the item (a voucher line in any other unit posts blank)."""
+    from app.models import Item
+
+    h = _h(_token(client, "ii-unit@x.example.com"))
+    batch = _upload(client, h).json()["batch_id"]
+    client.post(f"/api/items/import/{batch}/commit", headers=h)
+    items = client.get("/api/items", headers=h).json()
+    patta = next(i for i in items if i["name"] == "SS 304 Patta 4in 2mm")
+    session.expire_all()
+    assert session.get(Item, patta["id"]).tally_unit == "Kg"

@@ -151,6 +151,9 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     )
     merged_into_id: Mapped[str | None] = mapped_column(ForeignKey("item.id"))
     tally_guid: Mapped[str | None] = mapped_column(String(64), index=True)
+    # The unit Tally holds for this item, in Tally's own spelling ("Pcs", "Nos", "Kgs"). A voucher line in
+    # any other unit posts with a blank quantity, so pushes use this (services/tally/units.py).
+    tally_unit: Mapped[str | None] = mapped_column(String(40))
     # Push state: none | queued | synced | error. `tally_price` is the selling price last sent;
     # `tally_seen_price` what Tally showed at the last check (0 = no price there).
     tally_status: Mapped[str] = mapped_column(

@@ -296,3 +296,35 @@ def test_build_bytes_honours_explicit_encoding_override():
     xml = build_sales_voucher_xml_bytes(inv, party, _LEDGER_MAP, encoding="UTF-16")
     assert xml.startswith(b"\xff\xfe")  # UTF-16LE BOM
     assert b"U\x00T\x00F\x00-\x001\x006\x00" in xml[:80]  # "UTF-16" as UTF-16LE code units
+
+
+# --- S0.2: the voucher names its company ---------------------------------
+
+
+def _company_var(env: etree._Element) -> str | None:
+    el = env.find(".//REQUESTDESC/STATICVARIABLES/SVCURRENTCOMPANY")
+    return None if el is None else el.text
+
+
+def test_sales_envelope_names_the_company():
+    item = _item("X")
+    inv = _invoice([_line(1, item, qty="1", rate="1", line_total="1")], grand_total="1", round_off="0")
+    env = build_sales_voucher_envelope(inv, _party(), _LEDGER_MAP, company_name="Fleek")
+    assert _company_var(env) == "Fleek"
+
+
+def test_sales_company_name_is_escaped_not_injected():
+    item = _item("X")
+    inv = _invoice([_line(1, item, qty="1", rate="1", line_total="1")], grand_total="1", round_off="0")
+    name = 'Shah & Sons <GST> "A" ₹'
+    xml = build_sales_voucher_xml_bytes(inv, _party(), _LEDGER_MAP, company_name=name)
+    parsed = etree.fromstring(xml)
+    assert _company_var(parsed) == name  # round-trips as text, no extra elements
+    assert len(parsed.findall(".//SVCURRENTCOMPANY")) == 1
+
+
+def test_sales_without_company_name_keeps_the_old_shape():
+    item = _item("X")
+    inv = _invoice([_line(1, item, qty="1", rate="1", line_total="1")], grand_total="1", round_off="0")
+    env = build_sales_voucher_envelope(inv, _party(), _LEDGER_MAP)
+    assert env.find(".//REQUESTDESC/STATICVARIABLES") is None

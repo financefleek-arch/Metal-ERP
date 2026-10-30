@@ -86,6 +86,11 @@ def _sub(parent: etree._Element, tag: str, text: str | None = None) -> etree._El
     return el
 
 
+def _unit(line: object, line_units: dict[str, str] | None) -> str:
+    """The unit a bill line goes out in: Tally's own name for a linked item (S0.5), else the bill's."""
+    return (line_units or {}).get(line.id) or line.uom or "Nos"  # type: ignore[attr-defined]
+
+
 def build_envelope(
     bill: InwardBill,
     cfg: LedgerConfig,
@@ -93,6 +98,8 @@ def build_envelope(
     new_supplier_name: str | None = None,
     new_item_names: set[str] | None = None,
     line_item_names: dict[str, str] | None = None,
+    company_name: str | None = None,
+    line_units: dict[str, str] | None = None,
 ) -> etree._Element:
     new_item_names = new_item_names or set()
     is_inter = bill.supply_type == SupplyType.inter
@@ -115,6 +122,9 @@ def build_envelope(
     importdata = _sub(body, "IMPORTDATA")
     reqdesc = _sub(importdata, "REQUESTDESC")
     _sub(reqdesc, "REPORTNAME", "Vouchers")
+    if company_name:
+        # S0.2: name the target company, so the voucher cannot land in whichever one is open.
+        _sub(_sub(reqdesc, "STATICVARIABLES"), "SVCURRENTCOMPANY", company_name)
     reqdata = _sub(importdata, "REQUESTDATA")
 
     # --- master creates: new supplier ledger ---
@@ -213,10 +223,10 @@ def build_envelope(
         inv = _sub(vch, "ALLINVENTORYENTRIES.LIST")
         _sub(inv, "STOCKITEMNAME", item_name)
         _sub(inv, "ISDEEMEDPOSITIVE", "Yes")
-        _sub(inv, "RATE", f"{_money(line.unit_rate)}/{line.uom or 'Nos'}")
+        _sub(inv, "RATE", f"{_money(line.unit_rate)}/{_unit(line, line_units)}")
         _sub(inv, "AMOUNT", _neg(line.taxable_value))
-        _sub(inv, "ACTUALQTY", f"{_d(line.quantity)} {line.uom or 'Nos'}")
-        _sub(inv, "BILLEDQTY", f"{_d(line.quantity)} {line.uom or 'Nos'}")
+        _sub(inv, "ACTUALQTY", f"{_d(line.quantity)} {_unit(line, line_units)}")
+        _sub(inv, "BILLEDQTY", f"{_d(line.quantity)} {_unit(line, line_units)}")
         acc = _sub(inv, "ACCOUNTINGALLOCATIONS.LIST")
         _sub(acc, "LEDGERNAME", cfg.purchase_ledger)
         _sub(acc, "ISDEEMEDPOSITIVE", "Yes")
@@ -282,6 +292,8 @@ def build_xml_bytes(
     new_supplier_name: str | None = None,
     new_item_names: set[str] | None = None,
     line_item_names: dict[str, str] | None = None,
+    company_name: str | None = None,
+    line_units: dict[str, str] | None = None,
 ) -> bytes:
     env = build_envelope(
         bill,
@@ -289,6 +301,8 @@ def build_xml_bytes(
         new_supplier_name=new_supplier_name,
         new_item_names=new_item_names,
         line_item_names=line_item_names,
+        company_name=company_name,
+        line_units=line_units,
     )
     if party_name:
         for tag in ("PARTYLEDGERNAME", "BASICBUYERNAME"):

@@ -1,0 +1,627 @@
+<title>Firm Profile Redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Layout: one column of settings on the left, a live bill preview that stays in view on the right.
+     Tokens are the app's own: warm ground, ink, blue for everyday actions, brass for the GST/money choice. */
+  :root {
+    --bg: #f4f1ec; --card: #fffdf9; --ink: #23201b; --muted: #6f685c; --line: #e4ddd1;
+    --accent: #2f6f89; --accent-deep: #1d4a60; --accent-soft: #e6f0f4;
+    --brass: #9a7220; --brass-soft: #f7eed8;
+    --ok: #2e7d4f; --danger: #b3412f;
+    --paper: #ffffff; --paper-ink: #23201b; --paper-muted: #7c766a; --paper-line: #e6e0d6;
+    --serif: "Fraunces", Georgia, serif; --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1a1815; --card: #23201c; --ink: #efe9de; --muted: #a39a8b; --line: #38332c;
+      --accent: #6fb0cb; --accent-deep: #8cc3da; --accent-soft: #223640;
+      --brass: #d4a850; --brass-soft: #3a2f17; --ok: #6fc28c; --danger: #e07f6c;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1815; --card: #23201c; --ink: #efe9de; --muted: #a39a8b; --line: #38332c;
+    --accent: #6fb0cb; --accent-deep: #8cc3da; --accent-soft: #223640;
+    --brass: #d4a850; --brass-soft: #3a2f17; --ok: #6fc28c; --danger: #e07f6c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-block: 24px 56px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; margin: 0; text-wrap: balance; }
+  h1 { font-size: 28px; }
+  h2 { font-size: 19px; }
+  h3 { font-size: 16px; }
+  p { margin: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .mock { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .saved { font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; min-width: 120px; justify-content: flex-end; }
+  .saved i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; }
+  .saved.busy i { background: var(--brass); }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: 24px; align-items: start; }
+  @media (max-width: 920px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card.brass { border-color: var(--brass); background: linear-gradient(0deg, var(--card), var(--card)), var(--brass-soft); }
+
+  /* billing mode */
+  .modehead { display: flex; flex-direction: column; gap: 2px; margin-bottom: 12px; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .seg button { text-align: left; font: inherit; color: var(--ink); background: var(--card); border: 1.5px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+  .seg button b { font-weight: 600; }
+  .seg button span { font-size: 13px; color: var(--muted); }
+  .seg button[aria-checked="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .seg button[aria-checked="true"][data-mode="gst"] { border-color: var(--brass); background: var(--brass-soft); }
+  .seg button:focus-visible, .tab:focus-visible, .chip:focus-visible, .btn:focus-visible, .input:focus-visible, .link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (max-width: 520px) { .seg { grid-template-columns: 1fr; } }
+  .asks { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; font-size: 13px; }
+  .asks .lbl { color: var(--muted); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); }
+  .pill.need { border-color: var(--accent); color: var(--accent-deep); background: var(--accent-soft); }
+  .pill.gstneed { border-color: var(--brass); color: var(--brass); background: var(--brass-soft); }
+  .pill.auto { border-style: dashed; color: var(--muted); }
+  .switchnote { margin-top: 10px; font-size: 13px; color: var(--muted); }
+
+  /* tabs */
+  .tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+  .tab { font: inherit; background: none; border: 0; border-bottom: 2px solid transparent; padding: 10px 14px; margin-bottom: -1px; cursor: pointer; color: var(--muted); white-space: nowrap; font-weight: 500; }
+  .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+  .panel { display: flex; flex-direction: column; gap: 16px; }
+
+  /* fields */
+  .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 16px; }
+  .fields .full { grid-column: 1 / -1; }
+  @media (max-width: 520px) { .fields { grid-template-columns: minmax(0, 1fr); } }
+  label.l { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+  label.l em { font-style: normal; font-weight: 400; color: var(--muted); }
+  .input { width: 100%; font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; min-height: 42px; }
+  textarea.input { resize: vertical; min-height: 72px; }
+  .input::placeholder { color: var(--muted); opacity: .7; }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .hint.ok { color: var(--ok); }
+  .hint.bad { color: var(--danger); }
+  .derived { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .derived .pill { background: var(--accent-soft); border-color: transparent; }
+  .gst-only { animation: rise .25s ease both; }
+  [data-mode="simple"] .gst-only { display: none; }
+  [data-mode="gst"] .simple-only { display: none; }
+  @keyframes rise { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .gst-only { animation: none; } }
+
+  .gstbox { border: 1px solid var(--brass); background: var(--brass-soft); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .gstbox h3 { color: var(--brass); }
+  .gstbox .input { background: var(--card); }
+  .radios { display: flex; gap: 8px; flex-wrap: wrap; }
+  .radios label { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 14px; }
+  .radios input { accent-color: var(--brass); }
+
+  .logo { display: flex; align-items: center; gap: 14px; }
+  .logobox { width: 64px; height: 64px; border-radius: 10px; border: 1.5px dashed var(--line); display: grid; place-items: center; color: var(--muted); font-size: 12px; flex: none; text-align: center; font-family: var(--serif); font-size: 22px; color: var(--accent-deep); background: var(--accent-soft); border-style: solid; border-color: transparent; }
+  .logobox.empty { border: 1.5px dashed var(--line); background: none; color: var(--muted); font-family: var(--sans); font-size: 12px; }
+
+  .btn { font: inherit; font-weight: 500; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 8px 14px; min-height: 40px; cursor: pointer; }
+  .btn.pri { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+  .chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-deep); font-weight: 500; }
+  .chip[disabled] { cursor: not-allowed; }
+  .chip.lock[aria-pressed="true"] { border-color: var(--brass); background: var(--brass-soft); color: var(--brass); }
+
+  .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; }
+  .toggle input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+  /* connections */
+  .rows { display: flex; flex-direction: column; }
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); }
+  .row:first-child { border-top: 0; }
+  .row b { font-weight: 600; }
+  .st { font-size: 12px; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+  .st.on { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+  .st.off { background: var(--brass-soft); color: var(--brass); }
+  @media (max-width: 520px) { .row { grid-template-columns: minmax(0, 1fr) auto; } .row .btn { grid-column: 1 / -1; } }
+
+  /* preview */
+  .sticky { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 10px; }
+  @media (max-width: 920px) { .sticky { position: static; } }
+  .prevhead { display: flex; justify-content: space-between; align-items: baseline; }
+  .paper { background: var(--paper); color: var(--paper-ink); border-radius: 6px; padding: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 8px 24px rgba(0,0,0,.08); font-size: 11.5px; line-height: 1.45; border: 1px solid var(--paper-line); }
+  .paper .head { display: flex; gap: 10px; justify-content: space-between; align-items: flex-start; }
+  .paper .shop { display: flex; gap: 10px; min-width: 0; }
+  .paper .lg { width: 38px; height: 38px; border-radius: 6px; background: #e6f0f4; color: #1d4a60; font-family: var(--serif); font-weight: 600; font-size: 17px; display: grid; place-items: center; flex: none; }
+  .paper .nm { font-weight: 600; font-size: 13.5px; overflow-wrap: anywhere; }
+  .paper .meta { color: var(--paper-muted); overflow-wrap: anywhere; }
+  .paper .doc { text-align: right; flex: none; }
+  .paper .doc .t { font-family: var(--serif); font-weight: 600; font-size: 15px; letter-spacing: .02em; text-transform: uppercase; }
+  .paper hr { border: 0; border-top: 1px solid var(--paper-line); margin: 10px 0; }
+  .paper table { width: 100%; border-collapse: collapse; }
+  .paper th { text-align: left; font-weight: 600; color: var(--paper-muted); font-size: 10.5px; padding: 3px 0; border-bottom: 1px solid var(--paper-line); }
+  .paper td { padding: 4px 0; }
+  .paper .r { text-align: right; font-variant-numeric: tabular-nums; }
+  .paper tr.tot td { border-top: 1.5px solid var(--paper-ink); font-weight: 600; font-size: 13px; padding-top: 6px; }
+  .paper .pay { display: flex; gap: 12px; justify-content: space-between; align-items: flex-end; }
+  .paper .pay .tx { min-width: 0; overflow-wrap: anywhere; }
+  .paper canvas { width: 64px; height: 64px; flex: none; image-rendering: pixelated; }
+  .paper .foot { color: var(--paper-muted); margin-top: 6px; overflow-wrap: anywhere; }
+  .paper .sig { text-align: right; margin-top: 22px; color: var(--paper-muted); }
+  .note { font-size: 12.5px; color: var(--muted); }
+
+  .decide { border: 1px dashed var(--line); border-radius: 12px; padding: 18px 20px; margin-top: 24px; background: transparent; }
+  .decide ol { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+</style>
+
+<div class="wrap" id="app" data-mode="simple">
+  <div class="top">
+    <div>
+      <div class="mock">Mockup for review, example data</div>
+      <h1>Firm</h1>
+    </div>
+    <div class="saved" id="saved" aria-live="polite"><i></i><span>All changes saved</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="col">
+
+      <section class="card" aria-labelledby="mode-h">
+        <div class="modehead">
+          <h2 id="mode-h">How do you bill your customers?</h2>
+          <p class="muted small">This decides what we ask you. You can change it any time.</p>
+        </div>
+        <div class="seg" role="radiogroup" aria-labelledby="mode-h">
+          <button type="button" role="radio" aria-checked="true" data-mode="simple" id="m-simple"><b>Simple bills</b><span>No GST. Name, phone and how you get paid.</span></button>
+          <button type="button" role="radio" aria-checked="false" data-mode="gst" id="m-gst"><b>GST invoices</b><span>Adds GSTIN and tax lines on every bill.</span></button>
+        </div>
+        <div class="asks" id="asks"></div>
+        <p class="switchnote" id="switchnote"></p>
+      </section>
+
+      <div class="tabs" role="tablist" aria-label="Firm settings">
+        <button class="tab" role="tab" id="t-business" aria-selected="true" aria-controls="p-business" type="button">Business</button>
+        <button class="tab" role="tab" id="t-pay" aria-selected="false" aria-controls="p-pay" type="button" tabindex="-1">Get paid</button>
+        <button class="tab" role="tab" id="t-look" aria-selected="false" aria-controls="p-look" type="button" tabindex="-1">Bill wording</button>
+        <button class="tab" role="tab" id="t-conn" aria-selected="false" aria-controls="p-conn" type="button" tabindex="-1">Connections</button>
+      </div>
+
+      <!-- BUSINESS -->
+      <div class="panel" role="tabpanel" id="p-business" aria-labelledby="t-business">
+        <section class="card">
+          <h2 style="margin-bottom:14px">Your shop</h2>
+          <div class="fields">
+            <div class="full logo">
+              <div class="logobox empty" id="logobox">Logo</div>
+              <div>
+                <button class="btn" type="button" id="logobtn">Add your logo</button>
+                <p class="hint">Optional. Printed on the top left of every bill.</p>
+              </div>
+            </div>
+            <div class="full">
+              <label class="l" for="name"><span class="simple-only">Shop name</span><span class="gst-only">Trade name <em>(the name customers know you by)</em></span></label>
+              <input class="input" id="name" data-k="name" value="Shree Ram Metal Traders" autocomplete="off">
+              <p class="hint">Printed at the top of every bill.</p>
+            </div>
+            <div class="full gst-only">
+              <label class="l" for="legal">Legal name <em>(as on your GST certificate)</em></label>
+              <input class="input" id="legal" data-k="legal" value="Shree Ram Metal Traders" autocomplete="off">
+            </div>
+            <div>
+              <label class="l" for="phone">Phone</label>
+              <input class="input" id="phone" data-k="phone" inputmode="tel" value="98765 43210" autocomplete="off">
+              <p class="hint" id="phonehint">Customers see this on bills and on your catalog page.</p>
+            </div>
+            <div>
+              <label class="l" for="pin">PIN code <em>(optional)</em></label>
+              <input class="input" id="pin" data-k="pin" inputmode="numeric" maxlength="6" value="452001" autocomplete="off">
+              <p class="hint" id="pinhint">Fills in your city.</p>
+            </div>
+            <div class="full">
+              <label class="l" for="address">Address <em>(optional)</em></label>
+              <textarea class="input" id="address" data-k="address" rows="2">14, Jawahar Marg, Chhawni</textarea>
+            </div>
+            <div>
+              <label class="l" for="city">City <em>(optional)</em></label>
+              <input class="input" id="city" data-k="city" value="Indore" autocomplete="off">
+            </div>
+          </div>
+        </section>
+
+        <section class="card brass gst-only">
+          <div class="gstbox">
+            <div>
+              <h3>GST details</h3>
+              <p class="small muted">Only needed for GST invoices. Type the GSTIN and we read the state and PAN from it.</p>
+            </div>
+            <div>
+              <label class="l" for="gstin">GSTIN</label>
+              <input class="input" id="gstin" data-k="gstin" placeholder="23ABCDE1234F1Z5" maxlength="15" style="text-transform:uppercase" autocomplete="off" value="23ABCDE1234F1Z5">
+              <p class="hint" id="gstinhint"></p>
+              <div class="derived" id="derived"></div>
+            </div>
+            <div>
+              <div class="l" id="reg-l">Registration type</div>
+              <div class="radios" role="radiogroup" aria-labelledby="reg-l">
+                <label><input type="radio" name="reg" value="Regular" checked> Regular</label>
+                <label><input type="radio" name="reg" value="Composition"> Composition</label>
+              </div>
+              <p class="hint" id="reghint">Regular shops charge tax on each bill.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card simple-only" style="border-style:dashed;background:transparent">
+          <p class="small"><b>Not asking for:</b> GSTIN, PAN, state, legal name. Switch to GST invoices above if you need them later. Anything you typed there is kept.</p>
+        </section>
+      </div>
+
+      <!-- GET PAID -->
+      <div class="panel" role="tabpanel" id="p-pay" aria-labelledby="t-pay" hidden>
+        <section class="card">
+          <h2>Get paid by UPI</h2>
+          <p class="muted small" style="margin:2px 0 14px">Most customers pay on their phone. Add your UPI ID and every bill carries a QR.</p>
+          <div class="fields">
+            <div class="full">
+              <label class="l" for="upi">UPI ID</label>
+              <input class="input" id="upi" data-k="upi" placeholder="yourshop@okhdfcbank" value="shreeram.metals@okicici" autocomplete="off">
+              <p class="hint" id="upihint"></p>
+            </div>
+            <div class="full toggle">
+              <label for="showqr" style="cursor:pointer"><b>Show a QR code on bills</b><br><span class="muted small">Customers scan it and the amount is filled in.</span></label>
+              <input type="checkbox" id="showqr" checked>
+            </div>
+          </div>
+        </section>
+        <section class="card">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+            <div>
+              <h2>Bank account</h2>
+              <p class="muted small">Optional. For customers who pay by bank transfer.</p>
+            </div>
+            <button class="btn" type="button" id="bankbtn" aria-expanded="false" aria-controls="bankform">Add bank account</button>
+          </div>
+          <div class="fields" id="bankform" hidden style="margin-top:16px">
+            <div class="full">
+              <label class="l" for="holder">Account holder name</label>
+              <input class="input" id="holder" data-k="holder" value="Shree Ram Metal Traders" autocomplete="off">
+            </div>
+            <div>
+              <label class="l" for="acno">Account number</label>
+              <input class="input" id="acno" data-k="acno" inputmode="numeric" value="32145698701" autocomplete="off">
+            </div>
+            <div>
+              <label class="l" for="ifsc">IFSC</label>
+              <input class="input" id="ifsc" data-k="ifsc" maxlength="11" placeholder="SBIN0001234" style="text-transform:uppercase" value="SBIN0001234" autocomplete="off">
+            </div>
+            <div class="full"><p class="hint" id="ifschint"></p></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- BILL WORDING -->
+      <div class="panel" role="tabpanel" id="p-look" aria-labelledby="t-look" hidden>
+        <section class="card">
+          <h2 style="margin-bottom:12px">Bill title</h2>
+          <div class="chips" id="labels"></div>
+          <p class="hint" id="labelhint">Printed at the top right of the bill.</p>
+        </section>
+        <section class="card">
+          <h2>Lines at the bottom</h2>
+          <p class="muted small" style="margin:2px 0 14px">Tap a suggestion to start, then edit it. All optional.</p>
+          <div class="fields">
+            <div class="full">
+              <label class="l" for="decl">Declaration</label>
+              <div class="chips" id="declchips" style="margin-bottom:8px"></div>
+              <textarea class="input" id="decl" data-k="decl" rows="2"></textarea>
+            </div>
+            <div class="full">
+              <label class="l" for="terms">Terms</label>
+              <textarea class="input" id="terms" data-k="terms" rows="2" placeholder="Payment within 15 days."></textarea>
+            </div>
+            <div class="full">
+              <label class="l" for="juris">Legal line</label>
+              <div class="chips" id="jurischips" style="margin-bottom:8px"></div>
+              <input class="input" id="juris" data-k="juris" autocomplete="off">
+            </div>
+          </div>
+          <p class="note" style="margin-top:12px">Changes apply to new bills. Bills you already finalized keep the wording they were issued with.</p>
+        </section>
+      </div>
+
+      <!-- CONNECTIONS -->
+      <div class="panel" role="tabpanel" id="p-conn" aria-labelledby="t-conn" hidden>
+        <section class="card">
+          <h2 style="margin-bottom:4px">Connections</h2>
+          <p class="muted small">Everything that talks to another app lives here, off your profile.</p>
+          <div class="rows" style="margin-top:8px">
+            <div class="row"><div><b>Tally</b><div class="muted small">Send bills to Tally and bring your parties and items in.</div></div><span class="st on">Connected</span><button class="btn" type="button">Manage</button></div>
+            <div class="row"><div><b>WhatsApp</b><div class="muted small">Send bills and reminders from your own number.</div></div><span class="st off">Not set up</span><button class="btn pri" type="button">Connect</button></div>
+            <div class="row"><div><b>Payment reminders</b><div class="muted small">We suggest who to remind, you tap send.</div></div><span class="st on">On</span><button class="btn" type="button">Manage</button></div>
+            <div class="row"><div><b>Customer catalog page</b><div class="muted small">Minimum order, terms and order alerts.</div></div><span class="st on">On</span><button class="btn" type="button">Manage</button></div>
+            <div class="row"><div><b>Tally backups</b><div class="muted small">Last backup yesterday, 9:40 pm.</div></div><span class="st on">Healthy</span><button class="btn" type="button">View</button></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="card" style="display:flex;flex-direction:column;gap:6px">
+        <h3>Account and data</h3>
+        <p class="small muted">How we handle your data is in our <a class="link" href="#">privacy policy</a>. To close this account and delete its data, <a class="link" href="#" style="color:var(--danger)">request account deletion</a>.</p>
+      </section>
+    </div>
+
+    <aside class="sticky" aria-label="Bill preview">
+      <div class="prevhead"><h3>Your bill, as customers see it</h3><span class="mock" id="modetag">Simple</span></div>
+      <div class="paper" id="paper"></div>
+      <p class="note">Example items. Tax rows show only in GST mode, and rates here are for illustration.</p>
+    </aside>
+  </div>
+
+  <section class="decide">
+    <h3>What this changes behind the screen</h3>
+    <ol class="small">
+      <li>Simple bills ask for two things: shop name and phone. PAN, state and legal name are gone. No field is "required but unused".</li>
+      <li>GST mode asks for the GSTIN and reads state and PAN from it, so nobody types the same fact twice. The bill title locks to "Tax Invoice".</li>
+      <li>Today's Setup checklist counts "firm details" as done once address and state are filled. In simple mode it would be done after name and phone.</li>
+      <li>Existing shops with a GSTIN on file start in GST mode, everyone else in Simple. New sign-ups start in Simple.</li>
+      <li>Fixes included: UPI-only shops now print their UPI and QR, the account holder is printed, and Terms can be edited.</li>
+    </ol>
+  </section>
+</div>
+
+<script>
+(function () {
+  var app = document.getElementById("app");
+  var S = {
+    mode: "simple", name: "Shree Ram Metal Traders", legal: "Shree Ram Metal Traders", logo: false,
+    phone: "98765 43210", pin: "452001", city: "Indore", address: "14, Jawahar Marg, Chhawni",
+    gstin: "23ABCDE1234F1Z5", reg: "Regular", upi: "shreeram.metals@okicici", showqr: true,
+    bankOpen: false, holder: "Shree Ram Metal Traders", acno: "32145698701", ifsc: "SBIN0001234",
+    label: "Invoice", decl: "", terms: "", juris: ""
+  };
+  var STATES = { "03": "Punjab", "06": "Haryana", "07": "Delhi", "08": "Rajasthan", "09": "Uttar Pradesh", "19": "West Bengal", "23": "Madhya Pradesh", "24": "Gujarat", "27": "Maharashtra", "29": "Karnataka", "32": "Kerala", "33": "Tamil Nadu", "36": "Telangana" };
+  var PINS = { "452001": "Indore", "400001": "Mumbai", "110001": "New Delhi", "380001": "Ahmedabad", "302001": "Jaipur", "560001": "Bengaluru", "411001": "Pune", "226001": "Lucknow" };
+  var BANKS = { SBIN: "State Bank of India", HDFC: "HDFC Bank", ICIC: "ICICI Bank", UTIB: "Axis Bank", PUNB: "Punjab National Bank", BARB: "Bank of Baroda", KKBK: "Kotak Mahindra Bank" };
+  var LABELS = ["Invoice", "Bill", "Cash Memo", "Estimate"];
+  var DECLS = ["Goods once sold will not be taken back.", "Weight as per our scale is final.", "We declare the details above are true and correct."];
+  var GSTRE = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+
+  function $(id) { return document.getElementById(id); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function isGst() { return S.mode === "gst"; }
+  function upiOk() { return /^[\w.\-]{2,}@[a-z]{2,}$/i.test(S.upi.trim()); }
+  function gstinOk() { return GSTRE.test(S.gstin.trim().toUpperCase()); }
+  function ifscOk() { return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(S.ifsc.trim().toUpperCase()); }
+  function phoneDigits() { return S.phone.replace(/\D/g, "").replace(/^91(?=\d{10}$)/, ""); }
+
+  var savedTimer;
+  function flash() {
+    var el = $("saved");
+    el.classList.add("busy"); el.querySelector("span").textContent = "Saving…";
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(function () { el.classList.remove("busy"); el.querySelector("span").textContent = "All changes saved"; }, 700);
+  }
+
+  function renderAsks() {
+    var simple = '<span class="lbl">We ask:</span><span class="pill need">Shop name</span><span class="pill need">Phone</span><span class="lbl">Optional:</span><span class="pill">Logo</span><span class="pill">Address</span><span class="pill">UPI</span><span class="pill">Bank</span>';
+    var gst = '<span class="lbl">We ask:</span><span class="pill need">Trade name</span><span class="pill need">Legal name</span><span class="pill need">Phone</span><span class="pill gstneed">GSTIN</span><span class="pill gstneed">Registration type</span><span class="lbl">Read from GSTIN:</span><span class="pill auto">State</span><span class="pill auto">PAN</span>';
+    $("asks").innerHTML = isGst() ? gst : simple;
+    $("switchnote").textContent = isGst()
+      ? "GST invoices need the GSTIN, so we ask for it. Bills carry tax lines and the title Tax Invoice."
+      : "Nothing about GST is asked or printed. If you start charging GST later, switch here and old bills stay as they were.";
+  }
+
+  function renderGstin() {
+    var v = S.gstin.trim().toUpperCase(), hint = $("gstinhint"), d = $("derived");
+    d.innerHTML = "";
+    hint.className = "hint";
+    if (!v) { hint.textContent = "15 characters, for example 23ABCDE1234F1Z5."; return; }
+    if (gstinOk()) {
+      var st = STATES[v.slice(0, 2)] || "State code " + v.slice(0, 2);
+      hint.textContent = "Looks right."; hint.className = "hint ok";
+      d.innerHTML = '<span class="pill">State: ' + esc(st) + '</span><span class="pill">PAN: ' + esc(v.slice(2, 12)) + '</span>';
+    } else {
+      hint.textContent = v.length < 15 ? "Keep typing, " + (15 - v.length) + " more characters." : "This does not look like a GSTIN. Check it against your certificate.";
+      if (v.length >= 15) hint.className = "hint bad";
+    }
+    $("reghint").textContent = S.reg === "Composition" ? "Composition shops do not charge tax on the bill. We print Bill of Supply instead." : "Regular shops charge tax on each bill.";
+  }
+
+  function renderLabels() {
+    var box = $("labels"); box.innerHTML = "";
+    if (isGst()) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "chip lock"; b.setAttribute("aria-pressed", "true"); b.disabled = true;
+      b.textContent = S.reg === "Composition" ? "Bill of Supply" : "Tax Invoice";
+      box.appendChild(b);
+      $("labelhint").textContent = "GST law fixes this title, so it is locked in GST mode.";
+      return;
+    }
+    LABELS.forEach(function (l) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.setAttribute("aria-pressed", String(S.label === l)); b.textContent = l;
+      b.addEventListener("click", function () { S.label = l; flash(); renderLabels(); renderPreview(); });
+      box.appendChild(b);
+    });
+    $("labelhint").textContent = "Printed at the top right of the bill.";
+  }
+
+  function chipRow(id, items, onPick) {
+    var box = $(id); box.innerHTML = "";
+    items.forEach(function (t) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.textContent = t;
+      b.addEventListener("click", function () { onPick(t); });
+      box.appendChild(b);
+    });
+  }
+  function renderChips() {
+    chipRow("declchips", DECLS, function (t) { S.decl = t; $("decl").value = t; flash(); renderPreview(); });
+    var city = S.city.trim();
+    chipRow("jurischips", city ? ["Subject to " + city + " jurisdiction only."] : ["Add your city to get a suggestion."], function (t) {
+      if (!city) return; S.juris = t; $("juris").value = t; flash(); renderPreview();
+    });
+  }
+
+  function renderHints() {
+    var d = phoneDigits(), ph = $("phonehint");
+    if (d.length === 10) { ph.textContent = "Customers see this on bills and on your catalog page."; ph.className = "hint"; }
+    else { ph.textContent = "Enter a 10 digit mobile number."; ph.className = "hint bad"; }
+    var pn = $("pinhint");
+    if (/^\d{6}$/.test(S.pin) && PINS[S.pin]) { pn.textContent = "City filled in: " + PINS[S.pin] + "."; pn.className = "hint ok"; }
+    else { pn.textContent = "Fills in your city."; pn.className = "hint"; }
+    var u = $("upihint"), v = S.upi.trim();
+    if (!v) { u.textContent = "Use the form name@bank. Find it in your UPI app."; u.className = "hint"; }
+    else if (upiOk()) { u.textContent = "Looks right. This prints on every bill, even without a bank account."; u.className = "hint ok"; }
+    else { u.textContent = "Use the form name@bank, for example shop@okhdfcbank."; u.className = "hint bad"; }
+    var f = $("ifschint"), c = S.ifsc.trim().toUpperCase();
+    if (!c) { f.textContent = "The 11 character code from your cheque book."; f.className = "hint"; }
+    else if (ifscOk()) {
+      var nm = BANKS[c.slice(0, 4)] || "Bank found";
+      f.textContent = c === "SBIN0001234" ? nm + ", Vijay Nagar, Indore (branch comes from the IFSC, nothing to type)." : nm + ". Branch comes from the IFSC, nothing to type.";
+      f.className = "hint ok";
+    } else { f.textContent = "IFSC is 4 letters, a zero, then 6 letters or digits."; f.className = "hint bad"; }
+  }
+
+  function qr(canvas, seed) {
+    var n = 21, px = 3, ctx = canvas.getContext("2d");
+    canvas.width = n * px; canvas.height = n * px;
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    var h = 2166136261;
+    for (var i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    function rnd() { h ^= h << 13; h >>>= 0; h ^= h >>> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; }
+    ctx.fillStyle = "#000";
+    function finder(x, y) {
+      for (var a = 0; a < 7; a++) for (var b = 0; b < 7; b++) {
+        var edge = a === 0 || b === 0 || a === 6 || b === 6, core = a >= 2 && a <= 4 && b >= 2 && b <= 4;
+        if (edge || core) ctx.fillRect((x + a) * px, (y + b) * px, px, px);
+      }
+    }
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) {
+      var inF = (r < 8 && c < 8) || (r < 8 && c > n - 9) || (r > n - 9 && c < 8);
+      if (!inF && rnd() > 0.52) ctx.fillRect(c * px, r * px, px, px);
+    }
+    finder(0, 0); finder(n - 7, 0); finder(0, n - 7);
+  }
+
+  function renderPreview() {
+    var g = isGst(), v = S.gstin.trim().toUpperCase(), ok = gstinOk();
+    var title = g ? (S.reg === "Composition" ? "Bill of Supply" : "Tax Invoice") : S.label;
+    var initials = (S.name.trim().split(/\s+/).slice(0, 2).map(function (w) { return w[0]; }).join("") || "S").toUpperCase();
+    var loc = [S.city.trim(), S.pin.trim() ? "PIN " + S.pin.trim() : ""].filter(Boolean).join(", ");
+    var meta = [];
+    if (S.address.trim()) meta.push(esc(S.address.trim()));
+    if (loc) meta.push(esc(loc));
+    var contact = phoneDigits() ? "Contact: " + esc(S.phone.trim()) : "";
+    var gstLines = "";
+    if (g) {
+      gstLines = '<div class="meta">GSTIN: ' + (ok ? esc(v) : "not entered yet") + (ok ? " · " + esc(STATES[v.slice(0, 2)] || "") : "") + "</div>";
+    }
+    var tax = (g && S.reg === "Regular")
+      ? '<tr><td colspan="' + 4 + '" class="r" style="color:var(--paper-muted)">CGST 9%</td><td class="r">1,167.12</td></tr><tr><td colspan="4" class="r" style="color:var(--paper-muted)">SGST 9%</td><td class="r">1,167.12</td></tr>'
+      : "";
+    var total = (g && S.reg === "Regular") ? "15,302" : "12,968";
+    var hsnTh = g ? '<th>HSN</th>' : "";
+    var hsn1 = g ? '<td>7409</td>' : "", hsn2 = g ? '<td>7408</td>' : "";
+    var colsp = g ? 4 : 3;
+    tax = tax.replace(/colspan="4"/g, 'colspan="' + colsp + '"');
+
+    var pay = "";
+    var hasUpi = upiOk(), bankOn = S.bankOpen && (S.acno.trim() || S.ifsc.trim());
+    var bank = "";
+    if (bankOn) {
+      var c = S.ifsc.trim().toUpperCase(), bn = ifscOk() ? (BANKS[c.slice(0, 4)] || "") : "";
+      bank = '<div><b>Bank:</b> ' + [esc(S.holder.trim()), bn ? esc(bn) : "", S.acno.trim() ? "A/C " + esc(S.acno.trim()) : "", ifscOk() ? "IFSC " + esc(c) : ""].filter(Boolean).join(" · ") + "</div>";
+    }
+    var upiTxt = hasUpi ? '<div><b>UPI:</b> ' + esc(S.upi.trim()) + "</div>" : "";
+    if (upiTxt || bank) {
+      pay = '<hr><div class="pay"><div class="tx">' + upiTxt + bank + '</div>' + (hasUpi && S.showqr ? '<canvas id="qrc" aria-label="Sample payment QR code"></canvas>' : "") + "</div>";
+    }
+    var foot = "";
+    if (S.decl.trim()) foot += '<div class="foot"><b>Declaration:</b> ' + esc(S.decl.trim()) + "</div>";
+    if (S.terms.trim()) foot += '<div class="foot"><b>Terms:</b> ' + esc(S.terms.trim()) + "</div>";
+    if (S.juris.trim()) foot += '<div class="foot">' + esc(S.juris.trim()) + "</div>";
+
+    $("paper").innerHTML =
+      '<div class="head"><div class="shop"><div class="lg">' + esc(S.logo ? initials : initials) + '</div><div style="min-width:0"><div class="nm">' + esc(g && S.legal.trim() ? S.name.trim() || S.legal.trim() : S.name.trim() || "Your shop name") + "</div>" +
+      (g && S.legal.trim() && S.legal.trim() !== S.name.trim() ? '<div class="meta">' + esc(S.legal.trim()) + "</div>" : "") +
+      (meta.length ? '<div class="meta">' + meta.join("<br>") + "</div>" : "") + gstLines + (contact ? '<div class="meta">' + contact + "</div>" : "") +
+      '</div></div><div class="doc"><div class="t">' + esc(title) + '</div><div class="meta">No. 0042<br>12-Oct-26</div></div></div>' +
+      '<hr><div class="meta">Billed to: <b style="color:var(--paper-ink)">Mehta Utensils</b></div><hr>' +
+      "<table><tr><th>Item</th>" + hsnTh + '<th class="r">Weight</th><th class="r">Rate</th><th class="r">Amount</th></tr>' +
+      "<tr><td>Brass sheet</td>" + hsn1 + '<td class="r">12.40 kg</td><td class="r">520</td><td class="r">6,448</td></tr>' +
+      "<tr><td>Copper wire</td>" + hsn2 + '<td class="r">8.15 kg</td><td class="r">800</td><td class="r">6,520</td></tr>' +
+      (g && S.reg === "Regular" ? '<tr><td colspan="' + colsp + '" class="r" style="color:var(--paper-muted)">Taxable value</td><td class="r">12,968</td></tr>' : "") + tax +
+      '<tr class="tot"><td colspan="' + colsp + '">Total</td><td class="r">₹' + total + "</td></tr></table>" + pay + foot +
+      '<div class="sig">Authorised Signatory</div>';
+    var qc = $("qrc"); if (qc) qr(qc, S.upi.trim());
+    $("modetag").textContent = g ? "GST" : "Simple";
+  }
+
+  function setMode(m) {
+    S.mode = m; app.setAttribute("data-mode", m);
+    $("m-simple").setAttribute("aria-checked", String(m === "simple"));
+    $("m-gst").setAttribute("aria-checked", String(m === "gst"));
+    renderAsks(); renderGstin(); renderLabels(); renderPreview(); flash();
+  }
+  $("m-simple").addEventListener("click", function () { if (S.mode !== "simple") setMode("simple"); });
+  $("m-gst").addEventListener("click", function () { if (S.mode !== "gst") setMode("gst"); });
+
+  document.querySelectorAll("[data-k]").forEach(function (el) {
+    el.addEventListener("input", function () {
+      var k = el.getAttribute("data-k"), val = el.value;
+      if (k === "gstin" || k === "ifsc") { val = val.toUpperCase(); el.value = val; }
+      S[k] = val;
+      if (k === "pin" && PINS[val]) { S.city = PINS[val]; $("city").value = S.city; renderChips(); }
+      if (k === "city") renderChips();
+      flash(); renderGstin(); renderHints(); renderPreview();
+    });
+  });
+  document.querySelectorAll('input[name="reg"]').forEach(function (r) {
+    r.addEventListener("change", function () { S.reg = r.value; flash(); renderGstin(); renderLabels(); renderPreview(); });
+  });
+  $("showqr").addEventListener("change", function (e) { S.showqr = e.target.checked; flash(); renderPreview(); });
+  $("logobtn").addEventListener("click", function () {
+    S.logo = !S.logo;
+    var b = $("logobox");
+    b.className = S.logo ? "logobox" : "logobox empty";
+    b.textContent = S.logo ? (S.name.trim()[0] || "S").toUpperCase() : "Logo";
+    $("logobtn").textContent = S.logo ? "Change logo" : "Add your logo";
+    flash(); renderPreview();
+  });
+  $("bankbtn").addEventListener("click", function () {
+    S.bankOpen = !S.bankOpen;
+    $("bankform").hidden = !S.bankOpen;
+    $("bankbtn").setAttribute("aria-expanded", String(S.bankOpen));
+    $("bankbtn").textContent = S.bankOpen ? "Remove bank account" : "Add bank account";
+    flash(); renderPreview();
+  });
+
+  var tabs = ["business", "pay", "look", "conn"];
+  function showTab(id) {
+    tabs.forEach(function (t) {
+      var on = t === id;
+      $("t-" + t).setAttribute("aria-selected", String(on));
+      $("t-" + t).tabIndex = on ? 0 : -1;
+      $("p-" + t).hidden = !on;
+    });
+  }
+  tabs.forEach(function (t, i) {
+    var el = $("t-" + t);
+    el.addEventListener("click", function () { showTab(t); });
+    el.addEventListener("keydown", function (e) {
+      var n = e.key === "ArrowRight" ? i + 1 : e.key === "ArrowLeft" ? i - 1 : null;
+      if (n === null) return;
+      n = (n + tabs.length) % tabs.length; showTab(tabs[n]); $("t-" + tabs[n]).focus();
+    });
+  });
+
+  renderAsks(); renderChips(); renderLabels(); renderGstin(); renderHints(); renderPreview();
+  $("saved").querySelector("span").textContent = "All changes saved";
+})();
+</script>

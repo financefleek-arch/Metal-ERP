@@ -42,6 +42,7 @@ from app.models import (
     TallyLink,
     TallySyncJob,
 )
+from app.services.tally.units import line_unit
 
 # job.status values that mean "the agent still owes us a result"
 _NON_TERMINAL = ("queued", "sent", "running")
@@ -344,7 +345,9 @@ def enqueue_push_sales(session: Session, company: TallyCompany, invoice: Invoice
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invoice has no party.",
         )
-    voucher_xml = build_sales_voucher_xml_bytes(invoice, party, company.ledger_map or {})
+    voucher_xml = build_sales_voucher_xml_bytes(
+        invoice, party, company.ledger_map or {}, company_name=company.company_name
+    )
 
     job = TallySyncJob(
         tenant_id=company.tenant_id,
@@ -513,6 +516,16 @@ def enqueue_push_purchase(
             if item is not None:
                 line_item_names[ln.id] = item.name
 
+    # S0.5: a linked item goes out in the unit Tally holds for it (readiness blocks one that cannot).
+    line_units: dict[str, str] = {}
+    for ln in bill.lines:
+        if ln.matched_item_id is not None:
+            item = session.get(Item, ln.matched_item_id)
+            if item is not None and item.tally_guid:
+                unit = line_unit(item, ln.uom)[0]
+                if unit:
+                    line_units[ln.id] = unit
+
     ledger_map = company.ledger_map or {}
     cfg = LedgerConfig(
         creditors_group=ledger_map.get("creditors_parent") or "Sundry Creditors",
@@ -537,6 +550,8 @@ def enqueue_push_purchase(
         new_supplier_name=pending.supplier_name,
         new_item_names=pending.item_names,
         line_item_names=line_item_names,
+        company_name=company.company_name,
+        line_units=line_units,
     )
 
     job = TallySyncJob(

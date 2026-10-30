@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Tenant
 from app.schemas import TenantOut, TenantUpdate
-from app.services import activity
+from app.services import activity, onboarding
 
 router = APIRouter(prefix="/api/tenant", tags=["tenant"])
 
@@ -42,13 +42,27 @@ def update_tenant(
         "reminder_auto_send",
         "reminder_days",
         "default_credit_days",
+        "gst_enabled",
     }
-    had_details = bool(tenant.address and tenant.state_code)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    had_details = onboarding.firm_details_done(tenant)
+    data = body.model_dump(exclude_unset=True)
+    gstin = data.get("gstin", tenant.gstin)
+    if data.get("gst_enabled") and not gstin:
+        raise HTTPException(
+            status_code=422,
+            detail="Enter your GSTIN to switch on GST invoices.",
+        )
+    if data.get("gstin"):
+        # The GSTIN already says which state and PAN it belongs to; never ask for them twice.
+        data["state_code"] = data["gstin"][:2]
+        data["pan"] = data["gstin"][2:12]
+    for field, value in data.items():
         if value is None and field in not_nullable:
             continue  # an explicit null means "leave it", not "erase it"
         setattr(tenant, field, value)
-    if not had_details and tenant.address and tenant.state_code:
+    if tenant.gst_enabled and not tenant.gstin:
+        tenant.gst_enabled = False  # clearing the GSTIN ends GST mode
+    if not had_details and onboarding.firm_details_done(tenant):
         activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="firm_details_saved")
     session.flush()
     return tenant

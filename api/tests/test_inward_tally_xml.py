@@ -195,3 +195,21 @@ def test_line_item_names_overrides_stale_staged_json() -> None:
 def build_envelope_name(xml_bytes: bytes) -> str | None:
     root = etree.fromstring(xml_bytes)
     return root.findtext(".//ALLINVENTORYENTRIES.LIST/STOCKITEMNAME")
+
+
+def test_purchase_envelope_names_the_company() -> None:
+    xml_bytes = build_xml_bytes(
+        _bill(), LedgerConfig(xml_encoding="UTF-8"), party_name="ZZTEST Supplier",
+        company_name='Shah & Sons "A"',
+    )
+    root = etree.fromstring(xml_bytes)
+    names = root.findall(".//REQUESTDESC/STATICVARIABLES/SVCURRENTCOMPANY")
+    assert [n.text for n in names] == ['Shah & Sons "A"']
+
+
+def test_purchase_without_company_name_keeps_the_old_shape() -> None:
+    xml_bytes = build_xml_bytes(
+        _bill(), LedgerConfig(xml_encoding="UTF-8"), party_name="ZZTEST Supplier"
+    )
+    root = etree.fromstring(xml_bytes)
+    assert root.find(".//REQUESTDESC/STATICVARIABLES") is None

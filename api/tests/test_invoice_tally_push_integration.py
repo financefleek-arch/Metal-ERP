@@ -11,6 +11,7 @@ from an F1a pull" without re-running the whole masters-pull flow.
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -121,6 +122,7 @@ def _link_item_to_tally(item_id: str, guid: str = "item-guid-1") -> None:
     with SessionLocal() as s:
         it = s.get(Item, item_id)
         it.tally_guid = guid
+        it.tally_unit = "Nos"  # as a masters pull records it (S0.5)
         s.commit()
 
 
@@ -268,6 +270,8 @@ def test_enqueue_push_sales_creates_job_and_outbox(client: TestClient) -> None:
         assert "VCHTYPE=\"Sales\"" in voucher_xml
         assert "Anand Metals" in voucher_xml
         assert "Sales Accounts" in voucher_xml
+        # S0.2: the voucher names its company, never "whichever is open"
+        assert "<SVCURRENTCOMPANY>M/s F1b Traders</SVCURRENTCOMPANY>" in voucher_xml
 
 
 def test_push_blocked_with_422_when_not_ready(client: TestClient) -> None:
@@ -480,6 +484,7 @@ def _fully_linked_finalized_invoice(client: TestClient, email: str):
                 name="SS Thali 11in",
                 name_normalized="ss thali 11in",
                 tally_guid=f"item-guid-{email}",
+                tally_unit="Nos",
             )
         )
         s.commit()
@@ -529,3 +534,63 @@ def test_finalize_never_enqueues_when_no_tally_company(client: TestClient) -> No
     pid = _party(client, _h(tok))
     iid, _item_id = _finalized_invoice(client, _h(tok), pid)
     assert _push_job_for(tenant_id, iid) is None
+
+
+def test_blank_company_name_blocks_the_push(client: TestClient) -> None:
+    tok, tenant_id, iid, _shop_id = _setup_pushable_invoice(client, "e3@x.example.com")
+    with SessionLocal() as s:
+        company = s.scalar(select(TallyCompany).where(TallyCompany.tenant_id == tenant_id))
+        company.company_name = "  "
+        s.commit()
+    with SessionLocal() as s:
+        codes = {b.code for b in push_blockers(s, s.get(Invoice, iid))}
+    assert "company_name_missing" in codes
+
+
+# --------------------------------------------------------------------------
+# S0.5 - a line goes to Tally in the item's own unit
+# --------------------------------------------------------------------------
+
+
+def _set_item_unit(iid: str, unit: str | None) -> None:
+    with SessionLocal() as s:
+        inv = s.get(Invoice, iid)
+        item_id = [ln for ln in inv.lines if (ln.description or "").strip()][0].item_id
+        s.get(Item, item_id).tally_unit = unit
+        s.commit()
+
+
+def _blocker_codes(iid: str) -> set[str]:
+    with SessionLocal() as s:
+        return {b.code for b in push_blockers(s, s.get(Invoice, iid))}
+
+
+def test_unknown_tally_unit_holds_the_push(client: TestClient) -> None:
+    tok, tenant_id, iid, _shop = _setup_pushable_invoice(client, "u1@x.example.com")
+    _set_item_unit(iid, None)
+    assert "unit_unknown" in _blocker_codes(iid)
+    r = client.post(f"/api/tally/invoices/{iid}/push", headers=_h(tok))
+    assert r.status_code == 422
+
+
+def test_a_line_in_another_unit_than_tallys_is_blocked(client: TestClient) -> None:
+    tok, tenant_id, iid, _shop = _setup_pushable_invoice(client, "u2@x.example.com")
+    _set_item_unit(iid, "Kgs")  # the line is in nos
+    assert "unit_mismatch" in _blocker_codes(iid)
+
+
+def test_tallys_own_spelling_is_what_goes_out(client: TestClient) -> None:
+    """Our table folds Tally's `Pcs` into `nos`; the voucher must still say `Pcs` (a `Nos` line against
+    a Pcs item posts with a blank quantity, verified live)."""
+    tok, tenant_id, iid, shop_id = _setup_pushable_invoice(client, "u3@x.example.com")
+    _set_item_unit(iid, "Pcs")
+    assert _blocker_codes(iid) == set()
+
+    r = client.post(f"/api/tally/invoices/{iid}/push", headers=_h(tok))
+    assert r.status_code == 201, r.text
+    with SessionLocal() as s:
+        from app.models import AgentOutboxItem
+
+        xml = s.scalar(select(AgentOutboxItem).where(AgentOutboxItem.shop_id == shop_id)).payload["voucher_xml"]
+    assert re.search(r"<ACTUALQTY>10(\.0+)? Pcs</ACTUALQTY>", xml)
+    assert "96.00/Pcs" in xml

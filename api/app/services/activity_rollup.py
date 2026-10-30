@@ -33,6 +33,7 @@ from app.models import (
 from app.models._mixins import InvoiceStatus
 from app.services import activity
 from app.services.fleek_signed import FleekUnavailable
+from app.services.onboarding import firm_details_done
 from app.services.fleek_signed import request as fleek_request
 
 log = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ def first_times(session: Session, tenant: Tenant, started: datetime | None) -> d
         found = session.scalar(stmt)
         if found:
             first[key] = _aware(found)
-    if "firm_details_saved" not in first and tenant.address and tenant.state_code:
+    if "firm_details_saved" not in first and firm_details_done(tenant):
         first["firm_details_saved"] = _aware(tenant.created_at)
     if "whatsapp_connected" not in first:
         wa = session.scalar(

@@ -45,6 +45,7 @@
           {%- if tenant.pincode %}{% set _ = loc.append("PIN " ~ tenant.pincode) %}{% endif -%}
           {{ loc | join(", ") }}
         </div>
+        {% if tenant.gst_enabled and tenant.gstin %}<div>GSTIN: {{ tenant.gstin }}</div>{% endif %}
         {% if tenant.pan %}<div>PAN: {{ tenant.pan }}</div>{% endif %}
         {% if tenant.phone %}<div>Contact: {{ tenant.phone }}</div>{% endif %}
       </td>
@@ -176,12 +177,14 @@
   {% if tenant.bank_name or tenant.bank_ac_no %}
   <div class="foot">
     <span class="b">Bank:</span>
-    {{ tenant.bank_name or "" }}
+    {{ tenant.bank_holder ~ " · " if tenant.bank_holder else "" }}{{ tenant.bank_name or "" }}
     {% if tenant.bank_ac_no %} · A/C {{ tenant.bank_ac_no }}{% endif %}
     {% if tenant.bank_ifsc %} · IFSC {{ tenant.bank_ifsc }}{% endif %}
     {% if tenant.bank_branch %} · {{ tenant.bank_branch }}{% endif %}
-    {% if tenant.upi_id %} · UPI {{ tenant.upi_id }}{% endif %}
   </div>
+  {% endif %}
+  {% if tenant.upi_id %}
+  <div class="foot"><span class="b">UPI:</span> {{ tenant.upi_id }}</div>
   {% endif %}
 
   {% if invoice.declaration_snapshot %}

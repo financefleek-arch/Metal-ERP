@@ -33,6 +33,11 @@ def _count(session: Session, model: Any, tenant_id: str, *extra: Any) -> int:
     )
 
 
+def firm_details_done(tenant: Tenant) -> bool:
+    """A shop that bills without GST needs only an address; the state matters for GST invoices."""
+    return bool(tenant.address and (tenant.state_code or not tenant.gst_enabled))
+
+
 def steps(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     """Part A. Each step is done when the data it asks for exists."""
     tid = tenant.id
@@ -40,8 +45,8 @@ def steps(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
         (
             "firm",
             "Confirm your firm details",
-            "Address and state print on every invoice.",
-            bool(tenant.address and tenant.state_code),
+            "Your address prints on every invoice.",
+            firm_details_done(tenant),
             "/firm",
         ),
         (
@@ -69,7 +74,7 @@ def steps(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
             "bank",
             "Add your bank or UPI and terms",
             "Printed at the bottom of the invoice so customers know how to pay you.",
-            bool(tenant.bank_ac_no or tenant.upi_id),
+            bool(tenant.bank_ac_no or tenant.upi_id),  # the invoice now prints either
             "/firm",
         ),
     ]

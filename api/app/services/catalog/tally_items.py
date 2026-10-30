@@ -959,6 +959,18 @@ def apply_stock_check(session: Session, company: TallyCompany, raw: bytes) -> di
     company.known_stock_at = datetime.now(UTC)
 
     guid_by_name = {_norm(i.name): i.guid for i in stock.items if i.guid}
+
+    # S0.5: keep each linked item's unit as Tally holds it, so a voucher line is only ever sent in
+    # that unit (Tally blanks the quantity of a line in any other).
+    unit_by_guid = {i.guid: i.base_units.strip() for i in stock.items if i.guid and (i.base_units or "").strip()}
+    if unit_by_guid:
+        for item in session.scalars(
+            select(Item).where(Item.tenant_id == company.tenant_id, Item.tally_guid.is_not(None))
+        ):
+            unit = unit_by_guid.get(item.tally_guid)
+            if unit and item.tally_unit != unit[:40]:
+                item.tally_unit = unit[:40]
+
     linked = 0
     if guid_by_name:
         pushed = session.scalars(
@@ -983,6 +995,7 @@ def apply_stock_check(session: Session, company: TallyCompany, raw: bytes) -> di
             if taken is not None:
                 continue
             item.tally_guid = guid
+            item.tally_unit = (unit_by_guid.get(guid) or item.tally_unit or "")[:40] or None
             session.add(
                 TallyLink(
                     tenant_id=company.tenant_id,
