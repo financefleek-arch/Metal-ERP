@@ -231,20 +231,6 @@ def test_signup_keeps_the_google_ads_click_id_and_refuses_a_junk_one(client: Tes
     assert plain.status_code == 200  # no click id is the normal case
 
 
-def test_signup_keeps_where_the_visit_came_from_and_reads_the_browser(client: TestClient, fleek: FakeFleek) -> None:
-    ua = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 300.0"
-    r = client.post(
-        "/api/auth/signup/start",
-        json={**SIGNUP, "attribution": {"utm_source": "instagram", "referrer_host": "l.instagram.com", "junk": "x"}},
-        headers={"user-agent": ua},
-    )
-    assert r.status_code == 200, r.text
-    with SessionLocal() as s:
-        req = s.scalar(select(SignupRequest))
-        assert req is not None
-        assert req.attribution == {"utm_source": "instagram", "referrer_host": "l.instagram.com", "os": "iOS", "in_app": "instagram"}
-
-
 def test_signup_needs_terms_a_real_mobile_and_a_decent_password(client: TestClient, fleek: FakeFleek) -> None:
     assert _start(client, accept_terms=False).status_code == 422
     assert _start(client, mobile="12345").status_code == 422

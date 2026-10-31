@@ -9,7 +9,7 @@ import { Turnstile } from "../components/Turnstile";
 import { useCaptchaSiteKey } from "../lib/captcha";
 import { LandingPage } from "./LandingPage";
 import { markLandingSeen, shouldShowLanding } from "../lib/landing";
-import { adClick, firstTouch, noteSignup, track } from "../lib/analytics";
+import { adClick, noteSignup, track } from "../lib/analytics";
 
 // The policy of record (Section 12 covers Metal ERP); see pages/public/LegalPages.tsx.
 const PRIVACY_POLICY = "https://fleekfintech.com/privacy-policy/";
@@ -221,7 +221,7 @@ function SignupForm({
       const r = await api<Started>("/auth/signup/start", {
         method: "POST",
         auth: false,
-        body: { firm_name: f.firm_name.trim(), mobile: f.mobile, accept_terms: terms, captcha_token: token, ...adClick(), ...firstTouch() },
+        body: { firm_name: f.firm_name.trim(), mobile: f.mobile, accept_terms: terms, captcha_token: token, ...adClick() },
       });
       track("signup-codes-sent");
       onStarted(r);

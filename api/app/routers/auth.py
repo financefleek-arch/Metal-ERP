@@ -33,7 +33,6 @@ from app.security import create_access_token, hash_password, verify_password
 from app.services import (
     account,
     activity,
-    attribution,
     auth_throttle,
     captcha,
     entitlements,
@@ -93,7 +92,6 @@ def signup_start(body: SignupStartRequest, request: Request, session: SessionDep
             password=body.password,
             ip=ip,
             ad_click=(body.ad_click_kind, body.ad_click_id) if body.ad_click_kind and body.ad_click_id else None,
-            attribution=attribution.clean(body.attribution, request.headers.get("user-agent")),
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None

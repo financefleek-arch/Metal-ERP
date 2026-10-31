@@ -59,48 +59,6 @@ export function rememberAdClick(search: string = window.location.search): void {
   }
 }
 
-const FIRST_TOUCH = "metalerp.first-touch";
-const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"] as const;
-
-export type FirstTouch = Record<string, string>;
-
-/** First visit's campaign tags, external referrer host, landing page and device, kept a week (same 7 days and keys as Fleek's own landing page). A later visit leaves it alone. */
-export function rememberFirstTouch(search: string = window.location.search): void {
-  try {
-    const kept = JSON.parse(localStorage.getItem(FIRST_TOUCH) ?? "null") as { at?: number } | null;
-    if (kept && typeof kept.at === "number" && Date.now() - kept.at < AD_CLICK_KEEP_MS) return;
-    const t: FirstTouch = {};
-    const q = new URLSearchParams(search);
-    for (const k of UTM_KEYS) {
-      const v = q.get(k);
-      if (v) t[k] = v.slice(0, 80);
-    }
-    try {
-      const ref = document.referrer ? new URL(document.referrer).host : "";
-      if (ref && ref !== window.location.host) t.referrer_host = ref;
-    } catch {
-      /* no usable referrer */
-    }
-    t.device = window.matchMedia?.("(max-width: 767px)").matches ? "mobile" : window.matchMedia?.("(max-width: 1024px)").matches ? "tablet" : "desktop";
-    t.landing = (window.location.pathname + window.location.hash).slice(0, 80); // path and #anchor (an ad sitelink); never the query string
-    t.first_seen_at = new Date().toISOString();
-    localStorage.setItem(FIRST_TOUCH, JSON.stringify({ at: Date.now(), t }));
-  } catch {
-    /* blocked storage: the sign-up simply carries no first-touch facts (the server still adds browser and os) */
-  }
-}
-
-/** The remembered first-touch facts in the shape the sign-up request takes, or nothing. */
-export function firstTouch(): { attribution?: FirstTouch } {
-  try {
-    const v = JSON.parse(localStorage.getItem(FIRST_TOUCH) ?? "null") as { at?: number; t?: FirstTouch } | null;
-    if (v?.t && typeof v.at === "number" && Date.now() - v.at < AD_CLICK_KEEP_MS) return { attribution: v.t };
-  } catch {
-    /* fall through */
-  }
-  return {};
-}
-
 /** The remembered click id in the shape the sign-up request takes, or nothing. */
 export function adClick(): { ad_click_kind?: string; ad_click_id?: string } {
   try {
