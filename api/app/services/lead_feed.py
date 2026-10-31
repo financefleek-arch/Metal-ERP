@@ -71,6 +71,7 @@ def _new_lead(key: str, kind: str) -> dict[str, Any]:
         "fleek_org_id": None,
         "ad_click_kind": None,  # first-touch ad click that led to a sign-up attempt (gclid | gbraid | wbraid); optional on the Fleek side
         "ad_click_id": None,
+        "attribution": None,  # first-touch facts of the earliest sign-up attempt that has any (services/attribution.py); Fleek works out the source from them
     }
 
 
@@ -115,6 +116,8 @@ def build(session: Session, now: datetime | None = None) -> dict[str, Any]:
         )
         if r.ad_click_id and not lead["ad_click_id"]:  # requests are in time order: the first click kept
             lead["ad_click_kind"], lead["ad_click_id"] = r.ad_click_kind, r.ad_click_id
+        if r.attribution and not lead["attribution"]:
+            lead["attribution"] = r.attribution
         if r.tenant_id:
             lead["has_account"] = True
 

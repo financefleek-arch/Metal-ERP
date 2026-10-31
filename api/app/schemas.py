@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
@@ -99,6 +99,8 @@ class SignupStartRequest(BaseModel):
     # The Google Ads click behind this visit, if any: kind is gclid | gbraid | wbraid.
     ad_click_kind: Literal["gclid", "gbraid", "wbraid"] | None = None
     ad_click_id: Annotated[str, Field(max_length=200, pattern=r"^[A-Za-z0-9_-]+$")] | None = None
+    # First-touch facts from the landing visit (utm tags, referrer host, landing, device, first_seen_at); cleaned by services/attribution.py, never trusted.
+    attribution: dict[str, Any] | None = None
 
 
 class SignupStarted(BaseModel):
@@ -369,6 +371,7 @@ class PartyUpdate(BaseModel):
     default_state_code: StateCode = None
     gstin: Gstin = None
     whatsapp_optin: bool | None = None
+    default_company_id: str | None = None
     status: PartyStatus | None = None
     opening_balance: OpeningBalance | None = None
     opening_balance_as_of: date | None = None
@@ -392,6 +395,7 @@ class PartyOut(PartyBase):
     source: PartySource
     source_ref: str | None
     last_txn_at: datetime | None
+    default_company_id: str | None = None
     # True once the party has a finalized invoice or any payment — the
     # opening_balance fields are then read-only (server rejects a change).
     opening_balance_locked: bool = False

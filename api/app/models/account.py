@@ -9,11 +9,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
 from app.models._mixins import PkUuidMixin, TimestampMixin
+
+_JSON = JSON().with_variant(JSONB(), "postgresql")
 
 
 class SignupRequest(PkUuidMixin, TimestampMixin, Base):
@@ -35,6 +38,8 @@ class SignupRequest(PkUuidMixin, TimestampMixin, Base):
     # Google Ads click this sign-up came from (gclid | gbraid | wbraid), kept so a real sign-up can be sent back to Google.
     ad_click_kind: Mapped[str | None] = mapped_column(String(8))
     ad_click_id: Mapped[str | None] = mapped_column(String(200), index=True)
+    # First-touch facts the page sent (utm tags, referrer host, landing, device) plus os / browser / in-app from the User-Agent; see services/attribution.py.
+    attribution: Mapped[dict | None] = mapped_column(_JSON)
     # Filled when the firm has been made, so a repeated verify answers with the same firm.
     tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenant.id"))
     fleek_org_id: Mapped[str | None] = mapped_column(String(64))
