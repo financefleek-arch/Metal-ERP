@@ -22,6 +22,13 @@
       rel="stylesheet"
     />
     <title>Tally Companion</title>
+    <!-- Mirror guard: if this page is served from any other host (a proxy or copy of it), send the visitor to the real site. The server also refuses framing. -->
+    <script>
+      (function () {
+        var ok = { "metal.fleekfinance.in": 1, localhost: 1, "127.0.0.1": 1 };
+        if (!ok[location.hostname]) location.replace("https://metal.fleekfinance.in" + location.pathname + location.search);
+      })();
+    </script>
     <script defer src="https://analytics.fleekfintech.com/fleek-insights.js" data-website-id="37810516-965e-4d75-ac59-a4d68093a551"></script>
     <!-- Google tag (Google Ads account AW-18541952739): measures ad visits; the sign-up event is sent from lib/analytics.ts -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=AW-18541952739"></script>
