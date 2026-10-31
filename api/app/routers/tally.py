@@ -30,6 +30,7 @@ from app.schemas_tally import (
 )
 from app.services.tally.agent_health import assert_tally_reachable
 from app.services.tally.companies import add_company, get_default_company
+from app.services.tally.company_routing import company_for_document
 from app.services.tally.company_verify import enqueue_verify_company, relink_company
 from app.services.tally.jobs import (
     assert_no_pull_in_flight,
@@ -169,7 +170,7 @@ def put_ledger_map(
 def pull_masters(firm_id: str, session: SessionDep) -> TallySyncJob:
     _firm(session, firm_id)
     company = _load_company(session, firm_id)
-    assert_no_pull_in_flight(session, firm_id)
+    assert_no_pull_in_flight(session, firm_id, company.id)
     assert_tally_reachable(session, company)
     return enqueue_pull_masters(session, company)
 
@@ -213,7 +214,7 @@ def push_invoice(firm_id: str, invoice_id: str, session: SessionDep) -> TallySyn
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="; ".join(b.message for b in blockers),
         )
-    company = get_default_company(session, firm_id)
+    company = company_for_document(session, invoice)
     assert company is not None  # push_blockers() already confirmed this
     assert_no_push_in_flight(session, firm_id, invoice_id)
     assert_tally_reachable(session, company)
@@ -307,6 +308,6 @@ def retry_sync_job(
             detail="Only a failed job can be retried.",
         )
     company = _load_company(session, firm_id)
-    assert_no_pull_in_flight(session, firm_id)
+    assert_no_pull_in_flight(session, firm_id, company.id)
     assert_tally_reachable(session, company)
     return enqueue_pull_masters(session, company)

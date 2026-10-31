@@ -34,7 +34,6 @@ from decimal import ROUND_HALF_UP, Decimal
 from lxml import etree
 
 from app.models import Invoice, InvoiceLine, Party
-from app.services.tally.units import line_unit
 
 _CENT = Decimal("0.01")
 
@@ -107,7 +106,8 @@ def _weighment_narration(invoice: Invoice) -> str | None:
 
 def build_sales_voucher_envelope(
     invoice: Invoice, party: Party, ledger_map: dict[str, str],
-    *, company_name: str | None = None,
+    *, company_name: str | None = None, line_units: dict[str, str] | None = None,
+    party_name: str | None = None, item_names: dict[str, str] | None = None,
 ) -> etree._Element:
     """Build the `<ENVELOPE>` for a Sales voucher. Raises
     `LedgerMapIncomplete` if `ledger_map['sales_ledger']` is missing, and
@@ -145,7 +145,7 @@ def build_sales_voucher_envelope(
     _sub(vch, "VOUCHERTYPENAME", "Sales")
     _sub(vch, "VOUCHERNUMBER", str(invoice.number) if invoice.number is not None else "")
     _sub(vch, "REFERENCE", sales_reference(invoice))
-    _sub(vch, "PARTYLEDGERNAME", party.legal_name)
+    _sub(vch, "PARTYLEDGERNAME", party_name or party.legal_name)
     _sub(vch, "PERSISTEDVIEW", "Invoice Voucher View")
 
     narration = _weighment_narration(invoice)
@@ -168,9 +168,15 @@ def build_sales_voucher_envelope(
     for idx, line in enumerate(lines):
         is_last = idx == len(lines) - 1
         amount = _d(line.line_total) + (round_off if is_last else _d(0))
-        item_name = line.item.name if line.item else (line.description or "Item")
-        # Tally's own spelling of the item's unit (S0.5); readiness blocks a unit that cannot match.
-        unit = line_unit(line.item, line.uom)[0] if line.item else None
+        # the name the company holds for the item (its link's), else ours (S1.3)
+        item_name = (
+            ((item_names or {}).get(line.item_id) or line.item.name)
+            if line.item
+            else (line.description or "Item")
+        )
+        # The unit the document's company holds for the item, in Tally's spelling (S0.5, S1.2b);
+        # readiness blocks a unit that cannot match. The caller looks it up per company.
+        unit = (line_units or {}).get(line.item_id) if line.item_id else None
         uom = unit or line.uom or "Nos"
 
         inv = _sub(vch, "ALLINVENTORYENTRIES.LIST")
@@ -206,6 +212,8 @@ def serialize(env: etree._Element, encoding: str = "UTF-8") -> bytes:
 def build_sales_voucher_xml_bytes(
     invoice: Invoice, party: Party, ledger_map: dict[str, str],
     *, encoding: str = "UTF-8", company_name: str | None = None,
+    line_units: dict[str, str] | None = None,
+    party_name: str | None = None, item_names: dict[str, str] | None = None,
 ) -> bytes:
     """Default encoding is UTF-8, NOT UTF-16 — deliberately different from
     the purchase-side `inward/tally_xml.py` (which defaults UTF-16 because
@@ -215,5 +223,8 @@ def build_sales_voucher_xml_bytes(
     body gets "Unknown Request, cannot be processed" on that path, while
     byte-identical UTF-8 content is accepted and creates the voucher.
     """
-    env = build_sales_voucher_envelope(invoice, party, ledger_map, company_name=company_name)
+    env = build_sales_voucher_envelope(
+        invoice, party, ledger_map, company_name=company_name, line_units=line_units,
+        party_name=party_name, item_names=item_names,
+    )
     return serialize(env, encoding)

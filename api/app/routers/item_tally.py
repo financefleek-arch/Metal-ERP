@@ -26,6 +26,7 @@ from app.services.catalog import item_labels
 from app.services.catalog import tally_items as ti
 from app.services.item_filter import resolve_ids
 from app.services.tally.companies import get_default_company
+from app.services.tally.visibility import require_visible_default
 
 router = APIRouter(
     prefix="/api/item-tally", tags=["item-tally"], dependencies=[features.require("tally_full")]
@@ -97,6 +98,7 @@ def _run_out(run: ti.RunStatus) -> TallyRunOut:
 
 @router.post("/preflight", response_model=TallyPreflightOut)
 def preflight(body: TallyPushIn, session: SessionDep, user: CatalogUser) -> TallyPreflightOut:
+    require_visible_default(session, user)
     items = _items(session, user.tenant_id, body)
     pf, _, _ = ti.preflight(
         session,
@@ -111,6 +113,7 @@ def preflight(body: TallyPushIn, session: SessionDep, user: CatalogUser) -> Tall
 @router.post("/push", response_model=TallyRunOut, status_code=status.HTTP_201_CREATED)
 def push(body: TallyPushIn, session: SessionDep, user: CatalogWriteUser) -> TallyRunOut:
     """Send the chosen items to Tally, a batch at a time. Poll `GET /run`."""
+    require_visible_default(session, user)
     items = _items(session, user.tenant_id, body)
     pf, todo, _creates = ti.preflight(
         session,
@@ -147,4 +150,5 @@ def push(body: TallyPushIn, session: SessionDep, user: CatalogWriteUser) -> Tall
 
 @router.get("/run", response_model=TallyRunOut)
 def run(session: SessionDep, user: CatalogUser) -> TallyRunOut:
+    require_visible_default(session, user)
     return _run_out(ti.latest_run(session, user.tenant_id))

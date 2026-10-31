@@ -31,6 +31,7 @@ from app.models._mixins import InvoiceStatus
 from app.services import entitlements
 from app.services import whatsapp as wa
 from app.services.payments import balance_due_for_invoice
+from app.services.tally.companies import get_default_company, list_companies
 
 log = logging.getLogger("reminders")
 
@@ -60,6 +61,19 @@ class _Due:
     stage: int
 
 
+def excluded_company_ids(session: Session, tenant_id: str) -> set[str]:
+    """Companies whose bills a reminder must not total (S2.11, decision D-6): switched off for
+    reminders, or hidden from the accountant (an owner-only book is never chased from the shared
+    queue). The approver is an owner or accountant, so the accountant's view is the safe bound."""
+    out: set[str] = set()
+    for c in list_companies(session, tenant_id, include_disabled=True):
+        roles = [str(r) for r in (c.visible_roles or [])]
+        hidden_from_approver = bool(roles) and "accountant" not in roles
+        if not c.include_in_reminders or hidden_from_approver:
+            out.add(c.id)
+    return out
+
+
 def propose(session: Session, tenant: Tenant, as_on: date | None = None) -> int:
     """Write today's proposals for one firm. Returns how many new ones were made."""
     as_on = as_on or date.today()
@@ -73,6 +87,17 @@ def propose(session: Session, tenant: Tenant, as_on: date | None = None) -> int:
             Invoice.party_id.is_not(None),
         )
     ).all()
+
+    # one message per party covers the party's overdue bills across every company that is counted
+    # (S2.11); a bill with no company of its own belongs to the firm's default
+    excluded = excluded_company_ids(session, tenant.id)
+    default = get_default_company(session, tenant.id)
+    if excluded:
+        open_invoices = [
+            inv
+            for inv in open_invoices
+            if (inv.tally_company_id or (default.id if default else None)) not in excluded
+        ]
 
     existing = session.scalars(
         select(PaymentReminder).where(

@@ -406,3 +406,25 @@ def test_the_order_actions_are_audited_and_need_a_writer(shop) -> None:
     assert client.post(f"{url}/invoice", headers=vh).status_code == 403
     body = _lines((items[0]["id"], 1))
     assert client.put(f"{url}/lines", headers=vh, json=body).status_code == 403
+
+
+def test_an_order_invoice_goes_to_the_customers_tally_company(shop) -> None:
+    """S2.8: the draft made from an order takes the customer's default company, never the customer's
+    choice; the customer-facing status page does not name any company."""
+    from app.db import SessionLocal
+    from app.models import Party
+    from app.services.tally.companies import add_company
+
+    client, h, items, oid = _placed(shop)
+    url = f"/api/orders/{oid}"
+    o = client.post(f"{url}/customer", headers=h, json={"create_new": True}).json()
+    with SessionLocal() as s:
+        party = s.get(Party, o["matched_party_id"])
+        add_company(s, party.tenant_id, "GST")
+        est = add_company(s, party.tenant_id, "Estimate", kind="estimate")
+        party.default_company_id = est.id
+        s.commit()
+        est_id = est.id
+    made = client.post(f"{url}/invoice", headers=h).json()
+    inv = client.get(f"/api/invoices/{made['invoice_id']}", headers=h).json()
+    assert inv["tally_company_id"] == est_id and inv["tally_company_name"] == "Estimate"

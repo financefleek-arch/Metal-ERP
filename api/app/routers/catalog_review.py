@@ -41,6 +41,7 @@ from app.services import media as media_svc
 from app.services.catalog import supplier_defaults as svc
 from app.services.catalog.storage import CatalogStorage, get_storage, image_key
 from app.services.items import detach_catalog_links
+from app.services.tally.links import linked_ids
 
 router = APIRouter(
     prefix="/api/supplier-catalogs", tags=["supplier-catalog-review"], dependencies=[features.require("catalog_parse")]
@@ -212,6 +213,7 @@ def promote_undo(
                     select(table.c[col]).where(table.c[col].in_(ids[i : i + 500])).distinct()
                 )
             }
+    in_tally = linked_ids(session, "item", ids)
     removable: list[Item] = []
     found = 0
     for i in range(0, len(ids), 500):
@@ -223,7 +225,7 @@ def promote_undo(
                 it.source == "catalog"
                 and it.times_billed == 0
                 and it.tally_status == "none"
-                and it.tally_guid is None
+                and it.id not in in_tally
                 and it.id not in used
             ):
                 removable.append(it)

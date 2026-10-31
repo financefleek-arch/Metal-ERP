@@ -1,7 +1,7 @@
 """Push items to Tally as stock items.
 
 The unit is an item (the Items page is where a push starts): its state lives on the item
-(`tally_status`, `tally_price`), whatever brought it in (a price list, a bill, by hand). The price
+(per Tally company: `item_tally_state`), whatever brought it in (a price list, a bill, by hand). The price
 sent is the item's own selling rate, never a catalog row's.
 
 The rules come from the live probes in the execution plan (section 3):
@@ -49,6 +49,14 @@ from app.services.tally.agent_health import agent_online, assert_tally_reachable
 from app.services.tally.companies import get_default_company
 from app.services.tally.company_identity import WAITING_FOR_COMPANY, company_payload
 from app.services.tally.jobs import complete_job_error
+from app.services.tally.item_state import (
+    record_seen,
+    record_sent,
+    set_status,
+    state_map,
+    synced_item_ids,
+)
+from app.services.tally.links import is_linked, record_master_guid
 from tools.tally_import.parser import parse_stock_items
 
 log = logging.getLogger("tally.items")
@@ -154,10 +162,21 @@ def check_is_fresh(company: TallyCompany, now: datetime | None = None) -> bool:
 @dataclass
 class _Row:
     item: Item
+    # what the company being pushed to holds for the item (S1.2b)
+    status: str = "none"
+    price: Decimal | None = None
 
 
-def load_rows(session: Session, items: Sequence[Item]) -> list[_Row]:
-    return [_Row(it) for it in items]
+def load_rows(
+    session: Session, items: Sequence[Item], company: TallyCompany | None = None
+) -> list[_Row]:
+    if company is None:
+        return [_Row(it) for it in items]
+    states = state_map(session, company, [it.id for it in items])
+    return [
+        _Row(it, states[it.id].status, states[it.id].price) if it.id in states else _Row(it)
+        for it in items
+    ]
 
 
 def code_of(item: Item) -> str:
@@ -174,12 +193,12 @@ def price_for(item: Item) -> Decimal | None:
 
 def price_changed(r: _Row) -> bool:
     """Already in Tally, but with a different (or never sent) selling price."""
-    if r.item.tally_status != "synced":
+    if r.status != "synced":
         return False
     now_price = price_for(r.item)
     if now_price is None:
         return False
-    return r.item.tally_price is None or Decimal(str(r.item.tally_price)) != now_price
+    return r.price is None or Decimal(str(r.price)) != now_price
 
 
 def _category_names(session: Session, tenant_id: str) -> dict[str, str]:
@@ -255,8 +274,8 @@ def preflight(
 ) -> tuple[Preflight, list[_Row], list[tuple[str, str | None]]]:
     """Everything that could go wrong, found before anything is sent."""
     pf = Preflight(total=len(rows))
-    loaded = load_rows(session, rows)
     company = get_default_company(session, tenant_id)
+    loaded = load_rows(session, rows, company)
 
     # --- company + agent
     if company is None or company.shop_id is None:
@@ -267,6 +286,9 @@ def preflight(
         pf.checks.append(Check("no_rows", bool(rows), "Select at least one item.", blocking=False))
         return pf, loaded, []
     pf.checks.append(Check("no_company", True, f"Tally company: {company.company_name}"))
+    # S0.3: the agent last saw a different company (or a renamed one) where ours should be
+    if company.verify_state in ("different", "renamed") and company.verify_note:
+        pf.checks.append(Check(f"company_{company.verify_state}", False, company.verify_note))
     pf.root = (company.stock_group_root or "").strip() or None
     pf.checked_at = company.known_stock_at
 
@@ -304,19 +326,19 @@ def preflight(
     # --- what is selected
     ready = [r for r in loaded if r.item.merged_into_id is None and r.item.status != "archived"]
     pf.inactive = len(loaded) - len(ready)
-    pf.already_synced = sum(1 for r in ready if r.item.tally_status == "synced")
+    pf.already_synced = sum(1 for r in ready if r.status == "synced")
     todo = [
         r for r in ready
-        if include_synced or r.item.tally_status != "synced" or price_changed(r)
+        if include_synced or r.status != "synced" or price_changed(r)
     ]
     if not include_synced:
-        pf.price_updates = sum(1 for r in todo if r.item.tally_status == "synced")
+        pf.price_updates = sum(1 for r in todo if r.status == "synced")
     known_items = {n for n in (company.known_stock_items or [])}
     if skip_existing:
         # Leave out what Tally already has under the same name, so it is never overwritten.
         left_out = [
             r for r in todo
-            if r.item.tally_status != "synced" and _norm(r.item.name) in known_items
+            if r.status != "synced" and _norm(r.item.name) in known_items
         ]
         pf.skipped_existing = len(left_out)
         todo = [r for r in todo if r not in left_out]
@@ -357,7 +379,7 @@ def preflight(
     collisions = [
         Collision(r.item.id, code_of(r.item), r.item.name)
         for r in todo
-        if r.item.tally_status != "synced" and _norm(r.item.name) in known_items
+        if r.status != "synced" and _norm(r.item.name) in known_items
     ]
     pf.collisions = collisions
     pf.checks.append(
@@ -460,12 +482,13 @@ def expire_stalled_run(session: Session, tenant_id: str, now: datetime | None = 
         if _as_utc(job.created_at) > cutoff:
             continue
         counts = dict(job.counts or {})
-        _set_rows(session, list(counts.get("item_ids") or []), "none")
-        _set_rows(session, list(counts.get("rest") or []), "none")
+        company = session.get(TallyCompany, job.company_id)
+        if company is not None:
+            _set_rows(session, company, list(counts.get("item_ids") or []), "none")
+            _set_rows(session, company, list(counts.get("rest") or []), "none")
         counts["rest"] = []
         counts["sent"] = 0
         counts["expired"] = True
-        company = session.get(TallyCompany, job.company_id)
         complete_job_error(
             session, job, error=_stalled_message(job, company.company_name if company else None)
         )
@@ -581,7 +604,7 @@ def start_run(
     ids = [r.item.id for r in todo]
     run_id = str(uuid.uuid4())
     batches = [ids[i : i + BATCH_SIZE] for i in range(0, len(ids), BATCH_SIZE)]
-    _set_rows(session, ids, "queued")
+    _set_rows(session, company, ids, "queued")
     state = {
         "run": run_id,
         "batches": len(batches),
@@ -606,7 +629,7 @@ def _enqueue_batch(
     rows = list(session.scalars(select(Item).where(Item.id.in_(batch_ids))))
     order = {rid: i for i, rid in enumerate(batch_ids)}
     rows.sort(key=lambda r: order[r.id])
-    loaded = load_rows(session, rows)
+    loaded = load_rows(session, rows, company)
     groups = [
         GroupPlan(g["category_id"], "", g["tally_name"], "existing", 0) for g in state["groups"]
     ]
@@ -661,16 +684,9 @@ def _tag_int(root: etree._Element, tag: str) -> int:
         return 0
 
 
-def _set_rows(session: Session, ids: Sequence[str], value: str) -> None:
-    """Set the Tally state of items. An item Tally already has stays synced through a price
-    update that is queued, fails or is cancelled: only first sends move between the states."""
-    for i in range(0, len(ids), 500):
-        stmt = update(Item).where(Item.id.in_(list(ids[i : i + 500])))
-        if value == "queued":
-            stmt = stmt.where(Item.tally_status != "synced")
-        elif value in ("none", "error"):
-            stmt = stmt.where(Item.tally_status == "queued")
-        session.execute(stmt.values(tally_status=value))
+def _set_rows(session: Session, company: TallyCompany, ids: Sequence[str], value: str) -> None:
+    """Set the Tally state of items in `company` (rules in `item_state.set_status`)."""
+    set_status(session, company, ids, value)
 
 
 def _finish(job: TallySyncJob, status: str, counts: dict, error: str | None = None) -> None:
@@ -694,10 +710,12 @@ def process_items_result(
     counts = dict(job.counts or {})
     batch_ids: list[str] = list(counts.get("item_ids") or [])
     rest: list[str] = list(counts.get("rest") or [])
+    company = session.get(TallyCompany, job.company_id)
 
     def fail(message: str) -> None:
-        _set_rows(session, batch_ids, "error")
-        _set_rows(session, rest, "none")  # never sent: back to unsent
+        if company is not None:
+            _set_rows(session, company, batch_ids, "error")
+            _set_rows(session, company, rest, "none")  # never sent: back to unsent
         counts["rest"] = []
         counts["sent"] = 0
         complete_job_error(session, job, error=message)
@@ -733,18 +751,10 @@ def process_items_result(
         fail(detail)
         return
 
-    _set_rows(session, batch_ids, "synced")
-    sent_prices = counts.get("prices") or {}
-    now = datetime.now(UTC)
-    for i in range(0, len(batch_ids), 500):
-        for it in session.scalars(select(Item).where(Item.id.in_(batch_ids[i : i + 500]))):
-            p = sent_prices.get(it.id)
-            it.tally_price = Decimal(p) if p is not None else None
-            it.tally_pushed_at = now
-            it.tally_seen_price = None  # until the next check reads Tally back
+    if company is not None:
+        record_sent(session, company, batch_ids, counts.get("prices") or {}, datetime.now(UTC))
     counts.update(created=created, altered=altered, rest=[], sent=len(batch_ids))
     state = counts.get("state") or {}
-    company = session.get(TallyCompany, job.company_id)
     _finish(job, "ok", counts)
     session.flush()
 
@@ -761,7 +771,7 @@ def process_items_result(
             )
         except Exception as exc:  # noqa: BLE001 - never 500 at the agent
             log.warning("could not queue the next items batch: %s", exc)
-            _set_rows(session, rest, "none")
+            _set_rows(session, company, rest, "none")
             counts["stopped"] = (
                 exc.detail if isinstance(exc, HTTPException) else "Could not send the next batch."
             )
@@ -977,58 +987,56 @@ def apply_stock_check(session: Session, company: TallyCompany, raw: bytes) -> di
         if i.guid and (i.base_units or "").strip()
     }
     if unit_by_guid:
-        for item in session.scalars(
-            select(Item).where(Item.tenant_id == company.tenant_id, Item.tally_guid.is_not(None))
+        for link, item in session.execute(
+            select(TallyLink, Item)
+            .join(Item, Item.id == TallyLink.entity_id)
+            .where(TallyLink.company_id == company.id, TallyLink.entity_type == "item")
         ):
-            unit = unit_by_guid.get(item.tally_guid)
-            if unit and item.tally_unit != unit[:40]:
-                item.tally_unit = unit[:40]
+            unit = unit_by_guid.get(link.tally_guid)
+            if unit and link.tally_unit != unit[:40]:
+                link.tally_unit = unit[:40]
 
     linked = 0
     if guid_by_name:
-        pushed = session.scalars(
-            select(Item).where(
-                Item.tenant_id == company.tenant_id,
-                Item.tally_guid.is_(None),
-                Item.tally_status == "synced",
+        linked_here = set(
+            session.scalars(
+                select(TallyLink.entity_id).where(
+                    TallyLink.company_id == company.id, TallyLink.entity_type == "item"
+                )
             )
         )
-        now = datetime.now(UTC)
+        pushed = session.scalars(
+            select(Item).where(
+                Item.tenant_id == company.tenant_id, Item.id.in_(synced_item_ids(company))
+            )
+        )
         for item in pushed:
+            if item.id in linked_here or is_linked(session, company, "item", item):
+                continue
             guid = guid_by_name.get(_norm(item.name))
             if not guid:
                 continue
-            taken = session.scalar(
-                select(TallyLink.id).where(
-                    TallyLink.tenant_id == company.tenant_id,
-                    TallyLink.entity_type == "item",
-                    TallyLink.tally_guid == guid,
-                )
+            link = record_master_guid(
+                session, company.tenant_id, company, "item", item, guid, unit=unit_by_guid.get(guid)
             )
-            if taken is not None:
-                continue
-            item.tally_guid = guid
-            item.tally_unit = (unit_by_guid.get(guid) or item.tally_unit or "")[:40] or None
-            session.add(
-                TallyLink(
-                    tenant_id=company.tenant_id,
-                    entity_type="item",
-                    entity_id=item.id,
-                    tally_guid=guid,
-                    last_pulled_at=now,
-                )
-            )
+            if link is None:
+                continue  # that Tally item already belongs to another record of ours
             linked += 1
     # Read the selling price back for items we sent: an unlicensed Tally drops a price list it
     # does not like without a word, so what Tally shows is checked, not assumed.
     seen_by_name = {_norm(i.name): i.selling_price for i in stock.items}
+    seen: dict[str, Decimal] = {}
     for item in session.scalars(
-        select(Item).where(Item.tenant_id == company.tenant_id, Item.tally_status == "synced")
+        select(Item).where(
+            Item.tenant_id == company.tenant_id, Item.id.in_(synced_item_ids(company))
+        )
     ):
         if _norm(item.name) in seen_by_name:
-            seen = seen_by_name[_norm(item.name)]
             # 0 = Tally has the item but no selling price (a dropped price list shows up here)
-            item.tally_seen_price = Decimal(str(seen or 0)).quantize(Decimal("0.01"))
+            seen[item.id] = Decimal(str(seen_by_name[_norm(item.name)] or 0)).quantize(
+                Decimal("0.01")
+            )
+    record_seen(session, company, seen)
     session.flush()
     return {
         "groups": len(stock.groups),

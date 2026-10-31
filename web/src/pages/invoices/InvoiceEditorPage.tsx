@@ -39,6 +39,7 @@ import type {
   PaymentOut,
   PricePoint,
   ResolveResult,
+  TallyCompanyRow,
   WeighmentSlipIn,
 } from "../../lib/types";
 
@@ -279,6 +280,16 @@ export function InvoiceEditorPage() {
 
   const [partyId, setPartyId] = useState("");
   const [partyLabel, setPartyLabel] = useState("");
+  // The Tally company the bill posts to (S2.3). Sent only once the user picks one; left alone, the
+  // server uses the customer's default company, then the firm's.
+  const [companyId, setCompanyId] = useState("");
+  const [companyChosen, setCompanyChosen] = useState(false);
+  const companies = useQuery({
+    queryKey: ["tally-companies"],
+    queryFn: () => api<TallyCompanyRow[]>("/tally/companies"),
+    retry: false,
+  });
+  const pickable = (companies.data ?? []).filter((c) => c.status === "active");
   // the picked party's opening-balance state, so the "Bill to" block can show
   // it editable (new client) or as a read-only prior-balance line (locked).
   const [partyOpeningLocked, setPartyOpeningLocked] = useState(false);
@@ -354,6 +365,8 @@ export function InvoiceEditorPage() {
     setTheirs(null);
     setPartyId(inv.party_id ?? "");
     setPartyLabel(inv.party?.legal_name ?? "");
+    setCompanyId(inv.tally_company_id ?? "");
+    setCompanyChosen(false);
     setDate(inv.date);
     setNotes(inv.notes ?? "");
     setInvoiceDiscount(inv.invoice_discount && Number(inv.invoice_discount) ? inv.invoice_discount : "");
@@ -554,6 +567,7 @@ export function InvoiceEditorPage() {
       const remap = new Map(segSeen.map((s, i) => [s, i + 1]));
       const body = {
         party_id: partyId,
+        tally_company_id: companyChosen && companyId ? companyId : undefined,
         date,
         notes: notes.trim() || null,
         invoice_discount: String(invDiscAmt || 0),
@@ -1261,6 +1275,35 @@ export function InvoiceEditorPage() {
                 />
               )}
             </div>
+            {pickable.length > 1 && (
+              <div className="sm:col-span-2">
+                <label className="label" htmlFor="inv-company">Posts to</label>
+                {readOnly ? (
+                  <div className="field flex items-center">{inv?.tally_company_name ?? "—"}</div>
+                ) : (
+                  <select
+                    id="inv-company"
+                    className="field"
+                    value={companyId}
+                    onChange={(e) => {
+                      setCompanyId(e.target.value);
+                      setCompanyChosen(true);
+                      setDirty(true);
+                    }}
+                  >
+                    {!companyId && <option value="">The customer's company</option>}
+                    {pickable.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.company_name} ({c.series})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {finalized && inv?.company_guidance && (
+                  <p className="meta mt-1 max-w-prose">{inv.company_guidance}</p>
+                )}
+              </div>
+            )}
             <div>
               <label className="label">Invoice date</label>
               <DateField

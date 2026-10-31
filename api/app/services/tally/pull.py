@@ -92,7 +92,8 @@ def process_pull_result(
 
     try:
         party_summary = stage_masters_xml(
-            session, job.tenant_id, raw, batch_id=batch_id, sync_job_id=job.id
+            session, job.tenant_id, raw, batch_id=batch_id, sync_job_id=job.id,
+            company_id=job.company_id,
         )
         counts["ledgers"] = party_summary.total
     except NoLedgersError:
@@ -105,7 +106,8 @@ def process_pull_result(
 
     try:
         item_summary = stage_stock_items_xml(
-            session, job.tenant_id, raw, batch_id=batch_id, sync_job_id=job.id
+            session, job.tenant_id, raw, batch_id=batch_id, sync_job_id=job.id,
+            company_id=job.company_id,
         )
         counts["items"] = item_summary.total
         counts["dummies_skipped"] = item_summary.dummies_skipped

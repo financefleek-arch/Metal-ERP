@@ -59,6 +59,9 @@ from app.reference import (
 )
 from app.services.catalog import price_points
 from app.services.inward.tally_xml import LedgerConfig, build_xml_bytes
+from app.services.tally.companies import get_default_company
+from app.services.tally.company_routing import company_for_document
+from app.services.tally.ledger_config import ledger_config
 
 
 def _safe[T](validator: Callable[[str | None], T], value: object) -> T | None:
@@ -128,6 +131,10 @@ def approve_bill(
 
     if bill.status == InwardStatus.approved:
         raise ApproveError(["bill is already approved"])
+
+    if bill.tally_company_id is None:  # the bill posts to one company from approve on (S2.6)
+        default = get_default_company(session, bill.tenant_id)
+        bill.tally_company_id = default.id if default else None
 
     settings = get_settings()
     now = datetime.now(UTC)
@@ -241,16 +248,20 @@ def approve_bill(
                 linked_item.last_purchased_at = now
 
     # --- 5. XML ---
-    cfg_row = get_ledger_config(session, bill.tenant_id)
-    cfg = LedgerConfig(
-        creditors_group=cfg_row.creditors_group,
-        purchase_ledger=cfg_row.purchase_ledger,
-        cgst_ledger=cfg_row.cgst_ledger,
-        sgst_ledger=cfg_row.sgst_ledger,
-        igst_ledger=cfg_row.igst_ledger,
-        round_off_ledger=cfg_row.round_off_ledger,
-        xml_encoding=cfg_row.xml_encoding,
-    )
+    company = company_for_document(session, bill)
+    if company is not None:
+        cfg = ledger_config(company)  # one source: the company's ledger map (S1.5)
+    else:
+        cfg_row = get_ledger_config(session, bill.tenant_id)  # no company yet: the legacy row
+        cfg = LedgerConfig(
+            creditors_group=cfg_row.creditors_group,
+            purchase_ledger=cfg_row.purchase_ledger,
+            cgst_ledger=cfg_row.cgst_ledger,
+            sgst_ledger=cfg_row.sgst_ledger,
+            igst_ledger=cfg_row.igst_ledger,
+            round_off_ledger=cfg_row.round_off_ledger,
+            xml_encoding=cfg_row.xml_encoding,
+        )
     new_item_names: set[str] = {
         name
         for line in bill.lines
@@ -338,7 +349,7 @@ def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
     bill_id = bill.id
     try:
         from app.services.tally.agent_health import assert_tally_reachable
-        from app.services.tally.companies import get_default_company
+        from app.services.tally.company_routing import company_for_document
         from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
         from app.services.tally.push_readiness import (
             is_pushable,
@@ -347,7 +358,7 @@ def _enqueue_tally_push_best_effort(session: Session, bill: InwardBill) -> None:
 
         if not is_pushable(purchase_push_blockers(session, bill)):
             return
-        company = get_default_company(session, bill.tenant_id)
+        company = company_for_document(session, bill)
         if company is None:
             return
         assert_no_purchase_push_in_flight(session, bill.tenant_id, bill_id)
@@ -377,6 +388,7 @@ def _remember(
             bill_id=bill.id,
             rows=[(item_id, Decimal(str(line.unit_rate)))],
             on=bill.bill_date or now.date(),
+            company_id=bill.tally_company_id,
         )
     if line.match_method in (MatchMethod.fuzzy, MatchMethod.llm, MatchMethod.manual):
         item = session.get(Item, item_id)

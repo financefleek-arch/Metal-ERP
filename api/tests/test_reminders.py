@@ -419,3 +419,64 @@ def test_credit_days_can_be_set_and_a_null_does_not_erase_a_setting(client, sent
     after = client_patch(h, {"default_credit_days": None, "reminder_enabled": None})
     assert after.status_code == 200
     assert after.json()["default_credit_days"] == 30 and after.json()["reminder_enabled"] is False
+
+
+# --------------------------------------------------------------------------
+# S2.11 - one reminder across the companies that are counted
+# --------------------------------------------------------------------------
+
+
+def _bill_in(client, h, party_id: str, company_id: str, *, age: int) -> str:
+    d = client.post(
+        "/api/invoices",
+        headers=h,
+        json={
+            "party_id": party_id,
+            "tally_company_id": company_id,
+            "date": (TODAY - timedelta(days=age)).isoformat(),
+            "lines": [{"description": "Steel Glass", "quantity": "1", "uom": "nos", "unit_rate": "1000"}],
+        },
+    ).json()
+    assert client.post(f"/api/invoices/{d['id']}/finalize", headers=h).status_code == 200
+    return d["id"]
+
+
+def test_a_reminder_totals_the_party_across_counted_companies_and_skips_the_rest(client, sent) -> None:
+    from app.services.tally.companies import add_company
+
+    h, tid = _shop(client)
+    with SessionLocal() as s:
+        gst = add_company(s, tid, "GST")
+        est = add_company(s, tid, "Estimate", kind="estimate")
+        private = add_company(s, tid, "Private", kind="other")
+        private.visible_roles = ["owner"]  # owner-only: never chased from the shared queue
+        s.commit()
+        gst_id, est_id, private_id = gst.id, est.id, private.id
+    pid = _party(client, h, "Jay Matadee")
+    a = _bill_in(client, h, pid, gst_id, age=40)
+    b = _bill_in(client, h, pid, est_id, age=40)
+    _bill_in(client, h, pid, private_id, age=40)
+
+    assert _propose(tid) == 1
+    (r,) = _rows(tid)
+    assert sorted(r.invoice_ids) == sorted([a, b])  # GST + Estimate, not Private
+    assert r.kind == "statement" and str(r.amount) == "2000.00"
+
+    out = client.get("/api/reminders", headers=h).json()[0]
+    assert sorted(out["companies"]) == ["Estimate", "GST"]
+    assert sorted(out["invoice_labels"]) == ["1", "EST/1"]  # the series keeps equal numbers apart
+
+
+def test_a_company_switched_off_for_reminders_is_left_out(client, sent) -> None:
+    from app.services.tally.companies import add_company
+
+    h, tid = _shop(client)
+    with SessionLocal() as s:
+        add_company(s, tid, "GST")
+        est = add_company(s, tid, "Estimate", kind="estimate")
+        est.include_in_reminders = False
+        s.commit()
+        est_id = est.id
+    pid = _party(client, h, "Jay Matadee")
+    _bill_in(client, h, pid, est_id, age=40)
+    assert _propose(tid) == 0

@@ -12,7 +12,7 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 
 from app.deps import SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
@@ -26,7 +26,10 @@ from app.reference import (
 )
 from app.services import features
 from app.services.tally.jobs import assert_no_pull_in_flight
+from app.services.tally.ownership import ImportConflict, conflict
+from app.services.tally.links import company_for_import, record_master_guid
 from app.services.tally.staging import NoLedgersError, stage_masters_xml
+from app.services.tally.staging import current_batch as _current
 
 router = APIRouter(
     prefix="/api/parties/import", tags=["parties-import"], dependencies=[features.require("import")]
@@ -97,6 +100,8 @@ class CommitOut(BaseModel):
     updated: int
     skipped: int
     still_flagged: int
+    # Tally values that differ from ours on a field Tally owns (we kept ours), S1.9
+    conflicts: list[ImportConflict] = []
 
 
 # --------------------------------------------------------------------------
@@ -184,37 +189,25 @@ async def upload(
 class CurrentBatchOut(BaseModel):
     batch_id: str | None
     total: int
+    # which Tally company the batch was pulled from (null: a file upload), and how many other
+    # companies have a batch waiting (S1.6)
+    company_id: str | None = None
+    company_name: str | None = None
+    other_batches: int = 0
 
 
 @router.get("/current", response_model=CurrentBatchOut)
-def current_batch(user: WriteUser, session: SessionDep) -> CurrentBatchOut:
-    """The tenant's in-flight (staged, not yet committed) import, if any.
-
-    Lets the review screen resume a batch that was staged earlier instead of
-    forcing a re-upload of the whole XML. Only one uncommitted batch can exist
-    per tenant (upload clears the previous one), so the newest wins.
-    """
-    row = session.scalars(
-        select(StagingTallyParty)
-        .where(
-            StagingTallyParty.tenant_id == user.tenant_id,
-            StagingTallyParty.committed_as.is_(None),
-        )
-        .order_by(StagingTallyParty.created_at.desc())
-        .limit(1)
-    ).first()
-    if row is None:
-        return CurrentBatchOut(batch_id=None, total=0)
-    total = session.scalar(
-        select(func.count())
-        .select_from(StagingTallyParty)
-        .where(
-            StagingTallyParty.tenant_id == user.tenant_id,
-            StagingTallyParty.batch_id == row.batch_id,
-            StagingTallyParty.committed_as.is_(None),
-        )
+def current_batch(
+    user: WriteUser, session: SessionDep, company_id: str | None = None
+) -> CurrentBatchOut:
+    """The firm's in-flight (staged, not yet committed) import, if any: one per Tally company, so
+    pass `company_id` to see a particular company's; otherwise the newest."""
+    batch_id, total, cid, cname, others = _current(
+        session, StagingTallyParty, user.tenant_id, company_id
     )
-    return CurrentBatchOut(batch_id=row.batch_id, total=total or 0)
+    return CurrentBatchOut(
+        batch_id=batch_id, total=total, company_id=cid, company_name=cname, other_batches=others
+    )
 
 
 def _rows(session: SessionDep, tenant_id: str, batch_id: str) -> list[StagingTallyParty]:
@@ -371,7 +364,9 @@ def _clean_phone(raw: str | None) -> str | None:
 @router.post("/{batch_id}/commit", response_model=CommitOut)
 def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     rows = _rows(session, user.tenant_id, batch_id)
+    company = company_for_import(session, user.tenant_id, rows)
     created = updated = skipped = still_flagged = 0
+    conflicts: list[ImportConflict] = []
     syn = load_synonym_map(session, user.tenant_id)
 
     # --- identity pre-pass: one query for the tenant's existing parties, so a
@@ -416,13 +411,18 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         gstin: str | None,
         pan: str | None,
     ) -> None:
+        for field, theirs in (("gstin", gstin), ("pan", pan)):
+            found = conflict(party.legal_name, field, getattr(party, field), theirs)
+            if found is not None:
+                conflicts.append(found)
         _fill_blank(party, "gstin", gstin)
         _fill_blank(party, "pan", pan)
         _fill_blank(party, "phone", _clean_phone(row.phone))
         _fill_blank(party, "email", (row.email or "").strip()[:200] or None)
         _fill_blank(party, "default_state_code", state_code)
-        if not party.tally_guid:
-            party.tally_guid = row.tally_guid
+        record_master_guid(
+            session, user.tenant_id, company, "party", party, row.tally_guid, name=row.ledger_name
+        )
         # Widen role, never narrow: any mismatch resolves to 'both'.
         if party.role != role:
             party.role = PartyRole.both
@@ -504,13 +504,15 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             # "All Masters" GUID is 45 chars, so keep it only when it fits;
             # the full value always lives in tally_guid (VARCHAR(64)).
             source_ref=_fit_source_ref(row.tally_guid),
-            tally_guid=row.tally_guid,
         )
         if row.address_lines_json:
             party.addresses.append(_address_from_row(row, state_code))
         # id set explicitly (column default only fires at flush), so committed_as
         # and the dedup maps can use it before the single add_all below.
         new_parties.append(party)
+        record_master_guid(
+            session, user.tenant_id, company, "party", party, row.tally_guid, name=row.ledger_name
+        )
         pending_by_id[party.id] = party
         row.committed_as = party.id
         if gstin:
@@ -526,7 +528,8 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         session.flush()
 
     return CommitOut(
-        created=created, updated=updated, skipped=skipped, still_flagged=still_flagged
+        created=created, updated=updated, skipped=skipped, still_flagged=still_flagged,
+        conflicts=conflicts,
     )
 
 

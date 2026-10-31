@@ -4,6 +4,8 @@ match ladder, HSN seeding on commit, re-import is a no-op.
 
 from __future__ import annotations
 
+from app.services.tally.companies import get_default_company
+
 from pathlib import Path
 
 import pytest
@@ -415,6 +417,7 @@ def test_a_rate_per_another_unit_is_left_out_not_misread() -> None:
 def test_commit_records_the_unit_tally_holds(client: TestClient, session) -> None:  # type: ignore[no-untyped-def]
     """S0.5: Tally's own unit name is kept on the item (a voucher line in any other unit posts blank)."""
     from app.models import Item
+    from app.services.tally.links import unit_for
 
     h = _h(_token(client, "ii-unit@x.example.com"))
     batch = _upload(client, h).json()["batch_id"]
@@ -422,4 +425,7 @@ def test_commit_records_the_unit_tally_holds(client: TestClient, session) -> Non
     items = client.get("/api/items", headers=h).json()
     patta = next(i for i in items if i["name"] == "SS 304 Patta 4in 2mm")
     session.expire_all()
-    assert session.get(Item, patta["id"]).tally_unit == "Kg"
+    item = session.get(Item, patta["id"])
+    company = get_default_company(session, item.tenant_id)
+    # with a company the unit sits on its link; with none it waits on the item for the first company
+    assert (unit_for(session, company, item) if company else item.tally_unit) == "Kg"

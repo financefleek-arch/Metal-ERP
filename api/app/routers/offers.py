@@ -20,9 +20,10 @@ from app.deps import SessionDep
 from app.models import Tenant
 from app.routers.catalog import CatalogWriteUser, StorageDep
 from app.schemas_customer_catalog import CatalogSelection
-from app.services import audit, offers
+from app.services import audit, features, offers
 
-router = APIRouter(prefix="/api/offers", tags=["offers"])
+# Offers go out over the shop's own WhatsApp number, so they follow the plan's `whatsapp` switch like the rest of the paid routes
+router = APIRouter(prefix="/api/offers", tags=["offers"], dependencies=[features.require("whatsapp")])
 
 
 class OfferIn(BaseModel):

@@ -33,7 +33,8 @@ MILESTONES: tuple[str, ...] = (
 )
 # Other server events.
 SERVER_KEYS: frozenset[str] = frozenset(
-    MILESTONES + ("signed_in", "whatsapp_connected", "feature_requested", "plan_trial_started", "plan_cancelled")
+    # `plan_trial_started` is what the payment-page tap was called before 2026-10-31; it stays so counts already recorded still read
+    MILESTONES + ("signed_in", "whatsapp_connected", "feature_requested", "plan_checkout_opened", "plan_trial_started", "plan_cancelled")
 )
 # What the browser may report: friction and demand, never content.
 BEACON_KEYS: frozenset[str] = frozenset(
@@ -52,7 +53,7 @@ BEACON_KEYS: frozenset[str] = frozenset(
 KEYS: frozenset[str] = SERVER_KEYS | BEACON_KEYS
 
 # Events after which Fleek should hear about the shop soon, not at the next hourly run: every funnel step and every plan or WhatsApp change.
-NUDGE_KEYS: frozenset[str] = frozenset(MILESTONES + ("whatsapp_connected", "plan_trial_started", "plan_cancelled", "feature_requested"))
+NUDGE_KEYS: frozenset[str] = frozenset(MILESTONES + ("whatsapp_connected", "plan_checkout_opened", "plan_cancelled", "feature_requested"))
 NUDGE_DELAY = 60.0  # seconds to wait, so the request has committed and a burst of actions goes out as one message
 
 SEEN_EVERY = timedelta(minutes=5)

@@ -158,7 +158,16 @@ def test_undo_removes_only_untouched_new_items(shop) -> None:
     # one of them was already sent to Tally: it stays
     keep = out["created_item_ids"][0]
     with SessionLocal() as s:
-        s.get(Item, keep).tally_status = "synced"
+        from app.models import ItemTallyState
+        from app.services.tally.companies import add_company
+
+        item = s.get(Item, keep)
+        company = add_company(s, item.tenant_id, "Shah Traders")
+        s.add(
+            ItemTallyState(
+                tenant_id=item.tenant_id, company_id=company.id, item_id=keep, status="synced"
+            )
+        )
         s.commit()
     u = client.post(
         f"{BASE}/{cat['id']}/promote/undo", headers=h, json={"item_ids": out["created_item_ids"]}

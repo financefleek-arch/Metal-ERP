@@ -116,7 +116,8 @@ def start_plan(body: StartIn, user: CurrentUser, session: SessionDep) -> dict[st
     if code != 200:
         raise HTTPException(code if code in (404, 409, 502) else 502, out.get("message") or UNAVAILABLE)
     entitlements.invalidate(session, tenant)
-    activity.record(session, tenant_id=tenant.id, user_id=user.id, key="plan_trial_started", props={"plan": body.plan})
+    # The owner opened the payment page: an intent, not a plan. The plan begins when Fleek sees the autopay approved (the licence then says so).
+    activity.record(session, tenant_id=tenant.id, user_id=user.id, key="plan_checkout_opened", props={"plan": body.plan})
     return out
 
 

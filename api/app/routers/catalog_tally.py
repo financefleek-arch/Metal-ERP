@@ -29,6 +29,7 @@ from app.services.catalog import tally_items as ti
 from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.tally.agent_health import assert_tally_reachable
 from app.services.tally.companies import get_default_company
+from app.services.tally.visibility import default_company_hidden, require_visible_default
 
 router = APIRouter(prefix="/api/supplier-catalogs", tags=["supplier-catalog-tally"])
 
@@ -141,6 +142,8 @@ def _settings_out(company: TallyCompany | None) -> TallySettingsOut:
 
 @router.get("/tally/settings", response_model=TallySettingsOut)
 def get_tally_settings(session: SessionDep, user: CatalogUser) -> TallySettingsOut:
+    if default_company_hidden(session, user):
+        return _settings_out(None)  # looks unconnected to a role that may not see the company
     return _settings_out(get_default_company(session, user.tenant_id))
 
 
@@ -148,6 +151,7 @@ def get_tally_settings(session: SessionDep, user: CatalogUser) -> TallySettingsO
 def put_tally_settings(
     body: TallySettingsIn, session: SessionDep, user: CatalogWriteUser
 ) -> TallySettingsOut:
+    require_visible_default(session, user)
     company = get_default_company(session, user.tenant_id)
     if company is None:
         raise HTTPException(status_code=404, detail="Tally is not connected for this firm yet.")
@@ -194,6 +198,7 @@ def _check_out(job: TallySyncJob) -> TallyCheckOut:
 @router.post("/tally/check", response_model=TallyCheckOut, status_code=status.HTTP_201_CREATED)
 def start_tally_check(session: SessionDep, user: CatalogWriteUser) -> TallyCheckOut:
     """Read Tally's stock groups and item names through the agent."""
+    require_visible_default(session, user)
     company = get_default_company(session, user.tenant_id)
     if company is None:
         raise HTTPException(status_code=404, detail="Tally is not connected for this firm yet.")
@@ -203,5 +208,7 @@ def start_tally_check(session: SessionDep, user: CatalogWriteUser) -> TallyCheck
 
 @router.get("/tally/check", response_model=TallyCheckOut | None)
 def get_tally_check(session: SessionDep, user: CatalogUser) -> TallyCheckOut | None:
+    if default_company_hidden(session, user):
+        return None
     job = ti.latest_check(session, user.tenant_id)
     return _check_out(job) if job is not None else None

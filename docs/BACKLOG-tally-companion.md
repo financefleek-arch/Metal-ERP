@@ -161,15 +161,32 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
 - Still to do for S1.1: `tools/backfill_masters_xml.py`, `tools/tally_capture.py` and about 15 test lookups still use `TallyCompany.tenant_id ==` (fine with one company; move them before a firm gets a second); migration 0075 on Postgres; `include_in_reminders`, `visible_roles`, `series_prefix` and `document_label` are stored but read by nothing yet (S1.7, EP2, EP3).
 - Size: L.
 
-### S1.2 `tally_link` per company
+### S1.2 `tally_link` per company (BUILT 2026-10-31, uncommitted)
 **As** the system, **I want** one customer or item to hold a separate Tally link in each company, **so that** the same customer can exist in both books.
 - Closes: B1.
 - Acceptance:
   - `tally_link` gains `company_id`; unique on (company, entity_type, entity_id) and (company, entity_type, tally_guid). Backfill sets `company_id` to the firm's default company.
   - One helper reads a link for (entity, company). The 21 reads of `party.tally_guid` or `item.tally_guid` across 10 files go through it, with the legacy column as a read-only fallback during transition.
   - Imports and pushes write the link, not the legacy column. A test proves no new write to the legacy columns.
+- Built: `tally_link.company_id` (migration 0076): both uniqueness rules are per company, so one customer or item holds a separate link in each of a firm's companies. Backfill: existing links go to the firm's default company; customers and items that carried a Tally id only on the record get a link there too (oldest wins a duplicated id; Postgres only). New `services/tally/links.py` is the one place that reads or writes a master's Tally id: `guid_for`, `is_linked`, `linked_ids`, `record_master_guid`, `adopt_legacy_links`, `company_for_import`. Moved onto it: push readiness (sales and purchase), `enqueue_push_*`, `pending_master_creates` (now takes the company), the stock check, both masters-import commits, the catalog cleanup check, the item list flag and the in-Tally filter. The invoice and bill voucher links are per company too. `Item.tally_linked` is a SQL-side flag for the default company (list, filter).
+- Rules: the old `party.tally_guid` / `item.tally_guid` are read only, and only as a fallback for the DEFAULT company and only for a record with no link in any company. Nothing writes them while the firm has a company (a test scans the code for it). An import by file with no company yet keeps the id on the record; the firm's first company adopts it. A link never takes an id another record holds in that company.
+- Tests: 11 new in `tests/test_tally_links.py`. Full backend run before the last fixes: 1472 passed, 3 failed (a query auto-correlation bug in the new flag, and one test that asserted the old column); both fixed, catalog suite re-ran 44 passed. Full backend suite after both fixes: 1486 passed, 2 skipped, 0 failed.
+- Not done, on purpose: S1.3 (use the link's Tally name on push); the item's push state (`tally_status`, `tally_price`, `tally_seen_price`) and `tally_unit` still live on the item, not per company, so a second company would share them (see S1.2b); relationship readers outside the listed files (reports, ageing) do not read masters' Tally ids today. Migration 0076 on Postgres not run.
 - Touches: model, migration, `routers/parties_import.py`, `routers/items_import.py`, `routers/catalog_review.py`, `services/tally/jobs.py`, `push_readiness.py`, `tally_xml.py`, `tally_items.py`, `item_filter.py`, `schemas_item.py`.
 - Size: L.
+
+### S1.2b Item Tally state per company
+**As** an owner with GST and estimate books, **I want** each company to remember what it holds for an item, **so that** a price pushed to one company, or the unit one company uses, is not mistaken for the other's.
+- Found while building S1.2: `item.tally_status`, `tally_price`, `tally_seen_price`, `tally_synced_at` and, from S0.5, `tally_unit` describe ONE Tally company. With two companies the second would read and overwrite the first's. Unit matters most: the same item can be `Nos` in one company and `Pcs` in the other.
+- Acceptance:
+  - Move these onto the item's link in each company (or a sibling table keyed by company and item); `tally_unit` first, because a wrong unit blanks a voucher line (B3).
+  - Voucher unit checks (`push_readiness._unit_blockers`) and the catalog push read the document's company.
+  - The Items hub shows Tally state for the default company, with a way to see another company's.
+  - Backfill from the item's current values into its default company's link.
+- STATUS 2026-10-31: unit part BUILT. `tally_link.tally_unit` (migration 0077, backfilled from `item.tally_unit`); `links.unit_for` / `set_unit`; `units.line_unit` now pure, `company_line_unit` reads the document's company; sales XML takes `line_units`; pull and Check Tally write the link. The old item column is a fallback for the default company only, and moves onto the first link. 3 new tests in `tests/test_tally_links.py`; full backend suite exit 0.
+- STATUS 2026-10-31: push state part BUILT. Table `item_tally_state` (company, item; status, price, seen_price, pushed_at; migration 0078, backfilled to the default company). `services/tally/item_state.py` is the only writer (`set_status`, `record_sent`, `record_seen`); the catalog push, its result handler, the stalled-run expiry and Check Tally all work on the company the run was for. `Item.tally_status/price/seen_price/pushed_at` are now read-only views of the default company (for lists and filters). The catalog item push is also blocked on a `different`/`renamed` company (S0.3). 4 new tests in `tests/test_item_tally_state.py`; full backend suite: no failures.
+- STILL TO DO: the Items hub showing another company's state (needs the company switcher of S1.4); migrations 0077 and 0078 not run on Postgres.
+- Size: M. Depends: S1.2.
 
 ### S1.3 GUID-first push, name stored per link
 **As** an owner, **I want** a renamed customer or item to keep working, **so that** a rename on either side does not break a push.
@@ -179,6 +196,8 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - A push uses the link's `tally_name`, not our current name, once linked. The first push of an unlinked record uses our name and then records it.
   - When our name and the link's Tally name differ, the record shows "name differs in Tally" with a choice to keep, or to rename in Tally on next push.
   - Test: rename the party here after linking; the voucher still carries the Tally name.
+- STATUS 2026-10-31: BUILT (backend). `tally_link.tally_name` (migration 0079, backfilled from the record's name); a pull refreshes it, a first link records ours. `links.tally_name_for` is what sales and purchase pushes send for party and item (sales XML takes `party_name`, `item_names`). `links.name_differs` flags a rename. Tests in `tests/test_tally_links.py` and `tests/test_invoice_tally_push.py`.
+- NOT DONE: the "name differs in Tally" badge and the keep / rename-in-Tally choice (needs the party and item screens; goes with S1.4's UI). The catalog item push still names stock items by our name (it creates them, so ours is right).
 - Size: M. Depends: S1.2.
 
 ### S1.4 Company management screen and API
@@ -191,6 +210,7 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - A firm with one company sees today's Tally page, with no extra clutter.
 - Touches: `routers/tally.py`, `schemas_tally.py`, `routers/control_plane_firm.py`, web Tally page and Firm page.
 - Size: L.
+- STATUS 2026-10-31: API BUILT, SCREENS NOT. Decided: owners manage their own companies (theme: no unnecessary centralization; only what costs us stays with Fleek). `routers/tally_companies.py` (list, add, edit, default, switch off, verify, open, relink, ledger map, pull masters; owner vs accountant per `docs/PARITY-tally-company-management.md`), tests `tests/test_owner_companies.py`. Mockups agreed in principle on the canvas files in the scratchpad (publish was blocked by a permission rule). WEB BUILT 2026-10-31 (type-checked and linted, NOT yet clicked through in a browser): `components/TallyCompaniesCard.tsx` on the firm's Connections tab (list, add, edit, make default, switch off, check it in Tally; a firm with one company sees one card and one link). NOT DONE: the Fleek-admin read proxy (rows in the parity table); ledger names, relink and pull-masters buttons in the owner card (the API exists).
 
 ### S1.5 One ledger map per company; retire `TallyLedgerConfig`
 **As** a maintainer, **I want** one source for ledger names, **so that** inward and sales cannot disagree.
@@ -199,6 +219,8 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - Inward approve and push read `ledger_map` of the document's company.
   - A migration copies each firm's `tally_ledger_config` into its default company's map where the map lacks the key; conflicts are listed in the migration output, not overwritten.
   - After one release, `TallyLedgerConfig` and its 10 reads are removed.
+- STATUS 2026-10-31: BUILT. `services/tally/ledger_config.py` (`ledger_config`, `save_ledger_config`) reads and writes `tally_company.ledger_map`; sales push, purchase push, manual purchase export (`inward/approve.py`) and the inward settings API all use the default company's map. Migration 0080 copies the old config into the map where a key is missing and prints disagreements. A firm with NO company still uses the legacy `tally_ledger_config` row. Tests: `tests/test_ledger_config.py`.
+- NOT DONE: dropping `TallyLedgerConfig` (wait one release, and until a company is required); per-document company choice (S2.x; today the default company).
 - Size: M.
 
 ### S1.6 Per-company pull, staging and in-flight guards
@@ -208,6 +230,8 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - `staging_tally_party` and `staging_tally_item` carry `company_id`; the one-uncommitted-batch rule becomes per company.
   - `assert_no_pull_in_flight`, the stock-check and push guards key on company.
   - Review and commit screens say which company the batch came from.
+- STATUS 2026-10-31: BUILT. `staging_tally_party/item.company_id` (migration 0081, backfilled from the pull job); staging a batch clears only that company's uncommitted rows (a file upload has none and clears only uploads); `assert_no_pull_in_flight(session, tenant, company_id)` checks that company's running pull and staged rows; `/current` takes `company_id` and returns `company_id`, `company_name`, `other_batches`; the two import pages name the company. Test in `tests/test_tally_links.py`.
+- NOT DONE: the stock-check and push guards (`run_in_flight` in `tally_items.py` is still one per firm: pushing items to two companies at once is refused, which is safe); a company picker on the import pages (the newest batch shows first).
 - Touches: `models/tally_import.py`, `services/tally/jobs.py`, `staging.py`, `routers/parties_import.py`, `routers/items_import.py`.
 - Size: L. Depends: S1.1.
 
@@ -219,6 +243,12 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - Applied to: company list and detail, sync jobs, push status, agent job views, Fleek-admin firm Tally endpoints.
   - A test per role and per surface; a "leak checklist" in the PR listing each place company data is read.
   - Every later story that adds a read of company-scoped data (invoice lists, ledgers, ageing, reminders, statements, imports) must call it; this is part of their acceptance.
+- STATUS 2026-10-31: BUILT. `services/tally/visibility.py`: `can_see_company`, `visible_companies`, `default_company_hidden`, `require_visible_default` (404, so it does not reveal the company). Tests: `tests/test_company_visibility.py` (the rule for each of the 6 roles, platform admin) and `tests/catalog/test_company_visibility_http.py` (owner reaches, accountant is turned away on each surface).
+- LEAK CHECKLIST (every place a signed-in user reads or acts on company data; add a line per new surface):
+  - catalog Tally settings GET (looks unconnected), PUT (404), check start (404), last check GET (empty): `routers/catalog_tally.py`.
+  - item push preflight, push, run: `routers/item_tally.py`.
+  - invoice push status and push: `routers/tally_self_serve.py`.
+  - NOT YET GUARDED: `routers/tally.py` (platform-admin only, so sees all by rule); `routers/tally_agent.py` job dispatch (agent, not a user); company list and detail for users (no such endpoint until S1.4); invoice-list Tally badges and `TallyLink` reads on invoices (S2.x adds the invoice's company); Fleek-admin proxy `control_plane_firm.py` (S1.4).
 - Size: M. Depends: S1.1.
 
 ### S1.8 Relink for a new financial year
@@ -228,6 +258,8 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - A guided "link next year's company" action: pick the new company, pull its masters, auto-match parties and items to existing records by name and GSTIN, show the unmatched for review, then write links for the new company.
   - The old company stays linked and, if the owner wants, active (backdated entries). Its links are untouched.
   - Test with two companies sharing most ledgers.
+- STATUS 2026-10-31: CORE VERIFIED, GUIDED SCREEN NOT BUILT. Add the new year's company, pull its masters (the batch carries that company), commit: customers match the ones we hold by GSTIN, PAN or name (no duplicates), links are written in the NEW company only, and the old company's links are untouched. `company_for_import` now trusts the batch's `company_id` first. Test: `test_next_years_company_links_the_same_customers_and_leaves_the_old_links`.
+- NOT DONE: the guided "link next year's company" flow (pick, pull, review unmatched, confirm), which is screen work in S1.4; the "unmatched for review" list is today the normal import review.
 - Size: L.
 
 ### S1.10 Gateway address per company
@@ -247,6 +279,8 @@ Goal: a firm has several live Tally companies, each with its own links, ledger m
   - On a pull for a linked record, Tally-owned fields (ledger name via the link, group, GSTIN when ours is blank) update or flag; our commercial fields (phone, email, consent, link token, credit days, opening balance, prices, photos, catalog flags) are never changed by a pull.
   - A test lists the protected fields and fails if a new field is written by the importer without being added to either list.
   - A change in a Tally-owned field that conflicts with ours shows a review flag instead of overwriting.
+- STATUS 2026-10-31: BUILT. The importers already filled blanks only; now it is explicit and enforced. `services/tally/ownership.py` lists the fields a pull may fill (`PARTY_FILLED_FROM_TALLY`, `ITEM_FILLED_FROM_TALLY`) and the commercial fields it must never write (`PARTY_OURS`, `ITEM_OURS`); `tests/test_tally_ownership.py` reads both commit functions' source and fails if one writes a field on neither list. A differing Tally GSTIN, PAN, HSN or GST rate is kept as ours and returned in the commit as `conflicts` (party and item `CommitOut`). Test for the conflict in `tests/test_tally_party_import.py`.
+- NOT DONE: showing `conflicts` on the import result screens (the API returns them; the pages ignore them for now); a per-row review flag before commit.
 - Size: M. Depends: S1.2.
 
 ---
@@ -259,17 +293,21 @@ Goal: every document knows which company it belongs to, with the right number, t
 - Closes: G4. Decision: D-5.
 - **As** a user, **I want** each bill tied to one company at draft, **so that** it posts to the right books.
 - Acceptance: `invoice.tally_company_id` (nullable for a firm with no companies); default by the order: explicit, party default, document type, firm default; locked at finalize and shown on the invoice; no bill posts to two companies. Migration backfills finalized invoices to the default company. Uses the S1.7 filter.
+- STATUS 2026-10-31: BUILT (backend). Migration 0082; `services/tally/company_routing.py` (`choose_company` validates exists, active, visible; `resolve_company` explicit > customer default > firm default; `company_for_document`). Create takes `tally_company_id`; a defaulted company follows a changed customer, a chosen one stays; finalize fills a null one and edits are blocked after (existing rule). `InvoiceOut` carries `tally_company_id` and `_name` (null when the user may not see it). Tests: `tests/test_document_company.py`.
+- NOT DONE: per-document-type default (nothing stores one); showing the company on the invoice screen (S2.3 UI).
 - Size: M. Depends: S1.1.
 
 ### S2.2 Party default company
 - Closes: G4. **As** an owner, **I want** to set which company a customer's bills go to by default.
 - Acceptance: `party.default_company_id`, editable on the party, validated to a company the editing user can see, cleared if the company is disabled.
+- STATUS 2026-10-31: BUILT (API). `PATCH /api/parties/{id}` takes `default_company_id` (validated through `choose_company`; null clears); `PartyOut` returns it. A disabled company is skipped at resolve time rather than cleared. NOT DONE: the field on the party screen.
 - Size: S.
 
 ### S2.3 Company switch in the invoice editor
 - Closes: G4. **As** a counter user, **I want** to pick the company on a bill when I need to.
 - Acceptance: switch appears only when the firm has more than one company visible to the user; shows only visible companies; changing company on a draft re-runs defaults for series and label; mockup first.
 - Size: M.
+- STATUS 2026-10-31: WEB BUILT (type-checked and linted, NOT yet clicked through in a browser). `InvoiceEditorPage.tsx`: a "Posts to" select under the customer, shown only when the firm has 2+ active companies the user can see (`/api/tally/companies` already filters by role); sent only once the user picks one, so a defaulted company keeps following the customer; a final bill shows its company and the S2.10 guidance. Number series shown beside each company. NOT DONE: re-showing the number-to-be when the company changes (it still says "auto on finalize").
 
 ### S2.4 Series and label per company
 - Closes: G5, C3. Decision: D-7.
@@ -279,38 +317,49 @@ Goal: every document knows which company it belongs to, with the right number, t
   - Our sales use our own series (own voucher type or prefix) in that company; the voucher type is created in Tally through the import path if missing.
   - Onboarding check confirms the target voucher type accepts manual numbers and tells the shop what to switch if not.
   - Imported Tally vouchers never touch our sequence.
+- STATUS 2026-10-31: BUILT except the Tally voucher type. `companies.series_map` / `series_for`: a company's own `series_prefix` wins; the DEFAULT company without one keeps `Sales` (existing numbers carry on unbroken); any other company gets a name from its kind (EST, BR, FY, GST, CO), unique within the firm, so two companies never share a sequence. Create, slip-draft, company change and finalize set the series from the bill's company while it is a draft; duplicate keeps the source's. The PDF title uses the company's `document_label`, else the firm's. Tests: `test_series_names_are_unique_and_the_default_keeps_sales`, `test_each_company_numbers_its_own_bills` in `tests/test_document_company.py`.
+- NOT DONE: creating a manually-numbered voucher type in Tally and the onboarding check that the target type accepts manual numbers (agent and Tally work; the Reference field still carries our number, so retries stay safe); storing Tally's number back; the series prefix is not yet editable (S1.4 screen).
 - Size: L. Depends: S0.1, S2.1.
 
 ### S2.5 Push uses the document's company
 - Closes: G4. **As** the system, **I want** every push to go to the document's own company.
 - Acceptance: readiness, enqueue, job and link use the invoice's or bill's company; ledger map, units and series are that company's; sales and purchase.
+- STATUS 2026-10-31: BUILT except series. Readiness (`push_blockers`, `purchase_push_blockers`), the operator and self-serve push routes, the inward push route and the approve-time auto push use `company_for_document`; a disabled company blocks (`company_disabled`); ledger map and units were already per company. Series waits on S2.4. Test: `test_a_push_goes_to_the_documents_company_not_the_default`.
 - Size: M. Depends: S2.1, S1.5.
 
 ### S2.6 Inward bill carries its company
 - Closes: D1. Decision: D-11 (GSTIN routing comes with EP3, S3.9).
 - Acceptance: `inward_bill.tally_company_id`, default by firm default or user choice; visible filter applied; purchase push uses it.
+- STATUS 2026-10-31: BUILT except user choice. Column in 0082 (approved bills backfilled to the default); approve sets it to the firm default when null; push, readiness, ledger config use `company_for_document`. NOT DONE: a way for the user to pick the company on a bill (needs the S2.3-style switch).
 - Size: M.
 
 ### S2.7 Check Tally before creating a supplier or item
 - Closes: D1, B2 (part).
 - Acceptance: the purchase push first compares supplier and item names and GUIDs against the company's known masters (same check-Tally step the catalog push uses); creates only what is missing; a near-match is flagged for the user instead of duplicated.
+- STATUS 2026-10-31: BUILT for names. `services/tally/master_check.py` (`classify`: exact, near at 0.88 similarity, new) compares a supplier against the company's last-pulled ledgers and an item against its last stock check. `pending_master_creates` leaves out an exact match (a Create would alter it) and reports a near match; `purchase_push_blockers` holds the push with `similar_master_in_tally` naming both spellings. Tests: `tests/test_master_check.py`, two in `tests/inward/test_inward_tally_push_integration.py`.
+- NOT DONE: comparing GUIDs (we hold none for an unlinked record); a "this is the same one" button that writes the link (UI, then `record_master_guid` with the Tally guid from the ledger list); `known_ledgers` has no GUIDs today.
 - Size: L.
 
 ### S2.8 Orders follow the party's company
 - Closes: D2. Acceptance: an order turned into an invoice takes the party default company; customer-facing pages and WhatsApp show the firm name only, never the company.
+- STATUS 2026-10-31: DONE by composition: `make_invoice` goes through `create_invoice`, which resolves the customer's company. Customer pages and WhatsApp read no company. Test: `test_an_order_invoice_goes_to_the_customers_tally_company`.
 - Size: S. Depends: S2.1, S2.2.
 
 ### S2.9 Party roles as a set
 - Closes: B4. Acceptance: a party may be both customer and supplier; group scoping (`debtors_parent`, `creditors_parent`) is per company; resolve-party ladder order is not changed.
 - Size: M.
+- STATUS 2026-10-31: MOSTLY ALREADY TRUE, NOT FULLY BUILT. A party is one record with a role of customer, supplier or both; an import widens the role and never narrows it (`test_gstin_match_widens_role_to_both`), and the same party is linked in each company it exists in (S1.2, S1.8 test). Resolve-party ladder untouched. NOT DONE: group scoping by `debtors_parent` / `creditors_parent` per company: nothing reads those two map keys today (the importer classifies by Tally's standard primary groups), so a custom group under Sundry Creditors is classified by its top group only.
 
 ### S2.10 Wrong-company correction (interim)
 - Closes: D-5 (guidance). Acceptance: finalized invoice in the wrong company shows plain guidance (credit note plus fresh invoice; until EP4 S4.5, fix it in Tally). The full flow is S4.5.
+- STATUS 2026-10-31: BUILT (API): `InvoiceOut.company_guidance` on a final bill in a firm with 2+ companies. NOT DONE: showing it on the invoice screen.
 - Size: S.
 
 ### S2.11 Combined reminders with a per-company switch
 - Closes: D-6. Depends: S2.1, S1.7.
 - Acceptance: a reminder totals the party's overdue bills across companies marked `include_in_reminders` and visible to the approver; owner-only companies excluded by default; itemised by invoice number; the approve screen lists which companies each reminder covers; sent from the account's number with the firm name.
+- STATUS 2026-10-31: BUILT (backend). One reminder per party already covered every bill; now `reminders.excluded_company_ids` leaves out companies with `include_in_reminders` off or hidden from the accountant (an owner-only book is never chased from the shared queue), and a bill with no company counts under the default. `ReminderOut` returns `companies` (when more than one) and `invoice_labels` (`EST/5`, so equal numbers in two series stay apart). Tests in `tests/test_reminders.py`.
+- NOT DONE: the approve screen showing `companies` and `invoice_labels`; "sent from the account's number with the firm name" (account = S3.x); the statement PDF still lists one party ledger from our own invoices (it already spans companies).
 - Size: L.
 
 ---
@@ -364,6 +413,7 @@ Goal: receipts, credit notes and imported history flow both ways under the origi
 ### S4.1 Real voucher key
 - Closes: C1. Depends: S0.1. Acceptance: store the key from `LASTVCHID` (the voucher master id) and derive the voucher GUID as company GUID + "-" + 8-digit hex of it; `pushed:<number>` fallback removed or flagged unreliable; also store Tally's own voucher number, which differs from ours (C3).
 - Size: M.
+- STATUS 2026-10-31: BUILT for the key. `push.voucher_identity` reads `LASTVCHID` from the Import response and stores the voucher's real GUID (`voucher_guid`: company GUID + '-' + 8 hex digits of the master id; live example: id 28 -> `...-0000001c`) as the link's `tally_guid`, and the master id in `tally_masterid`. Without the company's GUID it stores the master id; with neither, the `pushed:<number>` placeholder, which `is_confirmed_key` reports as unconfirmed. Tests: `tests/test_voucher_key.py`. NOT DONE: Tally's own voucher number (C3; the Import response does not return it, so it needs a read by Reference, which S4.3 will do); using `is_confirmed_key` in the UI or in reconcile.
 
 ### S4.2 Voucher import into native rows
 - Closes: C2. Decision: D-8. Follows `PLAN-tally-voucher-import-and-party-prices.md`, per company, whole not in pieces.
@@ -377,6 +427,9 @@ Goal: receipts, credit notes and imported history flow both ways under the origi
 ### S4.4 Receipt push
 - Closes: C2. Decision: D-7. Acceptance: a recorded payment pushes as a Receipt voucher in our series with bill-wise allocation; ledger from the payment mode and the company's map.
 - Size: L.
+- STATUS 2026-10-31: BUILT (backend), VERIFIED LIVE. Posted two Receipt vouchers to the dev company "Fleek" (ids 29 and 30): a party-credit / cash-debit Receipt with an "Agst Ref" `BILLALLOCATIONS.LIST` named by our invoice number reduced that bill in Tally (9104: 100.00 -> 60.00); an unapplied amount as a "New Ref" under our own receipt reference posts too. `services/tally/receipts.py`: `split_by_company` (a payment is pushed once per company: each invoice's part to its own company, on-account to the default), `receipt_ledger` (cash or bank ledger from the payment mode and the company's map, D-7), `receipt_blockers`, `build_receipt_envelope`, `enqueue_push_receipt`, checksum so an unchanged re-push is a no-op. Result handling is the shared `process_push_result` (link entity `payment`, real voucher GUID, S4.1). Routes: `GET /api/tally/payments/{id}/push-status`, `POST /api/tally/payments/{id}/push` (one job per company, hidden companies skipped). The agent runs it under its existing `push_sales` action name, so no agent release. Tests: `tests/test_receipt_push.py`.
+- NOT DONE: the unknown-outcome check for receipts (S0.6 covers sales and purchase only; a receipt retry after "agent never answered" could post twice, so `outcome_unknown` is not set for receipts yet and the stuck-job message is the generic one); a "Send to Tally" button on the payment screen; reversing a pushed payment in Tally (a reversed payment is refused with a message); bill names assume one series per company (an invoice number repeated in two series of the same company would collide).
+
 
 ### S4.5 Credit notes
 - Closes: C2. Decision: D-5. Acceptance: issue a credit note against a finalized invoice (we never cancel finalized); pushes to the same company; supports the wrong-company correction.
@@ -418,6 +471,7 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 ### S6.6 Price points per company
 - Closes: D3. Acceptance: `supplier_price_point` carries a company where it matters; no change for one company.
 - Size: S.
+- STATUS 2026-10-31: BUILT. `supplier_price_point.tally_company_id` (migration 0083, backfilled from the bill); approve now fixes the bill's company first and the bill's prices carry it; a quote carries none (a price list belongs to no company). Test: `test_an_approved_bills_prices_remember_its_company`. NOT DONE: filtering price history by company in the screens (one company today).
 
 ### S6.7 Barcode aliases and scan input
 - Closes: E1. Decision: D-10 (internal code only). Status: Parked. Revisit trigger: a pilot shop asks for scan-at-counter or EAN packs; then aliases with a unit multiplier, scan-in at billing first.
@@ -478,6 +532,7 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 | 2026-10-30 | Backlog opened: 7 epics, 48 stories (S4.2 counted once though it splits into five), all Open. |
 | 2026-10-30 | S0.1 Building. Two separate Tally processes: port 9000 serves "Fleek" (GUID 167b31a2-6486-4396-8ee8-7fe38496052d, 18 vouchers, 2339 stock items, ZZTEST ledgers from earlier runs); port 9001 serves "Fleek Test" (GUID 67baeb49-5454-418e-aad2-4ae28441e6d1, empty: Cash and P&L only, no items, no units, 0 vouchers). Each gateway lists only its own company. The agent reads one `GatewayUrl`, so it can reach only one: new gap A5, new story S1.10. No vouchers posted yet. |
 | 2026-10-30 | S0.1 DONE: 7 live posts into the dev companies (4 vouchers landed in Fleek, master ids 19 to 22; the 3 refused or failed posts changed nothing). Findings in the S0.1 section. B3 raised to Critical, E2 lowered to Med, F1 and C3 confirmed, C1 simplified. |
+| 2026-10-31 | S1.2 BUILT (see its section). New story S1.2b: item Tally state and unit are per company, not per item. |
 | 2026-10-30 | S1.1 foundation BUILT (see its section). |
 | 2026-10-30 | S0.3 BUILT (see its section): backend + agent + panel; decisions taken: retry while not open, stop on renamed/different, block push on both. Agent release still to do. |
 | 2026-10-30 | Live: both companies loaded in one Tally window on 9000; Company collection lists both with GUIDs; a push by company name reaches the right books (id 28 posted to Fleek; Fleek Test refused a ledger it lacks). S0.3 can ship against ONE gateway; S1.10 (several gateways) is deferred until shops need it. Design updated. |

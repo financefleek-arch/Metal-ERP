@@ -38,9 +38,9 @@ def filter_clauses(f: ItemFilter) -> list:
             )
         )
     if f.in_tally is True:
-        out.append(or_(Item.tally_guid.is_not(None), Item.tally_status == "synced"))
+        out.append(or_(Item.tally_linked.is_(True), Item.tally_status == "synced"))
     elif f.in_tally is False:
-        out.append(and_(Item.tally_guid.is_(None), Item.tally_status != "synced"))
+        out.append(and_(Item.tally_linked.is_(False), Item.tally_status != "synced"))
     if f.tally_price_due:
         # sent before, but Tally's price is not the item's rate now (changed since, or Tally
         # dropped it)

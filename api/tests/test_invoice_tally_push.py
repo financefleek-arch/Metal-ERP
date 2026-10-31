@@ -328,3 +328,20 @@ def test_sales_without_company_name_keeps_the_old_shape():
     inv = _invoice([_line(1, item, qty="1", rate="1", line_total="1")], grand_total="1", round_off="0")
     env = build_sales_voucher_envelope(inv, _party(), _LEDGER_MAP)
     assert env.find(".//REQUESTDESC/STATICVARIABLES") is None
+
+
+def test_voucher_names_party_and_item_by_the_companys_own_names():
+    """S1.3: a rename here must not change what the voucher calls the ledger or the stock item."""
+    item = _item("SS Thali 11in (renamed)")
+    line = _line(1, item, qty="1", rate="96.00", line_total="96.00")
+    inv = _invoice([line], grand_total="96.00", round_off="0.00")
+    party = _party("Anand Metals (renamed)")
+
+    env = build_sales_voucher_envelope(
+        inv, party, _LEDGER_MAP,
+        party_name="Anand Metals Pvt Ltd",
+        item_names={item.id: "SS Thali 11in"},
+    )
+
+    assert env.find(".//PARTYLEDGERNAME").text == "Anand Metals Pvt Ltd"
+    assert env.find(".//ALLINVENTORYENTRIES.LIST/STOCKITEMNAME").text == "SS Thali 11in"

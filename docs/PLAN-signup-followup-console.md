@@ -151,6 +151,20 @@ the live DB, `FLEEK_ENV=preview`). Never `ruff format` `api/`.
 - Fleek frontend: admin page **Follow-ups** (`/admin/metal-erp/leads`, nav item, `MetalErpLeads.vue`, `metal-erp-leads.ts`, store `getMetalErpLeads`). Vitest 5 passed; `vue-tsc` shows no error in these files. **Not browser-verified.**
 - Also: the Fleek inbox now keeps Meta's failure reason on a failed send (`services/whatsapp_service.py`).
 
+**Slice 2 (2026-10-31): where each sign-up came from, shown on Follow-ups. SHIPPED AND REVERTED the same morning (commit ded615e, revert e29877e): production went down.
+Cause: migration 0084 had `down_revision = "0083"`, but 0076-0083 (Tally work) were still uncommitted, so on deploy `alembic upgrade head` could not find 0083. Before re-applying: commit and deploy
+0076-0083 first, or renumber 0084 to chain from the real head (0075 in prod), and run `alembic upgrade head` on a CLEAN CLONE first (CI does; the push-webhook deploy does not wait for it). The Fleek half
+(backend + frontend) was never deployed and is unaffected; the Metal ERP half is in git history at ded615e.** Decision 3 of section 7 ("tag at sign-up") taken as: first-touch facts, source worked out in Fleek.
+- Why: a sign-up (Salim ansari, 30 Oct) had no click id and the only way to see its source was matching Umami sessions by timestamp by hand.
+- Metal ERP: `web/src/lib/analytics.ts` `rememberFirstTouch()` (7 days, utm tags, external referrer host, device, landing path + #anchor, first-seen time; same keys as Fleek's `useLeadTracking.ts`),
+  sent with the sign-up as `attribution`. `services/attribution.py` cleans it and adds os / browser / in-app label from the User-Agent (raw UA never kept). Migration `0084`
+  `signup_request.attribution` (JSONB). `lead_feed.py` sends the first attempt's attribution per lead (additive, feed version stays 1). Tests: `tests/test_attribution.py` (4), one in `test_account_onboarding.py`.
+- Fleek backend: `metal_erp_leads_service.py` `clean_touch` (reuses `crm_lead_intake.clean_attribution`), `source_of` (click id or paid utm > other utm > referrer host > in-app > direct;
+  no attribution and no click = "Not recorded", never guessed), `overview` adds `source`, `source_label`, `source_notes` per lead and `sources` counts. No migration (payload is JSON). 7 new pure tests (run with `--noconftest`; needs `requests` + `cryptography` in the env).
+- Fleek frontend: Follow-ups page gets a Source column (badge + notes: device, in-app, campaign, landing, "signed up 2m after landing") and a source filter row. Vitest 6 pass; vue-tsc clean on these files. **Not browser-verified.**
+- Limits: leads before this ships show "Not recorded" unless they carry a click id. The Umami session id is not stored (the client cannot read it); first-seen time stands in for it.
+  An iPhone page with no Safari token is labelled "another app's browser" (a guess from the User-Agent, not proof it was Instagram).
+
 **Deploy order:** Fleek first (migration a20 and the intake route), then Metal ERP. Metal ERP first is harmless: Fleek answers 404 and the feed logs a warning until Fleek is up.
 
 **Known limits:** no call outcome, notes or assignment yet (slice 2); the page is a queue only. A person typing a made-up mobile into the sign-in box becomes a lead, and an

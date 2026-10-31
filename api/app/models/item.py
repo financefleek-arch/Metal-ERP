@@ -9,7 +9,6 @@ follow-up migration once pg_trgm is confirmed present.
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -154,14 +153,8 @@ class Item(PkUuidMixin, TimestampMixin, Base):
     # The unit Tally holds for this item, in Tally's own spelling ("Pcs", "Nos", "Kgs"). A voucher line in
     # any other unit posts with a blank quantity, so pushes use this (services/tally/units.py).
     tally_unit: Mapped[str | None] = mapped_column(String(40))
-    # Push state: none | queued | synced | error. `tally_price` is the selling price last sent;
-    # `tally_seen_price` what Tally showed at the last check (0 = no price there).
-    tally_status: Mapped[str] = mapped_column(
-        String(8), default="none", server_default="none", nullable=False
-    )
-    tally_price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
-    tally_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    tally_seen_price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    # The push state (tally_status, tally_price, tally_seen_price, tally_pushed_at) lives per company in
+    # `item_tally_state`; models/__init__.py maps the default company's row onto the item, read-only.
 
     # In stock / expected / out of stock / discontinued. Customer catalogs offer In stock by
     # default. Items from a supplier price list start out of stock until marked.

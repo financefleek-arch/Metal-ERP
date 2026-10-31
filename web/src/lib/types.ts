@@ -497,6 +497,10 @@ export interface ImportBatch {
 export interface ImportCurrentBatch {
   batch_id: string | null;
   total: number;
+  // which Tally company the batch came from (null: a file upload) and how many other companies have one waiting
+  company_id?: string | null;
+  company_name?: string | null;
+  other_batches?: number;
 }
 
 export interface ImportFlag {
@@ -830,6 +834,10 @@ export interface ItemImportBatch {
 export interface ItemImportCurrentBatch {
   batch_id: string | null;
   total: number;
+  // which Tally company the batch came from (null: a file upload) and how many other companies have one waiting
+  company_id?: string | null;
+  company_name?: string | null;
+  other_batches?: number;
 }
 
 export interface StagedItemRow {
@@ -959,6 +967,11 @@ export interface Invoice {
   template_version: string;
   party_id: string | null;
   party: PartyBrief | null;
+  /** the Tally company the bill posts to (null when the firm has none or the user may not see it) */
+  tally_company_id?: string | null;
+  tally_company_name?: string | null;
+  /** plain guidance on a final bill in a firm with several companies */
+  company_guidance?: string | null;
   bill_to_addr_id: string | null;
   ship_to_addr_id: string | null;
   notes: string | null;
@@ -1214,4 +1227,25 @@ export interface PriceHistory {
 
 export interface LastPrices {
   prices: PricePoint[];
+}
+
+/** A Tally company of the firm, as the owner's own page sees it (`/api/tally/companies`). */
+export interface TallyCompanyRow {
+  id: string;
+  company_name: string;
+  kind: string;
+  is_default: boolean;
+  status: string;
+  series: string;
+  series_prefix: string | null;
+  document_label: string | null;
+  include_in_reminders: boolean;
+  visible_roles: string[] | null;
+  connected: boolean;
+  ledger_map: Record<string, string>;
+  books_from: string | null;
+  verify_state: string | null;
+  verify_note: string | null;
+  verified_at: string | null;
+  last_masters_pull_at: string | null;
 }

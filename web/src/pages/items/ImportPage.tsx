@@ -131,7 +131,9 @@ export function ItemsImportPage() {
           <div className="mt-4 rounded-xl border border-accent/40 bg-accent-soft/40 px-4 py-3 text-sm">
             <p>
               An import staged earlier is waiting for review —{" "}
-              <strong>{staged.total}</strong> stock item{staged.total === 1 ? "" : "s"}.
+              <strong>{staged.total}</strong> stock item{staged.total === 1 ? "" : "s"}
+              {staged.company_name ? <> from <strong>{staged.company_name}</strong></> : null}.
+              {staged.other_batches ? ` ${staged.other_batches} more waiting for other companies.` : ""}
             </p>
             <div className="mt-2 flex gap-2">
               <button className="btn-primary" onClick={() => setBatchId(staged.batch_id)}>

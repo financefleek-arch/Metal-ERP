@@ -354,7 +354,7 @@ class ItemListItem(BaseModel):
     pack_qty: int | None = None
     carton_qty: int | None = None
     primary_media_id: str | None = Field(default=None, exclude=True)
-    tally_guid: str | None = Field(default=None, exclude=True)
+    tally_linked: bool = Field(default=False, exclude=True)
     tally_status: str = Field(default="none", exclude=True)
     tally_price: Money | None = Field(default=None, exclude=True)
     tally_seen_price: Money | None = Field(default=None, exclude=True)
@@ -373,7 +373,7 @@ class ItemListItem(BaseModel):
             return "synced"
         if self.tally_status in ("queued", "error"):
             return self.tally_status
-        return "imported" if self.tally_guid else "none"
+        return "imported" if self.tally_linked else "none"
 
     @computed_field  # type: ignore[prop-decorator]
     @property

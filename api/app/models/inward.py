@@ -53,6 +53,11 @@ class InwardBill(PkUuidMixin, TimestampMixin, Base):
     __tablename__ = "inward_bill"
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    # The Tally company this purchase bill posts to (S2.6); set at approve, the firm's default unless
+    # chosen. Null falls back to the default.
+    tally_company_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tally_company.id"), index=True
+    )
     uploaded_by: Mapped[str | None] = mapped_column(ForeignKey("app_user.id"))
 
     # Source file — same bind-mounted volume as invoice PDFs, `inward/` subdir.

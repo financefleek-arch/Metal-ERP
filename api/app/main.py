@@ -53,6 +53,7 @@ from app.routers import (
     share_links,
     tally,
     tally_agent,
+    tally_companies,
     tally_self_serve,
     tenant,
     voice_stream,
@@ -237,6 +238,7 @@ app.include_router(whatsapp.router)
 app.include_router(whatsapp.invoice_router)
 app.include_router(tally.router)
 app.include_router(tally_agent.router)
+app.include_router(tally_companies.router)
 app.include_router(tally_self_serve.router)
 app.include_router(inward.router)
 app.include_router(catalog.router)

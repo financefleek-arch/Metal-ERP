@@ -35,6 +35,11 @@ class StagingTallyParty(PkUuidMixin, Base):
     # Set when the batch was produced by a Tally Connector pull (F1a); null
     # for a plain file-upload batch. Deep-links the pull's job to its rows.
     sync_job_id: Mapped[str | None] = mapped_column(String(36))
+    # The Tally company the batch was pulled from; null for a file upload (S1.6). One uncommitted batch
+    # is allowed per company, so a pull for one company never clears another's.
+    company_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tally_company.id"), index=True
+    )
 
     # --- straight from the XML ---
     tally_guid: Mapped[str | None] = mapped_column(String(64))

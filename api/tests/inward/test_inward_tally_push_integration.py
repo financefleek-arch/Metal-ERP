@@ -241,6 +241,64 @@ def test_blockers_party_and_item_unlinked_are_pending_create_not_blocking(
     assert "Monin" in messages
 
 
+def _known_in_tally(tenant_id: str, *, supplier: str) -> None:
+    """The company's Tally already holds this ledger (as the last masters pull recorded it)."""
+    from app.models import TallyCompany
+
+    with SessionLocal() as s:
+        company = s.scalar(select(TallyCompany).where(TallyCompany.tenant_id == tenant_id))
+        company.known_ledgers = [{"name": supplier, "parent": "Sundry Creditors", "kind": "ledger"}]
+        s.commit()
+
+
+def test_a_supplier_already_in_tally_is_not_created_again(client: TestClient) -> None:
+    """S2.7: an exact name match is left alone (a Create would alter it)."""
+    tok, tenant_id = _register_firm(client, "pb3x@x.example.com")
+    _enable_inward(client, tok, tenant_id)
+    _seed_hsn()
+    _link_company(client, _admin_token(client), tenant_id)
+    bill_id = _upload_and_approve_sugal(client, _h(tok))
+    _known_in_tally(tenant_id, supplier="sugal foods")
+    with SessionLocal() as s:
+        bill = s.get(InwardBill, bill_id)
+        messages = " ".join(b.message for b in purchase_push_blockers(s, bill))
+    assert "Supplier 'SUGAL FOODS'" not in messages  # not announced as a create
+    assert "Monin" in messages  # the items are still new
+
+
+def test_a_supplier_with_a_near_name_in_tally_holds_the_push(client: TestClient) -> None:
+    """S2.7: a near match would make a duplicate ledger, so the user decides first."""
+    tok, tenant_id = _register_firm(client, "pb3y@x.example.com")
+    _enable_inward(client, tok, tenant_id)
+    _seed_hsn()
+    _link_company(client, _admin_token(client), tenant_id)
+    bill_id = _upload_and_approve_sugal(client, _h(tok))
+    _known_in_tally(tenant_id, supplier="Sugal Food")
+    with SessionLocal() as s:
+        bill = s.get(InwardBill, bill_id)
+        blockers = purchase_push_blockers(s, bill)
+    assert not is_pushable(blockers)
+    similar = next(b for b in blockers if b.code == "similar_master_in_tally")
+    assert "SUGAL FOODS" in similar.message and "Sugal Food" in similar.message
+
+
+def test_an_approved_bills_prices_remember_its_company(client: TestClient) -> None:
+    """S2.6 / S6.6: approve fixes the bill's Tally company, and its price history carries it."""
+    from app.models import SupplierPricePoint, TallyCompany
+
+    tok, tenant_id = _register_firm(client, "pb3z@x.example.com")
+    _enable_inward(client, tok, tenant_id)
+    _seed_hsn()
+    _link_company(client, _admin_token(client), tenant_id)
+    bill_id = _upload_and_approve_sugal(client, _h(tok))
+    with SessionLocal() as s:
+        bill = s.get(InwardBill, bill_id)
+        company = s.scalar(select(TallyCompany).where(TallyCompany.tenant_id == tenant_id))
+        assert bill.tally_company_id == company.id
+        points = list(s.scalars(select(SupplierPricePoint).where(SupplierPricePoint.source_id == bill_id)))
+        assert points and {p.tally_company_id for p in points} == {company.id}
+
+
 def test_blockers_not_approved(client: TestClient) -> None:
     tok, tenant_id = _register_firm(client, "pb4@x.example.com")
     _enable_inward(client, tok, tenant_id)

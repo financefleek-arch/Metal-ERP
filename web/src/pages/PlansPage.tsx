@@ -25,6 +25,27 @@ function inDays(n: number): string {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
+// Opening the payment page changes nothing on the firm: it stays on Free until the autopay is approved. So this page remembers, in this browser, that
+// the owner went to pay, and asks Fleek whether it was approved when they come back (the licence is cached, so it would not notice on its own).
+const OPENED_KEY = "plan_payment_opened_at";
+const OPENED_FOR_MS = 2 * 60 * 60 * 1000;
+function paymentOpened(): boolean {
+  try {
+    const t = Number(localStorage.getItem(OPENED_KEY));
+    return t > 0 && Date.now() - t < OPENED_FOR_MS;
+  } catch {
+    return false;
+  }
+}
+function setPaymentOpened(on: boolean) {
+  try {
+    if (on) localStorage.setItem(OPENED_KEY, String(Date.now()));
+    else localStorage.removeItem(OPENED_KEY);
+  } catch {
+    /* private window: the button below still works */
+  }
+}
+
 /** Plan and billing: what the firm is on, the plans and their prices (read live from Fleek), and starting or cancelling a plan. */
 export function PlansPage() {
   const { refresh } = useAuth();
@@ -34,6 +55,7 @@ export function PlansPage() {
   const [starting, setStarting] = useState<Plan | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [opened, setOpened] = useState(paymentOpened);
 
   useEffect(() => {
     beacon("plans_viewed");
@@ -63,16 +85,25 @@ export function PlansPage() {
   });
 
   // Back from the payment page (or the tab was left open): ask whether the autopay was approved, so the page does not wait on a webhook.
-  const pending = data?.current.state === "payment_pending" && !!data.can_manage;
+  const pending = (data?.current.state === "payment_pending" || opened) && !!data?.can_manage;
   const check = useMutation({
     mutationFn: () => api<{ changed: boolean }>("/plans/check", { method: "POST" }),
     onSuccess: async (r) => {
       if (r.changed) {
+        setPaymentOpened(false);
+        setOpened(false);
         await qc.invalidateQueries({ queryKey: PLANS_KEY });
         await refresh();
       }
     },
   });
+  // on a paid plan there is nothing left to wait for
+  useEffect(() => {
+    if (opened && data && !data.current.free) {
+      setPaymentOpened(false);
+      setOpened(false);
+    }
+  }, [opened, data]);
   const checkNow = check.mutate;
   useEffect(() => {
     if (!pending) return;
@@ -119,6 +150,14 @@ export function PlansPage() {
               ? `You can download and share invoice PDFs for ${data.pdf_days_left} more ${data.pdf_days_left === 1 ? "day" : "days"}; after that it needs Starter.`
               : "Downloading and sharing invoice PDFs now needs Starter."}
           </p>
+        )}
+        {cur.free && opened && owner && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+            <span className="meta">Went to the payment page? If you approved it, check here. If not, you are still on Free and nothing changed.</span>
+            <button className="btn-ghost" disabled={check.isPending} onClick={() => check.mutate()}>
+              {check.isPending ? "Checking…" : "I approved it. Check again"}
+            </button>
+          </div>
         )}
         {paidNow && cur.status === "trial" && (
           <p className="meta mt-1">
@@ -266,6 +305,7 @@ function StartSheet({ p, onClose }: { p: Plan; onClose: () => void }) {
   const start = useMutation({
     mutationFn: () => api<StartOut>("/plans/start", { method: "POST", body: { plan: p.plan } }),
     onSuccess: (r) => {
+      setPaymentOpened(true);
       window.location.assign(r.short_url); // the hosted page where the owner approves UPI AutoPay or a card
     },
     onError: (e) => setErr(message(e)),

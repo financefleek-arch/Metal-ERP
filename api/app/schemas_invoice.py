@@ -87,6 +87,8 @@ class InvoiceCreate(BaseModel):
     # optional so a draft can be started before a party is chosen; finalize
     # still requires it
     party_id: str | None = None
+    # the Tally company this bill posts to; omitted = the customer's default, else the firm's (S2.1)
+    tally_company_id: str | None = None
     date: date_t | None = None  # defaults to today
     bill_to_addr_id: str | None = None
     ship_to_addr_id: str | None = None
@@ -102,6 +104,7 @@ class InvoiceUpdate(BaseModel):
     """
 
     party_id: str | None = None
+    tally_company_id: str | None = None
     date: date_t | None = None
     bill_to_addr_id: str | None = None
     ship_to_addr_id: str | None = None
@@ -170,6 +173,11 @@ class InvoiceOut(BaseModel):
 
     party_id: str | None
     party: PartyBrief | None = None
+    # the Tally company the bill posts to; null when the user may not see it (S1.7) or the firm has none
+    tally_company_id: str | None = None
+    tally_company_name: str | None = None
+    # plain guidance on a finalized bill in a firm with several companies (S2.10)
+    company_guidance: str | None = None
     bill_to_addr_id: str | None
     ship_to_addr_id: str | None
 

@@ -46,7 +46,9 @@ from app.services.inward.approve import ApproveError, approve_bill, approve_gate
 from app.services.inward.run_extraction import run_extraction
 from app.services.tally.agent_health import assert_tally_reachable
 from app.services.tally.companies import get_default_company
+from app.services.tally.company_routing import company_for_document
 from app.services.tally.jobs import assert_no_purchase_push_in_flight, enqueue_push_purchase
+from app.services.tally.ledger_config import ledger_config, save_ledger_config
 from app.services.tally.push_readiness import (
     is_pushable,
     purchase_push_blockers,
@@ -563,7 +565,7 @@ def push_bill_to_tally(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="; ".join(b.message for b in blockers),
         )
-    company = get_default_company(session, user.tenant_id)
+    company = company_for_document(session, bill)
     assert company is not None  # purchase_push_blockers() already confirmed this
     assert_no_purchase_push_in_flight(session, user.tenant_id, bill_id)
     assert_tally_reachable(session, company)
@@ -579,12 +581,16 @@ def push_bill_to_tally(
 def get_ledgers(
     session: SessionDep, user: InwardUser
 ) -> LedgerConfigIO:
-    cfg = session.get(TallyLedgerConfig, user.tenant_id)
-    if cfg is None:
-        cfg = TallyLedgerConfig(tenant_id=user.tenant_id)
-        session.add(cfg)
+    company = get_default_company(session, user.tenant_id)
+    if company is not None:
+        cfg = ledger_config(company)
+        return LedgerConfigIO(**{f: getattr(cfg, f) for f in LedgerConfigIO.model_fields})
+    legacy = session.get(TallyLedgerConfig, user.tenant_id)  # no company yet: the legacy row
+    if legacy is None:
+        legacy = TallyLedgerConfig(tenant_id=user.tenant_id)
+        session.add(legacy)
         session.flush()
-    return LedgerConfigIO.model_validate(cfg)
+    return LedgerConfigIO.model_validate(legacy)
 
 
 @router.put("/settings/ledgers", response_model=LedgerConfigIO)
@@ -593,6 +599,11 @@ def put_ledgers(
     session: SessionDep,
     user: InwardWriteUser,
 ) -> LedgerConfigIO:
+    company = get_default_company(session, user.tenant_id)
+    if company is not None:
+        save_ledger_config(company, body.model_dump())
+        session.flush()
+        return body
     cfg = session.get(TallyLedgerConfig, user.tenant_id)
     if cfg is None:
         cfg = TallyLedgerConfig(tenant_id=user.tenant_id)

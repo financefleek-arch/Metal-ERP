@@ -103,6 +103,17 @@ def _addr_lines(addr: PartyAddress | None) -> list[str]:
     return [b for b in [*bits, tail] if b]
 
 
+def _document_label(session: Session, invoice: Invoice, tenant: Tenant | None) -> str:
+    """The bill's title: its Tally company's own label (an estimate book says "Estimate"), else the
+    firm's (S2.4)."""
+    from app.services.tally.company_routing import company_for_document
+
+    company = company_for_document(session, invoice) if invoice.tally_company_id else None
+    if company is not None and (company.document_label or "").strip():
+        return company.document_label.strip()
+    return tenant.document_label if tenant else "Invoice"
+
+
 def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
     from weasyprint import HTML  # local: keep API bootable without native libs
 
@@ -146,7 +157,7 @@ def render_invoice_pdf(session: Session, invoice: Invoice) -> Path:
                 total_amount_due = prev + (invoice.grand_total or 0)
 
     html = _env.get_template("invoice_v1_nongst.html").render(
-        doc_label=(tenant.document_label if tenant else "Invoice"),
+        doc_label=_document_label(session, invoice, tenant),
         tenant=tenant,
         invoice=invoice,
         party=party,

@@ -15,6 +15,7 @@ from app.deps import CurrentUser, SessionDep, WriteUser
 from app.models import Invoice, Party, PaymentReminder, Tenant
 from app.services import features
 from app.services import reminders as svc
+from app.services.tally.company_routing import company_for_document
 
 router = APIRouter(
     prefix="/api/reminders", tags=["reminders"], dependencies=[features.require("reminders")]
@@ -36,6 +37,9 @@ class ReminderOut(BaseModel):
     proposed_on: date
     status: str  # proposed | failed (| sent | skipped when asked for)
     error: str | None
+    # which Tally companies' bills this reminder totals, and each bill as series/number (S2.11)
+    companies: list[str] = []
+    invoice_labels: list[str] = []
 
 
 class IdsBody(BaseModel):
@@ -52,10 +56,16 @@ class SendResult(BaseModel):
 def _out(session: SessionDep, r: PaymentReminder) -> ReminderOut:
     party = session.get(Party, r.party_id)
     numbers: list[int] = []
+    labels: list[str] = []
+    company_names: list[str] = []
     for iid in r.invoice_ids or []:
         inv = session.get(Invoice, iid)
         if inv is not None and inv.number is not None:
             numbers.append(inv.number)
+            labels.append(f"{inv.series}/{inv.number}" if inv.series != "Sales" else str(inv.number))
+            company = company_for_document(session, inv)
+            if company is not None and company.company_name not in company_names:
+                company_names.append(company.company_name)
     return ReminderOut(
         id=r.id,
         party_id=r.party_id,
@@ -69,6 +79,8 @@ def _out(session: SessionDep, r: PaymentReminder) -> ReminderOut:
         proposed_on=r.proposed_on,
         status=r.status,
         error=r.error,
+        companies=company_names if len(company_names) > 1 else [],
+        invoice_labels=labels,
     )
 
 

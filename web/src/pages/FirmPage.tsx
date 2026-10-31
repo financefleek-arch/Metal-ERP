@@ -3,6 +3,7 @@ import { FormProvider, useForm } from "react-hook-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "../lib/api";
 import type { Tenant } from "../lib/types";
+import { TallyCompaniesCard } from "../components/TallyCompaniesCard";
 import { TallyConnectCard } from "../components/TallyConnectCard";
 import { TallyBackupsCard } from "../components/TallyBackupsCard";
 import { WhatsappConnectCard } from "../components/WhatsappConnectCard";
@@ -216,7 +217,7 @@ export function FirmPage() {
   const owner = me?.role === "owner";
   const showReminders = remindersOn && canWrite(me?.role);
   const showCatalog = Boolean(me?.ext_supplier_catalog);
-  const showConnections = tallyOn || owner; // an owner always sees what is on offer, even what the plan leaves out
+  const showConnections = true; // WhatsApp and Tally are always listed; each says why if you cannot use it
   const autoAllowed = data?.reminder_auto_allowed !== false;
 
   const onSubmit = handleSubmit(
@@ -287,7 +288,7 @@ export function FirmPage() {
         ]
       : []),
     ...(showConnections
-      ? [{ key: "connections" as const, title: "Connections", line: [(tallyOn || owner) && "Tally", owner && "WhatsApp"].filter(Boolean).join(" and "), todo: false }]
+      ? [{ key: "connections" as const, title: "Connections", line: "Tally and WhatsApp", todo: false }]
       : []),
   ];
 
@@ -433,17 +434,24 @@ export function FirmPage() {
               {tallyOn ? (
                 <>
                   <TallyConnectCard />
+                  <TallyCompaniesCard owner={owner} />
                   <TallyBackupsCard />
                 </>
               ) : (
                 owner && <LockedConnection feature={"tally" as FeatureKey} title="Tally" text="Back up your Tally data to the cloud and bring your customers and items in." />
               )}
-              {owner &&
-                (whatsappOn ? (
-                  <WhatsappConnectCard />
-                ) : (
-                  <LockedConnection feature="whatsapp" title="WhatsApp Business" text="Send bills and payment reminders to your customers from your own WhatsApp number." />
-                ))}
+              {!owner ? (
+                <div className="card mb-5 p-4 sm:p-5">
+                  <h3 className="text-sm font-semibold">WhatsApp Business</h3>
+                  <p className="mt-2 max-w-prose text-sm text-muted">
+                    Only the owner of this firm can connect or change WhatsApp. You are signed in as {me?.role ?? "a team member"}. Ask the owner to do it.
+                  </p>
+                </div>
+              ) : whatsappOn ? (
+                <WhatsappConnectCard />
+              ) : (
+                <LockedConnection feature="whatsapp" title="WhatsApp Business" text="Send bills and payment reminders to your customers from your own WhatsApp number." />
+              )}
             </>
           )}
 

@@ -106,7 +106,8 @@ def test_a_trial_is_started_through_fleek_and_nothing_is_charged_by_us(client: T
     assert r.status_code == 200 and r.json()["short_url"].startswith("https://")
     assert fleek.plan_calls[-1][2] == {"plan": "metal_erp_growth"}
     with SessionLocal() as s:
-        assert "plan_trial_started" in [e.key for e in s.scalars(select(ActivityEvent))]
+        keys = [e.key for e in s.scalars(select(ActivityEvent))]
+        assert "plan_checkout_opened" in keys and "plan_trial_started" not in keys      # tapping Start is an intent, not a started plan
 
 
 def test_only_a_plan_with_a_trial_can_be_tried_and_only_by_the_owner(client: TestClient, fleek: PlanFleek) -> None:
@@ -186,3 +187,18 @@ def test_cancel_is_one_call_and_its_result_is_passed_on(client: TestClient, flee
         assert "plan_cancelled" in [e.key for e in s.scalars(select(ActivityEvent))]
     fleek.cancel_status = 409
     assert client.post("/api/plans/cancel", headers=_h(t)).status_code == 409
+
+
+def test_offers_follow_the_whatsapp_switch_so_a_shop_held_to_free_cannot_send_them(
+    client: TestClient, fleek: PlanFleek, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    t = _linked_token(client, fleek)
+    monkeypatch.setattr("app.services.features.allowed", lambda session, tenant, key, *a, **k: key != "whatsapp")
+    for method, path, body in [
+        ("post", "/api/offers/send", {"selection": {}, "title": "x"}),
+        ("post", "/api/offers/preview", {"selection": {}}),
+        ("get", "/api/offers/abc", None),
+        ("post", "/api/offers/abc/pause", None),
+    ]:
+        r = getattr(client, method)(path, headers=_h(t), **({"json": body} if body is not None else {}))
+        assert r.status_code == 403 and r.json()["detail"]["code"] == "not_on_plan" and r.json()["detail"]["feature"] == "whatsapp", path

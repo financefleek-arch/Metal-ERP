@@ -75,6 +75,9 @@ from app.services.payments import paid_amount_for_invoice
 from app.services.speech.keyterms import top_item_keyterms
 from app.services.speech.parse_line import parse_voice_line
 from app.services.speech.transcribe import TranscriptionError, transcribe
+from app.services.tally.companies import list_companies, series_for
+from app.services.tally.company_routing import choose_company, company_for_document, resolve_company
+from app.services.tally.visibility import can_see_company
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -185,8 +188,25 @@ def _email(session: SessionDep, user_id: str | None) -> str | None:
     return u.label if u else None
 
 
-def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
+def _company_guidance(session: SessionDep, inv: Invoice, company) -> str | None:  # type: ignore[no-untyped-def]
+    """A final bill is locked to its Tally company. If it went to the wrong one, say what to do (S2.10;
+    the in-app correction flow is S4.5)."""
+    if company is None or inv.status != InvoiceStatus.final:
+        return None
+    if len(list_companies(session, inv.tenant_id)) < 2:
+        return None
+    return (
+        f"This bill belongs to {company.company_name}. If it should have gone to another company, "
+        "issue a credit note for it and make a fresh bill in the right company; until then, "
+        "correct it in Tally."
+    )
+
+
+def _out(session: SessionDep, inv: Invoice, user: User | None = None) -> InvoiceOut:
     party = session.get(Party, inv.party_id) if inv.party_id else None
+    company = company_for_document(session, inv) if inv.tally_company_id else None
+    if company is not None and user is not None and not can_see_company(user, company):
+        company = None
     paid_amount, balance_due, payment_status = _payment_fields(session, inv)
     return InvoiceOut(
         id=inv.id,
@@ -199,6 +219,9 @@ def _out(session: SessionDep, inv: Invoice) -> InvoiceOut:
         template_version=inv.template_version,
         party_id=inv.party_id,
         party=PartyBrief.model_validate(party) if party else None,
+        tally_company_id=company.id if company else None,
+        tally_company_name=company.company_name if company else None,
+        company_guidance=_company_guidance(session, inv, company),
         bill_to_addr_id=inv.bill_to_addr_id,
         ship_to_addr_id=inv.ship_to_addr_id,
         notes=inv.notes,
@@ -387,13 +410,19 @@ def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) ->
     if body.party_id:
         _owned_party(session, user.tenant_id, body.party_id)
     d = body.date or date.today()
+    explicit = choose_company(session, user, body.tally_company_id) if body.tally_company_id else None
+    party = session.get(Party, body.party_id) if body.party_id else None
+    company = resolve_company(
+        session, user.tenant_id, explicit_id=explicit.id if explicit else None, party=party
+    )
     inv = Invoice(
         tenant_id=user.tenant_id,
         doc_type=DocType.inv,
-        series="Sales",
+        series=series_for(session, company),
         fy=financial_year(d),
         date=d,
         party_id=body.party_id,
+        tally_company_id=company.id if company else None,
         bill_to_addr_id=body.bill_to_addr_id,
         ship_to_addr_id=body.ship_to_addr_id,
         notes=body.notes,
@@ -408,7 +437,7 @@ def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) ->
     session.add(inv)
     session.flush()
     activity.record(session, tenant_id=user.tenant_id, user_id=user.id, key="invoice_draft_created")
-    return _out(session, inv)
+    return _out(session, inv, user)
 
 
 @router.post(
@@ -446,10 +475,13 @@ def create_invoice_from_slip(
     draft = build_draft(session, user.tenant_id, extraction)
 
     d = date.today()
+    slip_party = session.get(Party, draft.party_id) if draft.party_id else None
+    slip_company = resolve_company(session, user.tenant_id, party=slip_party)
     inv = Invoice(
         tenant_id=user.tenant_id,
         doc_type=DocType.inv,
-        series="Sales",
+        series=series_for(session, slip_company),
+        tally_company_id=slip_company.id if slip_company else None,
         fy=financial_year(d),
         date=d,
         party_id=draft.party_id,
@@ -608,7 +640,7 @@ def party_item_price_history(
 
 @router.get("/{invoice_id}", response_model=InvoiceOut)
 def get_invoice(invoice_id: str, user: CurrentUser, session: SessionDep) -> InvoiceOut:
-    return _out(session, _load(session, user.tenant_id, invoice_id))
+    return _out(session, _load(session, user.tenant_id, invoice_id), user)
 
 
 @router.get(
@@ -644,11 +676,25 @@ def update_invoice(
     _check_not_changed_by_someone_else(session, inv, body.expected_updated_at, user)
 
     if body.party_id is not None and body.party_id != (inv.party_id or ""):
+        old_party = session.get(Party, inv.party_id) if inv.party_id else None
         if body.party_id:
             _owned_party(session, user.tenant_id, body.party_id)
             inv.party_id = body.party_id
         else:
             inv.party_id = None
+        # a company that was only defaulted from the old customer follows the new customer; one the
+        # user chose stays (S2.1)
+        old_default = resolve_company(session, user.tenant_id, party=old_party)
+        if body.tally_company_id is None and (
+            inv.tally_company_id is None or (old_default and inv.tally_company_id == old_default.id)
+        ):
+            new_party = session.get(Party, inv.party_id) if inv.party_id else None
+            company = resolve_company(session, user.tenant_id, party=new_party)
+            inv.tally_company_id = company.id if company else None
+    if body.tally_company_id:
+        inv.tally_company_id = choose_company(session, user, body.tally_company_id).id
+    # the number series is the company's (S2.4); a draft has no number yet, so it can follow a change
+    inv.series = series_for(session, company_for_document(session, inv))
     if body.date is not None:
         inv.date = body.date
         inv.fy = financial_year(body.date)
@@ -670,7 +716,7 @@ def update_invoice(
     inv.updated_at = datetime.now(UTC)
     inv.last_edited_by_user_id = user.id
     session.flush()
-    return _out(session, inv)
+    return _out(session, inv, user)
 
 
 @router.delete("/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -726,6 +772,11 @@ def finalize(
     invoice_id: str, background: BackgroundTasks, user: WriteUser, session: SessionDep
 ) -> FinalizeOut:
     inv = _load(session, user.tenant_id, invoice_id)
+    if inv.tally_company_id is None:  # locked from here on: a bill posts to one company (S2.1)
+        party = session.get(Party, inv.party_id) if inv.party_id else None
+        company = resolve_company(session, user.tenant_id, party=party)
+        inv.tally_company_id = company.id if company else None
+    inv.series = series_for(session, company_for_document(session, inv))  # last look before numbering
     try:
         result = finalize_invoice(session, inv, actor_user_id=user.id)
     except FinalizeError as exc:
@@ -783,7 +834,8 @@ def duplicate_invoice(invoice_id: str, user: DraftUser, session: SessionDep) -> 
     clone = Invoice(
         tenant_id=user.tenant_id,
         doc_type=DocType.inv,
-        series="Sales",
+        series=src.series,
+        tally_company_id=src.tally_company_id,
         fy=financial_year(d),
         date=d,
         party_id=src.party_id,

@@ -84,6 +84,11 @@ class NoStockItemsError(ValueError):
     """The XML parsed but had no <STOCKITEM> nodes."""
 
 
+def _same_company(model, company_id: str | None):  # type: ignore[no-untyped-def]
+    """Rows of this company's batch; with no company, the file-upload batch."""
+    return model.company_id == company_id if company_id else model.company_id.is_(None)
+
+
 def stage_masters_xml(
     session: Session,
     tenant_id: str,
@@ -91,6 +96,7 @@ def stage_masters_xml(
     *,
     batch_id: str,
     sync_job_id: str | None = None,
+    company_id: str | None = None,
 ) -> PartyStagingSummary:
     """Parse a Tally masters export and stage every trade-party ledger.
 
@@ -104,11 +110,12 @@ def stage_masters_xml(
     if not masters.ledgers:
         raise NoLedgersError("No ledgers found in the file")
 
-    # one in-flight import per tenant (policy — see module docstring)
+    # one in-flight import per company (policy — see module docstring); a file upload has none
     session.execute(
         delete(StagingTallyParty).where(
             StagingTallyParty.tenant_id == tenant_id,
             StagingTallyParty.committed_as.is_(None),
+            _same_company(StagingTallyParty, company_id),
         )
     )
 
@@ -155,6 +162,7 @@ def stage_masters_xml(
                 tenant_id=tenant_id,
                 batch_id=batch_id,
                 sync_job_id=sync_job_id,
+                company_id=company_id,
                 tally_guid=led.guid,
                 ledger_name=led.name,
                 parent_group=led.parent,
@@ -238,6 +246,7 @@ def stage_stock_items_xml(
     batch_id: str,
     seed_all_hsn: bool = False,
     sync_job_id: str | None = None,
+    company_id: str | None = None,
 ) -> ItemStagingSummary:
     try:
         stock = parse_stock_items(raw)
@@ -250,6 +259,7 @@ def stage_stock_items_xml(
         delete(StagingTallyItem).where(
             StagingTallyItem.tenant_id == tenant_id,
             StagingTallyItem.committed_as.is_(None),
+            _same_company(StagingTallyItem, company_id),
         )
     )
 
@@ -285,6 +295,7 @@ def stage_stock_items_xml(
                 tenant_id=tenant_id,
                 batch_id=batch_id,
                 sync_job_id=sync_job_id,
+                company_id=company_id,
                 tally_guid=si.guid,
                 stock_name=si.name,
                 parent_group=si.parent,
@@ -317,4 +328,46 @@ def stage_stock_items_xml(
     ]
     return ItemStagingSummary(
         batch_id=batch_id, total=staged, dummies_skipped=dummies, groups=groups
+    )
+
+
+def current_batch(
+    session: Session, model, tenant_id: str, company_id: str | None = None  # type: ignore[no-untyped-def]
+) -> tuple[str | None, int, str | None, str | None, int]:
+    """The firm's uncommitted batch: (batch_id, rows, company_id, company_name, other batches).
+
+    One batch is allowed per company (S1.6). With a `company_id` that company's batch is returned;
+    without, the newest one, and `other batches` counts the rest so the screen can say so.
+    """
+    from sqlalchemy import func
+
+    from app.models import TallyCompany
+
+    q = select(model).where(model.tenant_id == tenant_id, model.committed_as.is_(None))
+    if company_id:
+        q = q.where(model.company_id == company_id)
+    row = session.scalars(q.order_by(model.created_at.desc()).limit(1)).first()
+    if row is None:
+        return None, 0, None, None, 0
+    total = session.scalar(
+        select(func.count()).select_from(model).where(
+            model.tenant_id == tenant_id,
+            model.batch_id == row.batch_id,
+            model.committed_as.is_(None),
+        )
+    )
+    others = session.scalar(
+        select(func.count(func.distinct(model.batch_id))).where(
+            model.tenant_id == tenant_id,
+            model.committed_as.is_(None),
+            model.batch_id != row.batch_id,
+        )
+    )
+    company = session.get(TallyCompany, row.company_id) if row.company_id else None
+    return (
+        row.batch_id,
+        total or 0,
+        row.company_id,
+        company.company_name if company else None,
+        others or 0,
     )

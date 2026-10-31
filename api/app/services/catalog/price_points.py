@@ -97,6 +97,7 @@ def record_bill_prices(
     bill_id: str,
     rows: Iterable[tuple[str, Decimal]],
     on: date,
+    company_id: str | None = None,
 ) -> None:
     """`rows` are (item id, rate paid per unit)."""
     for item_id, price in rows:
@@ -106,6 +107,7 @@ def record_bill_prices(
                 supplier_party_id=supplier_party_id,
                 item_id=item_id,
                 source="bill",
+                tally_company_id=company_id,
                 source_id=bill_id,
                 price=price,
                 on_date=on,

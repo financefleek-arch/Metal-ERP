@@ -61,6 +61,11 @@ class Invoice(PkUuidMixin, TimestampMixin, Base):
     # nullable so a draft can be saved before the party is picked; the
     # finalize gate still requires it, so a numbered invoice always has one
     party_id: Mapped[str | None] = mapped_column(ForeignKey("party.id"), index=True)
+    # The Tally company this bill posts to (S2.1): chosen at draft, locked at finalize. Null only for a
+    # firm with no Tally company; a push then falls back to the firm's default.
+    tally_company_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tally_company.id"), index=True
+    )
     bill_to_addr_id: Mapped[str | None] = mapped_column(ForeignKey("party_address.id"))
     ship_to_addr_id: Mapped[str | None] = mapped_column(ForeignKey("party_address.id"))
 

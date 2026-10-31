@@ -22,7 +22,7 @@ import logging
 from lxml import etree
 from sqlalchemy.orm import Session
 
-from app.models import Invoice, InwardBill, TallySyncJob
+from app.models import Invoice, InwardBill, TallyCompany, TallySyncJob
 from app.services.tally.company_identity import HARD_STOPS
 from app.services.tally.jobs import (
     bill_checksum,
@@ -62,6 +62,38 @@ def _extract_voucher_key(root: etree._Element) -> str | None:
         if el is not None and (el.text or "").strip():
             return el.text.strip()
     return None
+
+
+def voucher_guid(company_guid: str | None, master_id: str | None) -> str | None:
+    """A voucher's GUID as Tally writes it: the company's GUID, a dash and the voucher's master id as 8
+    hex digits (live-verified, S0.1). None when either part is unknown."""
+    cg = (company_guid or "").strip()
+    mid = (master_id or "").strip()
+    if not cg or not mid.isdigit():
+        return None
+    return f"{cg}-{int(mid):08x}"
+
+
+def voucher_identity(
+    root: etree._Element, company_guid: str | None
+) -> tuple[str | None, str | None]:
+    """(key to store as the link's `tally_guid`, voucher master id) from an Import response (S4.1).
+
+    `LASTVCHID` is the voucher's master id. With the company's GUID known the key is the real voucher
+    GUID; without it the master id itself, which still identifies the voucher inside that company.
+    `(None, None)` when the response carries neither, and the caller then marks the link unconfirmed.
+    """
+    el = root.find(".//LASTVCHID")
+    master_id = (el.text or "").strip() if el is not None else ""
+    if master_id.isdigit():
+        return voucher_guid(company_guid, master_id) or master_id, master_id
+    key = _extract_voucher_key(root)
+    return key, (key if key and key.isdigit() else None)
+
+
+def is_confirmed_key(tally_guid: str | None) -> bool:
+    """False for the `pushed:<number>` placeholder written when Tally gave no key back."""
+    return bool(tally_guid) and not str(tally_guid).startswith("pushed:")
 
 
 def process_push_result(
@@ -120,14 +152,31 @@ def process_push_result(
         )
         return
 
+    if job.kind == "push_receipt":
+        company = session.get(TallyCompany, job.company_id)
+        key, master_id = voucher_identity(root, company.company_guid if company else None)
+        complete_push_ok(
+            session,
+            job,
+            tally_guid=key or f"pushed:{job.entity_id}",
+            checksum=str((job.counts or {}).get("checksum") or ""),
+            tally_masterid=master_id,
+        )
+        log.info("tally push %s: receipt created for payment %s", job.id, job.entity_id)
+        return
+
     if job.kind == "push_purchase":
         bill = session.get(InwardBill, job.entity_id) if job.entity_id else None
         if bill is None:
             complete_job_error(session, job, error="the pushed bill no longer exists")
             return
-        voucher_key = _extract_voucher_key(root) or f"pushed:{bill.bill_no or bill.id}"
+        company = session.get(TallyCompany, job.company_id)
+        key, master_id = voucher_identity(root, company.company_guid if company else None)
+        voucher_key = key or f"pushed:{bill.bill_no or bill.id}"
         checksum = bill_checksum(bill)
-        complete_push_ok(session, job, tally_guid=voucher_key, checksum=checksum)
+        complete_push_ok(
+            session, job, tally_guid=voucher_key, checksum=checksum, tally_masterid=master_id
+        )
         log.info("tally push %s: voucher created for inward bill %s", job.id, bill.id)
         return
 
@@ -136,7 +185,11 @@ def process_push_result(
         complete_job_error(session, job, error="the pushed invoice no longer exists")
         return
 
-    voucher_key = _extract_voucher_key(root) or f"pushed:{invoice.number}"
+    company = session.get(TallyCompany, job.company_id)
+    key, master_id = voucher_identity(root, company.company_guid if company else None)
+    voucher_key = key or f"pushed:{invoice.number}"
     checksum = invoice_checksum(invoice)
-    complete_push_ok(session, job, tally_guid=voucher_key, checksum=checksum)
+    complete_push_ok(
+        session, job, tally_guid=voucher_key, checksum=checksum, tally_masterid=master_id
+    )
     log.info("tally push %s: voucher created for invoice %s", job.id, invoice.id)

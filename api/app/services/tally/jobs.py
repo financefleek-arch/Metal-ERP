@@ -47,7 +47,9 @@ from app.services.tally.company_identity import (
     company_payload,
     not_open_message,
 )
-from app.services.tally.units import line_unit
+from app.services.tally.ledger_config import ledger_config
+from app.services.tally.links import is_linked, tally_name_for
+from app.services.tally.units import company_line_unit
 
 # job.status values that mean "the agent still owes us a result"
 _NON_TERMINAL = ("queued", "sent", "running")
@@ -116,39 +118,49 @@ def _as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
-def assert_no_pull_in_flight(session: Session, tenant_id: str) -> None:
-    """409 if this tenant has a masters pull that is either still running or
-    finished-ok with staged rows the operator hasn't committed or discarded
-    yet. Keeps a second pull — or a manual file upload — from wiping the
-    un-reviewed batch.
+def assert_no_pull_in_flight(
+    session: Session, tenant_id: str, company_id: str | None = None
+) -> None:
+    """409 if a masters pull for this company is either still running or finished-ok with staged rows
+    the operator hasn't committed or discarded yet. Keeps a second pull from wiping the un-reviewed
+    batch. One batch per company (S1.6), so a pull for one company never blocks another's.
+
+    With no `company_id` (a file upload) only the upload batch, which belongs to no company, is guarded.
     """
-    running = session.scalar(
-        select(TallySyncJob).where(
-            TallySyncJob.tenant_id == tenant_id,
-            TallySyncJob.kind == "pull_masters",
-            TallySyncJob.status.in_(_NON_TERMINAL),
+    if company_id is not None:
+        running = session.scalar(
+            select(TallySyncJob).where(
+                TallySyncJob.tenant_id == tenant_id,
+                TallySyncJob.company_id == company_id,
+                TallySyncJob.kind == "pull_masters",
+                TallySyncJob.status.in_(_NON_TERMINAL),
+            )
         )
-    )
-    if running is not None and not _expire_stuck_job(session, running):
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=(
-                "A Tally masters pull is already in progress. Wait for it to "
-                "finish before starting another."
-            ),
-        )
+        if running is not None and not _expire_stuck_job(session, running):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "A Tally masters pull is already in progress for this company. Wait for it to "
+                    "finish before starting another."
+                ),
+            )
+
+    def same_company(model):  # type: ignore[no-untyped-def]
+        return model.company_id == company_id if company_id else model.company_id.is_(None)
 
     uncommitted = session.scalar(
         select(StagingTallyParty.id).where(
             StagingTallyParty.tenant_id == tenant_id,
             StagingTallyParty.committed_as.is_(None),
             StagingTallyParty.sync_job_id.is_not(None),
+            same_company(StagingTallyParty),
         )
     ) or session.scalar(
         select(StagingTallyItem.id).where(
             StagingTallyItem.tenant_id == tenant_id,
             StagingTallyItem.committed_as.is_(None),
             StagingTallyItem.sync_job_id.is_not(None),
+            same_company(StagingTallyItem),
         )
     )
     if uncommitted is not None:
@@ -324,11 +336,11 @@ def enqueue_push_sales(
     Since finalized invoices are immutable this mainly guards a defensive
     re-enqueue (e.g. a double-click), not a real content change.
     """
-    from app.services.invoices.tally_xml import build_sales_voucher_xml_bytes
+    from app.services.invoices.tally_xml import build_sales_voucher_xml_bytes, real_lines
     checksum = invoice_checksum(invoice)
     existing_link = session.scalar(
         select(TallyLink).where(
-            TallyLink.tenant_id == company.tenant_id,
+            TallyLink.company_id == company.id,
             TallyLink.entity_type == "invoice",
             TallyLink.entity_id == invoice.id,
         )
@@ -366,8 +378,19 @@ def enqueue_push_sales(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Invoice has no party.",
         )
+    line_units: dict[str, str] = {}
+    item_names: dict[str, str] = {}
+    for ln in real_lines(invoice):
+        item = session.get(Item, ln.item_id) if ln.item_id else None
+        if item is not None:
+            unit = company_line_unit(session, company, item, ln.uom)[0]
+            if unit:
+                line_units[ln.item_id] = unit
+            item_names[ln.item_id] = tally_name_for(session, company, "item", item)
     voucher_xml = build_sales_voucher_xml_bytes(
-        invoice, party, company.ledger_map or {}, company_name=company.company_name
+        invoice, party, company.ledger_map or {}, company_name=company.company_name,
+        line_units=line_units, party_name=tally_name_for(session, company, "party", party),
+        item_names=item_names,
     )
 
     job = TallySyncJob(
@@ -410,6 +433,7 @@ def complete_push_ok(
     *,
     tally_guid: str,
     checksum: str,
+    tally_masterid: str | None = None,
 ) -> TallyLink:
     """Write/update the `tally_link` row for the pushed entity, mark the
     job `ok`. `tally_guid` is the Tally VOUCHERKEY if the response carried
@@ -420,7 +444,7 @@ def complete_push_ok(
     entity_type = job.entity_type or "invoice"
     link = session.scalar(
         select(TallyLink).where(
-            TallyLink.tenant_id == job.tenant_id,
+            TallyLink.company_id == job.company_id,
             TallyLink.entity_type == entity_type,
             TallyLink.entity_id == job.entity_id,
         )
@@ -429,15 +453,18 @@ def complete_push_ok(
     if link is None:
         link = TallyLink(
             tenant_id=job.tenant_id,
+            company_id=job.company_id,
             entity_type=entity_type,
             entity_id=job.entity_id,
             tally_guid=tally_guid,
+            tally_masterid=tally_masterid,
             checksum=checksum,
             last_pushed_at=now,
         )
         session.add(link)
     else:
         link.tally_guid = tally_guid
+        link.tally_masterid = tally_masterid or link.tally_masterid
         link.checksum = checksum
         link.last_pushed_at = now
 
@@ -486,13 +513,13 @@ def enqueue_push_purchase(
     explicitly (see `TallyPushBlockers`/`pending_master_creates` on the
     frontend) rather than silently implying the link exists.
     """
-    from app.services.inward.tally_xml import LedgerConfig, build_xml_bytes
+    from app.services.inward.tally_xml import build_xml_bytes
     from app.services.tally.push_readiness import pending_master_creates
 
     checksum = bill_checksum(bill)
     existing_link = session.scalar(
         select(TallyLink).where(
-            TallyLink.tenant_id == company.tenant_id,
+            TallyLink.company_id == company.id,
             TallyLink.entity_type == "inward_bill",
             TallyLink.entity_id == bill.id,
         )
@@ -521,8 +548,9 @@ def enqueue_push_purchase(
             return held
 
     party = session.get(Party, bill.matched_party_id) if bill.matched_party_id else None
-    pending = pending_master_creates(session, bill)
-    if party is None and pending.supplier_name is None:
+    pending = pending_master_creates(session, bill, company)
+    staged = (bill.new_supplier_staged_json or {}).get("legal_name") or bill.supplier_name
+    if party is None and not staged:
         # purchase_push_blockers() should have caught this already
         # (nothing resolved at all); defensive, not expected to be reached.
         raise HTTPException(
@@ -533,7 +561,11 @@ def enqueue_push_purchase(
     # it's Tally-linked yet); fall back to the pending-create name for the
     # rare case there's genuinely no Party row at all (shouldn't happen
     # post-approve, see the check above).
-    party_name = party.legal_name if party is not None else pending.supplier_name
+    party_name = (
+        tally_name_for(session, company, "party", party)
+        if party is not None
+        else (pending.supplier_name or staged)
+    )
 
     # Build the per-line name map from the actually-linked Items (source
     # of truth) — see the tally_xml.py docstring on why this must match
@@ -543,32 +575,20 @@ def enqueue_push_purchase(
         if ln.matched_item_id is not None:
             item = session.get(Item, ln.matched_item_id)
             if item is not None:
-                line_item_names[ln.id] = item.name
+                line_item_names[ln.id] = tally_name_for(session, company, "item", item)
 
     # S0.5: a linked item goes out in the unit Tally holds for it (readiness blocks one that cannot).
     line_units: dict[str, str] = {}
     for ln in bill.lines:
         if ln.matched_item_id is not None:
             item = session.get(Item, ln.matched_item_id)
-            if item is not None and item.tally_guid:
-                unit = line_unit(item, ln.uom)[0]
+            if item is not None and is_linked(session, company, "item", item):
+                unit = company_line_unit(session, company, item, ln.uom)[0]
                 if unit:
                     line_units[ln.id] = unit
 
-    ledger_map = company.ledger_map or {}
-    cfg = LedgerConfig(
-        creditors_group=ledger_map.get("creditors_parent") or "Sundry Creditors",
-        purchase_ledger=ledger_map.get("purchase_ledger") or "Purchase Accounts",
-        cgst_ledger=ledger_map.get("cgst_ledger") or "CGST",
-        sgst_ledger=ledger_map.get("sgst_ledger") or "SGST",
-        igst_ledger=ledger_map.get("igst_ledger") or "IGST",
-        round_off_ledger=ledger_map.get("round_off_ledger") or "Round Off",
-        # Live push over HTTP needs UTF-8 — the file-export path (still
-        # used by approve.py for the manual-import safety net) keeps its
-        # own UTF-16-default LedgerConfig separately; this one is built
-        # fresh, only for the live-push call.
-        xml_encoding="UTF-8",
-    )
+    # Live push over HTTP needs UTF-8 (the manual-export path keeps its own UTF-16 default).
+    cfg = ledger_config(company, xml_encoding="UTF-8")
     voucher_xml = build_xml_bytes(
         bill,
         cfg,

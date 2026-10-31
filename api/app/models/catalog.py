@@ -210,6 +210,11 @@ class SupplierPricePoint(PkUuidMixin, TimestampMixin, Base):
     supplier_party_id: Mapped[str | None] = mapped_column(ForeignKey("party.id"))
     product_id: Mapped[str | None] = mapped_column(ForeignKey("catalog_product.id"))
     item_id: Mapped[str | None] = mapped_column(ForeignKey("item.id"))
+    # The Tally company a bill price was paid in (S6.6); null for a quote (a price list belongs to no
+    # company) and for prices recorded before companies.
+    tally_company_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tally_company.id"), index=True
+    )
     # quote (a price list) | bill (an approved inward bill)
     source: Mapped[str] = mapped_column(String(8), nullable=False)
     source_id: Mapped[str] = mapped_column(String(36), nullable=False)

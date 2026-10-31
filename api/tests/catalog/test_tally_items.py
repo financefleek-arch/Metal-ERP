@@ -19,11 +19,14 @@ from app.models import (
     BackupShop,
     CatalogProduct,
     Item,
+    ItemTallyState,
     SupplierCatalogItem,
     TallyCompany,
     TallySyncJob,
 )
 from app.services.catalog import tally_items as ti
+from app.services.tally.companies import get_default_company
+from app.services.tally.links import guid_for, unit_for
 from app.services.tally.pull import process_pull_result
 from app.services.tally.push import process_push_result
 from tests.catalog.pdfs import TestCell, make_pdf
@@ -531,8 +534,11 @@ def test_check_tally_reads_groups_items_and_links_pushed_items(
         items=[(mug["display_name"], "Beer Mugs", "guid-777")],
     )
     with SessionLocal() as s:
-        assert s.get(Item, mug["item_id"]).tally_guid == "guid-777"  # usable on invoices now
-        assert s.get(Item, mug["item_id"]).tally_unit == "Nos"  # and in the unit Tally holds (S0.5)
+        item = s.get(Item, mug["item_id"])
+        company = get_default_company(s, env.tid)
+        assert guid_for(s, company, "item", item) == "guid-777"  # usable on invoices now
+        assert item.tally_guid is None  # the link holds it; the old column is no longer written
+        assert unit_for(s, company, item) == "Nos"  # and in the unit Tally holds (S0.5)
     settings = env.get("/tally/settings").json()
     assert settings["check_is_fresh"] is True and "Beer Mugs" in settings["known_groups"]
     latest = env.client.get("/api/supplier-catalogs/tally/check", headers=env.h).json()
@@ -801,8 +807,10 @@ def test_an_item_with_no_recorded_price_is_updated_once(
     env.push()
     _reply(_push_jobs(env.tid)[0].id, OK_XML.format(c=7, a=0))
     with SessionLocal() as s:
-        for i in s.scalars(select(Item).where(Item.id.in_(env.item_ids()))):
-            i.tally_price = None
+        for st in s.scalars(
+            select(ItemTallyState).where(ItemTallyState.item_id.in_(env.item_ids()))
+        ):
+            st.price = None
         s.commit()
     _do_check(env, monkeypatch)
     assert env.preflight()["price_updates"] == 4

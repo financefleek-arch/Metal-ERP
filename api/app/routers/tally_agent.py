@@ -147,7 +147,7 @@ def job_result(
     becomes a job `error`.
     """
     job = _job_for_shop(session, job_id, shop.id)
-    if job.kind in ("push_sales", "push_purchase", "push_items"):
+    if job.kind in ("push_sales", "push_purchase", "push_receipt", "push_items"):
         process_push_result(
             session,
             job,

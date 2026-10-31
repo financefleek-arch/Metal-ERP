@@ -12,7 +12,7 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 
 from app.deps import SessionDep, WriteUser
 from app.domain.normalize import load_synonym_map, normalize_name
@@ -22,7 +22,10 @@ from app.services import features
 from app.services.catalogue.classify_apply import Classifier
 from app.services.item_resolution import resolve_group
 from app.services.tally.jobs import assert_no_pull_in_flight
+from app.services.tally.ownership import ImportConflict, conflict
+from app.services.tally.links import company_for_import, record_master_guid, set_unit
 from app.services.tally.staging import NoStockItemsError, stage_stock_items_xml
+from app.services.tally.staging import current_batch as _current
 
 router = APIRouter(
     prefix="/api/items/import", tags=["items-import"], dependencies=[features.require("import")]
@@ -99,11 +102,18 @@ class CommitOut(BaseModel):
     still_flagged: int
     hsn_seeded: int
     groups_created: int
+    # Tally values that differ from ours on a field Tally owns (we kept ours), S1.9
+    conflicts: list[ImportConflict] = []
 
 
 class CurrentBatchOut(BaseModel):
     batch_id: str | None
     total: int
+    # which Tally company the batch was pulled from (null: a file upload), and how many other
+    # companies have a batch waiting (S1.6)
+    company_id: str | None = None
+    company_name: str | None = None
+    other_batches: int = 0
 
 
 # --------------------------------------------------------------------------
@@ -165,34 +175,17 @@ def _rows(session: SessionDep, tenant_id: str, batch_id: str) -> list[StagingTal
 
 
 @router.get("/current", response_model=CurrentBatchOut)
-def current_batch(user: WriteUser, session: SessionDep) -> CurrentBatchOut:
-    """The tenant's in-flight (staged, not yet committed) import, if any.
-
-    Lets the review screen resume a batch that was staged earlier instead of
-    forcing a re-upload of the whole XML. Only one uncommitted batch can exist
-    per tenant (upload clears the previous one), so the newest wins.
-    """
-    row = session.scalars(
-        select(StagingTallyItem)
-        .where(
-            StagingTallyItem.tenant_id == user.tenant_id,
-            StagingTallyItem.committed_as.is_(None),
-        )
-        .order_by(StagingTallyItem.created_at.desc())
-        .limit(1)
-    ).first()
-    if row is None:
-        return CurrentBatchOut(batch_id=None, total=0)
-    total = session.scalar(
-        select(func.count())
-        .select_from(StagingTallyItem)
-        .where(
-            StagingTallyItem.tenant_id == user.tenant_id,
-            StagingTallyItem.batch_id == row.batch_id,
-            StagingTallyItem.committed_as.is_(None),
-        )
+def current_batch(
+    user: WriteUser, session: SessionDep, company_id: str | None = None
+) -> CurrentBatchOut:
+    """The firm's in-flight (staged, not yet committed) import, if any: one per Tally company, so
+    pass `company_id` to see a particular company's; otherwise the newest."""
+    batch_id, total, cid, cname, others = _current(
+        session, StagingTallyItem, user.tenant_id, company_id
     )
-    return CurrentBatchOut(batch_id=row.batch_id, total=total or 0)
+    return CurrentBatchOut(
+        batch_id=batch_id, total=total, company_id=cid, company_name=cname, other_batches=others
+    )
 
 
 def _row_out(session: SessionDep, r: StagingTallyItem) -> StagedRowOut:
@@ -381,6 +374,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
     # uninformative (this whole "All Masters" export has no stock groups).
     classifier = Classifier(session, user.tenant_id)
     created = updated = skipped = still_flagged = hsn_seeded = 0
+    conflicts: list[ImportConflict] = []
     groups_created = [0]
 
     committable = [
@@ -437,6 +431,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         ).all()
     }
 
+    company = company_for_import(session, user.tenant_id, rows)
     new_items: list[Item] = []
     for row in rows:
         if row.committed_as:
@@ -458,6 +453,13 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
             if it is None or it.tenant_id != user.tenant_id:
                 still_flagged += 1
                 continue
+            for field, theirs in (("hsn_code", hsn), ("gst_rate", row.gst_rate)):
+                ours = getattr(it, field)
+                if field == "gst_rate" and float(ours or 0) == 0.0:
+                    continue  # a zero rate is "not set" here (filled below)
+                found = conflict(it.name, field, ours, theirs)
+                if found is not None:
+                    conflicts.append(found)
             if row.proposed_uom and not it.uom:
                 it.uom = row.proposed_uom
             if hsn and not it.hsn_code:
@@ -468,11 +470,13 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 it.mrp = row.mrp
             if row.gst_rate is not None and float(it.gst_rate or 0) == 0.0:
                 it.gst_rate = float(row.gst_rate)
-            if not it.tally_guid:
-                it.tally_guid = row.tally_guid
-            if (row.base_units or "").strip():
-                # Tally owns the unit name: refresh it on every pull (S0.5).
-                it.tally_unit = row.base_units.strip()[:40]
+            # Tally owns the unit name: refresh it on every pull (S0.5), in this company (S1.2b).
+            record_master_guid(
+                session, user.tenant_id, company, "item", it, row.tally_guid,
+                unit=row.base_units, name=row.stock_name,
+            )
+            if company is None:
+                set_unit(session, None, it, row.base_units)
             row.committed_as = it.id
             updated += 1
         else:
@@ -529,12 +533,14 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
                 gst_rate=float(row.gst_rate) if row.gst_rate is not None else 0.0,
                 source=ItemSource.import_,
                 status=item_status,
-                tally_guid=row.tally_guid,
-                tally_unit=(row.base_units or "").strip()[:40] or None,
             )
             # id set explicitly above (column default only fires at flush),
             # so committed_as and the dedup map can use it before add_all.
             new_items.append(it)
+            record_master_guid(
+                session, user.tenant_id, company, "item", it, row.tally_guid,
+                unit=row.base_units, name=row.stock_name,
+            )
             row.committed_as = it.id
             existing_by_key[key] = it.id  # a later row with the same name links
             created += 1
@@ -550,6 +556,7 @@ def commit(batch_id: str, user: WriteUser, session: SessionDep) -> CommitOut:
         still_flagged=still_flagged,
         hsn_seeded=hsn_seeded,
         groups_created=groups_created[0],
+        conflicts=conflicts,
     )
 
 

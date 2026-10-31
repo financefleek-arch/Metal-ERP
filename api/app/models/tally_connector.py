@@ -23,6 +23,7 @@ F1a keys upserts on the existing columns first, then backfills `tally_link`.
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     Boolean,
@@ -30,14 +31,19 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
+    and_,
+    exists,
     false,
     func,
+    or_,
+    select,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, aliased, mapped_column
 from sqlalchemy.types import JSON as _JSONType
 
 from app.db import Base
@@ -163,12 +169,14 @@ class TallyLink(PkUuidMixin, Base):
 
     __tablename__ = "tally_link"
     __table_args__ = (
+        # One record can be linked in each of the firm's Tally companies (S1.2): the same customer
+        # exists in the GST books and the estimate book under different Tally ids.
         UniqueConstraint(
-            "tenant_id", "entity_type", "entity_id",
+            "company_id", "entity_type", "entity_id",
             name="uq_tally_link_entity",
         ),
         UniqueConstraint(
-            "tenant_id", "entity_type", "tally_guid",
+            "company_id", "entity_type", "tally_guid",
             name="uq_tally_link_guid",
         ),
     )
@@ -176,12 +184,22 @@ class TallyLink(PkUuidMixin, Base):
     tenant_id: Mapped[str] = mapped_column(
         ForeignKey("tenant.id"), nullable=False, index=True
     )
+    # The Tally company this link lives in.
+    company_id: Mapped[str] = mapped_column(
+        ForeignKey("tally_company.id"), nullable=False, index=True
+    )
     # 'party' | 'item' | 'group' | 'invoice' | 'payment' | 'inward_bill'
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
     entity_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     tally_guid: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     tally_masterid: Mapped[str | None] = mapped_column(String(32))
+    # An item's unit as THIS company holds it, in Tally's spelling ("Pcs", "Nos"): the same item can be
+    # `Nos` in the GST books and `Pcs` in the estimate book (S1.2b). Read by services/tally/units.py.
+    tally_unit: Mapped[str | None] = mapped_column(String(40))
+    # The master's name in THIS company as last seen at a pull (or recorded when we created it). A push
+    # names the master by this, so a rename on our side cannot orphan the voucher (S1.3, decision D-8).
+    tally_name: Mapped[str | None] = mapped_column(String(500))
 
     last_pulled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -256,3 +274,84 @@ class TallySyncJob(PkUuidMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+def master_linked_expr(model, entity_type: str):  # type: ignore[no-untyped-def]
+    """SQL: is this record linked to Tally in its firm's default company (S1.2)?
+
+    A record that has no link in any company yet still counts when its legacy `tally_guid` column is
+    set (imported before links existed, or while the firm had no company); once it has a link, only
+    the links speak. Mirrors `services.tally.links.guid_for`.
+    """
+    # Own aliases, so a query that also selects TallyLink or TallyCompany does not auto-correlate
+    # these subqueries away.
+    in_link, any_link_row, default_company = (
+        aliased(TallyLink),
+        aliased(TallyLink),
+        aliased(TallyCompany),
+    )
+    in_default = exists().where(
+        in_link.entity_type == entity_type,
+        in_link.entity_id == model.id,
+        in_link.company_id.in_(
+            select(default_company.id)
+            .where(
+                default_company.tenant_id == model.tenant_id,
+                default_company.is_default.is_(True),
+            )
+            .scalar_subquery()
+        ),
+    )
+    any_link = exists().where(
+        any_link_row.entity_type == entity_type, any_link_row.entity_id == model.id
+    )
+    return or_(in_default, and_(model.tally_guid.is_not(None), ~any_link))
+
+
+class ItemTallyState(PkUuidMixin, Base):
+    """What one Tally company holds for one item: push state, the price last sent, the price Tally
+    showed at the last check (S1.2b). One row per (company, item), so a price pushed to the GST books
+    is not mistaken for the estimate book's."""
+
+    __tablename__ = "item_tally_state"
+    __table_args__ = (
+        UniqueConstraint("company_id", "item_id", name="uq_item_tally_state"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    company_id: Mapped[str] = mapped_column(
+        ForeignKey("tally_company.id"), nullable=False, index=True
+    )
+    item_id: Mapped[str] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    # none | queued | synced | error
+    status: Mapped[str] = mapped_column(
+        String(8), default="none", server_default="none", nullable=False
+    )
+    # the selling price last sent; `seen_price` is what Tally showed at the last check (0 = none there)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    seen_price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+def default_item_state_expr(model, column: str):  # type: ignore[no-untyped-def]
+    """SQL: one column of the item's state in its firm's DEFAULT company (S1.2b). What the Items list
+    and its filters show; the push itself always works on the company it was started for."""
+    state, default_company = aliased(ItemTallyState), aliased(TallyCompany)
+    expr = (
+        select(getattr(state, column))
+        .where(
+            state.item_id == model.id,
+            state.company_id.in_(
+                select(default_company.id)
+                .where(
+                    default_company.tenant_id == model.tenant_id,
+                    default_company.is_default.is_(True),
+                )
+                .scalar_subquery()
+            ),
+        )
+        .scalar_subquery()
+    )
+    if column == "status":
+        return func.coalesce(expr, "none")
+    return expr

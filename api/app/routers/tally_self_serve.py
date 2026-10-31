@@ -19,7 +19,7 @@ from sqlalchemy import select
 
 from app.backup_storage import R2NotConfigured, get_object
 from app.deps import SessionDep, WriteUser
-from app.models import BackupShop, BackupUpload, Invoice, TallySyncJob
+from app.models import BackupShop, BackupUpload, Invoice, Payment, TallyCompany, TallySyncJob
 from app.schemas_admin import (
     FirmBackupFileOut,
     FirmBackupListOut,
@@ -30,10 +30,16 @@ from app.schemas_tally import TallyPushBlockersOut, TallySyncJobOut
 from app.services import features
 from app.services.tally.agent_health import agent_online, assert_tally_reachable
 from app.services.tally.backup_retention import effective_retention_count
-from app.services.tally.companies import get_default_company
+from app.services.tally.company_routing import company_for_document
 from app.services.tally.installer import installer_filename
 from app.services.tally.jobs import assert_no_push_in_flight, enqueue_push_sales
 from app.services.tally.push_readiness import push_blockers
+from app.services.tally.receipts import (
+    enqueue_push_receipt,
+    receipt_blockers,
+    split_by_company,
+)
+from app.services.tally.visibility import require_visible_document_company
 
 router = APIRouter(
     prefix="/api/tally", tags=["tally-self-serve"], dependencies=[features.require("tally")]
@@ -190,6 +196,7 @@ def get_own_push_status(
     invoice_id: str, user: WriteUser, session: SessionDep
 ) -> TallyPushBlockersOut:
     invoice = _owned_invoice(session, user, invoice_id)
+    require_visible_document_company(session, user, invoice)
     blockers = push_blockers(session, invoice)
     return TallyPushBlockersOut(
         pushable=not blockers,
@@ -206,14 +213,76 @@ def push_own_invoice(
     invoice_id: str, user: WriteUser, session: SessionDep
 ) -> TallySyncJob:
     invoice = _owned_invoice(session, user, invoice_id)
+    require_visible_document_company(session, user, invoice)
     blockers = push_blockers(session, invoice)
     if blockers:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="; ".join(b.message for b in blockers),
         )
-    company = get_default_company(session, user.tenant_id)
+    company = company_for_document(session, invoice)
     assert company is not None  # push_blockers() already confirmed this
     assert_no_push_in_flight(session, user.tenant_id, invoice_id)
     assert_tally_reachable(session, company)
     return enqueue_push_sales(session, company, invoice)
+
+
+# --------------------------------------------------------------------------
+# receipts (S4.4): a recorded payment pushed to Tally as a Receipt voucher, once per company
+# --------------------------------------------------------------------------
+
+
+def _owned_payment(session: SessionDep, user: WriteUser, payment_id: str) -> Payment:
+    payment = session.get(Payment, payment_id)
+    if payment is None or payment.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found")
+    return payment
+
+
+def _receipt_plan(session: SessionDep, user: WriteUser, payment: Payment):  # type: ignore[no-untyped-def]
+    """[(company, parts, blockers)] for every company this payment touches that the user may see."""
+    from app.services.tally.visibility import can_see_company
+
+    out = []
+    for company_id, parts in split_by_company(session, payment).items():
+        company = session.get(TallyCompany, company_id) if company_id else None
+        if company is not None and not can_see_company(user, company):
+            continue
+        out.append((company, parts, receipt_blockers(session, payment, company)))
+    return out
+
+
+@router.get("/payments/{payment_id}/push-status", response_model=TallyPushBlockersOut)
+def get_payment_push_status(
+    payment_id: str, user: WriteUser, session: SessionDep
+) -> TallyPushBlockersOut:
+    payment = _owned_payment(session, user, payment_id)
+    blockers = [b for _c, _p, bl in _receipt_plan(session, user, payment) for b in bl]
+    return TallyPushBlockersOut(
+        pushable=not blockers,
+        blockers=[{"code": b.code, "message": b.message} for b in blockers],
+    )
+
+
+@router.post(
+    "/payments/{payment_id}/push",
+    response_model=list[TallySyncJobOut],
+    status_code=status.HTTP_201_CREATED,
+)
+def push_payment(payment_id: str, user: WriteUser, session: SessionDep) -> list[TallySyncJob]:
+    payment = _owned_payment(session, user, payment_id)
+    plan = _receipt_plan(session, user, payment)
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    blockers = [b for _c, _p, bl in plan for b in bl]
+    if blockers:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="; ".join(b.message for b in blockers),
+        )
+    jobs = []
+    for company, parts, _bl in plan:
+        assert company is not None  # receipt_blockers() stops a payment with no company
+        assert_tally_reachable(session, company)
+        jobs.append(enqueue_push_receipt(session, company, payment, parts))
+    return jobs

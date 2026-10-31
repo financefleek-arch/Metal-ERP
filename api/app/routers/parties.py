@@ -58,6 +58,7 @@ from app.services.payments import (
     has_ledger_history,
     open_invoices_for_party,
 )
+from app.services.tally.company_routing import choose_company
 
 router = APIRouter(prefix="/api/parties", tags=["parties"])
 
@@ -144,6 +145,7 @@ def _out(session: SessionDep, party: Party) -> PartyOut:
         status=party.status,
         source=party.source,
         source_ref=party.source_ref,
+        default_company_id=party.default_company_id,
         last_txn_at=party.last_txn_at,
         opening_balance=party.opening_balance,
         opening_balance_as_of=party.opening_balance_as_of,
@@ -409,6 +411,9 @@ def update_party(
                 "has to stay a supplier."
             ),
         )
+
+    if patch.get("default_company_id"):
+        choose_company(session, user, patch["default_company_id"])  # exists, active, visible (S2.2)
 
     for field, value in patch.items():
         setattr(party, field, value)

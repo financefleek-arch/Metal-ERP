@@ -26,6 +26,10 @@ class Party(PkUuidMixin, TimestampMixin, Base):
 
     tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
     legal_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Which Tally company this customer's bills go to by default (S2.2); null = the firm's default.
+    default_company_id: Mapped[str | None] = mapped_column(
+        ForeignKey("tally_company.id"), index=True
+    )
 
     # The dedupe key — normalize_name(legal_name, tenant synonym map). Mirrors
     # item.name_normalized: the create / rename routes maintain it, resolve_party

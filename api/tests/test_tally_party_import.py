@@ -414,3 +414,29 @@ def test_upload_rejects_non_xml(client: TestClient) -> None:
         files={"file": ("junk.xml", b"not xml at all", "text/xml")},
     )
     assert r.status_code == 422
+
+
+def test_a_gstin_that_differs_from_ours_is_reported_not_overwritten(client: TestClient) -> None:
+    """S1.9: same PAN, another state's GSTIN: we keep ours and say so."""
+    h = _h(_token(client, "imp-conflict@x.example.com"))
+    created = client.post(
+        "/api/parties",
+        headers=h,
+        json={"legal_name": "Balaji Traders", "gstin": "27aajcb1234k1zp", "role": "customer"},
+    )
+    assert created.status_code == 201, created.text
+    pid = created.json()["id"]
+    batch = _upload(client, h).json()["batch_id"]
+    rev = client.get(f"/api/parties/import/{batch}", headers=h).json()
+    row = next(r for r in rev["rows"] if r["ledger_name"] == "Balaji Traders")
+    if row["outcome"] != "link":
+        patched = client.patch(
+            f"/api/parties/import/{batch}/rows/{row['id']}",
+            headers=h,
+            json={"decision": "link", "link_party_id": pid},
+        )
+        assert patched.status_code == 200, patched.text
+    out = client.post(f"/api/parties/import/{batch}/commit", headers=h).json()
+    assert [c["field"] for c in out["conflicts"]] == ["gstin"]
+    assert out["conflicts"][0]["ours"] == "27AAJCB1234K1ZP"
+    assert client.get(f"/api/parties/{pid}", headers=h).json()["gstin"] == "27AAJCB1234K1ZP"
