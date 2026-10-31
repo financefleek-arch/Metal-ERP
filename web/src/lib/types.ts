@@ -1298,3 +1298,16 @@ export interface TallyBalanceDifference {
   tally: string;
   as_of: string | null;
 }
+
+/** What loading a Tally voucher file did to last rates and last sales. */
+export interface TallySalesFileResult {
+  vouchers_read: number;
+  sales: number;
+  parties: number;
+  prices: number;
+  unmatched_parties: string[];
+  unmatched_items: string[];
+  not_counted: Record<string, number>;
+  hint: string | null;
+}
+

@@ -74,9 +74,10 @@ _LIST_CAP = 50  # unmatched names kept on the job; the count is always exact
 # that). Sales are read in windows of days, and the size is tuned as the read goes: a window Tally cannot
 # answer in time is halved (and every window still to come with it), one it answers quickly lets the next
 # ones grow, and the size that worked is remembered for the next read. A single day that still times out is
-# skipped; after several timeouts in one read the rest of the sales are left, with a plain note.
+# skipped; after two timeouts in one read the rest of the sales are left, with a plain note.
 TIMEOUT_TEXT = "did not answer in time"
-MAX_TIMEOUTS = 6
+MAX_TIMEOUTS = 2  # the agent gives up after ~105 s but Tally does not cancel what it was asked, so every
+# abandoned request may still be running inside the shop's Tally: stop sooner rather than pile more on it
 SALES_FAST_MS = 25_000  # answered in under this: the next windows may be twice as long
 SALES_MAX_WINDOW = 15  # days
 

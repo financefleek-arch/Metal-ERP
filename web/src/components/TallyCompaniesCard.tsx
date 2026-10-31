@@ -1,8 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ApiError, api } from "../lib/api";
+import { ApiError, api, apiUpload } from "../lib/api";
 import { inr } from "../lib/previewTotal";
-import type { TallyBalanceDifference, TallyCompanyRow, TallyRefillStatus } from "../lib/types";
+import type {
+  TallyBalanceDifference,
+  TallyCompanyRow,
+  TallyRefillStatus,
+  TallySalesFileResult,
+} from "../lib/types";
 
 const KINDS: { value: string; label: string }[] = [
   { value: "gst", label: "GST books" },
@@ -276,6 +281,11 @@ function RefillPanel({ company, onError }: { company: TallyCompanyRow; onError: 
     queryFn: () => api<TallyRefillStatus>(`/tally/companies/${company.id}/refill`),
     refetchInterval: (q) => (q.state.data?.running ? 4000 : false),
   });
+  const dismiss = useMutation({
+    mutationFn: () => api(`/tally/companies/${company.id}/refill/dismiss`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key }),
+    onError,
+  });
   const start = useMutation({
     mutationFn: () => api(`/tally/companies/${company.id}/refresh`, { method: "POST", body: {} }),
     onSuccess: () => qc.invalidateQueries({ queryKey: key }),
@@ -326,6 +336,7 @@ function RefillPanel({ company, onError }: { company: TallyCompanyRow; onError: 
           {gone > 0 ? ` · ${gone} no longer in Tally` : ""}
         </p>
       )}
+      <SalesFileLoader company={company} onError={onError} noRates={st.prices === 0} />
       {notCountedText && (
         <p className="meta mt-2">
           Not counted as sales: {notCountedText}. Tell us if these should set the last rate too.
@@ -338,6 +349,11 @@ function RefillPanel({ company, onError }: { company: TallyCompanyRow; onError: 
           ))}
         </ul>
       )}
+      {!st.running && ((st.last_status === "error" && st.last_error) || st.notes.length > 0) && (
+        <button className="mt-1 text-sm font-medium text-muted" disabled={dismiss.isPending} onClick={() => dismiss.mutate()}>
+          Dismiss
+        </button>
+      )}
       {st.differences > 0 && (
         <div className="mt-2">
           <button className="text-sm font-medium text-accent" onClick={() => setReviewing((v) => !v)}>
@@ -348,6 +364,88 @@ function RefillPanel({ company, onError }: { company: TallyCompanyRow; onError: 
       )}
       {!st.running && st.last_status === "error" && st.last_error && (
         <p role="alert" className="mt-2 text-sm text-danger">{st.last_error}</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Last rates from a file the shop exports from Tally. The refresh reads sales straight from Tally, which
+ * can be slow on a big company; a file sidesteps that and works the same way. Read once, never stored.
+ */
+function SalesFileLoader({
+  company,
+  onError,
+  noRates,
+}: {
+  company: TallyCompanyRow;
+  onError: (e: unknown) => void;
+  noRates: boolean;
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(noRates);
+  const [result, setResult] = useState<TallySalesFileResult | null>(null);
+  const load = useMutation({
+    mutationFn: (file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return apiUpload<TallySalesFileResult>(`/tally/companies/${company.id}/refill/sales-file`, fd);
+    },
+    onSuccess: (r) => {
+      setResult(r);
+      qc.invalidateQueries({ queryKey: ["tally-refill", company.id] });
+    },
+    onError,
+  });
+  const nc = Object.entries(result?.not_counted ?? {})
+    .map(([t, n]) => `${t} ${n}`)
+    .join(", ");
+  return (
+    <div className="mt-2">
+      <button className="text-sm font-medium text-accent" onClick={() => setOpen((v) => !v)}>
+        {open ? "Hide" : "Fill last rates from a Tally file"}
+      </button>
+      {open && (
+        <div className="mt-2 rounded-lg border border-line bg-ground p-3 text-sm">
+          <p className="meta">
+            In Tally, open the Day Book for the months you want (the last three is enough), press Alt+E to export,
+            choose the XML format, and save the file. Then pick it here. It is read once and not kept.
+          </p>
+          <input
+            type="file"
+            accept=".xml,text/xml,application/xml"
+            className="mt-2 block text-sm"
+            disabled={load.isPending}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) load.mutate(f);
+              e.target.value = "";
+            }}
+          />
+          {load.isPending && <p className="meta mt-2">Reading the file…</p>}
+          {result && (
+            <div className="mt-2">
+              <p>
+                {result.vouchers_read} vouchers read · {result.sales} sales · {result.prices} last rates set for{" "}
+                {result.parties} parties
+              </p>
+              {result.hint && <p className="mt-1 text-warn">{result.hint}</p>}
+              {nc && <p className="meta mt-1">Not counted as sales: {nc}.</p>}
+              {result.unmatched_parties.length > 0 && (
+                <p className="meta mt-1">
+                  Not in your parties: {result.unmatched_parties.slice(0, 8).join(", ")}
+                  {result.unmatched_parties.length > 8 ? "…" : ""}
+                </p>
+              )}
+              {result.unmatched_items.length > 0 && (
+                <p className="meta mt-1">
+                  Not in your items: {result.unmatched_items.slice(0, 8).join(", ")}
+                  {result.unmatched_items.length > 8 ? "…" : ""}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

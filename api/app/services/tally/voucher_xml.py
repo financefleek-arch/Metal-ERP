@@ -257,6 +257,39 @@ def _items(v: etree._Element) -> list[ParsedItemLine]:
     return out
 
 
+def voucher_from_element(
+    v: etree._Element, parents: dict[str, str] | None = None, *, allow_no_guid: bool = False
+) -> ParsedVoucher | None:
+    """One `<VOUCHER>` as a record. A voucher with no GUID is skipped, unless `allow_no_guid` (a Tally
+    file export may carry none: it then gets a key from its type, number and date)."""
+    if len(v) == 0:
+        return None  # the "<VOUCHER>0</VOUCHER>" counter in an export's header is not a voucher
+    guid = _text(v, "GUID") or (v.get("REMOTEID") or "").strip()
+    type_name = _text(v, "VOUCHERTYPENAME") or (v.get("VCHTYPE") or "")
+    number = _text(v, "VOUCHERNUMBER")
+    if not guid:
+        if not allow_no_guid:
+            return None
+        guid = f"{type_name}|{number}|{_text(v, 'DATE')}"
+    return ParsedVoucher(
+        guid=guid,
+        master_id=_int(_text(v, "MASTERID")),
+        alter_id=_int(_text(v, "ALTERID")),
+        type_name=type_name,
+        kind=classify(type_name, parents),
+        number=number,
+        day=parse_day(_text(v, "DATE")),
+        party=_text(v, "PARTYLEDGERNAME"),
+        reference=_text(v, "REFERENCE"),
+        narration=_text(v, "NARRATION"),
+        cancelled=_yes(_text(v, "ISCANCELLED")),
+        optional=_yes(_text(v, "ISOPTIONAL")),
+        deleted=_yes(_text(v, "ISDELETED")),
+        ledgers=_ledgers(v),
+        items=_items(v),
+    )
+
+
 def parse_vouchers(raw: bytes, parents: dict[str, str] | None = None) -> list[ParsedVoucher]:
     """All vouchers in one export, in file order. A voucher that cannot be read (no GUID) is skipped;
     the caller counts the difference between what it expected and what came back."""
@@ -267,30 +300,74 @@ def parse_vouchers(raw: bytes, parents: dict[str, str] | None = None) -> list[Pa
         return []
     out: list[ParsedVoucher] = []
     for v in root.iter("VOUCHER"):
-        guid = _text(v, "GUID") or (v.get("REMOTEID") or "").strip()
-        if not guid:
-            continue
-        type_name = _text(v, "VOUCHERTYPENAME") or (v.get("VCHTYPE") or "")
-        out.append(
-            ParsedVoucher(
-                guid=guid,
-                master_id=_int(_text(v, "MASTERID")),
-                alter_id=_int(_text(v, "ALTERID")),
-                type_name=type_name,
-                kind=classify(type_name, parents),
-                number=_text(v, "VOUCHERNUMBER"),
-                day=parse_day(_text(v, "DATE")),
-                party=_text(v, "PARTYLEDGERNAME"),
-                reference=_text(v, "REFERENCE"),
-                narration=_text(v, "NARRATION"),
-                cancelled=_yes(_text(v, "ISCANCELLED")),
-                optional=_yes(_text(v, "ISOPTIONAL")),
-                deleted=_yes(_text(v, "ISDELETED")),
-                ledgers=_ledgers(v),
-                items=_items(v),
-            )
-        )
+        parsed = voucher_from_element(v, parents)
+        if parsed is not None:
+            out.append(parsed)
     return out
+
+
+class _CleanReader:
+    """A file-like over a Tally export for the XML parser: UTF-16 (what Tally's own Export writes) becomes
+    UTF-8, and the control characters Tally emits ("&#4;" for "Not Applicable") are dropped, so a file of
+    any size can be read in one pass without holding it in memory."""
+
+    _KEEP = 16  # bytes held back so a "&#4;" split across two reads is still seen whole
+
+    def __init__(self, stream) -> None:  # type: ignore[no-untyped-def]
+        self._stream = stream
+        head = stream.read(4)
+        self._decoder = None
+        self._pending = b""
+        if head[:2] in (b"\xff\xfe", b"\xfe\xff"):
+            import codecs
+
+            self._decoder = codecs.getincrementaldecoder("utf-16")()
+        self._raw_first = head
+        self._eof = False
+
+    def _pull(self, size: int) -> bytes:
+        if self._raw_first:
+            chunk, self._raw_first = self._raw_first, b""
+            more = self._stream.read(max(size - len(chunk), 0))
+            chunk += more
+        else:
+            chunk = self._stream.read(size)
+        if not chunk:
+            self._eof = True
+        if self._decoder is not None:
+            return self._decoder.decode(chunk, final=self._eof).encode("utf-8")
+        return chunk
+
+    def read(self, size: int = 65536) -> bytes:
+        while len(self._pending) < size + self._KEEP and not self._eof:
+            self._pending += self._pull(size)
+        if self._eof:
+            data, self._pending = self._pending, b""
+        else:
+            data, self._pending = self._pending[: -self._KEEP], self._pending[-self._KEEP :]
+        return _BAD_CHARS.sub(b"", data)
+
+
+def iter_vouchers(stream, parents: dict[str, str] | None = None):  # type: ignore[no-untyped-def]
+    """The vouchers of a Tally file export, one at a time, so a file of hundreds of MB never sits in memory.
+    A UI export (Day Book, Export > XML) and the Gateway's answer are both read; a voucher with no GUID gets
+    a key made from its type, number and date."""
+    reader = _CleanReader(stream)
+    try:
+        for _event, el in etree.iterparse(
+            reader, events=("end",), tag="VOUCHER", recover=True, huge_tree=True, resolve_entities=False
+        ):
+            parsed = voucher_from_element(el, parents, allow_no_guid=True)
+            if parsed is not None:
+                yield parsed
+            el.clear()
+            while el.getprevious() is not None:
+                parent = el.getparent()
+                if parent is None:
+                    break
+                del parent[0]
+    except etree.XMLSyntaxError:
+        return  # an empty or cut-off file: what was read before it stays read
 
 
 @dataclass

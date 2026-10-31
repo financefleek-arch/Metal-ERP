@@ -9,11 +9,11 @@ version) stays with Fleek, because it costs us storage. See `docs/PARITY-tally-c
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
@@ -44,7 +44,8 @@ from app.services.tally.companies import (
 )
 from app.services.tally.company_verify import enqueue_verify_company, relink_company
 from app.services.tally.jobs import assert_no_pull_in_flight, enqueue_pull_masters
-from app.services.tally.refill import DifferenceError, differences, settle_difference
+from app.services.tally.refill import DifferenceError, apply_sales, differences, settle_difference
+from app.services.tally.voucher_xml import iter_vouchers
 from app.services.tally.refill_job import MAX_MONTHS, is_refill_job, start_refill
 from app.services.tally.visibility import can_see_company, visible_companies
 
@@ -310,6 +311,36 @@ def recent_jobs(session: SessionDep, company: TallyCompany, limit: int = 20) -> 
     )
 
 
+MESSAGES_FRESH_FOR = timedelta(hours=24)
+
+
+def _messages_are_old(session: SessionDep, company: TallyCompany, latest: TallySyncJob | None) -> bool:
+    """The notes and the error of the latest refresh are about that read. They stop showing once they are
+    no longer news: the owner dismissed them, a day has passed, or a newer sales file has been loaded
+    (the thing they complained about, last rates, was dealt with another way). A read still running always
+    shows its own notes."""
+    if latest is None:
+        return True
+    if latest.status in ("queued", "sent", "running"):
+        return False
+    if (latest.counts or {}).get("dismissed"):
+        return True
+    made = latest.created_at if latest.created_at.tzinfo else latest.created_at.replace(tzinfo=UTC)
+    if datetime.now(UTC) - made > MESSAGES_FRESH_FOR:
+        return True
+    newer_file = session.scalar(
+        select(TallySyncJob.id)
+        .where(
+            TallySyncJob.company_id == company.id,
+            TallySyncJob.kind == "sales_file",
+            TallySyncJob.status == "ok",
+            TallySyncJob.created_at > latest.created_at,
+        )
+        .limit(1)
+    )
+    return newer_file is not None
+
+
 def refill_summary(session: SessionDep, company: TallyCompany) -> RefillOut:
     cid = company.id
     stock = session.scalar(
@@ -338,6 +369,7 @@ def refill_summary(session: SessionDep, company: TallyCompany) -> RefillOut:
         if is_refill_job(j)
     ]
     latest = jobs[0] if jobs else None
+    old = _messages_are_old(session, company, latest)
     results: dict = {}
     for j in reversed(jobs):  # oldest first, so the newest chain's figures overwrite older ones
         results.update((j.counts or {}).get("refill") or {})
@@ -350,12 +382,12 @@ def refill_summary(session: SessionDep, company: TallyCompany) -> RefillOut:
         running=bool(latest and latest.status in ("queued", "sent", "running")),
         step=(latest.counts or {}).get("step") if latest else None,
         last_status=latest.status if latest else None,
-        last_error=latest.error if latest else None,
+        last_error=None if old or latest is None else latest.error,
         mode=(latest.counts or {}).get("mode") if latest else None,
         full_refill_at=company.full_refill_at,
         auto_refresh=company.auto_refresh,
         differences=len(differences(session, company)),
-        notes=list((latest.counts or {}).get("notes") or []) if latest else [],
+        notes=[] if old or latest is None else list((latest.counts or {}).get("notes") or []),
         results=results,
     )
 
@@ -387,3 +419,102 @@ def settle_refill_difference(
         settle_difference(session, company, party_id, body.use)
     except DifferenceError as exc:
         raise _bad(CompanyError(str(exc))) from exc
+
+
+# ---- last rates from a file the shop exports from Tally (no waiting on the gateway)
+
+SALES_FILE_MAX_BYTES = 400 * 1024 * 1024
+
+
+class SalesFileOut(BaseModel):
+    vouchers_read: int  # every voucher in the file
+    sales: int  # of which counted as sales
+    parties: int  # parties with a last sale
+    prices: int  # last rates set or refreshed
+    unmatched_parties: list[str] = Field(default_factory=list)
+    unmatched_items: list[str] = Field(default_factory=list)
+    not_counted: dict[str, int] = Field(default_factory=dict)
+    hint: str | None = None
+
+
+def latest_voucher_types(session: SessionDep, company: TallyCompany) -> dict[str, str]:
+    """The voucher types (name -> parent) the latest refresh read, so a file's custom types are classified
+    by their parent rather than guessed from the name."""
+    for job in session.scalars(
+        select(TallySyncJob)
+        .where(TallySyncJob.company_id == company.id, TallySyncJob.kind == "pull_vouchers")
+        .order_by(TallySyncJob.created_at.desc())
+        .limit(40)
+    ):
+        types = (job.counts or {}).get("voucher_types")
+        if types:
+            return dict(types)
+    return {}
+
+
+@router.post("/{company_id}/refill/sales-file", response_model=SalesFileOut)
+def refill_from_sales_file(
+    company_id: str,
+    user: WriteUser,
+    session: SessionDep,
+    file: UploadFile = File(...),
+) -> SalesFileOut:
+    """Set last rates and last sales from a voucher file exported from Tally (Day Book, XML). The same
+    reading and matching as the refresh, without Tally having to answer the agent within its wait. The
+    file is read once, never stored."""
+    company = _mine(session, user, company_id)
+    stream = file.file
+    stream.seek(0, 2)
+    if stream.tell() > SALES_FILE_MAX_BYTES:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "That file is too large. Export a shorter period.")
+    stream.seek(0)
+    vouchers = list(iter_vouchers(stream, latest_voucher_types(session, company) or None))
+    res = apply_sales(session, company, vouchers)
+    hint = None
+    if not vouchers:
+        hint = "No vouchers were found in that file. Export the vouchers from Tally as XML and try again."
+    elif res.vouchers == 0:
+        hint = "The file has vouchers but none are sales. Check the period and the voucher type you exported."
+    elif res.prices == 0:
+        hint = "Sales were found, but none had items matching your list. Pull items from Tally first."
+    session.add(
+        TallySyncJob(
+            tenant_id=company.tenant_id,
+            company_id=company.id,
+            direction="in",
+            kind="sales_file",
+            entity_type="file",
+            status="ok",
+            counts={"vouchers_read": len(vouchers), "sales": res.vouchers, "prices": res.prices, "file": (file.filename or "")[:120]},
+            completed_at=datetime.now(UTC),
+        )
+    )
+    return SalesFileOut(
+        vouchers_read=len(vouchers),
+        sales=res.vouchers,
+        parties=res.parties,
+        prices=res.prices,
+        unmatched_parties=res.unmatched_parties[:50],
+        unmatched_items=res.unmatched_items[:50],
+        not_counted=res.not_counted,
+        hint=hint,
+    )
+
+
+@router.post("/{company_id}/refill/dismiss", status_code=204)
+def dismiss_refill_messages(company_id: str, user: WriteUser, session: SessionDep) -> None:
+    """Clear the notes and error of the latest refresh from the card. The job and its counts stay on record."""
+    company = _mine(session, user, company_id)
+    jobs = [
+        j
+        for j in session.scalars(
+            select(TallySyncJob)
+            .where(TallySyncJob.company_id == company.id, TallySyncJob.kind == "pull_vouchers")
+            .order_by(TallySyncJob.created_at.desc())
+            .limit(20)
+        )
+        if is_refill_job(j)
+    ]
+    if jobs and jobs[0].status not in ("queued", "sent", "running"):
+        jobs[0].counts = {**(jobs[0].counts or {}), "dismissed": True}
+

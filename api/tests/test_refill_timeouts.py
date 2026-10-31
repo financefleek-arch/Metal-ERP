@@ -237,3 +237,88 @@ def test_nothing_learned_yet_means_half_months() -> None:
         "sales:2026-10-02..2026-10-11",
         "sales:2026-10-01..2026-10-01",
     ]
+
+
+# ---- the notes and the error go away when they are no longer news
+
+
+def _stopped_chain(client: TestClient, monkeypatch: pytest.MonkeyPatch, email: str):
+    """A chain that ended on repeated timeouts: notes and an error on its last job, nothing running."""
+    tok, tid = _register_firm(client, email)
+    monkeypatch.setattr(tally_companies, "assert_tally_reachable", lambda session, company: None)
+    with SessionLocal() as s:
+        c = _company(s, tid)
+        cid = c.id
+        job = _to_the_sales(s, c, monkeypatch)
+        job.counts = {**job.counts, "timeouts": MAX_TIMEOUTS - 1}
+        _fail(s, job)  # stops the chain: notes recorded, no next job
+        for j in s.scalars(select(TallySyncJob)):
+            j.created_at = j.created_at - timedelta(minutes=2)
+        job.created_at = job.created_at + timedelta(minutes=1)  # the failed one is the latest, as in life
+        s.commit()
+    return tok, tid, cid
+
+
+def _status(client: TestClient, tok: str, cid: str) -> dict:
+    return client.get(f"/api/tally/companies/{cid}/refill", headers=_h(tok)).json()
+
+
+def test_a_failed_reads_notes_and_error_show_first(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    tok, _tid, cid = _stopped_chain(client, monkeypatch, "st1@x.example.com")
+    st = _status(client, tok, cid)
+    assert st["running"] is False and st["last_status"] == "error"
+    assert "did not answer" in st["last_error"] and len(st["notes"]) == 1
+
+
+def test_dismissing_clears_them_and_they_stay_cleared(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    tok, _tid, cid = _stopped_chain(client, monkeypatch, "st2@x.example.com")
+    assert client.post(f"/api/tally/companies/{cid}/refill/dismiss", headers=_h(tok)).status_code == 204
+    st = _status(client, tok, cid)
+    assert st["notes"] == [] and st["last_error"] is None
+    assert _status(client, tok, cid)["notes"] == []  # still gone on the next look
+
+
+def test_they_expire_after_a_day(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    tok, _tid, cid = _stopped_chain(client, monkeypatch, "st3@x.example.com")
+    with SessionLocal() as s:
+        for j in s.scalars(select(TallySyncJob)):
+            j.created_at = j.created_at - timedelta(hours=25)
+        s.commit()
+    st = _status(client, tok, cid)
+    assert st["notes"] == [] and st["last_error"] is None
+
+
+def test_loading_a_sales_file_afterwards_retires_them(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    tok, tid, cid = _stopped_chain(client, monkeypatch, "st4@x.example.com")
+    with SessionLocal() as s:
+        s.add(TallySyncJob(tenant_id=tid, company_id=cid, direction="in", kind="sales_file", entity_type="file", status="ok", counts={}))
+        s.commit()
+    st = _status(client, tok, cid)
+    assert st["notes"] == [] and st["last_error"] is None
+
+
+def test_a_read_still_running_shows_its_own_notes_and_cannot_be_dismissed(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tok, tid = _register_firm(client, "st5@x.example.com")
+    with SessionLocal() as s:
+        c = _company(s, tid)
+        cid = c.id
+        job = _to_the_sales(s, c, monkeypatch)
+        _fail(s, job)  # splits and queues the next window: a chain is running with a note
+        for j in s.scalars(select(TallySyncJob).where(TallySyncJob.status != "queued")):
+            j.created_at = j.created_at - timedelta(minutes=2)
+        s.commit()
+    client.post(f"/api/tally/companies/{cid}/refill/dismiss", headers=_h(tok))
+    st = _status(client, tok, cid)
+    assert st["running"] is True and len(st["notes"]) == 1
+
+
+def test_only_someone_who_can_write_may_dismiss(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.test_owner_companies import _colleague
+
+    tok, tid, cid = _stopped_chain(client, monkeypatch, "st6@x.example.com")
+    viewer = _colleague(client, tid, "viewer")
+    assert client.post(f"/api/tally/companies/{cid}/refill/dismiss", headers=viewer).status_code == 403
+    assert len(_status(client, tok, cid)["notes"]) == 1
+
