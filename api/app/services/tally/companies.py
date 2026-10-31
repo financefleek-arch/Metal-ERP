@@ -201,6 +201,8 @@ def update_company(session: Session, company: TallyCompany, patch: dict) -> Tall
         company.series_prefix = prefix or None
     if "include_in_reminders" in patch:
         company.include_in_reminders = bool(patch["include_in_reminders"])
+    if "auto_refresh" in patch:
+        company.auto_refresh = bool(patch["auto_refresh"])
     if "visible_roles" in patch:
         roles = patch["visible_roles"]
         if roles is not None:

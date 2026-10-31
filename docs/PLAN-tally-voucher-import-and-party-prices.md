@@ -256,3 +256,15 @@ Yes, three origins are distinguishable and shown:
 GST ledgers and tax split from vouchers (GST billing is set aside), stock reports and
 inventory movement (Tally stays the stock truth), voucher editing here, supplier-side
 reconciliation, payment-gateway links.
+
+## Status (2026-10-31)
+
+P0 raw capture built (agent action in commit 62f0b00, NOT in released agent 1.0.2). P1 parser BUILT, uncommitted: `services/tally/voucher_xml.py` (`parse_vouchers`, `parse_bills_receivable`, `classify`) + `tests/test_voucher_xml.py` (11 pass, real TallyPrime 7.1 dev captures; the fixture has Sales/Purchase/Journal only, Receipt and Credit Note shapes are from the S4.4 live probe, not a capture). Still to build: migration (next number is 0084, chains off 0083, which must be committed with it), `tally_voucher_stage`, `voucher_import.py` (resolve, apply, dedupe vs METALERP_REF), guards on `source=tally_import`, reconcile, routes, month chunking in the agent result path, review screen.
+
+## Direction change (2026-10-31): refill, not history
+
+User: do not import past invoices now; refill the parties and items already imported. Four things: party outstanding (Bills Receivable/Payable) written to `party.opening_balance` + `opening_balance_as_of` where the party has no history, plus a "Tally says" snapshot each refresh overwrites; party last-purchase (date, amount, count); item stock on hand (Stock Summary, per company, name match only); last price per party+item (voucher pass reduced month by month, only the latest rate kept). Pilot Positive: treat as blank slate (its one invoice was a test, no handling). BUILT: `services/tally/stock_summary.py` + `tests/test_stock_summary.py` (real 920-row export, trimmed fixture). The Stock Summary Gateway REQUEST is unverified against a live Tally. Not built: snapshot tables, bills->opening balance writer, last-price reducer, routes, screen, agent release.
+
+## Update 2026-10-31 (later): id-keyed light queries replace the name-keyed reports
+
+Stock Summary and Bills Receivable carry names only, and a Gateway "Stock Summary" request returns a single rolled-up row. The refill now reads two light Collection queries instead (ledgers and stock items with Tally's id, closing figures), matches by the id the masters pull stored, and corrects a link's name when Tally renames. Verified live on the dev Tally. `stock_summary.py` and the Bills Receivable parser remain for UI exports and as a source of pending-bill dates.

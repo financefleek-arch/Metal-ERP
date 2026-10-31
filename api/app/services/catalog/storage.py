@@ -46,6 +46,8 @@ class CatalogStorage(Protocol):
 
     def delete_many(self, keys: Iterable[str]) -> None: ...
 
+    def delete_prefix(self, prefix: str) -> int: ...
+
     def get_many(self, keys: Iterable[str]) -> dict[str, bytes | None]: ...
 
 
@@ -120,6 +122,16 @@ class LocalStorage:
     def delete(self, key: str) -> None:
         self._path(key).unlink(missing_ok=True)
 
+    def delete_prefix(self, prefix: str) -> int:
+        """Remove every file under a folder-like prefix (`media/<tenant>/`); returns how many."""
+        _check_key(prefix.rstrip("/"))
+        root = self._path(prefix.rstrip("/"))
+        if not root.exists():
+            return 0
+        count = sum(1 for p in root.rglob("*") if p.is_file())
+        shutil.rmtree(root, ignore_errors=True)
+        return count
+
     def put_many(self, items: Iterable[tuple[str, bytes, str]]) -> None:
         for key, data, ctype in items:
             self.put(key, data, ctype)
@@ -177,6 +189,19 @@ class R2Storage:
     def delete(self, key: str) -> None:
         _check_key(key)
         self._client.delete_object(Bucket=self._bucket, Key=key)
+
+    def delete_prefix(self, prefix: str) -> int:
+        _check_key(prefix.rstrip("/"))
+        prefix = prefix.rstrip("/") + "/"
+        count = 0
+        for page in self._client.get_paginator("list_objects_v2").paginate(
+            Bucket=self._bucket, Prefix=prefix
+        ):
+            keys = [{"Key": o["Key"]} for o in page.get("Contents", [])]
+            if keys:
+                self._client.delete_objects(Bucket=self._bucket, Delete={"Objects": keys})
+                count += len(keys)
+        return count
 
     def put_many(self, items: Iterable[tuple[str, bytes, str]]) -> None:
         batch = list(items)

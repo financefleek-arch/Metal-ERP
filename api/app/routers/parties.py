@@ -156,6 +156,10 @@ def _out(session: SessionDep, party: Party) -> PartyOut:
         wa_catalog_consent=party.wa_catalog_consent,
         wa_catalog_consent_at=party.wa_catalog_consent_at,
         wa_catalog_consent_source=party.wa_catalog_consent_source,
+        tally_outstanding=party.tally_outstanding,
+        tally_outstanding_as_of=party.tally_outstanding_as_of,
+        tally_last_sale_date=party.tally_last_sale_date,
+        tally_last_sale_amount=party.tally_last_sale_amount,
     )
 
 

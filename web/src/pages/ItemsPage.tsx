@@ -1025,6 +1025,14 @@ export function ItemsPage() {
                             </span>
                           ) : null;
                         })()}
+                        {it.tally_stock_qty != null && (
+                          <span
+                            title={`In stock in Tally${it.tally_stock_as_of ? `, as of ${it.tally_stock_as_of.slice(0, 10)}` : ""}`}
+                            className={`shrink-0 text-[11px] ${Number(it.tally_stock_qty) < 0 ? "font-semibold text-danger" : "text-muted"}`}
+                          >
+                            {Number(it.tally_stock_qty)} {it.tally_stock_unit ?? ""}
+                          </span>
+                        )}
                         {it.status === "unconfirmed" && (
                           <span className="ml-auto shrink-0 rounded-sm bg-[#f1e7d6] px-1 py-0.5 text-[11px] font-bold uppercase text-warn">
                             unconfirmed

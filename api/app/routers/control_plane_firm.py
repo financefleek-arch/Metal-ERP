@@ -17,8 +17,15 @@ from fastapi.responses import Response
 from sqlalchemy import select
 
 from app.deps import SessionDep
-from app.models import Tenant, User
+from app.models import TallyCompany, Tenant, User
 from app.routers import admin
+from app.routers.tally_companies import (
+    CompanyOut,
+    RefillOut,
+    company_out,
+    recent_jobs,
+    refill_summary,
+)
 from app.schemas_admin import (
     AdminUserCreate,
     AdminUserOut,
@@ -32,7 +39,9 @@ from app.schemas_admin import (
     FirmWhatsappTestOut,
     SlipUsageOut,
 )
+from app.schemas_tally import TallySyncJobOut
 from app.services.control_plane_auth import require_control_plane
+from app.services.tally.companies import get_company, list_companies
 from app.services.ocr import slip_usage
 
 router = APIRouter(
@@ -133,3 +142,36 @@ def set_tally_version(fleek_org_id: str, body: AgentTargetVersionIn, session: Se
 @router.get("/tally-shop/installer")
 def tally_installer(fleek_org_id: str, session: SessionDep) -> Response:
     return admin.download_firm_installer(_firm(session, fleek_org_id).id, session)
+
+
+# ---------------------------------------------------------------- Tally companies (read only, for support)
+#
+# The owner manages their own companies in their own app (decision 2026-10-31: avoid unnecessary
+# centralization). Fleek's console only looks, so a support person can see what the owner sees. Same
+# functions as the owner's routes (`routers/tally_companies.py`), so the two screens cannot drift. Writing
+# from here would be a new decision (docs/PARITY-tally-company-management.md).
+
+
+def _company(session: SessionDep, firm: Tenant, company_id: str) -> TallyCompany:
+    company = get_company(session, firm.id, company_id)
+    if company is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Company not found")
+    return company
+
+
+@router.get("/tally-companies", response_model=list[CompanyOut])
+def list_tally_companies(fleek_org_id: str, session: SessionDep) -> list[CompanyOut]:
+    firm = _firm(session, fleek_org_id)
+    return [
+        company_out(session, c, owner_view=True) for c in list_companies(session, firm.id, include_disabled=True)
+    ]
+
+
+@router.get("/tally-companies/{company_id}/refill", response_model=RefillOut)
+def get_tally_company_refill(fleek_org_id: str, company_id: str, session: SessionDep) -> RefillOut:
+    return refill_summary(session, _company(session, _firm(session, fleek_org_id), company_id))
+
+
+@router.get("/tally-companies/{company_id}/jobs", response_model=list[TallySyncJobOut])
+def get_tally_company_jobs(fleek_org_id: str, company_id: str, session: SessionDep) -> list:
+    return recent_jobs(session, _company(session, _firm(session, fleek_org_id), company_id))

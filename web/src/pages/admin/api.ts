@@ -3,6 +3,7 @@ import { downloadFile } from "../../lib/download";
 import type {
   AdminUser,
   AssignableRole,
+  FirmDeleteResult,
   FirmDetail,
   FirmListItem,
   FirmTallyShop,
@@ -56,6 +57,13 @@ export const adminApi = {
 
   putFirmWhatsapp: (firmId: string, body: FirmWhatsappUpsert) =>
     api<FirmWhatsapp>(`/admin/firms/${firmId}/whatsapp`, { method: "PUT", body }),
+
+  /** Erase the shop and every trace of it. Irreversible; `confirmName` must equal the shop's name. */
+  deleteFirm: (firmId: string, confirmName: string) =>
+    api<FirmDeleteResult>(`/admin/firms/${firmId}/delete`, {
+      method: "POST",
+      body: { confirm_name: confirmName },
+    }),
 
   deleteFirmWhatsapp: (firmId: string) =>
     api<void>(`/admin/firms/${firmId}/whatsapp`, { method: "DELETE" }),

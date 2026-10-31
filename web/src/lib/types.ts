@@ -135,6 +135,15 @@ export interface FirmDetail {
   users: AdminUser[];
 }
 
+/** POST /api/admin/firms/{id}/delete — what was erased. */
+export interface FirmDeleteResult {
+  deleted: string;
+  rows_removed: number;
+  files_removed: number;
+  files_failed: string[];
+  fleek_org_id: string | null;
+}
+
 /** Per-firm WhatsApp number registry (GET/PUT /api/admin/firms/{id}/whatsapp).
  *  There is no token here — sends use the process-wide FleekWA System User
  *  token; this row only picks which number the firm sends from. */
@@ -429,6 +438,11 @@ export interface Party extends PartyListItem {
   email: string | null;
   pan: string | null;
   opening_balance_as_of: string | null;
+  /** What the firm's default Tally company said at the last refresh (positive = the party owes you). */
+  tally_outstanding?: string | null;
+  tally_outstanding_as_of?: string | null;
+  tally_last_sale_date?: string | null;
+  tally_last_sale_amount?: string | null;
   addresses: PartyAddress[];
   document_count: number;
 }
@@ -587,6 +601,10 @@ export interface ItemListItem {
   pack_qty: number | null;
   carton_qty: number | null;
   tally_state: TallyState;
+  /** Stock on hand in the default Tally company at the last refresh; negative = oversold in Tally. */
+  tally_stock_qty?: string | null;
+  tally_stock_unit?: string | null;
+  tally_stock_as_of?: string | null;
 }
 
 /** Where an item stands with Tally. */
@@ -1240,6 +1258,7 @@ export interface TallyCompanyRow {
   series_prefix: string | null;
   document_label: string | null;
   include_in_reminders: boolean;
+  auto_refresh: boolean;
   visible_roles: string[] | null;
   connected: boolean;
   ledger_map: Record<string, string>;
@@ -1248,4 +1267,32 @@ export interface TallyCompanyRow {
   verify_note: string | null;
   verified_at: string | null;
   last_masters_pull_at: string | null;
+}
+
+/** What a Tally company holds from the refresh (stock, what parties owe, last rates) and where it stands. */
+export interface TallyRefillStatus {
+  items_with_stock: number;
+  parties_with_balance: number;
+  outstanding_total: string;
+  prices: number;
+  refreshed_at: string | null;
+  running: boolean;
+  step: string | null;
+  last_status: string | null;
+  last_error: string | null;
+  mode: string | null;
+  full_refill_at: string | null;
+  auto_refresh: boolean;
+  /** Typed opening balances that differ from Tally's, waiting for a choice. */
+  differences: number;
+  results: Record<string, Record<string, unknown>>;
+}
+
+/** A customer whose typed opening balance differs from what Tally says. */
+export interface TallyBalanceDifference {
+  party_id: string;
+  party: string;
+  ours: string;
+  tally: string;
+  as_of: string | null;
 }

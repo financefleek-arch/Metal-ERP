@@ -4,8 +4,9 @@ Reads finalized sales invoices only: drafts and cancelled invoices are not real 
 notes are not a selling price. Keyed by `item_id`, so a line typed free (no item yet) has no
 history until it is finalized and linked, which is fine: its first sale has none to show.
 
-Imported Tally sales (plan `PLAN-tally-voucher-import-and-party-prices.md`) will be native
-`invoice` rows, so they flow in here with no change; `source` already tells the two apart.
+Sales made in Tally before the shop came here arrive differently (plan 2026-10-31, the refill): not as
+invoices but as one row per party and item in `party_item_price`, the latest rate Tally knows of. They are
+merged in here, labelled `source="tally"`; a later native sale always wins over an older Tally one.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.models import Invoice, InvoiceLine
+from app.models import Invoice, InvoiceLine, PartyItemPrice
 from app.models._mixins import DocType, InvoiceStatus
 
 MAX_HISTORY = 20
@@ -68,23 +69,70 @@ def _point(r) -> PricePoint:
     )
 
 
+def _tally_point(row: PartyItemPrice) -> PricePoint:
+    return PricePoint(
+        invoice_id=f"tally:{row.id}",
+        series=f"Tally {row.voucher_no}" if row.voucher_no else "Tally",
+        number=None,
+        date=row.sold_on,
+        item_id=row.item_id,
+        quantity=row.quantity or Decimal(0),
+        uom=row.unit,
+        unit_rate=row.rate,
+        discount_pct=None,
+        source="tally",
+    )
+
+
+def _tally_rows(
+    session: Session, tenant_id: str, party_id: str, item_ids: list[str], company_ids: list[str] | None
+) -> list[PartyItemPrice]:
+    """What Tally last sold these items to this party. `company_ids` limits it to the companies the
+    caller may see (S1.7); None means no limit."""
+    if company_ids is not None and not company_ids:
+        return []
+    q = select(PartyItemPrice).where(
+        PartyItemPrice.tenant_id == tenant_id,
+        PartyItemPrice.party_id == party_id,
+        PartyItemPrice.item_id.in_(item_ids),
+    )
+    if company_ids is not None:
+        q = q.where(PartyItemPrice.company_id.in_(company_ids))
+    return list(session.scalars(q))
+
+
 def item_history(
-    session: Session, tenant_id: str, party_id: str, item_id: str, limit: int = 10
+    session: Session,
+    tenant_id: str,
+    party_id: str,
+    item_id: str,
+    limit: int = 10,
+    company_ids: list[str] | None = None,
 ) -> list[PricePoint]:
-    """Newest first. One row per invoice line, so an item billed twice on one bill shows twice."""
+    """Newest first. One row per invoice line, so an item billed twice on one bill shows twice. Tally's
+    last sale, when it has one, is part of the list."""
+    limit = max(1, min(limit, MAX_HISTORY))
     q = (
         _base(tenant_id, party_id)
         .where(InvoiceLine.item_id == item_id)
         .order_by(Invoice.date.desc(), Invoice.number.desc().nulls_last(), InvoiceLine.sl_no)
-        .limit(max(1, min(limit, MAX_HISTORY)))
+        .limit(limit)
     )
-    return [_point(r) for r in session.execute(q).all()]
+    points = [_point(r) for r in session.execute(q).all()]
+    points += [_tally_point(r) for r in _tally_rows(session, tenant_id, party_id, [item_id], company_ids)]
+    points.sort(key=lambda p: p.date, reverse=True)  # stable: a native sale stays first on a tie
+    return points[:limit]
 
 
 def last_prices(
-    session: Session, tenant_id: str, party_id: str, item_ids: list[str]
+    session: Session,
+    tenant_id: str,
+    party_id: str,
+    item_ids: list[str],
+    company_ids: list[str] | None = None,
 ) -> dict[str, PricePoint]:
-    """The most recent sale of each item to this party (items never sold to them are absent)."""
+    """The most recent sale of each item to this party (items never sold to them are absent). A native
+    sale wins over a Tally one of the same date or older."""
     ids = list(dict.fromkeys(item_ids))
     if not ids:
         return {}
@@ -106,4 +154,9 @@ def last_prices(
         .subquery()
     )
     rows = session.execute(select(ranked).where(ranked.c.rn == 1)).all()
-    return {r[4]: _point(r) for r in rows}
+    found = {r[4]: _point(r) for r in rows}
+    for row in _tally_rows(session, tenant_id, party_id, ids, company_ids):
+        have = found.get(row.item_id)
+        if have is None or row.sold_on > have.date:
+            found[row.item_id] = _tally_point(row)
+    return found

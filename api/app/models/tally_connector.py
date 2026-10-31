@@ -31,6 +31,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -98,6 +99,16 @@ class TallyCompany(PkUuidMixin, TimestampMixin, Base):
     )
     # Roles that may see this company; null = everyone, the owner always sees it (D-4, S1.7).
     visible_roles: Mapped[list | None] = mapped_column(_JSON)
+    # Incremental refill: the highest AlterID (Tally's per-record change counter) seen for ledgers and for
+    # stock items, so the next refresh asks only for what changed since. None = never read, read everything.
+    ledgers_alter_id: Mapped[int | None] = mapped_column(Integer)
+    items_alter_id: Mapped[int | None] = mapped_column(Integer)
+    # The last complete read. Deleted records do not show up as changes, so a full read runs now and then.
+    full_refill_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Opt-in: refresh once a day, in working hours, while the agent is online.
+    auto_refresh: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
     # active | disabled
     status: Mapped[str] = mapped_column(
         String(12), default="active", server_default="active", nullable=False
@@ -331,6 +342,62 @@ class ItemTallyState(PkUuidMixin, Base):
     price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     seen_price: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # stock on hand as Tally's Stock Summary showed it at `stock_as_of` (the refill); rate is the
+    # closing-stock cost, not a selling price, and a negative quantity is oversold stock, kept as is
+    stock_qty: Mapped[Decimal | None] = mapped_column(Numeric(15, 3))
+    stock_unit: Mapped[str | None] = mapped_column(String(20))
+    stock_rate: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    stock_value: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    stock_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PartyTallySnapshot(PkUuidMixin, Base):
+    """What one Tally company says about one party at the last refresh: what they owe and when they last
+    bought. Overwritten on every refresh; never read by ageing, which runs on our own ledger."""
+
+    __tablename__ = "party_tally_snapshot"
+    __table_args__ = (UniqueConstraint("company_id", "party_id", name="uq_party_tally_snapshot"),)
+
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    company_id: Mapped[str] = mapped_column(
+        ForeignKey("tally_company.id"), nullable=False, index=True
+    )
+    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), nullable=False, index=True)
+    # positive = the party owes the firm, as `party.opening_balance`
+    outstanding: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    outstanding_as_of: Mapped[date | None] = mapped_column(Date)
+    oldest_bill_date: Mapped[date | None] = mapped_column(Date)
+    open_bills: Mapped[int | None] = mapped_column(Integer)
+    last_sale_date: Mapped[date | None] = mapped_column(Date)
+    last_sale_amount: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+    # sales vouchers seen in the window the last pull covered, not a lifetime count
+    sales_in_window: Mapped[int | None] = mapped_column(Integer)
+    refreshed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The Tally figure the owner looked at and chose to ignore in favour of the opening balance typed here.
+    # The difference is shown again only if Tally's figure moves from this one.
+    kept_ours_outstanding: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
+
+
+class PartyItemPrice(PkUuidMixin, Base):
+    """The last rate this item was sold to this party in one Tally company: what the invoice editor
+    prefills (plan: party price history). One row per (company, party, item); a later sale replaces it."""
+
+    __tablename__ = "party_item_price"
+    __table_args__ = (
+        UniqueConstraint("company_id", "party_id", "item_id", name="uq_party_item_price"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(ForeignKey("tenant.id"), nullable=False, index=True)
+    company_id: Mapped[str] = mapped_column(
+        ForeignKey("tally_company.id"), nullable=False, index=True
+    )
+    party_id: Mapped[str] = mapped_column(ForeignKey("party.id"), nullable=False, index=True)
+    item_id: Mapped[str] = mapped_column(ForeignKey("item.id"), nullable=False, index=True)
+    rate: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
+    unit: Mapped[str | None] = mapped_column(String(20))
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(15, 3))
+    sold_on: Mapped[date] = mapped_column(Date, nullable=False)
+    voucher_no: Mapped[str | None] = mapped_column(String(40))
 
 
 def default_item_state_expr(model, column: str):  # type: ignore[no-untyped-def]
@@ -355,3 +422,24 @@ def default_item_state_expr(model, column: str):  # type: ignore[no-untyped-def]
     if column == "status":
         return func.coalesce(expr, "none")
     return expr
+
+
+def default_party_snapshot_expr(model, column: str):  # type: ignore[no-untyped-def]
+    """SQL: one column of the party's Tally snapshot in its firm's DEFAULT company, what the party screens
+    show. A firm with several companies sees the others' figures through the company screen."""
+    snap, default_company = aliased(PartyTallySnapshot), aliased(TallyCompany)
+    return (
+        select(getattr(snap, column))
+        .where(
+            snap.party_id == model.id,
+            snap.company_id.in_(
+                select(default_company.id)
+                .where(
+                    default_company.tenant_id == model.tenant_id,
+                    default_company.is_default.is_(True),
+                )
+                .scalar_subquery()
+            ),
+        )
+        .scalar_subquery()
+    )

@@ -1318,7 +1318,12 @@ export function InvoiceEditorPage() {
             <div>
               <label className="label">Number</label>
               <div className="field flex items-center text-muted">
-                {inv?.number ?? "auto on finalize"}
+                {inv?.number ??
+                  (() => {
+                    // with several companies the number runs in that company's own series
+                    const c = pickable.length > 1 ? pickable.find((x) => x.id === companyId) : undefined;
+                    return c ? `${c.series} · on finalize` : "auto on finalize";
+                  })()}
               </div>
             </div>
           </div>

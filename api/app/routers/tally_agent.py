@@ -44,6 +44,7 @@ from app.services.tally.company_verify import (
 from app.services.tally.jobs import mark_job_sent, record_agent_status
 from app.services.tally.pull import process_pull_result
 from app.services.tally.push import process_push_result
+from app.services.tally.refill_job import apply_refill_result, is_refill_job
 from app.services.tally.voucher_capture import process_capture_result
 from app.services.tally.voucher_check import process_check_result
 
@@ -181,6 +182,8 @@ def job_result(
             meta_json=body.tally_response,
             agent_error=body.error,
         )
+        if is_refill_job(job):
+            apply_refill_result(session, job)
     else:
         process_pull_result(
             session,

@@ -430,3 +430,50 @@ def test_the_operator_can_give_an_older_account_its_mobile(client: TestClient) -
     assert client.post("/api/auth/login", json={"identifier": "9822222222", "password": "long-enough-1"}).status_code == 401
     assert client.post("/api/auth/login", json={"identifier": "9833333333", "password": "long-enough-1"}).status_code == 200
     assert client.get("/api/auth/me", headers=_auth(session["access_token"])).status_code == 401
+
+
+# --------------------------------------------------------------------------
+# delete a shop and every trace
+# --------------------------------------------------------------------------
+
+
+def test_delete_firm_erases_every_trace_and_needs_the_name(client: TestClient) -> None:
+    from sqlalchemy import func, select
+
+    from app.db import Base
+
+    admin = _admin_token(client)
+    firm_tok = _register_firm(client, "gone@example.com")
+    me = client.get("/api/auth/me", headers=_auth(firm_tok)).json()
+    firm_id = me.get("tenant_id") or client.get("/api/admin/firms", headers=_auth(admin)).json()[0]["id"]
+    # some real data
+    client.post("/api/parties", headers=_auth(firm_tok), json={"name": "Acme Traders"})
+
+    url = f"/api/admin/firms/{firm_id}/delete"
+    r = client.post(url, headers=_auth(admin), json={"confirm_name": "wrong"})
+    assert r.status_code == 409
+
+    r = client.post(url, headers=_auth(admin), json={"confirm_name": "Existing Firm"})
+    assert r.status_code == 200, r.text
+    assert r.json()["rows_removed"] > 5
+
+    assert client.get(f"/api/admin/firms/{firm_id}", headers=_auth(admin)).status_code == 404
+    assert client.post(
+        "/api/auth/login", json={"email": "gone@example.com", "password": "firm-pass-1"}
+    ).status_code == 401
+    # nothing in any firm-owned table still points at the firm
+    with SessionLocal() as s:
+        for table in Base.metadata.tables.values():
+            if "tenant_id" in table.c and table.name != "tenant":
+                assert s.scalar(select(func.count()).select_from(table).where(table.c.tenant_id == firm_id)) == 0, table.name
+
+
+def test_the_operator_tenant_cannot_be_deleted(client: TestClient) -> None:
+    admin = _admin_token(client)
+    me = client.get("/api/auth/me", headers=_auth(admin)).json()
+    firms = client.get("/api/admin/firms", headers=_auth(admin)).json()
+    ops = next(f for f in firms if "Operations" in f["legal_name"])
+    r = client.post(
+        f"/api/admin/firms/{ops['id']}/delete", headers=_auth(admin), json={"confirm_name": ops["legal_name"]}
+    )
+    assert r.status_code == 403

@@ -358,6 +358,10 @@ class ItemListItem(BaseModel):
     tally_status: str = Field(default="none", exclude=True)
     tally_price: Money | None = Field(default=None, exclude=True)
     tally_seen_price: Money | None = Field(default=None, exclude=True)
+    # stock on hand in the firm's default Tally company, as of the last refresh from Tally
+    tally_stock_qty: Decimal | None = None
+    tally_stock_unit: str | None = None
+    tally_stock_as_of: datetime | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

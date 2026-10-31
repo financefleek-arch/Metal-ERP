@@ -369,6 +369,7 @@ class PartyUpdate(BaseModel):
     default_state_code: StateCode = None
     gstin: Gstin = None
     whatsapp_optin: bool | None = None
+    default_company_id: str | None = None
     status: PartyStatus | None = None
     opening_balance: OpeningBalance | None = None
     opening_balance_as_of: date | None = None
@@ -392,6 +393,7 @@ class PartyOut(PartyBase):
     source: PartySource
     source_ref: str | None
     last_txn_at: datetime | None
+    default_company_id: str | None = None
     # True once the party has a finalized invoice or any payment — the
     # opening_balance fields are then read-only (server rejects a change).
     opening_balance_locked: bool = False
@@ -402,6 +404,11 @@ class PartyOut(PartyBase):
     wa_catalog_consent: WaConsent = WaConsent.none
     wa_catalog_consent_at: datetime | None = None
     wa_catalog_consent_source: WaConsentSource | None = None
+    # what the firm's default Tally company said at the last refresh (positive = the party owes the firm)
+    tally_outstanding: Decimal | None = None
+    tally_outstanding_as_of: date | None = None
+    tally_last_sale_date: date | None = None
+    tally_last_sale_amount: Decimal | None = None
 
 
 class CatalogConsentIn(BaseModel):

@@ -48,10 +48,13 @@ from app.models.slip_capture import SlipCapture
 from app.models.tally_agent import AgentOutboxItem, BackupShop, BackupUpload
 from app.models.tally_connector import (
     ItemTallyState,
+    PartyItemPrice,
+    PartyTallySnapshot,
     TallyCompany,
     TallyLink,
     TallySyncJob,
     default_item_state_expr,
+    default_party_snapshot_expr,
     master_linked_expr,
 )
 from app.models.tally_import import StagingTallyParty
@@ -101,6 +104,8 @@ __all__ = [
     "PaymentAllocation",
     "SlipCapture",
     "ItemTallyState",
+    "PartyItemPrice",
+    "PartyTallySnapshot",
     "StagingTallyItem",
     "StagingTallyParty",
     "TallyCompany",
@@ -125,3 +130,10 @@ Item.tally_status = column_property(default_item_state_expr(Item, "status"))  # 
 Item.tally_price = column_property(default_item_state_expr(Item, "price"))  # type: ignore[attr-defined]
 Item.tally_seen_price = column_property(default_item_state_expr(Item, "seen_price"))  # type: ignore[attr-defined]
 Item.tally_pushed_at = column_property(default_item_state_expr(Item, "pushed_at"))  # type: ignore[attr-defined]
+Item.tally_stock_qty = column_property(default_item_state_expr(Item, "stock_qty"))  # type: ignore[attr-defined]
+Item.tally_stock_unit = column_property(default_item_state_expr(Item, "stock_unit"))  # type: ignore[attr-defined]
+Item.tally_stock_as_of = column_property(default_item_state_expr(Item, "stock_as_of"))  # type: ignore[attr-defined]
+Party.tally_outstanding = column_property(default_party_snapshot_expr(Party, "outstanding"))  # type: ignore[attr-defined]
+Party.tally_outstanding_as_of = column_property(default_party_snapshot_expr(Party, "outstanding_as_of"))  # type: ignore[attr-defined]
+Party.tally_last_sale_date = column_property(default_party_snapshot_expr(Party, "last_sale_date"))  # type: ignore[attr-defined]
+Party.tally_last_sale_amount = column_property(default_party_snapshot_expr(Party, "last_sale_amount"))  # type: ignore[attr-defined]

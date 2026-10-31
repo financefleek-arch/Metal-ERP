@@ -77,7 +77,7 @@ from app.services.speech.parse_line import parse_voice_line
 from app.services.speech.transcribe import TranscriptionError, transcribe
 from app.services.tally.companies import list_companies, series_for
 from app.services.tally.company_routing import choose_company, company_for_document, resolve_company
-from app.services.tally.visibility import can_see_company
+from app.services.tally.visibility import can_see_company, visible_companies
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -604,6 +604,11 @@ def _owned_party(session: SessionDep, tenant_id: str, party_id: str) -> None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Party not found")
 
 
+def _visible_company_ids(session: SessionDep, user: CurrentUser) -> list[str]:
+    """Tally companies this user may see: a price Tally holds for a hidden company is not shown (S1.7)."""
+    return [c.id for c in visible_companies(session, user)]
+
+
 # Registered before `/{invoice_id}` so "price-history" is never read as an invoice id.
 @router.get("/price-history/last", response_model=LastPricesOut)
 def party_last_prices(
@@ -616,7 +621,7 @@ def party_last_prices(
     changed. Finalized sales invoices only."""
     _owned_party(session, user.tenant_id, party_id)
     ids = [i for i in (x.strip() for x in item_ids.split(",")) if i][:100]
-    found = last_prices(session, user.tenant_id, party_id, ids)
+    found = last_prices(session, user.tenant_id, party_id, ids, _visible_company_ids(session, user))
     return LastPricesOut(
         prices=[PricePointOut(**p.__dict__) for p in found.values()]
     )
@@ -632,7 +637,9 @@ def party_item_price_history(
 ) -> PriceHistoryOut:
     """What this party was billed for this item, newest first (the editor's Alt+S panel)."""
     _owned_party(session, user.tenant_id, party_id)
-    rows = item_history(session, user.tenant_id, party_id, item_id, limit)
+    rows = item_history(
+        session, user.tenant_id, party_id, item_id, limit, _visible_company_ids(session, user)
+    )
     return PriceHistoryOut(
         item_id=item_id, rows=[PricePointOut(**p.__dict__) for p in rows]
     )

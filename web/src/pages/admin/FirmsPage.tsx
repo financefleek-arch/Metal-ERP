@@ -4,6 +4,7 @@ import { ApiError } from "../../lib/api";
 import type {
   AdminUser,
   AssignableRole,
+  FirmDeleteResult,
   FirmDetail,
   FirmWhatsapp,
 } from "../../lib/types";
@@ -87,7 +88,14 @@ export function FirmsPage() {
               onCancel={() => setCreating(false)}
             />
           ) : selected ? (
-            <FirmDetailPane key={selected} firmId={selected} />
+            <FirmDetailPane
+              key={selected}
+              firmId={selected}
+              onDeleted={() => {
+                setSelectedId(null);
+                void qc.invalidateQueries({ queryKey: ["admin-firms"] });
+              }}
+            />
           ) : (
             <p className="text-sm text-muted">
               Select a firm, or create one.
@@ -158,7 +166,7 @@ function NewFirmForm({
 
 // --------------------------------------------------------------------------
 
-function FirmDetailPane({ firmId }: { firmId: string }) {
+function FirmDetailPane({ firmId, onDeleted }: { firmId: string; onDeleted: () => void }) {
   const qc = useQueryClient();
   const firm = useQuery({
     queryKey: ["admin-firm", firmId],
@@ -180,7 +188,77 @@ function FirmDetailPane({ firmId }: { firmId: string }) {
       <WhatsappPanel firmId={firm.data.id} />
       <TallyPanel firmId={firm.data.id} firmName={firm.data.legal_name} />
       <UsersTable firm={firm.data} onChanged={refresh} />
+      <DeleteShopPanel firm={firm.data} onDeleted={onDeleted} />
     </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+
+/** Erase the shop and every trace of it. The operator types the shop's name to arm the button. */
+function DeleteShopPanel({ firm, onDeleted }: { firm: FirmDetail; onDeleted: () => void }) {
+  const [typed, setTyped] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [result, setResult] = useState<FirmDeleteResult | null>(null);
+  const armed = typed.trim() === firm.legal_name.trim();
+
+  const del = useMutation({
+    mutationFn: () => adminApi.deleteFirm(firm.id, typed),
+    onSuccess: (r) => setResult(r),
+    onError: (e) => setErr(e instanceof ApiError ? e.message : "Could not delete this shop"),
+  });
+
+  if (result) {
+    return (
+      <section className="mt-8 rounded-md border border-line p-4 text-sm">
+        <p className="font-medium">{result.deleted} was deleted.</p>
+        <p className="mt-1 text-muted">
+          {result.rows_removed} records and {result.files_removed} files removed.
+        </p>
+        {result.files_failed.length > 0 && (
+          <p className="err mt-1">
+            {result.files_failed.length} files could not be removed from storage: {result.files_failed.join(", ")}
+          </p>
+        )}
+        {result.fleek_org_id && (
+          <p className="mt-1 text-muted">
+            Its Fleek organisation ({result.fleek_org_id}) is kept in Fleek and must be removed there.
+          </p>
+        )}
+        <button className="btn-ghost mt-3" onClick={onDeleted}>
+          Close
+        </button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-8 rounded-md border border-danger/40 p-4">
+      <h3 className="font-serif text-base font-semibold text-danger">Delete this shop</h3>
+      <p className="mt-1 text-sm text-muted">
+        Permanently erases the shop and everything it has: logins, invoices, parties, items, payments, photos,
+        catalogs, Tally backups and WhatsApp settings. This cannot be undone.
+      </p>
+      <label className="mt-3 block text-sm">
+        Type <b>{firm.legal_name}</b> to confirm
+        <input
+          className="input mt-1 w-full"
+          value={typed}
+          onChange={(e) => {
+            setTyped(e.target.value);
+            setErr(null);
+          }}
+        />
+      </label>
+      {err && <p className="err mt-2">{err}</p>}
+      <button
+        className="mt-3 rounded border border-danger/40 px-3 py-1.5 text-sm text-danger enabled:hover:bg-danger/5 disabled:opacity-40"
+        disabled={!armed || del.isPending}
+        onClick={() => del.mutate()}
+      >
+        {del.isPending ? "Deleting…" : "Delete shop and all its data"}
+      </button>
+    </section>
   );
 }
 

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ApiError, api } from "../lib/api";
-import type { TallyCompanyRow } from "../lib/types";
+import { inr } from "../lib/previewTotal";
+import type { TallyBalanceDifference, TallyCompanyRow, TallyRefillStatus } from "../lib/types";
 
 const KINDS: { value: string; label: string }[] = [
   { value: "gst", label: "GST books" },
@@ -202,6 +203,7 @@ export function TallyCompaniesCard({ owner }: { owner: boolean }) {
                   </button>
                 )}
               </div>
+              {c.connected && <RefillPanel company={c} onError={fail} />}
               {panel?.id === c.id && panel.kind === "ledgers" && (
                 <LedgerForm
                   company={c}
@@ -244,6 +246,133 @@ export function TallyCompaniesCard({ owner }: { owner: boolean }) {
         )}
       </ul>
     </div>
+  );
+}
+
+const STEP_LABEL = (step: string | null): string => {
+  if (step === "groups") return "your Tally groups";
+  if (step === "items") return "stock on hand";
+  if (step === "ledgers") return "what parties owe";
+  if (step === "bills") return "unpaid bill dates";
+  if (step?.startsWith("sales:")) return `sales for ${step.slice(6)}`;
+  return "Tally";
+};
+
+const num = (v: unknown): number => (typeof v === "number" ? v : 0);
+
+/**
+ * Fill the parties and items already imported with what Tally knows: stock on hand, what each party owes
+ * and the latest rate each party paid per item. Read-only on the Tally side; steps run one after another.
+ */
+function RefillPanel({ company, onError }: { company: TallyCompanyRow; onError: (e: unknown) => void }) {
+  const qc = useQueryClient();
+  const key = ["tally-refill", company.id];
+  const status = useQuery({
+    queryKey: key,
+    queryFn: () => api<TallyRefillStatus>(`/tally/companies/${company.id}/refill`),
+    refetchInterval: (q) => (q.state.data?.running ? 4000 : false),
+  });
+  const start = useMutation({
+    mutationFn: () => api(`/tally/companies/${company.id}/refresh`, { method: "POST", body: {} }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: key }),
+    onError,
+  });
+  const [reviewing, setReviewing] = useState(false);
+  const st = status.data;
+  if (!st) return null;
+  // In Tally but not in Metal: new there (the masters pull brings them in) or never pulled yet. Not an
+  // error and nothing to fix by hand; renamed ones were already corrected by Tally's own id.
+  const notInMetal = num(st.results.items?.unmatched_count) + num(st.results.ledgers?.unmatched_count);
+  const renamed = num(st.results.items?.renamed) + num(st.results.ledgers?.renamed);
+  const gone = num(st.results.items?.missing_count) + num(st.results.ledgers?.missing_count);
+  const has = st.items_with_stock > 0 || st.parties_with_balance > 0 || st.prices > 0;
+  return (
+    <div className="mt-3 border-t border-line pt-3 text-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          className="btn-ghost"
+          disabled={st.running || start.isPending}
+          onClick={() => start.mutate()}
+        >
+          {st.running ? `Reading ${STEP_LABEL(st.step)}…` : has ? "Refresh from Tally" : "Fill from Tally"}
+        </button>
+        <span className="meta">
+          Stock on hand, what each party owes, and the last rate each paid per item. Tally is only read.
+        </span>
+      </div>
+      {has && (
+        <p className="meta mt-2">
+          {st.parties_with_balance} parties owe {inr(st.outstanding_total)} · {st.items_with_stock} items with
+          stock · {st.prices} last rates
+          {st.refreshed_at ? ` · refreshed ${st.refreshed_at.slice(0, 10)}` : ""}
+          {notInMetal > 0 ? ` · ${notInMetal} in Tally are not in your list yet` : ""}
+          {renamed > 0 ? ` · ${renamed} renamed in Tally, updated` : ""}
+          {gone > 0 ? ` · ${gone} no longer in Tally` : ""}
+        </p>
+      )}
+      {st.differences > 0 && (
+        <div className="mt-2">
+          <button className="text-sm font-medium text-accent" onClick={() => setReviewing((v) => !v)}>
+            {reviewing ? "Hide" : `Review ${st.differences} balance${st.differences === 1 ? "" : "s"} that differ from Tally`}
+          </button>
+          {reviewing && <DifferenceList company={company} onError={onError} />}
+        </div>
+      )}
+      {!st.running && st.last_status === "error" && st.last_error && (
+        <p role="alert" className="mt-2 text-sm text-danger">{st.last_error}</p>
+      )}
+    </div>
+  );
+}
+
+/** Opening balances typed here that Tally disagrees with: take Tally's figure or keep yours. */
+function DifferenceList({ company, onError }: { company: TallyCompanyRow; onError: (e: unknown) => void }) {
+  const qc = useQueryClient();
+  const base = `/tally/companies/${company.id}/refill`;
+  const rows = useQuery({
+    queryKey: ["tally-differences", company.id],
+    queryFn: () => api<TallyBalanceDifference[]>(`${base}/differences`),
+  });
+  const choose = useMutation({
+    mutationFn: (v: { party_id: string; use: "tally" | "mine" }) =>
+      api(`${base}/differences/${v.party_id}`, { method: "POST", body: { use: v.use } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tally-differences", company.id] });
+      qc.invalidateQueries({ queryKey: ["tally-refill", company.id] });
+    },
+    onError,
+  });
+  if (rows.isLoading) return <p className="meta mt-2">Looking…</p>;
+  const list = rows.data ?? [];
+  if (list.length === 0) return <p className="meta mt-2">Nothing to review.</p>;
+  return (
+    <ul className="mt-2 flex flex-col gap-2">
+      {list.map((r) => (
+        <li key={r.party_id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3">
+          <span className="font-medium">{r.party}</span>
+          <span className="meta">
+            you have {inr(r.ours)} · Tally says {inr(r.tally)}
+            {r.as_of ? ` (${r.as_of})` : ""}
+          </span>
+          <span className="flex gap-3">
+            <button
+              className="text-sm font-medium text-accent"
+              disabled={choose.isPending}
+              onClick={() => choose.mutate({ party_id: r.party_id, use: "tally" })}
+            >
+              Use Tally&rsquo;s
+            </button>
+            <button
+              className="text-sm font-medium text-muted"
+              disabled={choose.isPending}
+              onClick={() => choose.mutate({ party_id: r.party_id, use: "mine" })}
+            >
+              Keep mine
+            </button>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -372,6 +501,7 @@ function CompanyForm({
   const [label, setLabel] = useState(company?.document_label ?? "");
   const [prefix, setPrefix] = useState(company?.series_prefix ?? "");
   const [reminders, setReminders] = useState(company?.include_in_reminders ?? true);
+  const [autoRefresh, setAutoRefresh] = useState(company?.auto_refresh ?? false);
   const [roles, setRoles] = useState<string[]>(company?.visible_roles ?? ROLE_CHOICES.map((r) => r.value));
 
   const toggle = (r: string) => setRoles((cur) => (cur.includes(r) ? cur.filter((x) => x !== r) : [...cur, r]));
@@ -389,6 +519,7 @@ function CompanyForm({
               document_label: label,
               series_prefix: prefix,
               include_in_reminders: reminders,
+              auto_refresh: autoRefresh,
               visible_roles: allTicked ? null : roles,
             },
           })
@@ -441,6 +572,13 @@ function CompanyForm({
               ))}
             </fieldset>
             <div className="sm:col-span-2">
+              <label className="flex min-h-[32px] items-center gap-2 text-sm">
+                <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+                Refresh from Tally every day
+              </label>
+              <p className="meta ml-6 mb-2">
+                Stock, what parties owe and the last rates, only what changed, while the shop PC is on.
+              </p>
               <label className="flex min-h-[32px] items-center gap-2 text-sm">
                 <input type="checkbox" checked={reminders} onChange={(e) => setReminders(e.target.checked)} />
                 Include its unpaid bills in payment reminders

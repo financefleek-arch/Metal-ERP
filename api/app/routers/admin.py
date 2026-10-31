@@ -30,6 +30,8 @@ from app.schemas_admin import (
     AdminUserPatch,
     AgentTargetVersionIn,
     FirmCreate,
+    FirmDeleteIn,
+    FirmDeleteOut,
     FirmDetail,
     FirmListItem,
     FirmPatch,
@@ -41,7 +43,8 @@ from app.schemas_admin import (
     FirmWhatsappUpsert,
 )
 from app.security import hash_password
-from app.services import account, entitlements, firm_provisioning
+from app.services import account, entitlements, firm_erasure, firm_provisioning
+from app.services.catalog.storage import CatalogStorage, get_storage
 
 router = APIRouter(
     prefix="/api/admin",
@@ -181,6 +184,38 @@ def _whatsapp_out(cfg: TenantWhatsappConfig | None) -> FirmWhatsappOut:
         waba_id=cfg.waba_id,
         display_phone_number=cfg.display_phone_number,
         updated_at=cfg.updated_at,
+    )
+
+
+@router.post("/firms/{firm_id}/delete", response_model=FirmDeleteOut)
+def delete_firm(
+    firm_id: str,
+    body: FirmDeleteIn,
+    session: SessionDep,
+    storage: CatalogStorage = Depends(get_storage),
+) -> FirmDeleteOut:
+    """Permanently erase a shop and every trace of it: all its rows, logins, files and backups.
+    Irreversible, so the operator must type the shop's exact name back."""
+    firm = _load_firm(session, firm_id)
+    if body.confirm_name.strip() != firm.legal_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The name typed does not match this shop.",
+        )
+    name, org_id = firm.legal_name, firm.fleek_org_id
+    try:
+        report = firm_erasure.erase_firm(session, firm, storage)
+    except firm_erasure.ErasureRefused as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    log.warning(
+        "firm deleted: %s (%s) rows=%s files_failed=%s", name, firm_id, report.total_rows, report.files_failed
+    )
+    return FirmDeleteOut(
+        deleted=name,
+        rows_removed=report.total_rows,
+        files_removed=report.files_removed,
+        files_failed=report.files_failed,
+        fleek_org_id=org_id,
     )
 
 

@@ -10,14 +10,23 @@ version) stays with Fleek, because it costs us storage. See `docs/PARITY-tally-c
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.deps import CurrentUser, SessionDep, WriteUser
-from app.models import BackupShop, TallyCompany, TallySyncJob, User
+from app.models import (
+    BackupShop,
+    ItemTallyState,
+    PartyItemPrice,
+    PartyTallySnapshot,
+    TallyCompany,
+    TallySyncJob,
+    User,
+)
 from app.models._mixins import UserRole
 from app.schemas_tally import LedgerMapIn, OpenCompanyOut, RelinkIn, TallySyncJobOut
 from app.services import features
@@ -35,6 +44,8 @@ from app.services.tally.companies import (
 )
 from app.services.tally.company_verify import enqueue_verify_company, relink_company
 from app.services.tally.jobs import assert_no_pull_in_flight, enqueue_pull_masters
+from app.services.tally.refill import DifferenceError, differences, settle_difference
+from app.services.tally.refill_job import MAX_MONTHS, is_refill_job, start_refill
 from app.services.tally.visibility import can_see_company, visible_companies
 
 router = APIRouter(
@@ -68,6 +79,8 @@ class CompanyOut(BaseModel):
     series_prefix: str | None
     document_label: str | None
     include_in_reminders: bool
+    # refresh stock, balances and last rates from Tally once a day while the agent is online
+    auto_refresh: bool = False
     # who may see it besides the owner; null = everyone. Shown to the owner only.
     visible_roles: list[str] | None
     connected: bool = False
@@ -90,16 +103,23 @@ class CompanyPatch(BaseModel):
     document_label: str | None = Field(default=None, max_length=40)
     series_prefix: str | None = Field(default=None, max_length=20)
     include_in_reminders: bool | None = None
+    auto_refresh: bool | None = None
     visible_roles: list[str] | None = None
 
 
-def _out(session: SessionDep, company: TallyCompany, user: User) -> CompanyOut:
+def company_out(session: SessionDep, company: TallyCompany, *, owner_view: bool) -> CompanyOut:
+    """One company as the screens show it. The owner (and Fleek's operator console, which calls this too)
+    sees who else may see it; an accountant does not."""
     out = CompanyOut.model_validate(company)
     out.series = series_map(session, company.tenant_id).get(company.id, "Sales")
     out.connected = company.shop_id is not None
-    if user.role != UserRole.owner:
-        out.visible_roles = None  # an accountant is not told who else may see it
+    if not owner_view:
+        out.visible_roles = None
     return out
+
+
+def _out(session: SessionDep, company: TallyCompany, user: User) -> CompanyOut:
+    return company_out(session, company, owner_view=user.role == UserRole.owner)
 
 
 def _mine(session: SessionDep, user: User, company_id: str) -> TallyCompany:
@@ -231,3 +251,137 @@ def pull_my_masters(company_id: str, user: WriteUser, session: SessionDep) -> Ta
     assert_no_pull_in_flight(session, user.tenant_id, company.id)
     assert_tally_reachable(session, company)
     return enqueue_pull_masters(session, company)
+
+
+# ---- the refill: stock, what parties owe, last sale and last rate, read from Tally ----
+
+
+class RefreshIn(BaseModel):
+    # blank: a full read the first time and once a week, only the changes otherwise
+    months: int | None = Field(default=None, ge=1, le=MAX_MONTHS)
+    full: bool = False
+
+
+class RefillOut(BaseModel):
+    """What the company holds from Tally, and where the latest refresh stands."""
+
+    items_with_stock: int
+    parties_with_balance: int
+    outstanding_total: str
+    prices: int
+    refreshed_at: datetime | None
+    running: bool
+    step: str | None = None
+    last_status: str | None = None
+    last_error: str | None = None
+    # full | changes: how the latest read went about it
+    mode: str | None = None
+    full_refill_at: datetime | None = None
+    auto_refresh: bool = False
+    differences: int = 0  # typed opening balances that differ from Tally's, waiting for a choice
+    results: dict = Field(default_factory=dict)
+
+
+@router.post("/{company_id}/refresh", response_model=TallySyncJobOut, status_code=201)
+def refresh_from_tally(
+    company_id: str, body: RefreshIn, user: WriteUser, session: SessionDep
+) -> TallySyncJob:
+    """Read stock, what each party owes and the latest rates from Tally, a step at a time."""
+    company = _mine(session, user, company_id)
+    assert_tally_reachable(session, company)
+    return start_refill(session, company, months=body.months, full=body.full)
+
+
+@router.get("/{company_id}/refill", response_model=RefillOut)
+def refill_status(company_id: str, user: CurrentUser, session: SessionDep) -> RefillOut:
+    return refill_summary(session, _mine(session, user, company_id))
+
+
+def recent_jobs(session: SessionDep, company: TallyCompany, limit: int = 20) -> list[TallySyncJob]:
+    """The company's latest Tally jobs, newest first (what a support person reads to see what happened)."""
+    return list(
+        session.scalars(
+            select(TallySyncJob)
+            .where(TallySyncJob.company_id == company.id)
+            .order_by(TallySyncJob.created_at.desc())
+            .limit(max(1, min(limit, 50)))
+        )
+    )
+
+
+def refill_summary(session: SessionDep, company: TallyCompany) -> RefillOut:
+    cid = company.id
+    stock = session.scalar(
+        select(func.count()).select_from(ItemTallyState).where(
+            ItemTallyState.company_id == cid, ItemTallyState.stock_as_of.is_not(None)
+        )
+    )
+    owed, owed_sum, refreshed = session.execute(
+        select(
+            func.count(),
+            func.coalesce(func.sum(PartyTallySnapshot.outstanding), 0),
+            func.max(PartyTallySnapshot.refreshed_at),
+        ).where(PartyTallySnapshot.company_id == cid, PartyTallySnapshot.outstanding > 0)
+    ).one()
+    prices = session.scalar(
+        select(func.count()).select_from(PartyItemPrice).where(PartyItemPrice.company_id == cid)
+    )
+    jobs = [
+        j
+        for j in session.scalars(
+            select(TallySyncJob)
+            .where(TallySyncJob.company_id == cid, TallySyncJob.kind == "pull_vouchers")
+            .order_by(TallySyncJob.created_at.desc())
+            .limit(20)
+        )
+        if is_refill_job(j)
+    ]
+    latest = jobs[0] if jobs else None
+    results: dict = {}
+    for j in reversed(jobs):  # oldest first, so the newest chain's figures overwrite older ones
+        results.update((j.counts or {}).get("refill") or {})
+    return RefillOut(
+        items_with_stock=int(stock or 0),
+        parties_with_balance=int(owed or 0),
+        outstanding_total=str(Decimal(owed_sum or 0).quantize(Decimal("0.01"))),
+        prices=int(prices or 0),
+        refreshed_at=refreshed,
+        running=bool(latest and latest.status in ("queued", "sent", "running")),
+        step=(latest.counts or {}).get("step") if latest else None,
+        last_status=latest.status if latest else None,
+        last_error=latest.error if latest else None,
+        mode=(latest.counts or {}).get("mode") if latest else None,
+        full_refill_at=company.full_refill_at,
+        auto_refresh=company.auto_refresh,
+        differences=len(differences(session, company)),
+        results=results,
+    )
+
+
+class DifferenceOut(BaseModel):
+    party_id: str
+    party: str
+    ours: str
+    tally: str
+    as_of: str | None = None
+
+
+class DifferenceChoice(BaseModel):
+    use: str = Field(pattern="^(tally|mine)$")
+
+
+@router.get("/{company_id}/refill/differences", response_model=list[DifferenceOut])
+def refill_differences(company_id: str, user: WriteUser, session: SessionDep) -> list[dict]:
+    """Customers whose opening balance was typed here and differs from what Tally says."""
+    return differences(session, _mine(session, user, company_id))
+
+
+@router.post("/{company_id}/refill/differences/{party_id}", status_code=204)
+def settle_refill_difference(
+    company_id: str, party_id: str, body: DifferenceChoice, user: WriteUser, session: SessionDep
+) -> None:
+    company = _mine(session, user, company_id)
+    try:
+        settle_difference(session, company, party_id, body.use)
+    except DifferenceError as exc:
+        raise _bad(CompanyError(str(exc))) from exc

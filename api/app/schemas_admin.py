@@ -245,3 +245,16 @@ class FirmTallyShopProvisionResult(BaseModel):
     api_key: str = Field(
         default="", description="deprecated — plaintext key, now baked into the installer"
     )
+
+
+class FirmDeleteIn(BaseModel):
+    confirm_name: str
+
+
+class FirmDeleteOut(BaseModel):
+    deleted: str
+    rows_removed: int
+    files_removed: int
+    files_failed: list[str]
+    # the Fleek organisation this shop was linked to; it lives in Fleek's own database and is NOT touched here
+    fleek_org_id: str | None = None

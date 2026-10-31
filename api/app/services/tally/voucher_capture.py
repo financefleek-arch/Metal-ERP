@@ -88,6 +88,83 @@ def _tally_date(d: date) -> str:
     return d.strftime("%Y%m%d")
 
 
+# The two light queries behind the refill (`light_masters.py`): every ledger and every stock item with its Tally
+# id, group or unit and closing figures. Verified on a live TallyPrime 7.1 (2026-10-31). A Tally "Stock Summary"
+# report request was tried first and is NOT used: asked this way it answers with a single rolled-up row, not
+# one row per item.
+_COLLECTION_TEMPLATE = (
+    "<ENVELOPE>"
+    "<HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>"
+    "<TYPE>Collection</TYPE><ID>{name}</ID></HEADER>"
+    "<BODY><DESC><STATICVARIABLES>"
+    "<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>"
+    "{company}"
+    "{as_on}"
+    "</STATICVARIABLES>"
+    "<TDL><TDLMESSAGE>"
+    '<COLLECTION NAME="{name}" ISMODIFY="No"><TYPE>{kind}</TYPE><FETCH>{fetch}</FETCH></COLLECTION>'
+    "</TDLMESSAGE></TDL>"
+    "</DESC></BODY></ENVELOPE>"
+)
+
+
+def _collection(
+    name: str,
+    kind: str,
+    fetch: str,
+    company_name: str,
+    as_on: date | None,
+    alter_after: int | None = None,
+) -> str:
+    """`alter_after` asks only for records whose AlterID is above it (verified live: a ledger query above
+    217 returned the 5 changed ledgers of 12, a stock-item query above 1540 returned 1,169 of 2,339)."""
+    xml = _COLLECTION_TEMPLATE.format(
+        name=name,
+        kind=kind,
+        fetch=fetch,
+        company=_company_var(company_name),
+        as_on=f"<SVTODATE>{_tally_date(as_on)}</SVTODATE>" if as_on else "",
+    )
+    if alter_after is not None:
+        xml = xml.replace(
+            "</COLLECTION></TDLMESSAGE>",
+            f"<FILTER>MEAlter</FILTER></COLLECTION>"
+            f'<SYSTEM TYPE="Formulae" NAME="MEAlter">$AlterID &gt; {int(alter_after)}</SYSTEM></TDLMESSAGE>',
+            1,
+        )
+    return xml
+
+
+def build_groups_request(company_name: str, as_on: date | None = None) -> str:
+    return _collection("MEGroups", "Group", "Name, Parent", company_name, as_on)
+
+
+def build_ledgers_request(
+    company_name: str, as_on: date | None = None, alter_after: int | None = None
+) -> str:
+    return _collection(
+        "MELedgers",
+        "Ledger",
+        "Name, Guid, Parent, ClosingBalance, OpeningBalance, AlterID",
+        company_name,
+        as_on,
+        alter_after,
+    )
+
+
+def build_stock_items_request(
+    company_name: str, as_on: date | None = None, alter_after: int | None = None
+) -> str:
+    return _collection(
+        "MEStockItems",
+        "StockItem",
+        "Name, Guid, Parent, BaseUnits, ClosingBalance, ClosingValue, ClosingRate, AlterID",
+        company_name,
+        as_on,
+        alter_after,
+    )
+
+
 def build_vouchers_request(company_name: str, start: date, end: date) -> str:
     if end < start:
         raise ValueError("end date is before start date")

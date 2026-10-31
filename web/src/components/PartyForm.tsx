@@ -14,6 +14,7 @@ import {
   pincodeError,
 } from "../lib/reference";
 import { missingLabel } from "../lib/format";
+import { inr } from "../lib/previewTotal";
 import type { Party, PartyRole } from "../lib/types";
 import { StateSelect } from "./StateSelect";
 import { DateField } from "./DateField";
@@ -400,6 +401,17 @@ export function PartyForm({
             )}
           </div>
         </div>
+        {party.tally_outstanding != null && (
+          <p className="mt-2 text-[12px] text-muted">
+            Tally says {inr(party.tally_outstanding)} outstanding
+            {party.tally_outstanding_as_of ? ` as of ${party.tally_outstanding_as_of}` : ""}
+            {party.tally_last_sale_date
+              ? ` · last bought ${party.tally_last_sale_date}${
+                  party.tally_last_sale_amount ? ` (${inr(party.tally_last_sale_amount)})` : ""
+                }`
+              : ""}
+          </p>
+        )}
       </div>
 
       <div className="border-t border-line pt-4">

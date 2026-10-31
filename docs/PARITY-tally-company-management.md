@@ -64,3 +64,16 @@ and `/{id}/active` (owner), `POST /{id}/verify`, `GET /open/now`, `POST /{id}/re
 `check_unique` (name and prefix unique per firm, "Sales" reserved for the default). Tests:
 `tests/test_owner_companies.py` (per role, other firm, duplicates, rename). Not built yet: the web screens
 and the Fleek-admin read proxy.
+
+## Built 2026-10-31 (Fleek admin, read only)
+
+`routers/control_plane_firm.py` now carries three signed, read-only routes under
+`/api/internal/control-plane/firms/{fleek_org_id}`: `GET /tally-companies` (every company including switched-off
+ones, with who may see each, as the owner sees it), `GET /tally-companies/{id}/refill` (what the company holds from
+Tally and where the latest refresh stands) and `GET /tally-companies/{id}/jobs` (its latest Tally jobs, newest
+first). They call the owner routes' own functions (`company_out`, `refill_summary`, `recent_jobs`), so the two
+screens cannot drift; another firm's company is a 404. No write route exists from Fleek (tested), which keeps to
+the decision that owners manage their own companies. Rows 1 and 9 (list, jobs) are covered; rows 2 to 8 and 10 stay
+owner-only until there is a reason for support to act on a company, which would be a new decision. Tests:
+`tests/test_control_plane_companies.py`. The Fleek admin SCREEN (in fleek-frontend) that shows these is not built.
+

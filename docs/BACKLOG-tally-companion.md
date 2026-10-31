@@ -419,6 +419,7 @@ Goal: receipts, credit notes and imported history flow both ways under the origi
 - Closes: C2. Decision: D-8. Follows `PLAN-tally-voucher-import-and-party-prices.md`, per company, whole not in pieces.
 - Split: S4.2a parser and fixtures; S4.2b apply sales as native invoices (`source=tally_import`); S4.2c apply receipts with bill allocations; S4.2d opening balances and bills receivable; S4.2e visibility filter applied to imports.
 - Size: XL (split above).
+- STATUS 2026-10-31: REPLACED for now by the refill (user: past invoices are not needed yet). S4.2a parser BUILT (`services/tally/voucher_xml.py`, 11 tests). S4.2d BUILT in a lighter form: Bills Receivable sets `party.opening_balance` where the party has no history, plus a "Tally says" snapshot (`refill.apply_outstanding`). S4.2b/c/e (native invoices and payments from Tally) NOT BUILT and not planned until collections need them.
 
 ### S4.3 Reconcile and flags
 - Closes: C1. Decision: D-8. Acceptance: for each voucher we pushed, flag "missing in Tally" and "changed in Tally"; never auto-delete or overwrite; a daily or on-demand run.
@@ -453,13 +454,17 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 - Closes: E2. Decision: D-9. Depends: S0.1. Acceptance: agent reads closing stock per item for a company; backend stores it with an as-of time; report shape confirmed live (see `tally-stksum-vs-masters`).
 - Size: L.
 
+- STATUS 2026-10-31: BUILT and verified live. Stock comes from a light StockItem query keyed by Tally's id (`light_masters.parse_stock_items`, request `voucher_capture.build_stock_items_request`; 2,339 items = 1.4 MB on the dev Tally), stored per company on `item_tally_state.stock_*` (migration 0084) by `refill.apply_stock`. A Stock Summary report request was tried and dropped: asked via the Gateway it returns one rolled-up row. `stock_summary.py` stays as a parser for a UI export (matched by name). The agent that runs it (`pull_vouchers`) is not in the released 1.0.2.
+
 ### S6.2 Show stock with its age
 - Closes: E2. Acceptance: item and editor show stock "as of" a time, per company; stale or unknown is shown as such; billing never blocks.
 - Size: M.
+- STATUS 2026-10-31: PARTLY. Items list shows quantity and unit of the default company, with the as-of date on hover. NOT DONE: other companies' stock, staleness wording, the invoice editor.
 
 ### S6.3 Negative-stock warning
 - Closes: E2. Acceptance: warn only; switchable off per shop; the explained error when Tally itself rejects a push.
 - Size: S.
+- STATUS 2026-10-31: PARTLY. The Items list shows Tally stock in red when it is below zero (`ItemsPage`); counted per refresh (`StockResult.negative`). NOT DONE: the warning in the invoice editor, the per-shop switch, and the explained push error.
 
 ### S6.4 One creator for Tally stock items
 - Closes: D4, B2. Acceptance: written rule for `SupplierCatalogItem`, `CatalogProduct` and `Item`; one code path creates Tally stock items; duplicates by name or part number blocked.
@@ -541,3 +546,25 @@ Closes C4. Needs its own discovery story before breakdown, because it is the lar
 | 2026-10-30 | S0.6 BUILT (see its section). Live: sales `REFERENCE` accepted and found by a filtered export. Dev Fleek now also holds voucher id 27 (reference ME/2026-27/9301). |
 | 2026-10-30 | S0.5 BUILT (see its section). Live unit test: `nos`/`NOS` fine; `pcs` vs a Nos item and `kg` post blank, voucher ids 23 to 26 in dev Fleek. Design moved from a unit map to a per-item Tally unit. |
 | 2026-10-30 | S0.2 code done, unit and integration tests pass (60 tests across push, inward xml, connector, self-serve). Not yet confirmed live that Tally accepts `SVCURRENTCOMPANY` in a voucher Import. Adds a push blocker `company_name_missing`. Uncommitted. |
+
+## Refill of parties and items (2026-10-31, replaces the full voucher import for now)
+
+Not a story in the epics above; it is what S4.2d, S6.1 and the party price history became. Plan: `PLAN-tally-voucher-import-and-party-prices.md` (direction change section).
+
+One read model, one chain, keyed by Tally's own id (the id the masters pull already stored on `tally_link`), so nothing is matched by spelling where Tally can give an id:
+
+- `light_masters.py`: ledger query (id, group, closing and opening balance) and stock-item query (id, group, unit, closing quantity, value, rate). Verified live; about 500 bytes a row against a 78 MB masters file.
+- `refill.py`: `_Matcher` (id first, name only for rows with no id), `apply_stock`, `apply_outstanding` (sources: ledger closing balance or pending bills; customers with no ledger get `opening_balance`, suppliers and parties with history get the snapshot only, a different hand-typed figure is kept and reported), `apply_sales` (last sale and last rate per party and item). A rename in Tally corrects the link's stored name on its own.
+- `refill_job.py`: items, ledgers, then sales a month at a time (newest first), one capture job at a time; a failed step ends the chain, earlier steps stay.
+- Routes `POST /api/tally/companies/{id}/refresh`, `GET .../refill`; the company card shows progress, counts, "N in Tally are not in your list yet" and "N renamed in Tally, updated". Price lookup merges Tally's last rate (source "tally", visible companies only); party form and Items list show the figures.
+- Live check 2026-10-31 on the dev Tally: ledgers 12 rows, stock items 2,339, sales vouchers Sep-2026 17 sales + 2 receipts + 10 purchases + 1 journal parsed.
+- Group lineage: Positive's customers sit under groups of their own (AASAM, SILIGURI, JAIGOUN ...), only 50 of 1,412 directly under Sundry Debtors. The chain reads the Group list first (`light_masters.parse_groups`, 28 groups on the dev Tally) and walks it with the masters import's own `tools/tally_import/groups.py` `GroupTree`, carried down the chain on the job. Closes the S2.9 gap for the refill.
+- Incremental (2026-10-31, verified live): every ledger and stock item carries an `AlterID`. A query with `$AlterID > N` returns only what changed (dev Tally: ledgers above 217 gave 5 of 12, stock items above 1540 gave 1,169 of 2,339). `tally_company.ledgers_alter_id / items_alter_id` hold the highest seen (only ever move up, only on rows Tally sent); `full_refill_at` stamps the last complete read. `refill_job.choose_mode`: full the first time and at least weekly (a deleted record is not a change), otherwise changes only, with sales for this and last month. Opt-in daily refresh: `tally_company.auto_refresh` (owner's company form), `refill_job.run_auto_refresh` from `main._refill_loop`, hourly, 08:00 to 20:00 India time, agent online, none within 20 hours (a failed or running chain is not retried until the next day).
+- Refill gaps closed (2026-10-31): (1) deleted in Tally: a full read lists linked items and parties that are gone, clears an item's stock and a party's Tally balance (never the opening balance), and leaves everything alone when more than half the list vanishes at once (a failed read); (2) pending-bill dates: a full read adds a `bills` step (Bills Receivable) giving each party's open-bill count and oldest date, counting parties whose bills do not add up to the ledger; (3) typed-vs-Tally opening balances: the owner or accountant reviews each difference on the company card and takes Tally's figure or keeps theirs (`party_tally_snapshot.kept_ours_outstanding`, hidden until Tally's figure moves; locked parties refused); (4) units: all Tally spellings seen at Positive (Pcs, NOS, Doz, Kgs, Set, BOX, GROSS, Nug) resolve through the canonical unit table and the editor already shows a different-unit Tally price without filling it. Tests: `test_refill_gaps.py`.
+- DECIDED NOT TO BUILD: incremental sales by AlterID (the last two months re-read daily and three months weekly already catch a late bill); rebuilding the first masters import on the light queries (the masters pull works; Positive's real ledger fields `LEDGERMOBILE` and `PRIORSTATENAME` could only be probed on a dev ledger with data).
+- NOT DONE: the agent release that carries `pull_vouchers`; a first run on the pilot (size and time of a real month of sales); Bills Payable detail for suppliers.
+
+## Fleek admin: read-only company view (2026-10-31)
+
+BUILT in Metal ERP: three signed read-only routes (`GET /tally-companies`, `.../{id}/refill`, `.../{id}/jobs`) in `control_plane_firm.py`, sharing the owner routes' functions; tests in `test_control_plane_companies.py`. NOT BUILT: the Fleek admin screen in fleek-frontend and the fleek-backend proxy that signs and forwards these calls (Fleek parity table first, per the standing rule).
+

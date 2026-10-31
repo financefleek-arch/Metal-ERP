@@ -122,6 +122,26 @@ async def _reminder_loop() -> None:
         await asyncio.sleep(REMINDER_CHECK_EVERY_SECONDS)
 
 
+REFILL_CHECK_EVERY_SECONDS = 60 * 60
+
+
+async def _refill_loop() -> None:
+    """Hourly, in working hours: queue the daily refresh from Tally for companies that opted in (stock, what
+    parties owe, last sales; only what changed, see services/tally/refill_job.py). Idempotent, so a repeat
+    or two copies are harmless."""
+    from app.services.tally import refill_job
+
+    await asyncio.sleep(300)
+    while True:
+        try:
+            started = await asyncio.to_thread(refill_job.run_auto_refresh)
+            if started:
+                log.info("tally refreshes queued: %d", started)
+        except Exception:  # noqa: BLE001 - never let the scheduler die
+            log.exception("tally refresh run failed")
+        await asyncio.sleep(REFILL_CHECK_EVERY_SECONDS)
+
+
 ACTIVITY_EVERY_SECONDS = 60 * 60  # hourly while the product is young: we want to see what shops do soon after they do it
 
 
@@ -190,6 +210,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
             asyncio.create_task(_activity_loop()),
             asyncio.create_task(_activity_nudge_loop()),
             asyncio.create_task(_lead_feed_loop()),
+            asyncio.create_task(_refill_loop()),
         ]
     )
     try:
