@@ -25,7 +25,7 @@ function Verdict({ c }: { c: TallyCompanyRow }) {
     return <span className="text-xs font-semibold text-ok">Open in Tally and matched</span>;
   if (c.verify_state === "not_open")
     return <span className="text-xs font-semibold text-warn">Not open in Tally right now</span>;
-  if (c.verify_state === "renamed" || c.verify_state === "different")
+  if (c.verify_state === "renamed" || c.verify_state === "different" || c.verify_state === "duplicate")
     return <span className="text-xs font-semibold text-warn">{c.verify_note ?? "Tally has a different company open"}</span>;
   return <span className="meta">Not checked yet</span>;
 }
@@ -254,7 +254,11 @@ const STEP_LABEL = (step: string | null): string => {
   if (step === "items") return "stock on hand";
   if (step === "ledgers") return "what parties owe";
   if (step === "bills") return "unpaid bill dates";
-  if (step?.startsWith("sales:")) return `sales for ${step.slice(6)}`;
+  if (step === "vtypes") return "your voucher types";
+  if (step?.startsWith("sales:")) {
+    const [from, to] = step.slice(6).split("..");
+    return to ? `sales ${from.slice(5)} to ${to.slice(5)}` : `sales for ${from}`;
+  }
   return "Tally";
 };
 
@@ -285,6 +289,18 @@ function RefillPanel({ company, onError }: { company: TallyCompanyRow; onError: 
   const notInMetal = num(st.results.items?.unmatched_count) + num(st.results.ledgers?.unmatched_count);
   const renamed = num(st.results.items?.renamed) + num(st.results.ledgers?.renamed);
   const gone = num(st.results.items?.missing_count) + num(st.results.ledgers?.missing_count);
+  // other voucher types that carry items (a shop's own Estimate or Sales Order): read but not counted as sales
+  const notCounted: Record<string, number> = {};
+  for (const [k, v] of Object.entries(st.results)) {
+    if (!k.startsWith("sales:")) continue;
+    const nc = (v as { not_counted?: Record<string, number> }).not_counted ?? {};
+    for (const [t, n] of Object.entries(nc)) notCounted[t] = (notCounted[t] ?? 0) + n;
+  }
+  const notCountedText = Object.entries(notCounted)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([t, n]) => `${t} ${n}`)
+    .join(", ");
   const has = st.items_with_stock > 0 || st.parties_with_balance > 0 || st.prices > 0;
   return (
     <div className="mt-3 border-t border-line pt-3 text-sm">
@@ -309,6 +325,18 @@ function RefillPanel({ company, onError }: { company: TallyCompanyRow; onError: 
           {renamed > 0 ? ` · ${renamed} renamed in Tally, updated` : ""}
           {gone > 0 ? ` · ${gone} no longer in Tally` : ""}
         </p>
+      )}
+      {notCountedText && (
+        <p className="meta mt-2">
+          Not counted as sales: {notCountedText}. Tell us if these should set the last rate too.
+        </p>
+      )}
+      {st.notes.length > 0 && (
+        <ul className="meta mt-2 list-disc pl-5">
+          {st.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
       )}
       {st.differences > 0 && (
         <div className="mt-2">

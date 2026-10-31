@@ -133,7 +133,8 @@ def test_a_full_chain_sets_the_markers_and_the_next_refresh_asks_only_for_change
 
         second = start_refill(s, c, today=TODAY)
         assert second.counts["mode"] == "changes" and second.counts["step"] == "groups"
-        assert len(second.counts["steps_left"]) == 2 + 2  # items, ledgers and the last two months
+        assert second.counts["window_days"] == 15  # the size the first read finished with, tried again
+        assert [w for w in second.counts["steps_left"] if w.startswith("sales:")]
         # items and ledgers ask for what is above the markers; groups never filter
         items_job_xml = refill_job._request_for("items", c, TODAY, "changes")
         assert f"$AlterID &gt; {c.items_alter_id}" in items_job_xml
@@ -175,7 +176,7 @@ def test_forcing_a_full_read_ignores_the_markers(client: TestClient) -> None:
         c.items_alter_id = c.ledgers_alter_id = 5
         c.full_refill_at = datetime.now(UTC)
         job = start_refill(s, c, full=True, today=TODAY)
-        assert job.counts["mode"] == "full" and len(job.counts["steps_left"]) == 3 + 3
+        assert job.counts["mode"] == "full" and len(job.counts["steps_left"]) == 3 + 1 + 6
 
 
 # ------------------------------------------------------------------------- the daily refresh

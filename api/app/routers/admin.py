@@ -197,7 +197,7 @@ def delete_firm(
     """Permanently erase a shop and every trace of it: all its rows, logins, files and backups.
     Irreversible, so the operator must type the shop's exact name back."""
     firm = _load_firm(session, firm_id)
-    if body.confirm_name.strip() != firm.legal_name.strip():
+    if " ".join(body.confirm_name.split()).lower() != " ".join(firm.legal_name.split()).lower():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="The name typed does not match this shop.",

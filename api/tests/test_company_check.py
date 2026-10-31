@@ -162,12 +162,13 @@ def test_checkin_learns_the_guid_by_itself(client: TestClient) -> None:
         assert [x["name"] for x in shop.tally_companies] == [name, "Other"]
 
 
-def test_checkin_notices_a_rename(client: TestClient) -> None:
+def test_checkin_follows_a_rename_by_the_stored_id(client: TestClient) -> None:
+    """Same Tally id, new name: the same books, so the name here follows (it used to wait for a person)."""
     _tok, tenant_id, _iid, shop_id = _setup_pushable_invoice(client, "cc7@x.example.com")
     _set(tenant_id, company_guid=G1)
     _checkin(shop_id, tenant_id, ("Brand New Name", G1))
     c = _company(tenant_id)
-    assert c.verify_state == "renamed" and "Brand New Name" in c.verify_note
+    assert c.company_name == "Brand New Name" and c.verify_state == "verified" and c.company_guid == G1
 
 
 def test_checkin_notices_a_different_company_with_our_name(client: TestClient) -> None:

@@ -192,3 +192,12 @@ def test_a_full_ledger_list_does_not_zero_a_party_it_does_not_mention(client: Te
         record_master_guid(s, tid, c, "party", gone, "guid-not-in-the-file", name="Gone From Tally")
         apply_outstanding(s, c, balances_from_ledgers(_ledgers()), TODAY, absent_is_zero=False)
         assert s.scalar(select(PartyTallySnapshot)) is None  # no balance invented for it
+
+
+def test_voucher_types_read_with_their_parents() -> None:
+    from app.services.tally.light_masters import parse_voucher_types
+
+    types = parse_voucher_types((FIX / "tally_voucher_types_dev_sample.xml").read_bytes())
+    assert len(types) == 24 and types["Sales"] == "Sales" and types["Sales Order"] == "Sales Order"
+    assert types["Receipt"] == "Receipt" and types["Credit Note"] == "Credit Note"
+

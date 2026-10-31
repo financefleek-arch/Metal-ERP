@@ -167,6 +167,15 @@ def test_unknown_party_rejected(client: TestClient) -> None:
     assert r.status_code == 404
 
 
+def test_empty_party_id_saved_as_no_party(client: TestClient) -> None:
+    """"" from a client that has not picked a party yet must store NULL: stored as
+    "" it violates invoice_party_id_fkey on Postgres (a 500 in prod)."""
+    h = _h(_register(client, "inv7b@x.example.com"))
+    r = client.post("/api/invoices", headers=h, json={"party_id": ""})
+    assert r.status_code == 201
+    assert r.json()["party_id"] is None
+
+
 def test_download_name_standard() -> None:
     """PDF saves as "<Party> <YYYY-MM-DD> <total>.pdf" — shared by the browser
     download and the WhatsApp document attachment."""

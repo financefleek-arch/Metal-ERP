@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.backup_storage import R2NotConfigured, get_object
 from app.models import AgentOutboxItem, BackupShop, TallyCompany, TallySyncJob
+from app.services.tally.companies import CompanyError, check_unique
 from app.services.tally.jobs import _NON_TERMINAL, _expire_stuck_job, complete_job_error
 from app.services.tally.voucher_capture import is_export_request
 
@@ -111,7 +112,28 @@ def judge(company: TallyCompany, open_companies: list[OpenCompany]) -> tuple[str
     stored = (company.company_guid or "").strip()
 
     if stored:
-        by_guid = next((c for c in open_companies if c.guid == stored), None)
+        same_id = [c for c in open_companies if c.guid == stored]
+        exact = next((c for c in same_id if c.name.casefold() == ours.casefold()), None)
+        if len(same_id) > 1:
+            # Two open companies carry one Tally id: one is a copy of the other (a restored backup or a
+            # copied data folder opened beside the original). That is not a rename. Ours is still open
+            # under its own name, so nothing is stopped, but the copies must not both be used.
+            listed = " and ".join(f'"{c.name}"' for c in same_id)
+            if exact is not None:
+                return (
+                    "duplicate",
+                    f"Tally has {len(same_id)} open companies with the same Tally id ({listed}): one is a copy "
+                    f'of the other. We use "{exact.name}". Close the copy you do not use, or entries made in '
+                    "one will not appear in the other.",
+                    exact,
+                )
+            return (
+                "duplicate",
+                f"Tally has {len(same_id)} open companies with the same Tally id ({listed}), and neither is "
+                f'called "{ours}". Close the copy you do not use, then pick the right one here.',
+                None,
+            )
+        by_guid = same_id[0] if same_id else None
         if by_guid is not None and by_guid.name.casefold() == ours.casefold():
             return "verified", f'"{by_guid.name}" is open and is the company we linked.', by_guid
         if by_guid is not None:
@@ -158,7 +180,7 @@ def _apply_verdict(
     changed = company.verify_state != state or company.verify_note != note[:400]
     company.verify_state = state
     company.verify_note = note[:400]
-    if matched is not None and state in ("verified", "renamed"):
+    if matched is not None and state in ("verified", "renamed", "duplicate"):
         if company.company_guid != matched.guid or company.books_from != matched.books_from:
             changed = True
         company.company_guid = matched.guid
@@ -187,8 +209,46 @@ def apply_open_companies(session: Session, shop: BackupShop, open_companies: lis
     linked = session.scalars(select(TallyCompany).where(TallyCompany.shop_id == shop.id)).all()
     for company in linked:
         state, note, matched = judge(company, open_companies)
+        if state == "renamed" and matched is not None and adopt_rename(session, company, matched, now):
+            continue  # the same company under a new name: followed, nothing for anyone to do
         _apply_verdict(company, state, note, matched, now)
     session.flush()
+
+
+def adopt_rename(
+    session: Session, company: TallyCompany, matched: OpenCompany, now: datetime
+) -> bool:
+    """Tally renamed the company we linked: the Tally id is the same, so it is the same books. Follow the
+    new name instead of leaving pushes and reads pointed at one Tally no longer has (it refuses them).
+
+    Only ever from an id match, and never onto a name another company of this firm already uses (that
+    one is left as "renamed" for a person to sort out). The change is recorded as a job row, so support
+    can see when it happened and what it was before; the name is also one an owner can edit back."""
+    old = company.company_name
+    try:
+        check_unique(session, company.tenant_id, name=matched.name, except_id=company.id)
+    except CompanyError:
+        return False
+    company.company_name = matched.name
+    company.company_guid = matched.guid
+    company.books_from = matched.books_from
+    company.verify_state = "verified"
+    company.verify_note = f'"{matched.name}" is open and is the company we linked.'
+    company.verified_at = now
+    session.add(
+        TallySyncJob(
+            tenant_id=company.tenant_id,
+            company_id=company.id,
+            direction="in",
+            kind="company_renamed",
+            entity_type="company",
+            status="ok",
+            counts={"from": old, "to": matched.name},
+            completed_at=now,
+        )
+    )
+    log.info("company %s renamed in Tally: %r -> %r (same Tally id), name followed", company.id, old, matched.name)
+    return True
 
 
 def relink_company(

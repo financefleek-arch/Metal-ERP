@@ -255,7 +255,7 @@ export interface TallyCompany {
   last_masters_pull_at: string | null;
   company_guid: string | null;
   books_from: string | null;
-  verify_state: "verified" | "renamed" | "different" | "not_open" | null;
+  verify_state: "verified" | "renamed" | "different" | "duplicate" | "not_open" | null;
   verify_note: string | null;
   verified_at: string | null;
   created_at: string;
@@ -1285,6 +1285,8 @@ export interface TallyRefillStatus {
   auto_refresh: boolean;
   /** Typed opening balances that differ from Tally's, waiting for a choice. */
   differences: number;
+  /** Plain sentences about what the latest read had to do (a slow window split, a part skipped). */
+  notes: string[];
   results: Record<string, Record<string, unknown>>;
 }
 

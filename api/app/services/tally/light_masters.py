@@ -95,6 +95,20 @@ def parse_groups(raw: bytes) -> list[TallyGroup]:
     return out
 
 
+def parse_voucher_types(raw: bytes) -> dict[str, str]:
+    """Voucher type name -> its parent type (a built-in one is its own parent)."""
+    root = _root(raw)
+    out: dict[str, str] = {}
+    if root is None:
+        return out
+    for el in root.iter("VOUCHERTYPE"):
+        name = _name(el)
+        parent = _clean(el.findtext("PARENT"))
+        if name and parent:
+            out[name] = parent
+    return out
+
+
 def party_tree(groups: list[TallyGroup] | None) -> GroupTree:
     """The lineage walker the masters import uses. With no groups it still knows the two root names."""
     return GroupTree(groups or [])

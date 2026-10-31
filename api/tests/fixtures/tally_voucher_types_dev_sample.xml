@@ -1,0 +1,267 @@
+<ENVELOPE>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <STATUS>1</STATUS>
+ </HEADER>
+ <BODY>
+  <DESC>
+   <CMPINFO>
+    <COMPANY>0</COMPANY>
+    <GROUP>0</GROUP>
+    <LEDGER>36</LEDGER>
+    <COSTCATEGORY>0</COSTCATEGORY>
+    <COSTCENTRE>0</COSTCENTRE>
+    <GODOWN>10</GODOWN>
+    <STOCKGROUP>0</STOCKGROUP>
+    <STOCKCATEGORY>0</STOCKCATEGORY>
+    <STOCKITEM>10</STOCKITEM>
+    <VOUCHERTYPE>0</VOUCHERTYPE>
+    <CURRENCY>12</CURRENCY>
+    <UNIT>0</UNIT>
+    <BUDGET>0</BUDGET>
+    <CLIENTRULE>0</CLIENTRULE>
+    <SERVERRULE>0</SERVERRULE>
+    <STATE>0</STATE>
+    <TDSRATE>0</TDSRATE>
+    <TAXCLASSIFICATION>0</TAXCLASSIFICATION>
+    <STCATEGORY>0</STCATEGORY>
+    <DEDUCTEETYPE>0</DEDUCTEETYPE>
+    <ATTENDANCETYPE>0</ATTENDANCETYPE>
+    <FBTCATEGORY>0</FBTCATEGORY>
+    <FBTASSESSEETYPE>0</FBTASSESSEETYPE>
+    <TARIFFCLASSIFICATION>0</TARIFFCLASSIFICATION>
+    <EXCISEDUTYCLASSIFICATION>0</EXCISEDUTYCLASSIFICATION>
+    <SERIALNUMBER>0</SERIALNUMBER>
+    <ADJUSTMENTCLASSIFICATION>0</ADJUSTMENTCLASSIFICATION>
+    <INCOMETAXSLAB>0</INCOMETAXSLAB>
+    <INCOMETAXCLASSIFICATION>0</INCOMETAXCLASSIFICATION>
+    <LBTCLASSIFICATION>0</LBTCLASSIFICATION>
+    <TAXUNIT>0</TAXUNIT>
+    <RETURNMASTER>0</RETURNMASTER>
+    <GSTCLASSIFICATION>0</GSTCLASSIFICATION>
+    <VOUCHERNUMBERSERIES>12</VOUCHERNUMBERSERIES>
+    <VOUCHER>12</VOUCHER>
+   </CMPINFO>
+  </DESC>
+  <DATA>
+   <COLLECTION ISMSTDEPTYPE="Yes" MSTDEPTYPE="1024">
+    <VOUCHERTYPE NAME="Attendance" RESERVEDNAME="Attendance">
+     <PARENT TYPE="String">Attendance</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Attendance</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Contra" RESERVEDNAME="Contra">
+     <PARENT TYPE="String">Contra</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Contra</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Credit Note" RESERVEDNAME="Credit Note">
+     <PARENT TYPE="String">Credit Note</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Credit Note</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Debit Note" RESERVEDNAME="Debit Note">
+     <PARENT TYPE="String">Debit Note</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Debit Note</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Delivery Note" RESERVEDNAME="Delivery Note">
+     <PARENT TYPE="String">Delivery Note</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Delivery Note</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Job Work In Order" RESERVEDNAME="Job Work In Order">
+     <PARENT TYPE="String">Job Work In Order</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Job Work In Order</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Job Work Out Order" RESERVEDNAME="Job Work Out Order">
+     <PARENT TYPE="String">Job Work Out Order</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Job Work Out Order</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Journal" RESERVEDNAME="Journal">
+     <PARENT TYPE="String">Journal</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Journal</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Material In" RESERVEDNAME="Material In">
+     <PARENT TYPE="String">Material In</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Material In</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Material Out" RESERVEDNAME="Material Out">
+     <PARENT TYPE="String">Material Out</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Material Out</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Memorandum" RESERVEDNAME="Memorandum">
+     <PARENT TYPE="String">Memorandum</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Memorandum</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Payment" RESERVEDNAME="Payment">
+     <PARENT TYPE="String">Payment</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Payment</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Payroll" RESERVEDNAME="Payroll">
+     <PARENT TYPE="String">Payroll</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Payroll</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Physical Stock" RESERVEDNAME="Physical Stock">
+     <PARENT TYPE="String">Physical Stock</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Physical Stock</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Purchase" RESERVEDNAME="Purchase">
+     <PARENT TYPE="String">Purchase</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Purchase</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Purchase Order" RESERVEDNAME="Purchase Order">
+     <PARENT TYPE="String">Purchase Order</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Purchase Order</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Receipt" RESERVEDNAME="Receipt">
+     <PARENT TYPE="String">Receipt</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Receipt</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Receipt Note" RESERVEDNAME="Receipt Note">
+     <PARENT TYPE="String">Receipt Note</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Receipt Note</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Rejections In" RESERVEDNAME="Rejections In">
+     <PARENT TYPE="String">Rejections In</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Rejections In</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Rejections Out" RESERVEDNAME="Rejections Out">
+     <PARENT TYPE="String">Rejections Out</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Rejections Out</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Reversing Journal" RESERVEDNAME="Reversing Journal">
+     <PARENT TYPE="String">Reversing Journal</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Reversing Journal</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Sales" RESERVEDNAME="Sales">
+     <PARENT TYPE="String">Sales</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sales</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Sales Order" RESERVEDNAME="Sales Order">
+     <PARENT TYPE="String">Sales Order</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sales Order</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+    <VOUCHERTYPE NAME="Stock Journal" RESERVEDNAME="Stock Journal">
+     <PARENT TYPE="String">Stock Journal</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Stock Journal</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </VOUCHERTYPE>
+   </COLLECTION>
+  </DATA>
+ </BODY>
+</ENVELOPE>

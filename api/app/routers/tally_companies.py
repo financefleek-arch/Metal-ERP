@@ -279,6 +279,7 @@ class RefillOut(BaseModel):
     full_refill_at: datetime | None = None
     auto_refresh: bool = False
     differences: int = 0  # typed opening balances that differ from Tally's, waiting for a choice
+    notes: list[str] = Field(default_factory=list)  # plain sentences about what the latest read had to do
     results: dict = Field(default_factory=dict)
 
 
@@ -354,6 +355,7 @@ def refill_summary(session: SessionDep, company: TallyCompany) -> RefillOut:
         full_refill_at=company.full_refill_at,
         auto_refresh=company.auto_refresh,
         differences=len(differences(session, company)),
+        notes=list((latest.counts or {}).get("notes") or []) if latest else [],
         results=results,
     )
 

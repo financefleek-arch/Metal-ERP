@@ -31,6 +31,7 @@ from app.schemas_admin import (
     AdminUserOut,
     AdminUserPatch,
     AgentTargetVersionIn,
+    FirmDeleteOut,
     FirmDetail,
     FirmPatch,
     FirmTallyShopOut,
@@ -40,9 +41,11 @@ from app.schemas_admin import (
     SlipUsageOut,
 )
 from app.schemas_tally import TallySyncJobOut
+from app.services import firm_erasure
+from app.services.catalog.storage import CatalogStorage, get_storage
 from app.services.control_plane_auth import require_control_plane
-from app.services.tally.companies import get_company, list_companies
 from app.services.ocr import slip_usage
+from app.services.tally.companies import get_company, list_companies
 
 router = APIRouter(
     prefix="/api/internal/control-plane/firms/{fleek_org_id}",
@@ -106,6 +109,30 @@ def patch_user(fleek_org_id: str, user_id: str, body: AdminUserPatch, session: S
 def disable_user(fleek_org_id: str, user_id: str, session: SessionDep) -> None:
     _user_of(session, _firm(session, fleek_org_id), user_id)
     admin.disable_firm_user(user_id, session)
+
+
+# ---------------------------------------------------------------- erase the shop
+
+
+@router.delete("", response_model=FirmDeleteOut)
+def erase_firm(
+    fleek_org_id: str, session: SessionDep, storage: CatalogStorage = Depends(get_storage)
+) -> FirmDeleteOut:
+    """Erase the firm and every trace of it. Fleek has already had the operator confirm the shop's name;
+    404 means there is nothing here (already deleted), which Fleek treats as done."""
+    firm = _firm(session, fleek_org_id)
+    name = firm.legal_name
+    try:
+        report = firm_erasure.erase_firm(session, firm, storage)
+    except firm_erasure.ErasureRefused as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    return FirmDeleteOut(
+        deleted=name,
+        rows_removed=report.total_rows,
+        files_removed=report.files_removed,
+        files_failed=report.files_failed,
+        fleek_org_id=fleek_org_id,
+    )
 
 
 # ---------------------------------------------------------------- slip-reading usage (read only)

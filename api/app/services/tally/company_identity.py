@@ -36,6 +36,8 @@ def not_open_message(session: Session, job: TallySyncJob) -> str:
 
 def company_payload(company: TallyCompany) -> dict[str, str]:
     out = {"company_name": company.company_name}
-    if company.company_guid:
+    # With two open copies of one company the agent cannot tell them apart by id and would stop the job as
+    # "renamed" even though ours is open under its own name; checked by name alone it goes ahead.
+    if company.company_guid and company.verify_state != "duplicate":
         out["company_guid"] = company.company_guid
     return out

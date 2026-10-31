@@ -255,3 +255,24 @@ def test_slip_usage_is_readable_by_fleek_and_empty_for_a_new_firm(client: TestCl
     assert body["this_month"]["cost_usd"] == "0.0000"
     assert _req(client, "GET", "/api/internal/control-plane/firms/not-linked/slip-usage").status_code == 404
     assert _req(client, "GET", f"{BASE}/slip-usage", secret="wrong").status_code in (401, 403)
+
+
+# --------------------------------------------------------------------------
+# erase the shop
+# --------------------------------------------------------------------------
+
+
+def test_fleek_can_erase_a_linked_firm_and_a_second_call_finds_nothing(client: TestClient, firm: str) -> None:
+    _licence(firm, 3)
+    assert client.request("DELETE", BASE).status_code == 401
+    assert _req(client, "DELETE", BASE, secret="wrong").status_code == 401
+
+    r = _req(client, "DELETE", BASE)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["deleted"] == "Kumar Steel House" and body["rows_removed"] >= 2
+    with SessionLocal() as s:
+        assert s.get(Tenant, firm) is None
+        assert s.scalar(select(TenantEntitlement).where(TenantEntitlement.tenant_id == firm)) is None
+    # already gone: Fleek treats this 404 as done
+    assert _req(client, "DELETE", BASE).status_code == 404

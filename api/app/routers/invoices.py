@@ -407,11 +407,14 @@ def list_invoices(
 
 @router.post("", response_model=InvoiceOut, status_code=status.HTTP_201_CREATED)
 def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) -> InvoiceOut:
-    if body.party_id:
-        _owned_party(session, user.tenant_id, body.party_id)
+    # "" means "no party yet" (update_invoice reads it that way too); stored as-is it
+    # trips invoice_party_id_fkey, so normalise to NULL.
+    party_id = body.party_id or None
+    if party_id:
+        _owned_party(session, user.tenant_id, party_id)
     d = body.date or date.today()
     explicit = choose_company(session, user, body.tally_company_id) if body.tally_company_id else None
-    party = session.get(Party, body.party_id) if body.party_id else None
+    party = session.get(Party, party_id) if party_id else None
     company = resolve_company(
         session, user.tenant_id, explicit_id=explicit.id if explicit else None, party=party
     )
@@ -421,7 +424,7 @@ def create_invoice(body: InvoiceCreate, user: DraftUser, session: SessionDep) ->
         series=series_for(session, company),
         fy=financial_year(d),
         date=d,
-        party_id=body.party_id,
+        party_id=party_id,
         tally_company_id=company.id if company else None,
         bill_to_addr_id=body.bill_to_addr_id,
         ship_to_addr_id=body.ship_to_addr_id,

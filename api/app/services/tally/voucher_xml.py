@@ -109,10 +109,14 @@ def classify(type_name: str, parents: dict[str, str] | None = None) -> str:
     key = (type_name or "").strip().lower()
     if parents:
         parent = parents.get(type_name) or parents.get(key)
-        if parent and parent.strip().lower() in _PARENTS:
-            return _PARENTS[parent.strip().lower()]
+        if parent:
+            # Tally says what this type is: trust it exactly. A "Sales Order" or "Delivery Note" is not a
+            # sale, and a shop's "Estimate" is whatever its parent says, whatever the name.
+            return _PARENTS.get(parent.strip().lower(), OTHER)
     if key in _PARENTS:
         return _PARENTS[key]
+    if any(word in key for word in ("order", "delivery", "quotation", "estimate", "challan", "memo")):
+        return OTHER  # without the parent to go by, a document that is not an invoice is not guessed to be one
     # most specific first: "credit note" before anything containing "note"
     for needle, family in (
         ("credit note", CREDIT_NOTE),

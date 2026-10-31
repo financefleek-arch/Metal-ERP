@@ -61,17 +61,28 @@ def _next(s, after: TallySyncJob) -> TallySyncJob | None:
     )
 
 
-def test_the_plan_is_stock_then_bills_then_newest_month_first() -> None:
-    assert plan_steps(3, date(2026, 10, 31)) == [
+def test_the_plan_is_masters_first_then_sales_by_half_month_newest_first() -> None:
+    assert plan_steps(2, date(2026, 10, 31), bills=True) == [
         "groups",
         "items",
         "ledgers",
-        "sales:2026-10",
-        "sales:2026-09",
-        "sales:2026-08",
+        "bills",
+        "vtypes",
+        "sales:2026-10-16..2026-10-31",
+        "sales:2026-10-01..2026-10-15",
+        "sales:2026-09-16..2026-09-30",
+        "sales:2026-09-01..2026-09-15",
     ]
-    assert plan_steps(2, date(2026, 1, 15))[-2:] == ["sales:2026-01", "sales:2025-12"]
-    assert len(plan_steps(99, TODAY)) == 3 + 12  # capped at a year
+    assert "bills" not in plan_steps(1, date(2026, 10, 31))
+    # a window that has not started yet is not asked for
+    assert plan_steps(1, date(2026, 10, 10))[-1:] == ["sales:2026-10-01..2026-10-15"]
+    assert plan_steps(1, date(2026, 10, 10)).count("sales:2026-10-16..2026-10-31") == 0
+    assert plan_steps(2, date(2026, 1, 15))[-3:] == [
+        "sales:2026-01-01..2026-01-15",
+        "sales:2025-12-16..2025-12-31",
+        "sales:2025-12-01..2025-12-15",
+    ]
+    assert len(plan_steps(99, TODAY)) == 3 + 1 + 24  # capped at a year, two windows a month
 
 
 def test_the_light_requests_are_read_only_exports_naming_the_company_and_the_fields() -> None:
@@ -99,7 +110,7 @@ def test_a_refresh_runs_the_chain_one_job_at_a_time_and_applies_each_file(
 
         zero = start_refill(s, c, months=1, today=TODAY)
         assert is_refill_job(zero) and zero.counts["step"] == "groups"
-        assert zero.counts["steps_left"] == ["items", "ledgers", "bills", "sales:2026-10"]
+        assert zero.counts["steps_left"] == ["items", "ledgers", "bills", "vtypes", "sales:2026-10-16..2026-10-31", "sales:2026-10-01..2026-10-15"]
         _finish(s, zero, (FIX / "tally_groups_dev_sample.xml").read_bytes(), monkeypatch)
         assert zero.counts["refill"]["groups"]["groups"] == 28
         first = _next(s, zero)
@@ -118,17 +129,27 @@ def test_a_refresh_runs_the_chain_one_job_at_a_time_and_applies_each_file(
         assert bills_job is not None and bills_job.counts["step"] == "bills"  # a full read adds the bill dates
         _finish(s, bills_job, bills, monkeypatch)
         assert bills_job.counts["refill"]["bills"]["parties"] == 1
-        third = _next(s, bills_job)
-        assert third is not None and third.counts["step"] == "sales:2026-10"
-        assert third.counts["steps_left"] == []
+        vtypes_job = _next(s, bills_job)
+        assert vtypes_job is not None and vtypes_job.counts["step"] == "vtypes"
+        _finish(s, vtypes_job, (FIX / "tally_voucher_types_dev_sample.xml").read_bytes(), monkeypatch)
+        assert vtypes_job.counts["refill"]["vtypes"]["voucher_types"] == 24
+        third = _next(s, vtypes_job)
+        assert third is not None and third.counts["step"] == "sales:2026-10-16..2026-10-31"
+        assert third.counts["voucher_types"]["Sales Order"] == "Sales Order"  # carried to the sales steps
+        assert third.counts["steps_left"] == ["sales:2026-10-01..2026-10-15"]
 
         sales = _sales_xml([("g1", "20261005", "9", "Anand Metals", "SS Thali", "110.00")])
-        _finish(s, third, sales, monkeypatch)
+        _finish(s, third, b"<ENVELOPE/>", monkeypatch)  # nothing sold in the second half
         s.commit()
-        assert third.counts["refill"]["sales:2026-10"]["prices"] == 1
+        assert third.counts["refill"]["sales:2026-10-16..2026-10-31"]["prices"] == 0
+        fourth = _next(s, third)
+        assert fourth is not None and fourth.counts["step"] == "sales:2026-10-01..2026-10-15"
+        _finish(s, fourth, sales, monkeypatch)
+        s.commit()
+        assert fourth.counts["refill"]["sales:2026-10-01..2026-10-15"]["prices"] == 1
         assert s.scalar(select(PartyItemPrice.rate)) == Decimal("110.00")
         assert s.scalar(select(ItemTallyState.stock_qty)) is not None
-        assert _next(s, third) is None  # the chain is finished
+        assert _next(s, fourth) is None  # the chain is finished
 
 
 def test_a_repeated_callback_does_not_apply_or_queue_twice(

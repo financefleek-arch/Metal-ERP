@@ -322,3 +322,32 @@ def test_unmatched_parties_and_items_are_listed_and_priced_nowhere(client: TestC
         )
         assert res.unmatched_items == ["Unknown Item"] and res.unmatched_parties == ["Stranger"]
         assert s.scalar(select(PartyItemPrice)) is None
+
+
+def test_documents_with_items_that_are_not_sales_are_reported_not_silently_dropped(client: TestClient) -> None:
+    tid = _firm(client, "rf20@x.example.com")
+    xml = _sales_xml(
+        [
+            ("a", "20260901", "1", "Anand", "SS Thali", "100.00"),
+            ("b", "20260902", "2", "Anand", "SS Thali", "90.00"),
+            ("c", "20260903", "3", "Anand", "SS Thali", "80.00"),
+        ]
+    )
+    # the second is the shop's own "Estimate" under Sales; the third an order, which is not a sale
+    xml = xml.replace(b"<VOUCHERNUMBER>2<", b"<VOUCHERNUMBER>2<").replace(
+        b"<GUID>b</GUID><MASTERID>2</MASTERID><VOUCHERTYPENAME>Sales<", b"<GUID>b</GUID><MASTERID>2</MASTERID><VOUCHERTYPENAME>Estimate<"
+    ).replace(
+        b"<GUID>c</GUID><MASTERID>3</MASTERID><VOUCHERTYPENAME>Sales<", b"<GUID>c</GUID><MASTERID>3</MASTERID><VOUCHERTYPENAME>Sales Order<"
+    )
+    from app.services.tally.voucher_xml import parse_vouchers
+
+    with SessionLocal() as s:
+        c = add_company(s, tid, "GST")
+        _party(s, tid, "Anand")
+        _item(s, tid, "SS Thali")
+        types = {"Sales": "Sales", "Estimate": "Sales", "Sales Order": "Sales Order"}
+        res = apply_sales(s, c, parse_vouchers(xml, types))
+        assert res.vouchers == 2  # the sale and the estimate count
+        assert res.not_counted == {"Sales Order": 1}  # and the owner is told what was left out
+        assert s.scalar(select(PartyItemPrice.rate)) == D("90.00")  # the later of the two that count
+

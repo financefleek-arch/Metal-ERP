@@ -200,7 +200,8 @@ function DeleteShopPanel({ firm, onDeleted }: { firm: FirmDetail; onDeleted: () 
   const [typed, setTyped] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [result, setResult] = useState<FirmDeleteResult | null>(null);
-  const armed = typed.trim() === firm.legal_name.trim();
+  const norm = (v: string) => v.trim().replace(/\s+/g, " ").toLowerCase();
+  const armed = norm(typed) === norm(firm.legal_name);
 
   const del = useMutation({
     mutationFn: () => adminApi.deleteFirm(firm.id, typed),
@@ -250,6 +251,7 @@ function DeleteShopPanel({ firm, onDeleted }: { firm: FirmDetail; onDeleted: () 
           }}
         />
       </label>
+      {!armed && <p className="mt-1 text-xs text-muted">The button turns on once the name above is typed in full.</p>}
       {err && <p className="err mt-2">{err}</p>}
       <button
         className="mt-3 rounded border border-danger/40 px-3 py-1.5 text-sm text-danger enabled:hover:bg-danger/5 disabled:opacity-40"

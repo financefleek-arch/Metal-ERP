@@ -45,7 +45,7 @@ from app.models._mixins import PartyRole
 from app.services.payments import has_ledger_history
 from app.services.tally.light_masters import ItemRow, LedgerRow, party_tree
 from app.services.tally.stock_summary import StockRow, is_adjustment
-from app.services.tally.voucher_xml import SALES, ParsedVoucher, PendingBill
+from app.services.tally.voucher_xml import OTHER, SALES, ParsedVoucher, PendingBill
 
 _CENT = Decimal("0.01")
 _ZERO = Decimal(0)
@@ -400,6 +400,9 @@ class PriceResult:
     prices: int = 0
     unmatched_parties: list[str] = field(default_factory=list)
     unmatched_items: list[str] = field(default_factory=list)
+    # documents with items that are not sales (an Estimate or Sales Order of the shop's own): how many of
+    # each type were left out, so the owner can see what a refill did not count and say if it should
+    not_counted: dict[str, int] = field(default_factory=dict)
 
 
 def _line_rate(line) -> Decimal | None:  # type: ignore[no-untyped-def]
@@ -427,6 +430,8 @@ def apply_sales(
     count: dict[str, int] = defaultdict(int)
     best: dict[tuple[str, str], tuple[tuple, ParsedVoucher, object]] = {}
     for v in vouchers:
+        if v.kind == OTHER and v.items and not (v.cancelled or v.deleted):
+            result.not_counted[v.type_name] = result.not_counted.get(v.type_name, 0) + 1
         if v.kind != SALES or v.cancelled or v.optional or v.deleted or v.day is None:
             continue
         result.vouchers += 1

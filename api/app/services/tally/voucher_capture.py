@@ -135,6 +135,12 @@ def _collection(
     return xml
 
 
+def build_voucher_types_request(company_name: str, as_on: date | None = None) -> str:
+    """Every voucher type with its parent: a shop's own "Estimate" or "Sales - Cash" says which built-in type
+    (Sales, Receipt, ...) it is, which the name alone cannot. Verified live (24 types on the dev Tally)."""
+    return _collection("MEVoucherTypes", "VoucherType", "Name, Parent", company_name, as_on)
+
+
 def build_groups_request(company_name: str, as_on: date | None = None) -> str:
     return _collection("MEGroups", "Group", "Name, Parent", company_name, as_on)
 

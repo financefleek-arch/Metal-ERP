@@ -132,3 +132,19 @@ def test_pending_bills_pair_each_bill_with_its_balance_and_due_date():
     assert first.closing == Decimal("-960.00")
     assert first.day == date(2026, 9, 2) and first.due == date(2026, 9, 2)
     assert bills[3].closing == Decimal("-1.00")
+
+
+def test_a_shops_own_voucher_types_are_classified_by_their_parent_not_their_name() -> None:
+    parents = {"Estimate": "Sales", "Cash Memo": "Sales", "Sales Order": "Sales Order", "Delivery Note": "Delivery Note"}
+    assert classify("Estimate", parents) == SALES  # the name says nothing, the parent says Sales
+    assert classify("Cash Memo", parents) == SALES
+    assert classify("Sales Order", parents) == OTHER  # an order is not a sale, whatever the name contains
+    assert classify("Delivery Note", parents) == OTHER
+
+
+def test_without_the_parent_a_document_that_is_not_an_invoice_is_not_guessed_to_be_one() -> None:
+    assert classify("Sales Order") == OTHER
+    assert classify("Estimate") == OTHER
+    assert classify("Delivery Note") == OTHER
+    assert classify("Sales - Cash") == SALES and classify("Export Sales") == SALES
+
